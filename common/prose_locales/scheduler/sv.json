@@ -143,6 +143,22 @@
     "en": "71471822b228b1b8",
     "text": "Tar bort de löpande summor som hålls för varje GNAP-beviljandes gränser när beviljandet har tagit slut, då ingen av dess token längre kan visas upp (#432)."
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "Maskinvarutoken på poster"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "Skriver de maskinvaru-, OATH- och YubiKey OTP-token vars skrivning till posten inte skedde till innehavarnas poster och kopierar vid sin första körning i en process varje token som registrerades innan token lagrades på poster till dess innehavare."
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "Index för maskinvarutoken återuppbyggda"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "Skriver om maskinvarutokenregistret och OATH- och YubiKey OTP-inventarierna från token på personernas poster, som är huvudkällan: körs för hand efter en återställning eller när ett index motsäger en post."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Antal värden per datakrypteringsnyckel"
@@ -662,6 +678,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "Pausar, inaktiverar eller tar bort en ström vars mottagare har varit inaktiv i ssf.inactivityTimeoutS (SSF 1.0 avsnitt 8.1.1), och meddelar en paus eller inaktivering med en stream-updated-händelse först, och skickar en verifieringshändelse till varje aktiverad ström som inte har fått någon från den här sändaren på ssf.verificationEveryS (avsnitt 8.1.4)."
+  },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "SSH-användarcertifikat på poster"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "Skriver de SSH-användarcertifikat vars skrivning till posten misslyckades vid utfärdandet till innehavarnas poster (stsSshUserCertificate), tar bort utgångna och kopierar vid sin första körning i en process de certifikat som utfärdades innan de lagrades på poster till sina innehavare."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

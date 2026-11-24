@@ -17203,6 +17203,18 @@ const CODES = [
       'handling can no longer catch it: the client is answered ' +
       'operationsError (1) rather than left without a result (run #510).',
     spec: 'RFC 4511 section 4.1.9' },
+  { code: 'STS-LDAP-0224',
+    summary: 'A handler for a person\'s credential attribute was refused by ' +
+      'the entry observer: the attribute is not one of the five it ' +
+      'observes, or the handler offers no changed(); that attribute\'s ' +
+      'index is not kept in step with the entries (#2050, #2051).',
+    spec: 'none — logged' },
+  { code: 'STS-LDAP-0225',
+    summary: 'The handler of a person\'s credential attribute threw on a ' +
+      'write of their entry; the write stands, and the index of that ' +
+      'attribute may be behind the entry until its job catches it up ' +
+      '(#2050, #2051).',
+    spec: 'none — logged' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -23355,6 +23367,31 @@ const CODES = [
       'an unexpected error at /admin-api; the log line has the stack ' +
       '(#1955).',
     spec: 'HTTP 500' },
+  { code: 'STS-HWTOKEN-0014',
+    summary: 'The directory offered the token entries library no ' +
+      'locate(), locateAsync(), write() or holdersAsync(), so nothing was ' +
+      'installed: no hardware, OATH or YubiKey OTP token is written onto ' +
+      'its holder\'s entry until one is, and every index write is marked ' +
+      'pending (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0015',
+    summary: 'A token\'s value could not be written onto its holder\'s ' +
+      'entry (stsHardwareToken, stsOathToken or stsYubiOtpToken); the ' +
+      'index row is marked pending and the hardware-tokens.entries job ' +
+      'writes it again (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0016',
+    summary: 'The hardware-tokens.entries job, or the manual rebuild of ' +
+      'the token indexes from the entries, could not read a store or the ' +
+      'directory; nothing more was done this run (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0017',
+    summary: 'A hardware, OATH or YubiKey OTP token value written onto a ' +
+      'person\'s entry by a door other than its own module was not what ' +
+      'the index recorded for them, so it was put back as recorded or ' +
+      'taken off, and audited with the writer: a serial is recorded only ' +
+      'from attestation and a token assigned only by its inventory (#2051).',
+    spec: 'none — audited' },
   // ===== OATH ==============================================================
   { code: 'STS-OATH-0001',
     summary: 'An HOTP code (or a pair given to resynchronise) was not ' +
@@ -23842,6 +23879,37 @@ const CODES = [
     summary: 'A person\'s SSH user certificates could not be read or ' +
       'revoked: the register threw (#1955).',
     spec: 'HTTP 500 or 503' },
+  { code: 'STS-SSHCA-0006',
+    summary: 'The directory offered the SSH user certificate register no ' +
+      'locate() or write(), so nothing was installed: no certificate is ' +
+      'written onto its holder\'s entry (stsSshUserCertificate) until one ' +
+      'is, and the register still holds and publishes every certificate ' +
+      '(#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0007',
+    summary: 'A person\'s entry could not be brought in step with the SSH ' +
+      'user certificates the register holds for them: the certificate was ' +
+      'issued or revoked in the register, which is authoritative, and the ' +
+      'ssh-user-ca.entries job tries the entry again (#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0008',
+    summary: 'The ssh-user-ca.entries job could not read the register of ' +
+      'issued SSH user certificates, or record what it found, so no entry ' +
+      'was brought in step this run; the next run tries again (#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0009',
+    summary: 'An SSH user certificate written onto a person\'s entry by a ' +
+      'door other than the CA was refused and taken off again: its serial ' +
+      'was never issued by this realm, was issued to somebody else, was ' +
+      'revoked (a revocation is permanent) or has expired, or the value ' +
+      'differs from what the CA issued. Audited with the writer (#2050).',
+    spec: 'none — audited' },
+  { code: 'STS-SSHCA-0010',
+    summary: 'An SSH user certificate was removed from its holder\'s entry, ' +
+      'which revokes it, and the revocation could not be recorded or the ' +
+      'KRL rebuilt; the entry no longer names it and the next KRL build ' +
+      'tries again (#2050).',
+    spec: 'none — logged' },
   // ===== OPENPGP ===========================================================
   { code: 'STS-OPENPGP-0001',
     summary: 'An OpenPGP public key offered for registration did not ' +
@@ -24016,6 +24084,12 @@ const CODES = [
       'encryption key that is not one of RFC 9980\'s ML-KEM composites. ' +
       'Refused before its proof is checked; nothing is spent or written.',
     spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-OPENPGP-0034',
+    summary: 'A userSMIMECertificate value written onto a person\'s entry ' +
+      'holds no certificate this service can read, so it was taken off ' +
+      'again and audited with the writer: an S/MIME certificate on the ' +
+      'entry is the master mail is encrypted to (#2050).',
+    spec: 'none — audited' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

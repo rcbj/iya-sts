@@ -15452,7 +15452,11 @@ async function issueSshUserCertificateAsync(scopeId, spec) {
       hardwareBound: s.hardwareBound === true,
       evidence: s.evidence ? String(s.evidence) : '',
       extensions: extensions.slice(),
-      caMember: one.member
+      caMember: one.member,
+      // The certificate itself, public (#2050): what the holder's entry
+      // carries in `stsSshUserCertificate`, and what the entries job writes
+      // back where that write failed.
+      certificate: one.line
     };
   });
   let kept = false;
@@ -15517,6 +15521,24 @@ async function sshUserCertificatesOfAsync(scopeId, ownerSubject) {
   });
   log.debug("Leaving sshUserCertificatesOfAsync(). " + out.length);
   return out;
+}
+
+/**
+ * The SSH user certificates the realm's PKI row recorded before the #1955
+ * review (`sshIssued`), read from the store's row first: what
+ * `common/ssh_issued.ts`'s backfill copies into its register and onto the
+ * holders' entries (#2050). Nothing is written to the row.
+ *
+ * @param scopeId - the realm
+ * @returns a promise of the rows, as recorded
+ */
+async function legacySshUserCertificatesAsync(scopeId) {
+  log.debug("Entering legacySshUserCertificatesAsync().");
+  const id = realmIdOf(scopeId);
+  await keystore.refreshPki(id);
+  const rows = ((rawRowFor(id) || {}).sshIssued || []).slice();
+  log.debug("Leaving legacySshUserCertificatesAsync(). " + rows.length);
+  return rows;
 }
 
 /**
@@ -15601,6 +15623,11 @@ async function revokeSshUserCertificateAsync(scopeId, serialHex,
         return unsettled();
       }
     }
+    // OFF ITS HOLDER'S ENTRY (#2050), where the backfill had copied it
+    // there before the register held it; the register is authoritative and
+    // its entries job takes it off where this cannot.
+    await register.leaveEntry(id, String(certificate.ownerSubject || ''),
+                              serial);
   }
   const krl = await buildSshUserKrlAsync(id);
   if (!krl || !krl.ok) {
@@ -15665,6 +15692,9 @@ async function revokeSshUserKeyAsync(scopeId, fingerprint) {
       revokedAt: now.toISOString()
     });
     legacy += 1;
+    // Off its holder's entry (#2050), as above.
+    await register.leaveEntry(id, String(issued[i].ownerSubject || ''),
+                              String(issued[i].serialHex || ''));
   }
   if (legacy) {
     saveRow(id, Object.assign({}, row, { sshIssued: issued }));
@@ -17296,6 +17326,7 @@ module.exports = {
   issueSshUserCertificateAsync: issueSshUserCertificateAsync,
   revokeSshUserCertificateAsync: revokeSshUserCertificateAsync,
   revokeSshUserKeyAsync: revokeSshUserKeyAsync,
+  legacySshUserCertificatesAsync: legacySshUserCertificatesAsync,
   buildSshUserKrlAsync: buildSshUserKrlAsync,
   sshUserCertificatesOfAsync: sshUserCertificatesOfAsync,
   sshUserCertificateExtensions: sshUserCertificateExtensions,

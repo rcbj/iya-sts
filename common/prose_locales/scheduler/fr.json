@@ -143,6 +143,22 @@
     "en": "71471822b228b1b8",
     "text": "Supprime les totaux cumulés conservés pour les limites de chaque autorisation GNAP une fois l’autorisation terminée, lorsqu’aucun de ses jetons ne peut plus être présenté (#432)."
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "Jetons matériels sur les entrées"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "Écrit sur les entrées de leurs titulaires les jetons matériels, OATH et YubiKey OTP dont l’écriture sur l’entrée n’a pas eu lieu et, à sa première exécution dans un processus, copie sur son titulaire chaque jeton enregistré avant qu’ils ne soient conservés sur les entrées."
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "Index des jetons matériels reconstruits"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "Réécrit le registre des jetons matériels et les inventaires OATH et YubiKey OTP à partir des jetons des entrées des personnes, qui font foi : à lancer à la main après une restauration ou quand un index contredit une entrée."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Décompte des valeurs par clé de chiffrement des données"
@@ -662,6 +678,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "Met en pause, désactive ou supprime un flux dont le récepteur est inactif depuis ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), en annonçant d’abord une pause ou une désactivation par un événement stream-updated, et envoie un événement de vérification à chaque flux activé qui n’en a reçu aucun de ce transmetteur depuis ssf.verificationEveryS (section 8.1.4)."
+  },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "Certificats utilisateur SSH sur les entrées"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "Écrit sur les entrées de leurs titulaires (stsSshUserCertificate) les certificats utilisateur SSH dont l’écriture sur l’entrée a échoué à la délivrance, retire ceux qui ont expiré et, à sa première exécution dans un processus, copie sur leurs titulaires les certificats délivrés avant qu’ils ne soient conservés sur les entrées."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

@@ -143,6 +143,22 @@
     "en": "71471822b228b1b8",
     "text": "Binubura ang mga running total na itinatago para sa mga limit ng bawat GNAP grant kapag natapos na ang grant, kapag wala nang token nito ang maaaring ipakita (#432)."
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "Mga hardware token sa mga entry"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "Isinusulat sa mga entry ng mga may hawak ang mga hardware, OATH at YubiKey OTP token na hindi naisulat sa entry, at sa unang takbo nito sa isang proseso ay kinokopya sa may hawak ang bawat token na naitala bago sila itinago sa mga entry."
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "Muling binuo ang mga index ng hardware token"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "Muling isinusulat ang rehistro ng hardware token at ang mga imbentaryo ng OATH at YubiKey OTP mula sa mga token sa mga entry ng mga tao, na siyang master: pinapatakbo nang mano-mano pagkatapos ng restore o kapag hindi tugma ang isang index sa isang entry."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Mga bilang ng value ng data encryption key"
@@ -662,6 +678,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "Pina-pause, dini-disable o binubura ang stream na hindi aktibo ang receiver sa loob ng ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), na inaanunsyo muna ang pause o disable gamit ang stream-updated event, at nagpapadala ng verification event sa bawat naka-enable na stream na walang natanggap mula sa transmitter na ito sa loob ng ssf.verificationEveryS (section 8.1.4)."
+  },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "Mga SSH user certificate sa mga entry"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "Isinusulat sa mga entry ng mga may hawak (stsSshUserCertificate) ang mga SSH user certificate na hindi naisulat sa entry nang inisyu, inaalis ang mga nag-expire, at sa unang takbo nito sa isang proseso ay kinokopya sa mga may hawak ang mga certificate na inisyu bago sila itinago sa mga entry."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

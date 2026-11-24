@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "Ein Hardware-Token wurde als verloren gemeldet und seine Anmeldedaten zurückgezogen"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "Ein Hardware-Token wurde vom Eintrag einer Person entfernt, und ihre Anmeldedaten darauf verließen das Register"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "Ein auf den Eintrag einer Person geschriebenes Token wurde abgelehnt und wie erfasst wiederhergestellt"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "Die PSKC-Seed-Datei eines Herstellers wurde importiert oder abgelehnt"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "Ein nicht zugewiesenes OATH-Token wurde aus dem Bestand entfernt"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "Ein zugewiesenes OATH-Token wurde stillgelegt, weil es vom Eintrag seines Inhabers entfernt wurde"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "Eine YubiKey-OTP-CSV wurde importiert oder abgelehnt"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "Ein nicht zugewiesenes YubiKey-OTP wurde aus dem Bestand entfernt"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "Ein zugewiesenes YubiKey OTP wurde stillgelegt, weil es vom Eintrag seines Inhabers entfernt wurde"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
@@ -1830,6 +1846,10 @@
   "audit.actions.ssh-user-ca.revoke.label": {
     "en": "45c66d3faec475a4",
     "text": "Eine Person hat eines ihrer SSH-Benutzerzertifikate widerrufen"
+  },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Ein auf den Eintrag einer Person geschriebenes SSH-Benutzerzertifikat wurde abgelehnt: Die CA hat es ihr nicht ausgestellt, oder es ist gesperrt oder abgelaufen"
   },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",

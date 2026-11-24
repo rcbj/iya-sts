@@ -2740,6 +2740,56 @@ class UsersPage {
       return '<div class="secframe"><h4>' + heading + '</h4>' + body +
              '</div>';
     };
+    // THE PERSON'S S/MIME AND SSH USER CERTIFICATES (#2050), on the entry
+    // beside the stored ones and listed with them; neither signs anybody
+    // in, so neither has a form here. The S/MIME certificate is the
+    // person's to set on the portal; an SSH certificate is revoked on the
+    // Hardware tokens page, and its register decides what the entry holds.
+    const smimeRows = certView.smimeCertificates || [];
+    const smimeFrame = subFrame(
+      t.html('consoleUsers.mfaSection.smimeHeading'),
+      kit.note(t.html('consoleUsers.mfaSection.smimeLead')) +
+      (smimeRows.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.certThSubject') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.certThIssuer') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.certThValidity') + '</th><th>' +
+          'SHA-256</th></tr>' +
+          smimeRows.map(function (one) {
+            return '<tr><td><code>' + kit.esc(one.subject || '—') +
+              '</code></td><td><code>' + kit.esc(one.issuer || '—') +
+              '</code></td><td>' + kit.esc(one.notBefore || '—') + ' – ' +
+              kit.esc(one.notAfter || '—') +
+              (one.expired
+                ? ' <strong>' +
+                  t.html('consoleUsers.mfaSection.certExpired') +
+                  '</strong>' : '') +
+              '</td><td><code>' + kit.esc(one.sha256 || '—') +
+              '</code></td></tr>';
+          }).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')));
+    const sshRows = certView.sshCertificates || [];
+    const sshFrame = subFrame(
+      t.html('consoleUsers.mfaSection.sshHeading'),
+      kit.note(t.html('consoleUsers.mfaSection.sshLead')) +
+      (sshRows.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.sshThSerial') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThKey') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThPrincipals') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThExpires') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThAuthority') + '</th></tr>' +
+          sshRows.map(function (one) {
+            return '<tr><td><code>' + kit.esc(one.serialHex) +
+              '</code></td><td><code>' + kit.esc(one.keyType) + ' ' +
+              kit.esc(one.keyFingerprint) + '</code></td><td>' +
+              kit.esc((one.principals || []).join(', ')) + '</td><td>' +
+              kit.esc(one.notAfter || '—') + '</td><td>' +
+              kit.esc(one.authority) + '</td></tr>';
+          }).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')));
     const certificatesBlock = '<section class="secframe"><h2>' +
       t.html('consoleUsers.mfaSection.certificatesHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.certificatesLead')) +
@@ -2769,6 +2819,7 @@ class UsersPage {
           t.html('consoleUsers.mfaSection.certAdd') +
           '</button></div></form>')
         : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite'))) +
+      smimeFrame + sshFrame +
       '</section>';
 
     // --- message-signing certificates (#521, 2026-10-28) ---------------------

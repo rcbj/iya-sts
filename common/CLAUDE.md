@@ -8404,6 +8404,78 @@ for a serial, a key's certificates, a person's list and the KRL, so what was
 issued before is still listed and revocable; nothing new goes on the row. A
 revocation of a row-held serial refreshes the PKI row first.
 
+**HARDWARE TOKENS ON THE PERSON'S ENTRY, THE MASTER (#2051, rcbj
+2026-11-23).** `token_entries.ts` owns `stsHardwareToken`, `stsOathToken`
+and `stsYubiOtpToken` (OIDs 1001-1003), one JSON value per token, never a
+secret. `hardware_tokens.ts` (`put()`), `oath_tokens.ts` and
+`yubiotp_store.ts` (each `put()`) write the holder's entry FIRST and then
+their store, which is an index; a row whose entry write failed is marked
+`entrySync: 'pending'` (`e:pending`), and `hardware-tokens.entries` writes
+it again — its first run in a process the backfill of every row with a
+holder. **Change-driven, through `entry_observer.ts`, the mechanism the
+SSH and S/MIME kinds share**: a foreign write REMOVING a value updates that
+entry's index row (`entryRemoved()`: a hardware token's credentials of the
+person dropped, an OATH or YubiKey OTP token retired) and one ADDING or
+CHANGING a value is put back to what the index holds for the person
+(`entryValueFor()`), or taken off, and audited (STS-HWTOKEN-0017). The
+manual job `hardware-tokens.rebuild-index` rewrites the register, the
+inventories' assigned and retired rows and `yubiotp.publicIds` from the
+entries' holders (`holdersAsync()`, paged) — recovery after a restore,
+never the upkeep. An unassigned import
+has no person and keeps its sealed seed in the inventory until assigned or
+claimed. The directory is a rule 3e slot, `token_entries.setDirectory()`,
+filled by `ldap/ldap_server.js`, for the reason `ssh_issued.ts`'s is.
+STS-HWTOKEN-0014 (a partial slot), 0015 (an entry not written), 0016 (the
+jobs could not read).
+
+**AND ON THE HOLDER'S ENTRY (#2050, rcbj 2026-11-23: S/MIME and SSH user
+certificates are mapped to the person).** A person's live certificates are
+in `stsSshUserCertificate` (OID 1000), one JSON value each with the
+OpenSSH text, written at issuance once the register kept the row, taken
+off at revocation (a person's, an administrator's, a lost key's through
+`revokeSshUserKeyAsync()`) and at expiry. **The entry is the master and
+the register its index** (rcbj: "Be consistent. The user objects need to
+contain the master copy of the credential data."), kept right by
+`entry_observer.ts`: every write of a person's entry, through
+`noteAccountChange()`, hands the attribute's values before and after to
+`ssh_issued.entryChanged()`. A value removed by another door IS a
+revocation (the CA's path, audited with the writer); a value added or
+changed that is not exactly what the CA issued that person, live and
+unrevoked, is taken off again (STS-SSHCA-0009) — a revocation is
+permanent and only the CA issues. The entry first, then the index, as for
+every kind; the module's own writes are flagged and ignored by its
+handler. The `ssh-user-ca.entries` job (cluster, per realm, five minutes,
+in every cell) writes `pending` rows onto their entries and takes expired
+ones off. A row's `entry` marker (`held`/`pending`/`gone`) is the entry's
+state, and a `held` or `pending` row outlives its certificate by a day so
+the job sees it expire. Its first run in a process is the BACKFILL (from 1.0.0 on): rows
+written before #2050 and the PKI row's `sshIssued` members, copied into the
+register with their revocation, are marked and then projected; idempotent,
+and bounded because a certificate lives an hour at most. The directory is a
+rule 3e slot, `ssh_issued.setDirectory()`, filled by `ldap/ldap_server.js`:
+the register is built at the credential libraries, long before 21, and a
+require the other way would drag the `/admin/ldap/*` pages forward. A
+process that does not hold the person's entry (another cell's) answers
+`absent` and marks nothing `gone`. `userSMIMECertificate` is declared on
+the person by the same change and read through `Credential.smimeCertificate`
+(`openpgp_keys.ts`'s `person()`), and its observer handler takes off a
+value that holds no certificate (STS-OPENPGP-0034); `DomainMap.valuesOf()` reads an attribute
+under its RFC 4522 `;binary` spelling first and its plain one after. Both
+are listed beside the stored certificates in `GET /admin-api/users/
+certificates` (`smimeCertificates`, `sshCertificates`) and on the person's
+console page. STS-SSHCA-0006 (a partial slot), 0007 (an entry not brought
+in step), 0008 (the job could not read or record), 0009 (a value refused),
+0010 (a removal's revocation failed); STS-LDAP-0224/0225 (a handler
+refused, a handler threw).
+**WHO DID IT, FOR EVERY DOOR**: the observer's change carries the writer —
+an LDAP add, modify or delete's bound DN, else `audit.currentActor()`, the
+one actor model every audit row uses: the management and account APIs'
+token subject (`res.locals.apiCaller`, which the console's `/admin-api`
+calls carry), SCIM's client (`req.scimAuth.principal`), the signed-in user,
+or a scheduler job (`job:<id>`, the source `Scheduler.asJob()` enters
+around every body). A write outside all of them is named `unknown: <door>,
+outside any request or job` on the row, never left blank.
+
 The CA key and KRL are public, `no-store` documents at
 `/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`, on the main port
 only: the plain-HTTP revocation listener refuses both (STS-SSHCA-0001),

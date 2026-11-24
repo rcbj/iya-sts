@@ -218,6 +218,10 @@ const register = realms.map({
         out.push('h:' + String(c.holder));
       }
     });
+    // A row whose holders' entries were not written (#2051).
+    if (record.entrySync === 'pending') {
+      out.push('e:pending');
+    }
     return out;
   },
   sortBy: function (record: Json): number | null {
@@ -619,7 +623,7 @@ class HardwareTokens {
       detail: HardwareTokens.text(ev.detail)
     }]).slice(-MAX_EVIDENCE);
     base.updatedAt = now;
-    register.set(key, base);
+    this.put(key, base, held);
     const username = String(s.username || '');
     this.recordAudit(created ? 'hardware-token.create'
                              : 'hardware-token.credential-add',
@@ -702,7 +706,7 @@ class HardwareTokens {
       return !(c.kind === kind && c.ref === ref);
     }).concat([entry]).slice(-MAX_CREDENTIALS);
     next.updatedAt = this.nowIso();
-    register.set(key, next);
+    this.put(key, next, held);
     this.recordAudit('hardware-token.credential-add',
       String(s.actor || s.username || ''), String(s.username || ''),
       'An escrowed credential was noted on hardware token ' + key + ' (' +
@@ -799,7 +803,7 @@ class HardwareTokens {
       return !(c.kind === kind && c.ref === String(ref));
     });
     next.updatedAt = this.nowIso();
-    register.set(found.key, next);
+    this.put(found.key, next, found.record);
     log.debug("Leaving HardwareTokens.forgetCredential(). Dropped.");
     return true;
   }
@@ -1258,7 +1262,7 @@ class HardwareTokens {
     marked.lost = { at: now, by: actor, via: String(s.via || ''),
                     retired: [] };
     marked.updatedAt = now;
-    register.set(key, marked);
+    this.put(key, marked, record);
     // THE RECOVERY THE LOSS OWES (#724, design X2): a person whose every
     // passkey is on this token is left with nothing as strong, so before
     // the keys go — while `credentials.holdsPasskey()` is still true — a
@@ -1321,7 +1325,7 @@ class HardwareTokens {
                                                    code: r.errorCode || '' } })
                : c;
     });
-    register.set(key, done);
+    this.put(key, done, marked);
     const target = ctx.holderName;
     this.recordAudit('hardware-token.lost', actor, target,
       'Hardware token ' + key + ' was reported lost: ' + retired.length +
@@ -1664,6 +1668,318 @@ class HardwareTokens {
     register.clear();
     log.debug("Leaving HardwareTokens.forgetForTests().");
   }
+
+  // -------------------------------------------------------------------------
+  // THE TOKEN ON ITS HOLDERS' ENTRIES (#2051, `common/token_entries.ts`):
+  // the entry is the master and this register its index. Every write goes
+  // through `put()`, which writes each person the token names — its holder
+  // and every person with a credential on it, before and after — and then
+  // the row, marked `entrySync: 'pending'` where an entry could not be
+  // written, which the entries job writes again.
+  // -------------------------------------------------------------------------
+
+  // The people a record names, by entryUUID.
+  private static peopleOf(record: Json): string[] {
+    helpers.log.debug("Entering HardwareTokens.peopleOf().");
+    const out: string[] = [];
+    if (record && record.holder) {
+      out.push(String(record.holder));
+    }
+    ((record && record.credentials) || []).forEach(function (c: Json) {
+      const who = String((c && c.holder) || '');
+      if (who && out.indexOf(who) < 0) {
+        out.push(who);
+      }
+    });
+    helpers.log.debug("Leaving HardwareTokens.peopleOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * One person's value of `stsHardwareToken` for a token, or null when the
+   * token names them no more.
+   *
+   * @param key - the token's key
+   * @param record - the register's record
+   * @param person - the person's entryUUID
+   * @returns the value, or null
+   */
+  static entryValueOf(key: string, record: Json, person: string): Json {
+    helpers.log.debug("Entering HardwareTokens.entryValueOf().");
+    if (!record || HardwareTokens.peopleOf(record).indexOf(person) < 0) {
+      helpers.log.debug("Leaving HardwareTokens.entryValueOf(). Not theirs.");
+      return null;
+    }
+    const value: Json = {
+      key: String(key), vendor: String(record.vendor || ''),
+      serial: String(record.serial || ''),
+      model: String(record.model || ''),
+      firmware: String(record.firmware || ''),
+      formFactor: String(record.formFactor || ''),
+      status: String(record.status || 'active'),
+      lost: record.lost || null,
+      holder: String(record.holder || '') === person,
+      credentials: (record.credentials || []).filter(function (c: Json) {
+        return String((c && c.holder) || record.holder || '') === person;
+      }),
+      evidence: record.evidence || [],
+      registeredAt: String(record.registeredAt || ''),
+      updatedAt: String(record.updatedAt || '')
+    };
+    if (record.fips === true) {
+      value.fips = true;
+    }
+    if (record.previousLoss) {
+      value.previousLoss = record.previousLoss;
+    }
+    helpers.log.debug("Leaving HardwareTokens.entryValueOf().");
+    return value;
+  }
+
+  // Each person's value written, synchronously or off the loop; answers
+  // whether any write failed (an absent entry is not a failure: a person
+  // deleted, whose values went with the entry).
+  private projectRecord(key: string, next: Json, previous: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.projectRecord().");
+    const entries = require('./token_entries');
+    let failed = false;
+    const people = HardwareTokens.peopleOf(next);
+    HardwareTokens.peopleOf(previous).forEach(function (one: string) {
+      if (people.indexOf(one) < 0) {
+        people.push(one);
+      }
+    });
+    people.forEach(function (person: string) {
+      const state = entries.project('urn:uuid:' + person,
+        entries.ATTRIBUTES.hardware, key,
+        HardwareTokens.entryValueOf(key, next, person));
+      failed = failed || state === 'failed';
+    });
+    log.debug("Leaving HardwareTokens.projectRecord(). " + !failed);
+    return failed;
+  }
+
+  private async projectRecordAsync(key: string, record: Json):
+      Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.projectRecordAsync().");
+    const entries = require('./token_entries');
+    let failed = false;
+    for (const person of HardwareTokens.peopleOf(record)) {
+      const state = await entries.projectAsync('urn:uuid:' + person,
+        entries.ATTRIBUTES.hardware, key,
+        HardwareTokens.entryValueOf(key, record, person));
+      failed = failed || state === 'failed';
+    }
+    log.debug("Leaving HardwareTokens.projectRecordAsync(). " + !failed);
+    return failed;
+  }
+
+  // THE ONE WRITE (above): the entries first, then the index.
+  private put(key: string, next: Json, previous: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.put().");
+    const failed = this.projectRecord(key, next, previous);
+    const row = Object.assign({}, next);
+    if (failed) {
+      row.entrySync = 'pending';
+    } else {
+      delete row.entrySync;
+    }
+    register.set(key, row);
+    log.debug("Leaving HardwareTokens.put(). " + (failed ? 'Pending.'
+                                                          : 'In step.'));
+  }
+
+  /**
+   * The entries job's part (`token_entries.syncEntries()`): every pending
+   * row written again, and with `backfill` every row, in the ambient realm.
+   *
+   * @param opts - `{ backfill }`
+   * @returns a promise of `{ ok, written, pending }`
+   */
+  async syncEntries(opts?: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.syncEntries().");
+    const rows: Json[] = [];
+    if (opts && opts.backfill) {
+      await register.scanAsync(function (value: Json, key: unknown) {
+        rows.push({ key: String(key), value: value });
+      });
+    } else {
+      rows.push.apply(rows, await register.lookupEntriesAsync('e:pending'));
+    }
+    let written = 0;
+    let pending = 0;
+    for (const one of rows) {
+      if (!one || !one.value) {
+        continue;
+      }
+      const failed = await this.projectRecordAsync(String(one.key),
+                                                   one.value);
+      const was = one.value.entrySync === 'pending';
+      if (failed) {
+        pending += 1;
+      } else {
+        written += 1;
+      }
+      if (failed !== was) {
+        const row = Object.assign({}, one.value);
+        if (failed) {
+          row.entrySync = 'pending';
+        } else {
+          delete row.entrySync;
+        }
+        register.set(String(one.key), row);
+      }
+    }
+    log.debug("Leaving HardwareTokens.syncEntries(). " + written + "/" +
+              pending);
+    return { ok: true, written: written, pending: pending };
+  }
+
+  // The register's row of a key, read from the store when this process
+  // does not hold it.
+  private async rowAsync(key: string): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.rowAsync().");
+    if (!register.get(key)) {
+      try {
+        await register.warm([key]);
+      } catch (e) {
+        log.debug("Caught in HardwareTokens.rowAsync(): " +
+                  ((e && e.message) || e));
+        // The store cannot be asked: what this process holds decides.
+      }
+    }
+    log.debug("Leaving HardwareTokens.rowAsync().");
+    return register.get(key) || null;
+  }
+
+  /**
+   * What the index holds for one person's value of a token (the entry
+   * observer's check, `token_entries.ts`): the value they may hold, or null.
+   *
+   * @param key - the token's key
+   * @param change - the observer's change (`subject` the person)
+   * @returns a promise of the value, or null
+   */
+  async entryValueFor(key: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.entryValueFor().");
+    const person = String((change && change.subject) || '')
+      .replace(/^urn:uuid:/i, '');
+    const row = await this.rowAsync(String(key));
+    log.debug("Leaving HardwareTokens.entryValueFor().");
+    return person ? HardwareTokens.entryValueOf(String(key), row, person)
+                  : null;
+  }
+
+  /**
+   * A token's value removed from a person's entry by another door (the
+   * entry observer, `token_entries.ts`): the entry is the master, so the
+   * register's row drops that person's credentials — they are no longer
+   * evidence at a sign-in — and hands the token to another holder of a
+   * credential on it, or forgets it when nobody is left. Every other
+   * person's entry is written first, as every write here is.
+   *
+   * @param key - the token's key
+   * @param change - the observer's change
+   * @returns a promise of `{ ok, changed }`
+   */
+  async entryRemoved(key: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.entryRemoved().");
+    const c = change || {};
+    const person = String(c.subject || '').replace(/^urn:uuid:/i, '');
+    const row = await this.rowAsync(String(key));
+    if (!row || !person ||
+        HardwareTokens.peopleOf(row).indexOf(person) < 0) {
+      log.debug("Leaving HardwareTokens.entryRemoved(). Not theirs.");
+      return { ok: true, changed: false };
+    }
+    const next = JSON.parse(JSON.stringify(row));
+    delete next.entrySync;
+    next.credentials = (next.credentials || []).filter(function (cr: Json) {
+      return String((cr && cr.holder) || row.holder || '') !== person;
+    });
+    if (String(next.holder || '') === person) {
+      next.holder = String(((next.credentials || [])[0] || {}).holder || '');
+    }
+    next.updatedAt = this.nowIso();
+    if (!next.holder && !(next.credentials || []).length) {
+      register.delete(String(key));
+    } else {
+      this.put(String(key), next, row);
+    }
+    this.recordAudit('hardware-token.entry-removed',
+      String(c.actor || c.door || 'directory'), String(c.username || ''),
+      'Hardware token ' + key + ' was removed from the entry of ' +
+      String(c.username || '') + ', so its credentials of theirs are no ' +
+      'longer on the register', { key: String(key),
+                                  door: String(c.door || '') });
+    log.debug("Leaving HardwareTokens.entryRemoved(). Dropped.");
+    return { ok: true, changed: true };
+  }
+
+  /**
+   * The register rebuilt from the entries, which are the master
+   * (`token_entries.rebuildIndexes()`), in the ambient realm.
+   *
+   * @returns a promise of `{ ok, rebuilt }`
+   */
+  async rebuildFromEntries(): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.rebuildFromEntries().");
+    const entries = require('./token_entries');
+    const holders = await entries.holdersOf(entries.ATTRIBUTES.hardware);
+    const byKey: Record<string, Json[]> = {};
+    for (const person of holders) {
+      const uuid = this.holderOf(person.username);
+      (person.values || []).forEach(function (value: Json) {
+        const key = String((value && value.key) || '');
+        if (key && uuid) {
+          (byKey[key] = byKey[key] || []).push({ uuid: uuid, value: value });
+        }
+      });
+    }
+    let rebuilt = 0;
+    Object.keys(byKey).forEach(function (key: string) {
+      const parts = byKey[key];
+      const main = parts.filter(function (p: Json) {
+        return p.value.holder === true;
+      })[0] || parts[0];
+      const v = main.value;
+      const record: Json = {
+        vendor: v.vendor, serial: v.serial, model: v.model,
+        firmware: v.firmware, formFactor: v.formFactor,
+        holder: main.value.holder === true ? main.uuid
+          : String(((register.get(key) || {}).holder) || main.uuid),
+        credentials: [].concat.apply([], parts.map(function (p: Json) {
+          return (p.value.credentials || []).map(function (c: Json) {
+            return Object.assign({ holder: p.uuid }, c);
+          });
+        })),
+        evidence: v.evidence || [], status: v.status, lost: v.lost || null,
+        registeredAt: v.registeredAt, updatedAt: v.updatedAt
+      };
+      if (v.fips === true) {
+        record.fips = true;
+      }
+      if (v.previousLoss) {
+        record.previousLoss = v.previousLoss;
+      }
+      const held = Object.assign({}, register.get(key) || {});
+      delete held.entrySync;
+      if (entries.stored(held) !== entries.stored(record)) {
+        register.set(key, record);
+        rebuilt += 1;
+      }
+    });
+    log.debug("Leaving HardwareTokens.rebuildFromEntries(). " + rebuilt);
+    return { ok: true, rebuilt: rebuilt };
+  }
 }
 
 const slot = new InstanceSlot<HardwareTokens>(
@@ -1700,5 +2016,10 @@ export = {
   markLost: slot.forward('markLost'),
   registerRetirer: slot.forward('registerRetirer'),
   retirerKinds: slot.forward('retirerKinds'),
+  entryValueOf: HardwareTokens.entryValueOf,
+  syncEntries: slot.forward('syncEntries'),
+  rebuildFromEntries: slot.forward('rebuildFromEntries'),
+  entryValueFor: slot.forward('entryValueFor'),
+  entryRemoved: slot.forward('entryRemoved'),
   forgetForTests: slot.forward('forgetForTests')
 };
