@@ -18,9 +18,9 @@
 //   B. The frame's markup: eight boxes, each ticked from the map's values
 //      and nothing else, none with a `name` (they post nothing), each map's
 //      switch beside it; nothing at all when the form draws no map.
-//   C. The builder (a `<dialog>` since #2046) posts nothing: no control has a `name`, no
-//      button submits, the sample is escaped, and only targets the page
-//      draws are offered.
+//   C. The builder (a `<dialog>` since #2046) posts nothing: no control
+//      has a `name`, no button submits, the sample is escaped, and only
+//      targets the page draws are offered.
 //   D. Steps and paths: a namespace the service has a prefix for is written
 //      with that prefix (SOAP 1.1 as `soap11`, never the `soap` alias), an
 //      unknown one by local-name() and namespace-uri(), none as the bare
@@ -37,6 +37,9 @@
 //   I. A box REPLACES its map with the presets ticked, and unticking the
 //      last one gives back what the map held (rcbj, 2026-11-23); with
 //      nothing remembered, unticking takes out only the preset.
+//   K. Each map's switch turns TRUE when the map is put to use and back
+//      when it is given back, on all four maps; a switch set by hand, or
+//      one this page did not turn on, is left alone.
 //   J. The same, for EVERY field and box through `boxChanged()` (the step
 //      the click handler takes, memory included): each box alone, both in
 //      either order and out in either order, a Save, an empty field, a
@@ -147,13 +150,16 @@ function frame(t, tr) {
                           'wstrustSignResponseElements header']),
           'B. exactly the boxes whose presets the maps hold are ticked',
           JSON.stringify(checked));
-  t.check(/<code>wstrustEncryptRequest<\/code> <span class="state-valid">on/
+  t.check(/<code>wstrustEncryptRequest<\/code> <span class="state-valid"[^>]*>on/
             .test(html) &&
-          /<code>wstrustSignResponse<\/code> <span class="state-none">off/
+          /<code>wstrustSignResponse<\/code> <span class="state-none"[^>]*>off/
             .test(html) &&
-          /<code>wstrustSignRequest<\/code> <span class="state-none">the/
+          /<code>wstrustSignRequest<\/code> <span class="state-none"[^>]*>the/
             .test(html),
           'B. each map\'s switch is drawn beside it: on, off, inherited');
+  t.check(MAPS.every(function (map) {
+    return html.indexOf('data-wsp-switch="' + map + '"') > 0;
+  }), 'B. each switch cell names its map, so it can follow the radios');
   t.check(html.indexOf('<section class="secframe">') === 0 &&
           html.indexOf('id="cfg-wstrust-protection"') > 0 &&
           html.indexOf('consoleApplications.') < 0,
@@ -492,6 +498,111 @@ function everyField(t) {
   log.debug("Leaving everyField().");
 }
 
+// THE SWITCH FOLLOWS ITS MAP (rcbj, 2026-11-23), on every map: put to use,
+// it is TRUE and what it was is remembered; given back or emptied, it is
+// that again. Through `followSwitch()` on a stand-in form holding the
+// switch's three radios, as the page's form does.
+function switches(t) {
+  log.debug("Entering switches().");
+  const formFor = function (app, switches) {
+    log.debug("Entering formFor().");
+    const radios = {};
+    Object.keys(switches).forEach(function (name) {
+      radios[name] = ['TRUE', 'FALSE', ''].map(function (value) {
+        return { value: value, checked: switches[name] === value };
+      });
+    });
+    log.debug("Leaving formFor().");
+    return {
+      radios: radios,
+      querySelector: function (selector) {
+        return selector === 'input[name="application"]'
+          ? { value: app } : null;
+      },
+      querySelectorAll: function (selector) {
+        const found = /name="field\.([A-Za-z]+)"/.exec(selector);
+        return found && radios[found[1]] ? radios[found[1]] : [];
+      },
+      value: function (name) {
+        const on = radios[name].filter(function (one) {
+          return one.checked;
+        })[0];
+        return on ? on.value : null;
+      }
+    };
+  };
+  const names = Object.keys(WebWsProtection.SWITCHES);
+  t.check(JSON.stringify(names.slice(0).sort()) === JSON.stringify(
+            MAPS.slice(0).sort()),
+          'K. every map has a switch', JSON.stringify(
+            WebWsProtection.SWITCHES));
+  names.forEach(function (map) {
+    const sw = WebWsProtection.SWITCHES[map];
+    ['', 'FALSE', 'TRUE'].forEach(function (start) {
+      Protection.forget();
+      const initial = {};
+      initial[sw] = start;
+      const form = formFor('switch-app', initial);
+      Protection.followSwitch(form, map, true);
+      const on = form.value(sw);
+      Protection.followSwitch(form, map, false);
+      const back = form.value(sw);
+      t.check(on === 'TRUE' && back === start,
+              'K. ' + map + ': ' + sw + ' "' + start + '" is TRUE while the ' +
+              'map is in use, and "' + start + '" again once it is given ' +
+              'back', JSON.stringify([on, back]));
+    });
+    // Put to use twice (a second box): what it was is kept from the first.
+    Protection.forget();
+    const twice = {};
+    twice[sw] = 'FALSE';
+    const form = formFor('switch-app', twice);
+    Protection.followSwitch(form, map, true);
+    Protection.followSwitch(form, map, true);
+    Protection.followSwitch(form, map, false);
+    t.check(form.value(sw) === 'FALSE',
+            'K. ' + map + ': put to use twice, given back once, it is what ' +
+            'it was before the first', form.value(sw));
+    // Set by hand meanwhile: the reader's choice stands.
+    Protection.forget();
+    const decided = {};
+    decided[sw] = '';
+    const form2 = formFor('switch-app', decided);
+    Protection.followSwitch(form2, map, true);
+    form2.radios[sw].forEach(function (one) {
+      one.checked = one.value === 'FALSE';
+    });
+    Protection.switchDecided('switch-app', map);
+    Protection.followSwitch(form2, map, false);
+    t.check(form2.value(sw) === 'FALSE',
+            'K. ' + map + ': a switch the reader set by hand is not put back',
+            form2.value(sw));
+    // Given back when this page never turned it on: left alone.
+    Protection.forget();
+    const untouched = {};
+    untouched[sw] = 'TRUE';
+    const form3 = formFor('switch-app', untouched);
+    Protection.followSwitch(form3, map, false);
+    t.check(form3.value(sw) === 'TRUE',
+            'K. ' + map + ': a switch this page did not turn on is left ' +
+            'alone when the map is emptied', form3.value(sw));
+  });
+  // One map's switch and one application's are not another's.
+  Protection.forget();
+  t.check(Protection.switchFor('a1', MAPS[0], true, '') === 'TRUE' &&
+          Protection.switchFor('a1', MAPS[2], true, 'FALSE') === 'TRUE' &&
+          Protection.switchFor('a2', MAPS[0], true, 'FALSE') === 'TRUE' &&
+          Protection.switchFor('a1', MAPS[2], false, 'TRUE') === 'FALSE' &&
+          Protection.switchFor('a1', MAPS[0], false, 'TRUE') === '' &&
+          Protection.switchFor('a2', MAPS[0], false, 'TRUE') === 'FALSE',
+          'K. each map of each application has its own switch memory');
+  t.check(Protection.followSwitch(formFor('x', {}), MAPS[0], true) ===
+            undefined,
+          'K. a form that draws no switch is left alone');
+  Protection.forget();
+  log.debug("Leaving switches().");
+}
+
 function steps(t) {
   log.debug("Entering steps().");
   const P = WebWsProtection.PREFIXES;
@@ -616,6 +727,7 @@ function run(t) {
   merging(t);
   replacing(t);
   everyField(t);
+  switches(t);
   const sample = steps(t);
   tree(t, sample);
   lists(t, tr);

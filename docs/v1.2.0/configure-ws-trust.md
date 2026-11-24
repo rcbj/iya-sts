@@ -896,7 +896,10 @@ the Management API:
 
 A map is read only while its switch is on. The switch is the attribute shown
 in the table's last column, or the realm's setting when that attribute is
-empty.
+empty. Putting a map to use turns its switch on: ticking its box, adding the
+XPath builder's list to it, or typing into it while it is empty. Giving the
+map back (unticking its last box) or emptying it puts the switch back as it
+was. A switch you set yourself stays as you set it.
 
 ### The XPath builder
 
