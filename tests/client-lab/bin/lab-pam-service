@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-pam-service
+#
+# ---------------------------------------------------------------------------
+# A PAM SERVICE A JOB WROTE, INSTALLED AS AN ADMINISTRATOR INSTALLS ONE
+# (#2061). PAM reads a service's stack only from /etc/pam.d, which the
+# agent's /files cannot reach, so:
+#
+#   lab-pam-service install <name> <file>
+#       copies <file> (under the work directory when relative) to
+#       /etc/pam.d/<name>; <name> is lowercase letters, digits and dashes
+#       and must begin `lab-`, so no system service is replaced
+#   lab-pam-service remove <name>
+#       removes /etc/pam.d/<name>
+#
+# `pamtester <name> <user> authenticate` then drives it: pam_yubico, for
+# the YubiKey OTP job, pointed at the service's YK-VAL endpoint.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+action="${1:?install or remove}"
+name="${2:?a service name}"
+if ! [[ "${name}" =~ ^lab-[a-z0-9-]+$ ]]; then
+  echo "lab-pam-service: a service name is lab-[a-z0-9-]+, not ${name}" >&2
+  exit 2
+fi
+
+case "${action}" in
+  install)
+    file="${3:?a file}"
+    case "${file}" in
+      /run/client-lab/work/*) ;;
+      /*) echo "lab-pam-service: ${file} is not in the work directory" >&2
+          exit 2 ;;
+      *) file="/run/client-lab/work/${file}" ;;
+    esac
+    install -m 0644 "${file}" "/etc/pam.d/${name}"
+    echo "/etc/pam.d/${name}"
+    ;;
+  remove)
+    rm -f "/etc/pam.d/${name}"
+    echo "removed"
+    ;;
+  *)
+    echo "lab-pam-service: install or remove, not ${action}" >&2
+    exit 2
+    ;;
+esac

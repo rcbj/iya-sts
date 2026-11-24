@@ -54,7 +54,7 @@ const CLIENTS = Object.freeze([
   'piv-tool', 'opensc-explorer',
   'ssh', 'ssh-keygen', 'ssh-add', 'ssh-agent', 'scp', 'sftp',
   'sendmail', 'mailx', 'postqueue', 'postconf',
-  'oathtool', 'pamtester',
+  'oathtool', 'pamtester', 'ykgenerate', 'ykparse', 'modhex',
   'kinit', 'klist', 'kdestroy', 'kvno',
   'ldapmodify', 'ldapsearch',
   'curl', 'openssl'

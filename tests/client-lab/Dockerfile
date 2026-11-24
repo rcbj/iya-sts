@@ -77,7 +77,7 @@ RUN echo "postfix postfix/main_mailer_type select Local only" \
         gnupg scdaemon gpg-agent dirmngr \
         openssh-client openssh-server \
         postfix bsd-mailx \
-        oathtool libpam-yubico pamtester \
+        oathtool libpam-yubico pamtester libyubikey-dev \
         krb5-user \
         ldap-utils \
         curl openssl ca-certificates procps \
