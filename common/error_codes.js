@@ -17223,6 +17223,11 @@ const CODES = [
       'attribute may be behind the entry until its job catches it up ' +
       '(#2050, #2051).',
     spec: 'none — logged' },
+  { code: 'STS-LDAP-0226',
+    summary: 'An LDAP search was refused before it read any entry: one of ' +
+      'its substring assertions held more components (initial, any, ' +
+      'final) than the limit of 32 (#2137).',
+    spec: 'LDAP adminLimitExceeded (11)' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
