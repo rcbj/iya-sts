@@ -307,7 +307,9 @@ const pki = require('./pki');
 // Required for `isRevoked()` and the reason table, AND for its side effect:
 // it installs the Web Crypto engine pkijs verifies a CRL signature with.
 const pkiRevocation = require('./pki_revocation');
-const USER_AGENT = require('./version').userAgent('crl-fetch');
+// The outbound User-Agent's builder (a leaf). Asked per fetch since #2142:
+// product leaves the build out (`mode.publishesBuildDetail()`).
+const version = require('./version');
 
 /**
  * The values `pki.revocationCheck` may take.
@@ -1768,7 +1770,9 @@ function fetchBytes(url, options) {
                            Number(config.value('pki.revocationFetchTimeoutMs')));
   const headers = { 'Accept': opts.accept || 'application/pkix-crl, ' +
                                              'application/octet-stream, */*',
-                    'User-Agent': opts.userAgent || USER_AGENT };
+                    'User-Agent': opts.userAgent ||
+                      version.userAgent('crl-fetch',
+                                        mode.publishesBuildDetail()) };
   if (opts.body) {
     headers['Content-Type'] = opts.contentType;
     headers['Content-Length'] = String(opts.body.length);

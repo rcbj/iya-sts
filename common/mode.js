@@ -635,6 +635,32 @@ function requiresTypedLogoutToken() {
     config.value('federation.allowUntypedLogoutToken') !== true;
 }
 
+// Does this service show its exact build — the version, build number, build
+// instant and commit — where someone other than an administrator reads it
+// (#2142, ASVS 5.0.0 13.4.6)? Development answers yes, so a bug report from
+// any page names its build; product answers no, so an anonymous caller or a
+// partner learns nothing that narrows down which defects this build carries.
+// `security.publishBuildInfo` forces either answer. The console and
+// /admin-api never ask: an administrator always sees the build.
+/**
+ * Tells whether the exact build is shown beyond administrators: on the page
+ * footer and shells, in the sign-in, portal and reports APIs and their
+ * documents, and in the outbound User-Agent.
+ *
+ * @returns true in development mode, false in product mode, unless
+ *   `security.publishBuildInfo` is `on` or `off`
+ */
+function publishesBuildDetail() {
+  log.debug("Entering publishesBuildDetail().");
+  const forced = String(config.value('security.publishBuildInfo') || 'auto');
+  if (forced === 'on' || forced === 'off') {
+    log.debug("Leaving publishesBuildDetail(). Forced " + forced + ".");
+    return forced === 'on';
+  }
+  log.debug("Leaving publishesBuildDetail().");
+  return !isProduct();
+}
+
 /**
  * @returns true when request logs leave out credentials and bodies
  */
@@ -3468,6 +3494,21 @@ const REQUIREMENTS = [
              'wsfed.ssoConsent turn it off per protocol, and an ' +
              'application\'s own value overrides them.',
     where: 'common/sso_consent.ts' },
+  // #2142 (ASVS 5.0.0 13.4.6).
+  { id: 'build-detail',
+    what: 'The exact build is shown only to administrators',
+    development: 'Every page footer, the sign-in, portal and reports APIs ' +
+                 'and their OpenAPI documents carry the version, build ' +
+                 'number, build time and commit, and the User-Agent of ' +
+                 'every request this service makes names the version.',
+    product: 'None of them carries the build: the footer has no version ' +
+             'line, an OpenAPI document names the API\'s own version, and ' +
+             'the User-Agent is the product name alone. The console and ' +
+             'the management API still show the build. ' +
+             'security.publishBuildInfo set to on shows it again.',
+    where: 'common/page_footer.ts, common/page_locale.ts, ' +
+           'common/version.js, authn/authn_api.ts, ' +
+           'account-api/account_api.ts' },
   { id: 'secrets-from-store',
     what: 'Backend secrets come from a secret store',
     development: 'The key-encryption key may be a file, and the database ' +
@@ -5144,6 +5185,7 @@ module.exports = {
   refusesPlaintextYubiCsv: refusesPlaintextYubiCsv,
   requiresSecretStore: requiresSecretStore,
   redactsRequestLog: redactsRequestLog,
+  publishesBuildDetail: publishesBuildDetail,
   requiresTypedLogoutToken: requiresTypedLogoutToken,
   hidesFailureDetail: hidesFailureDetail,
   requiresTrustedProxyRanges: requiresTrustedProxyRanges,

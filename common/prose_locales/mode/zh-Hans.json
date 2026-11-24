@@ -587,6 +587,18 @@
     "en": "0a4ee080bb81a76f",
     "text": "在 SAML 2.0、SAML 1.1 或 WS-Federation 让用户登录某个应用前，每个应用询问一次，并保存回答。saml2.ssoConsent、saml11.ssoConsent 和 wsfed.ssoConsent 可按协议关闭此功能，应用自身的值优先于它们。"
   },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "确切的构建只向管理员显示"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "每个页面页脚、登录、门户和报表 API 及其 OpenAPI 文档都带有版本、构建号、构建时间和 commit，此服务发出的每个请求的 User-Agent 都写明版本。"
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "它们都不带构建：页脚没有版本行，OpenAPI 文档给出 API 自身的版本，User-Agent 只有产品名称。控制台和管理 API 仍显示构建。将 security.publishBuildInfo 设为 on 会再次显示。"
+  },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
     "text": "后端密钥来自密钥存储"

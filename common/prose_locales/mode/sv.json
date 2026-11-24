@@ -587,6 +587,18 @@
     "en": "0a4ee080bb81a76f",
     "text": "En person tillfrågas en gång per program innan SAML 2.0, SAML 1.1 eller WS-Federation loggar in dem i det, och svaret sparas. saml2.ssoConsent, saml11.ssoConsent och wsfed.ssoConsent stänger av det per protokoll, och ett programs eget värde åsidosätter dem."
   },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "Det exakta bygget visas bara för administratörer"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "Varje sidfot, API:erna för inloggning, portal och rapporter och deras OpenAPI-dokument bär versionen, byggnumret, byggtiden och commit, och User-Agent i varje förfrågan tjänsten gör anger versionen."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "Inget av dem bär bygget: sidfoten har ingen versionsrad, ett OpenAPI-dokument anger API:ets egen version och User-Agent är bara produktnamnet. Konsolen och hanterings-API:et visar fortfarande bygget. security.publishBuildInfo satt till on visar det igen."
+  },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
     "text": "Tjänstens hemligheter kommer från ett hemlighetsvalv"

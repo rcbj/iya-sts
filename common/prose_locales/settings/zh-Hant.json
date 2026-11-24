@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "在 Strict-Transport-Security 加入 includeSubDomains，使瀏覽器對此服務主機名稱的所有子網域也使用 HTTPS。產品模式預設開啟。若某個子網域仍需透過純 HTTP 回應，請關閉。"
   },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "向非管理員顯示確切的建置"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "確切的版本、建置編號、建置時間和 commit 是否出現在管理員以外的人可以讀到的地方：每個頁面的頁尾、登入、入口網站和報表 API 及其 OpenAPI 文件，以及此服務向合作夥伴發出的請求的 User-Agent。auto（預設）在開發模式下顯示，在產品模式下隱藏；產品模式下文件改為提供 API 本身的版本，User-Agent 只有產品名稱；on 和 off 在任一模式下強制設定。主控台和管理 API 一律顯示建置。"
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "接受未指定受眾的判斷提示"

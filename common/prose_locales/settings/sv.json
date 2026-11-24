@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
   },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Visa det exakta bygget för personer som inte är administratörer"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Om den exakta versionen, byggnumret, byggtiden och commit syns där någon annan än en administratör kan läsa dem: sidfoten på varje sida, API:erna för inloggning, portal och rapporter och deras OpenAPI-dokument, och User-Agent i de förfrågningar tjänsten gör till partner. auto, standard, visar dem i utvecklingsläge och döljer dem i produktläge, där dokumenten i stället anger API:ets egen version och User-Agent bara är produktnamnet; on och off tvingar fram det i båda lägena. Konsolen och hanterings-API:et visar alltid bygget."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Acceptera ett påstående utan målgrupp"

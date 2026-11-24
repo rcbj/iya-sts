@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Fügt includeSubDomains zu Strict-Transport-Security hinzu, sodass Browser auch für jede Subdomäne des Hostnamens dieses Dienstes HTTPS verwenden. Im Produktmodus standardmäßig an. Schalten Sie es aus, wenn eine Subdomäne dieses Hostnamens weiterhin über reines HTTP antworten muss."
   },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Den genauen Build auch Personen zeigen, die keine Administratoren sind"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Ob die genaue Version, die Build-Nummer, die Build-Zeit und der Commit dort erscheinen, wo jemand anderes als ein Administrator sie lesen kann: in der Fußzeile jeder Seite, in den APIs für Anmeldung, Portal und Berichte und ihren OpenAPI-Dokumenten sowie im User-Agent der Anfragen, die dieser Dienst an Partner stellt. auto, der Standard, zeigt sie im Entwicklungsmodus und verbirgt sie im Produktmodus, wo die Dokumente stattdessen die eigene Version der API nennen und der User-Agent nur der Produktname ist; on und off erzwingen es in jedem Modus. Die Konsole und die Verwaltungs-API zeigen den Build immer."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Eine Assertion annehmen, die keine Audience nennt"

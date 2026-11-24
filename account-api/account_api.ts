@@ -239,6 +239,12 @@ interface AccountApiDeps {
  * The account API: the user portal's only door.
  */
 class AccountApi {
+  /**
+   * The API's own version, for the document's `info.version` where the
+   * build may not be shown (#2142).
+   */
+  static readonly API_VERSION = '1';
+
   private table: AccountOperation[] | null = null;
   // Each operation's declared parameters, built once: the check below runs
   // on every request and the conversion from zod is not free.
@@ -514,8 +520,12 @@ class AccountApi {
   document(req: Json): Json {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AccountApi.document().");
+    // OpenAPI requires `info.version`; where the build may not be shown
+    // (#2142) it is this API's own, as the reports API's document says.
     const doc = AccountApiSpec.document({
-      baseUrl: baseUrlOf(req), version: version.load().version });
+      baseUrl: baseUrlOf(req),
+      version: mode.publishesBuildDetail() ? version.load().version :
+        AccountApi.API_VERSION });
     log.debug("Leaving AccountApi.document().");
     return doc;
   }
@@ -547,13 +557,19 @@ class AccountApi {
   }
 
   /**
-   * The build, as every page's foot says it.
+   * The build, as every page's foot says it: both empty where the build may
+   * not be shown (#2142) — a person is not an administrator, and
+   * `/account-api/locale` is anybody's.
    *
    * @returns `{ version, buildInfo }`
    */
   versionData(): Json {
     const { log } = this.deps;
     log.debug("Entering AccountApi.versionData().");
+    if (!mode.publishesBuildDetail()) {
+      log.debug("Leaving AccountApi.versionData(). Not shown.");
+      return { version: '', buildInfo: '' };
+    }
     const v = version.load();
     log.debug("Leaving AccountApi.versionData().");
     return { version: v.version, buildInfo: version.buildInfo(v) };

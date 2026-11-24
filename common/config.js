@@ -1619,6 +1619,28 @@ const SETTINGS = [
                  'if a subdomain of this host name must still answer over ' +
                  'plain HTTP.' },
 
+  // THE EXACT BUILD ON WHAT AN OUTSIDER SEES (#2142, ASVS 5.0.0 13.4.6):
+  // the version, build number, build instant and commit on the page footer,
+  // the shells, the sign-in and account APIs' answers and documents, and the
+  // outbound User-Agent. `auto` follows the mode (mode.publishesBuildDetail());
+  // the console and /admin-api carry the build whatever this says.
+  { key: 'security.publishBuildInfo', group: 'Web security',
+    label: 'Show the exact build to people who are not administrators',
+    env: 'STS_SECURITY_PUBLISH_BUILD_INFO', type: 'enum',
+    dflt: 'auto', runtime: true,
+    enumValues: ['auto', 'on', 'off'],
+    description: 'Whether the exact version, build number, build time and ' +
+                 'commit appear where someone other than an administrator ' +
+                 'can read them: the footer of every page, the sign-in, ' +
+                 'portal and reports APIs and their OpenAPI documents, and ' +
+                 'the User-Agent of the requests this service makes to ' +
+                 'partners. auto, the default, shows them in development ' +
+                 'mode and hides them in product mode, where the documents ' +
+                 'name the API\'s own version instead and the User-Agent is ' +
+                 'the product name alone; on and off force it in either ' +
+                 'mode. The console and the management API always show the ' +
+                 'build.' },
+
   { key: 'federation.allowAssertionWithoutAudience', group: 'Federation',
     label: 'Accept an assertion that names no audience',
     env: 'STS_FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE', type: 'bool', dflt: false,
