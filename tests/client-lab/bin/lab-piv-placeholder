@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-piv-placeholder
+#
+# ---------------------------------------------------------------------------
+# A PLACEHOLDER CERTIFICATE IN A PIV SLOT, OVER THE CARD'S OWN KEY (#2059).
+#
+#   lab-piv-placeholder <dir> <slot>
+#
+# OpenSC lists a PIV key only beside a certificate in its slot (it finds
+# keys through their certificates), so a key the card has just generated is
+# not a PKCS#11 object until one is written there — which is why `ykman piv
+# keys generate` is followed by `ykman piv certificates generate` on a real
+# YubiKey too. <dir>/slot-<slot>.pub is the key (bin/lab-piv-attest wrote
+# it); the certificate, "CN=placeholder <slot>", is signed by a throwaway
+# key deleted on the way out, written to <dir>/placeholder-<slot>.pem and to
+# the slot, and replaced when the issued certificate is imported.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+dir="${1:?a directory}"
+slot="${2:?a slot}"
+reader='Virtual PCD 00 01'
+cd "${dir}"
+keys="$(mktemp -d)"
+trap 'rm -rf "${keys}"' EXIT
+
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+  -out "${keys}/throwaway.key"
+openssl req -new -key "${keys}/throwaway.key" \
+  -subj "/CN=placeholder ${slot}" -out "${keys}/placeholder.csr"
+openssl x509 -req -in "${keys}/placeholder.csr" \
+  -force_pubkey "slot-${slot}.pub" -signkey "${keys}/throwaway.key" \
+  -days 1 -out "placeholder-${slot}.pem"
+yubico-piv-tool -r "${reader}" -a import-certificate -s "${slot}" \
+  -i "placeholder-${slot}.pem"

@@ -71,6 +71,24 @@ grep -q 'engine.addSeedMaterial(new SecureRandom().generateSeed(32))' \
   "${nullrng}"
 echo "  patched: SecureRandomNullProvider seeded from SecureRandom" \
   >> "${OUT}/PINS"
+# A SECOND CHANGE (#2059): RAW RSA WITH A PRIVATE KEY ON A FULL BLOCK. A
+# PIV card signs with RSA as raw RSA over the k-byte PKCS#1 block the host
+# padded (SP 800-73-4 Part 2, GENERAL AUTHENTICATE), which PivApplet does
+# with Cipher.ALG_RSA_NOPAD in MODE_ENCRYPT. jcardsim sizes that cipher's
+# buffer to Bouncy Castle's encrypt-mode input block, k - 1 bytes, so every
+# 2048-bit PIV signature is refused (CryptoException, 6F00 at the reader)
+# although Bouncy Castle itself takes a k-byte block below the modulus. For
+# ALG_RSA_NOPAD the buffer is the larger of the two block sizes; every other
+# algorithm is unchanged. (MIT kinit's PKINIT signs with CKM_RSA_PKCS only:
+# krb5 1.20's pkinit_crypto_openssl.c has no PKCS#11 EC.)
+asym=jcardsim/src/main/java/com/licel/jcardsim/crypto
+asym="${asym}/AsymmetricCipherImpl.java"
+was='JCSystem.makeTransientByteArray((short) engine.getInputBlockSize(), JCSystem.CLEAR_ON_DESELECT)'
+now='JCSystem.makeTransientByteArray((short) (algorithm == ALG_RSA_NOPAD ? Math.max(engine.getInputBlockSize(), engine.getOutputBlockSize()) : engine.getInputBlockSize()), JCSystem.CLEAR_ON_DESELECT)'
+sed -i "s|${was}|${now}|" "${asym}"
+grep -q 'algorithm == ALG_RSA_NOPAD ? Math.max' "${asym}"
+echo "  patched: AsymmetricCipherImpl's ALG_RSA_NOPAD buffer a full block" \
+  >> "${OUT}/PINS"
 # Its pom installs the API jar in the `initialize` phase, which one `mvn
 # package` resolves dependencies before; jcardsim's own README runs
 # `mvn initialize` first for that reason.
