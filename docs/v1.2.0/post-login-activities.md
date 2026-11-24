@@ -12,13 +12,19 @@ and mails them reminders. Either way the rules come from the policy.
 [Passkeys → Post-login activities](passkeys.md#post-login-activities-moving-people-to-post-quantum-passkeys)
 walks through a rollout; this page is the reference.
 
-One activity exists today:
+Two activities exist today:
 
 | Activity | What the person is asked |
 |---|---|
+| `pqc-mail-encryption` | To move their **mail encryption to a post-quantum key**: an OpenPGP key whose encryption subkey is ML-KEM (RFC 9980), or an uploaded ML-KEM S/MIME certificate. A person whose mail is encrypted to a classical key is asked; a person whose mail is not encrypted can be invited or required. See [The mail-encryption activity](#the-mail-encryption-activity) below. |
 | `pqc-passkey-migration` | To register a **post-quantum (ML-DSA) passkey**. A person who holds a classical passkey and no ML-DSA one is asked for an ML-DSA one. All their passkeys are asked about at once, because a passkey has no role: one ML-DSA passkey is enough, and it signs them in and answers the second step as the realm allows. A person with no passkey can be invited or required to register one. |
 
-More activities will use the same policy and the same step.
+Each activity has its own block of fields on the policy, with its own
+switch, Skip and allotted time, so a profile saved before an activity
+existed reads it as off. When several are due at one sign-in, the person
+is asked every required one and at most one they may skip; mail encryption
+is asked before the passkey migration, because mail encrypted to a
+classical key today can be read once that key falls.
 
 ## Before you start
 
@@ -152,6 +158,51 @@ the audit log (`/admin/audit`) by that action.
 
 The new passkey does not change how this sign-in authenticated. The session
 keeps the `amr` and `acr` of the sign-in the person had already completed.
+
+## The mail-encryption activity
+
+The second block of the policy. Its fields may be left out of a save
+through the management API: what the profile stored is kept, so a client
+written before the block existed is not refused.
+
+| Field | Default | What it does |
+|---|---|---|
+| Ask for post-quantum mail encryption (`mailEnabled`) | off | When on, a person whose mail is encrypted to a classical key (an OpenPGP key whose encryption key is not ML-KEM, or an S/MIME certificate whose key is not ML-KEM) is asked after signing in. A named profile with this off excludes the people it reaches. |
+| Mail encryption: Skip puts it off for (`mailSnoozeDays`) | 7 days | 1–90. |
+| Mail encryption: allotted time (`mailGraceDays`) | 0 | From the first invitation to this activity; 0 means no deadline. |
+| Mail encryption: a person whose mail is not encrypted (`mailNoKey`) | `leave` | `leave`, `invite` (always skippable) or `require`. |
+| Mail encryption: what is offered (`mailPrefer`) | `either` | `either` (an OpenPGP key and an S/MIME certificate, the kind the person uses now first), `openpgp` or `smime`. |
+| Mail encryption: keep the classical OpenPGP key for (`mailKeepClassical`) | 90 days | How long the classical OpenPGP key a post-quantum one replaces stays beside it (0–3650; 0 removes it at once). |
+
+**Who is asked.** Only where the realm can take what the step offers: an
+OpenPGP key needs one of RFC 9980's ML-KEM composites
+(`ML-KEM-768+X25519`, `ML-KEM-1024+X448`) on `openpgp.algorithms` (empty
+names every algorithm), and an S/MIME certificate needs a runtime that can
+encrypt to ML-KEM. A person with no mail address is not asked: a key is
+registered for the address on the person's entry.
+
+**What the person does.** For OpenPGP, they press *Get a challenge to
+sign*, sign the text with their new key (`gpg --clearsign`) and paste the
+signed text and the public key. The proof of possession, the user-id rule
+and the allow list are those of the portal's [OpenPGP page](openpgp.md);
+the key's encryption subkey must also be ML-KEM, or it is refused
+(STS-OPENPGP-0033) before anything is written. An OpenPGP card cannot hold
+such a key yet, so the key is kept in software and nothing is recorded as
+hardware-bound. For S/MIME, they paste a certificate whose key is ML-KEM
+and which names their address (STS-AUTHN-0600 for any other). This
+service does not issue ML-KEM S/MIME certificates. Mail to the person is
+then encrypted with the new key.
+
+**The classical OpenPGP key is kept for a while.** When a post-quantum
+key replaces a classical one at this step, the classical key stays on the
+person's entry, and is published in the Web Key Directory with the new
+one, for `mailKeepClassical` days, so a correspondent that cannot use the
+new key can still find the old one. Mail from this service goes to the new
+key at once. After that, the scheduler job
+`post-login.mail-classical-retire` (hourly, **Monitoring → Scheduler**)
+removes it from the entry and the directory; a key past its time is
+already left out of the directory whether or not the job has run. A
+registration on the portal outside this step replaces the key as before.
 
 ## Skip, and the allotted time
 
@@ -294,7 +345,8 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 |---|---|
 | `authn.post-login.asked` | A person was asked; `askedBy` says whether the policy or a started activity asked. |
 | `authn.post-login.skipped` | A person skipped; the row includes when the skip ends. |
-| `authn.post-login.done` | A person registered the passkey; the row includes its algorithm. |
+| `authn.post-login.done` | A person did the activity: for the passkey migration the row includes the passkey's algorithm; for mail encryption the kind (`openpgp` or `smime`), the fingerprint or serial, and when a kept classical key goes. |
+| `openpgp.classical-kept`, `openpgp.classical-retired` | A classical OpenPGP key was kept beside a post-quantum one, and later removed. |
 | `authn.post-login.held` | A required activity refused a sign-in at a door that can't ask for it. |
 | `authn.post-login.unsupported` | The person's device did not complete the passkey ceremony; the error name, the browser and the platform. |
 | `webauthn.key.possibly-replaced` | A new passkey under the same user handle and AAGUID may have replaced an older one on its authenticator ([Passkeys](passkeys.md#a-passkey-that-may-have-been-replaced-on-its-authenticator)). |
@@ -318,6 +370,11 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | STS-AUTHN-0495 | A post-login activity is running in a realm with no mail transport. |
 | STS-AUTHN-0542 | A group or an application names a post-login profile the realm does not hold; that reference counts for nothing. |
 | STS-AUTHN-0543 | A named post-login profile was not deleted: a group or an application still names it. |
+| STS-AUTHN-0600 | The mail-encryption step refused an S/MIME certificate whose key is not ML-KEM. |
+| STS-AUTHN-0601, 0602 | The step was sent a kind of key it does not offer, or another activity's act. |
+| STS-AUTHN-0603 | The realm can no longer take anything the mail-encryption step offered, so the held session started without it. |
+| STS-OPENPGP-0033 | An OpenPGP key registered at the step has no ML-KEM encryption subkey. |
+| STS-OPENPGP-0031, 0032 | A classical OpenPGP key could not be kept, or could not be removed by the job. |
 
 See [error codes](error-codes.md) for the full list.
 

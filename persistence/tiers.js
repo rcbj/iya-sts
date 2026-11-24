@@ -446,6 +446,9 @@ const CELL_MINTED = [
   // A person's OpenPGP registration challenge and their Web Key Directory
   // publication (#1955 P6): somebody's, beside their entry in this cell.
   'openpgp.challenges', 'openpgp.wkd',
+  // The classical OpenPGP keys kept beside a post-quantum one, and until
+  // when (#2009 P2): somebody's, beside their entry in this cell.
+  'openpgp.classicalKept',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',

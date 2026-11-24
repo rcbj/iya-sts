@@ -16721,6 +16721,42 @@ rcbj: post-login activities for the other credentials a token carries
   from the activity's own `timing()`. The passkey migration is
   `passkeyKind()`, its answers unchanged.
 
+### 3ct, continued: the mail-encryption activity (#2009 P2, 2026-11-23)
+
+`pqc-mail-encryption`, `post_login_mail.ts` (its header argues it; rcbj's
+D1, D3, D4). What reaches outside it:
+
+* **A BLOCK OF ROWS ON THE POLICY, `optional`** (`mailEnabled`,
+  `mailSnoozeDays`, `mailGraceDays`, `mailNoKey`, `mailPrefer`,
+  `mailKeepClassical`; `stsPostLoginMail*`). `post_login_policy.ts`'s
+  `validate()` skips an optional row left out and `save()` writes back what
+  the entry stored for it (the passkey policy's #907 rule), so a client
+  written before the block is neither refused nor switches it off. A
+  profile saved before reads it as off. The `activity` row stays one value.
+* **STARTABLE IS A COLUMN OF THE TABLE** (`post_login_kinds.ts`'s
+  `startable`, `startableIds()`): the started activities' `ACTIVITIES` is
+  the passkey migration alone until P4 gives the others their mail and
+  report words.
+* **D3's SECOND SLOT IS `openpgp_keys.ts`'s**: `register()` takes
+  `requirePostQuantum` (STS-OPENPGP-0033, asked before the proof) and
+  `keepClassicalDays`; the replaced classical key goes to
+  `stsOpenPgpClassicalKey` / `stsOpenPgpClassicalKeyInfo` with a row in
+  `openpgp.classicalKept` (cell tier, on demand), which is what the job
+  `post-login.mail-classical-retire` walks — never the directory, for which
+  no index answers "holds a classical key". `classicalKept()` is the
+  read-time check: a key past `keptUntil` is neither drawn nor published by
+  the Web Key Directory, whether or not the job ran. `lookup()` answers the
+  two binary keys concatenated, the post-quantum one first. `encryptionFor()`
+  reads the first slot only, so new mail goes to the new key.
+* **S/MIME IS UPLOADED (D4)**: `crypto.smimeRecipientCertificate()` answers
+  `postQuantum` and `keyAlgorithm`; `crypto.smimeKemAvailable()` is the
+  realm's "can encrypt to ML-KEM" (tried once a process).
+* **THE STEP** is `authn.ts`'s `postLoginMailAct()`, `POST
+  /authn-api/mfa/{id}/post-login/mail` (`act`: `openpgp-challenge`,
+  `openpgp-register`, `smime-register`); the challenge is kept on the step.
+  The passkey `register` act at a mail step, and the reverse, is
+  STS-AUTHN-0602.
+
 ## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
 
 rcbj's decisions on #1234 (2026-10-30, twice that day): every kind on

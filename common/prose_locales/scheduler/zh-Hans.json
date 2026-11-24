@@ -399,6 +399,14 @@
     "en": "5081eadb5d5abbeb",
     "text": "向进行中的登录后活动覆盖的人员（#1111）发送登录提醒，登录后该活动会请他们注册后量子通行密钥。每次运行在游标之后读取每个已启动活动人群（领域，或其各组的并集）的一批，只向有待完成该活动的人发送，绝不在提醒间隔内或超过其上限发送，并为每个已启动活动的每次运行写一条审计记录。"
   },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "移除保留的经典 OpenPGP 密钥"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "在配置的 mailKeepClassical 天数过去后，移除登录后邮件加密活动在取代它的后量子密钥旁保留的经典 OpenPGP 密钥（#2009，D3）：从此人的条目中移除，因而也从 Web Key Directory 中移除。只遍历保留密钥的记录，从不遍历目录，每移除一个密钥写一条审计记录。时间已过的密钥已经不会出现在目录和任何页面中，无论此任务是否运行过。"
+  },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
     "text": "内存报告"

@@ -12216,6 +12216,18 @@ class Authn {
   // application and the risk the door assessed. The first invitation is
   // recorded here, which is when the allotted time starts.
   // ---------------------------------------------------------------------------
+  // WHAT AN ACTIVITY ASKS, in the audit row's words (#2009 P2): the rows
+  // keep their actions and `activity` (design X7), and the summary names
+  // what was asked rather than always a passkey.
+  private postLoginWhat(activity: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Authn.postLoginWhat(). " + activity);
+    log.debug("Leaving Authn.postLoginWhat().");
+    return activity === 'pqc-mail-encryption'
+      ? 'move their mail encryption to a post-quantum key'
+      : 'register a post-quantum passkey';
+  }
+
   private postLoginStep(res: any, record: any, username: string,
                         said: any): boolean {
     const { log, randomId, stsCrypto, audit, postLogin } = this.deps;
@@ -12252,7 +12264,16 @@ class Authn {
         profile: String(due.profile || ''),
         // Who asked (#1126): the policy, or a started activity's id;
         // written on the progress row at Skip and at done as at the ask.
-        askedBy: String(due.askedBy || '') },
+        askedBy: String(due.askedBy || ''),
+        // THE MAIL-ENCRYPTION ACTIVITY'S FACTS (#2009 P2): what the step
+        // offers, what the person's mail is encrypted to now, and how
+        // long a replaced classical OpenPGP key is kept (D3). Empty for
+        // the passkey migration.
+        offers: Array.isArray(due.offers) ? due.offers.map(String) : [],
+        current: due.current
+          ? { kind: String(due.current.kind || ''),
+              algorithm: String(due.current.algorithm || '') } : null,
+        keepClassicalDays: Number(due.keepClassicalDays) || 0 },
       held: {
         amr: Array.isArray(hold.amr) ? hold.amr : [],
         acr: String(hold.acr || ''), via: String(hold.via || ''),
@@ -12275,8 +12296,8 @@ class Authn {
       action: 'authn.post-login.asked', outcome: 'success',
       actor: username, target: username, channel: 'http',
       protocol: record && record.protocol,
-      summary: username + ' was asked, after signing in, to register a ' +
-               'post-quantum passkey' +
+      summary: username + ' was asked, after signing in, to ' +
+               this.postLoginWhat(String(due.activity)) +
                (due.required ? '; it is required' : ''),
       detail: { activity: String(due.activity),
                 reason: String(due.reason), required: due.required === true,
@@ -12697,8 +12718,9 @@ class Authn {
         action: 'authn.post-login.skipped', outcome: 'success',
         actor: step.username, target: step.username, channel: 'http',
         protocol: step.authn && step.authn.protocol,
-        summary: step.username + ' put off registering a post-quantum ' +
-                 'passkey for ' + due.snoozeDays + ' day(s)',
+        summary: step.username + ' put off a post-login activity (' +
+                 String(due.activity) + ') for ' + due.snoozeDays +
+                 ' day(s)',
         detail: { activity: String(due.activity),
                   snoozedUntil: new Date(Number(skipped.snoozedUntil))
                     .toISOString(),
@@ -12707,6 +12729,16 @@ class Authn {
       });
       this.finishPostLogin(req, res, base, step);
       log.debug("Leaving Authn.postLoginAct(). Skipped.");
+      return;
+    }
+    // REGISTER IS THE PASSKEY MIGRATION'S ACT (#2009 P2): another
+    // activity's step has acts of its own (`postLoginMailAct()`).
+    if (String(due.activity || postLogin.PQC_MIGRATION) !==
+        postLogin.PQC_MIGRATION) {
+      errorCodes.mark(res, 'STS-AUTHN-0602');
+      this.stepRefused(res, 'This step asks for another post-login ' +
+                       'activity, not a passkey.');
+      log.debug("Leaving Authn.postLoginAct(). Another activity's step.");
       return;
     }
     if (!postLogin.canRegister(String(due.method || ''))) {
@@ -12760,6 +12792,119 @@ class Authn {
     this.stepAnswer(res, 'mfa', 'webauthn', String(stepId), WEBAUTHN_PATH,
                     'mfa');
     log.debug("Leaving Authn.postLoginAct(). To the registration.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // `POST /authn-api/mfa/{id}/post-login/mail` — THE MAIL-ENCRYPTION
+  // ACTIVITY'S ACTS (#2009 P2, design X4), each through
+  // `common/post_login_mail.ts` and so through `common/openpgp_keys.ts`'s
+  // own doors and refusals:
+  //
+  //   * `openpgp-challenge` — the registration challenge, kept on the step
+  //     and drawn by the page, which the person signs with their OpenPGP
+  //     tool;
+  //   * `openpgp-register` — the signed challenge and the public key, which
+  //     must be post-quantum (STS-OPENPGP-0033); the classical key it
+  //     replaces is kept for the profile's days (D3);
+  //   * `smime-register` — an ML-KEM certificate, uploaded (D4;
+  //     STS-AUTHN-0600 for any other).
+  //
+  // A registration done, the activity is done and the held session starts
+  // as the door would have started it. Where the realm can no longer take
+  // anything the step offered, the held session starts without it
+  // (STS-AUTHN-0603): a sign-in is never held for what cannot be done.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers an act at the post-login mail-encryption step.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param stepId - the step's id
+   * @param body - `{ act, publicKey?, signed?, certificate? }`
+   * @returns a promise settled when the answer is sent
+   */
+  async postLoginMailAct(req: any,
+                         res: IyaApi.AuthnAnswering<'answerPostLoginMail'>,
+                         stepId: string, body: any): Promise<void> {
+    const { log, baseUrlOf, audit, errorCodes, postLogin } = this.deps;
+    log.debug("Entering Authn.postLoginMailAct(). " +
+              String((body && body.act) || ''));
+    const base = baseUrlOf(req);
+    const found = this.stepProblem('post-login', stepId);
+    if (found.problem) {
+      errorCodes.mark(res, found.problem.code);
+      this.stepRefused(res, found.problem.why);
+      log.debug("Leaving Authn.postLoginMailAct(). No step.");
+      return;
+    }
+    const step = found.step;
+    const due = step.postLogin;
+    if (String(due.activity || '') !== 'pqc-mail-encryption') {
+      errorCodes.mark(res, 'STS-AUTHN-0602');
+      this.stepRefused(res, 'This step asks for another post-login ' +
+                       'activity, not a mail encryption key.');
+      log.debug("Leaving Authn.postLoginMailAct(). Another activity.");
+      return;
+    }
+    const mail = require('../common/post_login_mail');
+    const still = [].concat(due.offers || []).filter(function (k: string) {
+      return k === 'openpgp' ? mail.canOpenpgp() : mail.canSmime();
+    });
+    if (!still.length) {
+      pendingMfa.delete(String(stepId));
+      log.info(errorCodes.tag('STS-AUTHN-0603') + 'authn: the post-login ' +
+               'mail-encryption activity of "' + step.username + '" ' +
+               'cannot be done here any more; the held session is started ' +
+               'without it.');
+      errorCodes.mark(res, 'STS-AUTHN-0603');
+      this.finishPostLogin(req, res, base, step);
+      log.debug("Leaving Authn.postLoginMailAct(). Cannot be done here.");
+      return;
+    }
+    const act = String((body && body.act) || '');
+    const username = String(step.username);
+    let answer: any = null;
+    if (act === 'openpgp-challenge') {
+      answer = mail.challenge(username, due);
+      if (answer && answer.ok) {
+        step.postLogin.challenge = answer.challenge;
+        pendingMfa.set(String(stepId), step);
+        this.stepAnswer(res, 'mfa', 'post-login', String(stepId),
+                        POST_LOGIN_PATH, 'mfa');
+        log.debug("Leaving Authn.postLoginMailAct(). A challenge.");
+        return;
+      }
+    } else if (act === 'openpgp-register') {
+      answer = await mail.registerOpenPgp(username, due, body || {});
+    } else {
+      answer = mail.registerSmime(username, due, body || {});
+    }
+    if (!answer || !answer.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0601');
+      this.stepRefused(res, String(((answer && answer.errors) || [])[0] ||
+        (answer && answer.error) || 'The key was not registered.'));
+      log.debug("Leaving Authn.postLoginMailAct(). Refused.");
+      return;
+    }
+    pendingMfa.delete(String(stepId));
+    postLogin.noteDone(username, due);
+    audit.audit({
+      action: 'authn.post-login.done', outcome: 'success',
+      actor: username, target: username, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: username + ' moved their mail encryption to a ' +
+               'post-quantum ' + (answer.kind === 'smime'
+                 ? 'S/MIME certificate' : 'OpenPGP key') +
+               ' after signing in',
+      detail: { activity: String(due.activity), kind: String(answer.kind),
+                fingerprint: String(answer.fingerprint || ''),
+                serial: String(answer.serial || ''),
+                classicalKeptUntil: String(answer.keptUntil || ''),
+                profile: String(due.profile || ''),
+                askedBy: String(due.askedBy || '') }
+    });
+    this.finishPostLogin(req, res, base, step);
+    log.debug("Leaving Authn.postLoginMailAct(). Done.");
   }
 
   private refusedSession(res, base, record, username, started, detail) {
@@ -14050,6 +14195,22 @@ class Authn {
         snoozeDays: Number(due.snoozeDays) || 0,
         deadline: Number(due.deadline) > 0
           ? new Date(Number(due.deadline)).toISOString() : '' };
+      // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): what the step offers,
+      // what the person's mail is encrypted to now, the OpenPGP challenge
+      // the step issued (none until asked), and how long a replaced
+      // classical key is kept.
+      if (String(due.activity || '') === 'pqc-mail-encryption') {
+        view.postLogin.mail = {
+          offers: Array.isArray(due.offers) ? due.offers.map(String) : [],
+          current: { kind: String((due.current && due.current.kind) || ''),
+                     algorithm: String((due.current &&
+                                        due.current.algorithm) || '') },
+          challenge: due.challenge
+            ? { text: String(due.challenge.text || ''),
+                expiresAt: String(due.challenge.expiresAt || '') }
+            : null,
+          keepClassicalDays: Number(due.keepClassicalDays) || 0 };
+      }
     }
     const own = this.preferredLanguageOf(String(step.username));
     log.debug("Leaving Authn.mfaView().");
@@ -21730,6 +21891,7 @@ export = {
   mfaWebauthnAct: slot.forward('mfaWebauthnAct'),
   mfaSetupAct: slot.forward('mfaSetupAct'),
   postLoginAct: slot.forward('postLoginAct'),
+  postLoginMailAct: slot.forward('postLoginMailAct'),
   mfaStartOver: slot.forward('mfaStartOver'),
   passwordChangeStartOver: slot.forward('passwordChangeStartOver'),
   finishEmailSecondFactor: slot.forward('finishEmailSecondFactor'),

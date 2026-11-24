@@ -77,6 +77,46 @@ model PolicyPostLogin {
     field: #{key: "noPasskeyFallback", type: "enum", dflt: "none", values: #["none", "classical"], label: "A person with no passkey whose device cannot make ML-DSA"}
   })
   stsPostLoginNoPasskeyFallback?: string;
+  // THE MAIL-ENCRYPTION ACTIVITY'S BLOCK (#2009 P2, design X2 and X4): rows
+  // of its own, with its own switch, so a profile saved before it existed
+  // reads it as off. `optional`: a save that leaves the block out keeps
+  // what the profile stored.
+  @attr(#{
+    kind: "single",
+    what: "OFF BY DEFAULT. On, every person this profile reaches whose mail is encrypted to a classical key — an OpenPGP key whose encryption key is not ML-KEM, or an S/MIME certificate whose key is not ML-KEM — is asked after signing in to register a post-quantum one (pqc-mail-encryption): mail encrypted to a classical key today can be read once that key falls. A named profile with this off excludes whoever it is selected for from this activity.",
+    field: #{key: "mailEnabled", type: "bool", dflt: false, optional: true, label: "Ask for post-quantum mail encryption"}
+  })
+  stsPostLoginMailEnabled?: boolean;
+  @attr(#{
+    kind: "single",
+    what: "How long Skip puts the mail-encryption activity off for that person.",
+    field: #{key: "mailSnoozeDays", type: "int", dflt: 7, min: 1, max: 90, unit: "days", optional: true, label: "Mail encryption: Skip puts it off for"}
+  })
+  stsPostLoginMailSnoozeDays?: int32;
+  @attr(#{
+    kind: "single",
+    what: "Counted from the person's FIRST invitation to the mail-encryption activity. When it has passed, Skip is gone and the sign-in is held until a post-quantum key is registered. 0 is no deadline.",
+    field: #{key: "mailGraceDays", type: "int", dflt: 0, min: 0, max: 3650, unit: "days", optional: true, label: "Mail encryption: allotted time"}
+  })
+  stsPostLoginMailGraceDays?: int32;
+  @attr(#{
+    kind: "single",
+    what: "A person whose mail is not encrypted at all (stsMailEncryption none or absent). leave: not asked. invite: asked to register a post-quantum key, and may always skip it. require: asked, and may skip it only until the allotted time has passed.",
+    field: #{key: "mailNoKey", type: "enum", dflt: "leave", values: #["leave", "invite", "require"], optional: true, label: "Mail encryption: a person whose mail is not encrypted"}
+  })
+  stsPostLoginMailNoKey?: string;
+  @attr(#{
+    kind: "single",
+    what: "What the step offers. either: an OpenPGP key and an S/MIME certificate, the kind the person uses now first. openpgp: an RFC 9980 OpenPGP key only. smime: an ML-KEM S/MIME certificate only, uploaded (this realm does not issue one). A kind the realm cannot take is never offered, and nobody is asked where neither can be.",
+    field: #{key: "mailPrefer", type: "enum", dflt: "either", values: #["either", "openpgp", "smime"], optional: true, label: "Mail encryption: what is offered"}
+  })
+  stsPostLoginMailPrefer?: string;
+  @attr(#{
+    kind: "single",
+    what: "How many days a person's classical OpenPGP key stays on their entry and in the Web Key Directory beside the post-quantum key that replaced it, so a correspondent that cannot use the new key still finds the old one. New mail from this service goes to the post-quantum key at once. Afterwards a scheduler job removes the classical key from the entry and the Web Key Directory. 0 removes it at once.",
+    field: #{key: "mailKeepClassical", type: "int", dflt: 90, min: 0, max: 3650, unit: "days", optional: true, label: "Mail encryption: keep the classical OpenPGP key for"}
+  })
+  stsPostLoginMailKeepClassical?: int32;
   @attr(#{
     kind: "single",
     what: "Which named post-login profile wins where several are named for one sign-in — by the application and by the person's groups: the lowest, from 1 to 1000.",

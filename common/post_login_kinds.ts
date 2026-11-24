@@ -68,6 +68,10 @@ interface KindRow {
   // The module that answers for it, relative to this directory, required
   // lazily by `post_login.ts`; '' where `post_login.ts` answers itself.
   module: string;
+  // Whether an administrator may START it (#1111): mail its people. Only
+  // the passkey migration until #2009's P4 gives the started activities,
+  // their mail and their report the other activities' words.
+  startable: boolean;
 }
 
 /**
@@ -110,12 +114,22 @@ interface PostLoginKind {
 const PQC_PASSKEY_MIGRATION = 'pqc-passkey-migration';
 
 /**
+ * The mail-encryption migration's id (#2009 P2): OpenPGP and S/MIME, one
+ * activity (rcbj's D1).
+ */
+const PQC_MAIL_ENCRYPTION = 'pqc-mail-encryption';
+
+/**
  * Every post-login activity, in the order a sign-in asks those of one
  * exposure.
  */
 const KINDS: readonly KindRow[] = Object.freeze([
   Object.freeze({ id: PQC_PASSKEY_MIGRATION, exposure: 'forgery' as Exposure,
-                  module: '' })
+                  module: '', startable: true }),
+  // #2009 P2: `common/post_login_mail.ts` answers for it.
+  Object.freeze({ id: PQC_MAIL_ENCRYPTION,
+                  exposure: 'decrypt-later' as Exposure,
+                  module: './post_login_mail', startable: false })
 ]);
 
 /**
@@ -132,6 +146,10 @@ class PostLoginKinds {
    * The passkey migration's id.
    */
   static readonly PQC_PASSKEY_MIGRATION = PQC_PASSKEY_MIGRATION;
+  /**
+   * The mail-encryption migration's id (#2009 P2).
+   */
+  static readonly PQC_MAIL_ENCRYPTION = PQC_MAIL_ENCRYPTION;
   /**
    * The table.
    */
@@ -152,6 +170,23 @@ class PostLoginKinds {
       return row.id;
     });
     log.debug("Leaving PostLoginKinds.ids(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The activities an administrator may start (#1111), in the table's
+   * order: the passkey migration until #2009's P4.
+   *
+   * @returns the ids
+   */
+  static startableIds(): string[] {
+    log.debug("Entering PostLoginKinds.startableIds().");
+    const out = KINDS.filter(function (row) {
+      return row.startable === true;
+    }).map(function (row) {
+      return row.id;
+    });
+    log.debug("Leaving PostLoginKinds.startableIds(). " + out.length);
     return out;
   }
 

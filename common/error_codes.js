@@ -8664,6 +8664,33 @@ const CODES = [
       'card, or a certificate that is not one) as a first factor, and not ' +
       'this kind (#2031).',
     spec: 'Sign-in screen refusal sentence; /authn-api answers refused' },
+  // #2009 P2: THE MAIL-ENCRYPTION ACTIVITY'S STEP. Numbered from 0600 so
+  // the parallel #2031 branch's codes above 0582 cannot meet these.
+  { code: 'STS-AUTHN-0600',
+    summary: 'The post-login mail-encryption activity refused an S/MIME ' +
+      'certificate whose key is not ML-KEM (RFC 9935): the activity asks ' +
+      'for a post-quantum certificate, and mail encrypted to an RSA or EC ' +
+      'one could be read once that key falls. Nothing was written (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0601',
+    summary: 'A post-login mail-encryption act named a kind of key the step ' +
+      'does not offer (an OpenPGP act where only S/MIME is offered, or the ' +
+      'reverse): the profile\'s mailPrefer and what the realm can take ' +
+      'decide what is offered, not the browser (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0602',
+    summary: 'A post-login act was sent to a step asking another activity: ' +
+      'a mail-encryption act at a passkey step, a passkey registration at ' +
+      'a mail-encryption step. Nothing was done (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0603',
+    summary: 'The post-login mail-encryption activity can no longer be done ' +
+      'here: since the step was asked the realm stopped taking every kind ' +
+      'it offered (openpgp.algorithms names no ML-KEM composite, or the ' +
+      'runtime cannot encapsulate to ML-KEM). The held session is started ' +
+      'without it: a sign-in is never held for something that cannot be ' +
+      'done (#2009).',
+    spec: 'none (the sign-in goes on)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -23936,6 +23963,25 @@ const CODES = [
       'used only for an address it names.',
     spec: 'none (a log line; the directory write that changed the address ' +
       'is unaffected)' },
+  { code: 'STS-OPENPGP-0031',
+    summary: 'A post-quantum OpenPGP key was registered at the post-login ' +
+      'mail-encryption activity, and the classical key it replaced could ' +
+      'not be kept beside it on the person\'s entry (#2009, D3): the new ' +
+      'key stands and the classical one is replaced, as a registration ' +
+      'replaces a key.',
+    spec: 'none (a log line; the registration succeeds)' },
+  { code: 'STS-OPENPGP-0032',
+    summary: 'The job post-login.mail-classical-retire could not remove a ' +
+      'classical OpenPGP key whose kept time had passed (#2009, D3). It ' +
+      'is already left out of the Web Key Directory and every page, and ' +
+      'the next run tries again.',
+    spec: 'none (a log line and the run\'s result)' },
+  { code: 'STS-OPENPGP-0033',
+    summary: 'An OpenPGP key registered where a post-quantum one is asked ' +
+      'for (the post-login mail-encryption activity, #2009) has an ' +
+      'encryption key that is not one of RFC 9980\'s ML-KEM composites. ' +
+      'Refused before its proof is checked; nothing is spent or written.',
+    spec: 'none (HTTP 400 from /authn-api)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

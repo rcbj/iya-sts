@@ -399,6 +399,14 @@
     "en": "5081eadb5d5abbeb",
     "text": "Pinapadalhan ng paalala na mag-sign in ang mga taong naaabot ng isang tumatakbong aktibidad pagkatapos mag-sign in (#1111), kung saan hihilingin sa kanila ng aktibidad na magrehistro ng post-quantum passkey. Bumabasa bawat takbo ng isang bahagi ng populasyon ng bawat sinimulang aktibidad (ang realm, o ang unyon ng mga grupo nito) pagkatapos ng cursor, sinusulatan lamang ang mga may nakabinbing aktibidad, hindi kailanman sa loob ng pagitan ng paalala o lampas sa maximum nito, at sumusulat ng isang audit row bawat sinimulang aktibidad bawat takbo."
   },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "Inalis ang mga pinanatiling klasikong OpenPGP key"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "Inaalis ang klasikong OpenPGP key na pinanatili ng post-login na aktibidad ng pag-encrypt ng mail katabi ng post-quantum na key na pumalit dito (#2009, D3), kapag lumipas na ang mailKeepClassical na araw ng profile: mula sa entry ng tao at kaya mula sa Web Key Directory. Dinadaanan lamang ang mga hilera ng pinanatiling key, hindi kailanman ang directory, at nagsusulat ng isang audit row bawat inalis na key. Ang key na lumipas na ang oras ay hindi na kasama sa directory at sa bawat pahina, tumakbo man o hindi ang job na ito."
+  },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
     "text": "Ulat ng memory"

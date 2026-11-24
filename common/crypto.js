@@ -21776,7 +21776,14 @@ function smimeRecipientCertificate(values, at) {
       const problem = smimeRecipientProblem(c, when);
       if (!problem) {
         log.debug("Leaving smimeRecipientCertificate(). Chosen.");
+        // WHETHER IT IS POST-QUANTUM (#2009 P2): the post-login
+        // mail-encryption activity asks of the certificate mail goes to,
+        // and an ML-KEM key (RFC 9935) is the only post-quantum one here.
+        const keyOid = String(c.subjectPublicKeyInfo.algorithm.algorithmId);
         return { ok: true,
+                 postQuantum: !!SMIME_KEM[keyOid],
+                 keyAlgorithm: SMIME_KEM[keyOid] ? SMIME_KEM[keyOid].name
+                   : (keyOid === '1.2.840.10045.2.1' ? 'EC' : 'RSA'),
                  der: Buffer.from(c.toSchema().toBER(false)),
                  emails: smimeAddressesOf(c),
                  serial: Buffer.from(c.serialNumber.valueBlock.valueHexView)
@@ -22040,6 +22047,37 @@ async function smimeKemEnvelope(mimeBytes, certificate, row, kemOid) {
   return out;
 }
 
+// Whether this runtime encapsulated to ML-KEM, asked once a process
+// (`smimeKemAvailable()`): null until asked.
+let smimeKemAnswer = null;
+
+/**
+ * Whether this runtime can encapsulate to an ML-KEM-768 key, the one thing
+ * mail to an ML-KEM S/MIME certificate needs (STS-OPENPGP-0028 is what a
+ * send logs when it cannot). Asked by the post-login mail-encryption
+ * activity (#2009 P2), which offers an ML-KEM certificate only where mail
+ * could be encrypted to it. Tried once a process on a fresh key pair.
+ *
+ * @returns true when it can
+ */
+function smimeKemAvailable() {
+  log.debug("Entering smimeKemAvailable().");
+  if (smimeKemAnswer === null) {
+    try {
+      const pair = nobleMlKem.ml_kem768.keygen();
+      const share = nobleMlKem.ml_kem768.encapsulate(pair.publicKey);
+      smimeKemAnswer = !!(share && share.cipherText &&
+                          share.cipherText.length ===
+                            SMIME_KEM['2.16.840.1.101.3.4.4.2'].cipherBytes);
+    } catch (e) {
+      log.debug("Caught in smimeKemAvailable(): " + ((e && e.message) || e));
+      smimeKemAnswer = false;
+    }
+  }
+  log.debug("Leaving smimeKemAvailable(). " + smimeKemAnswer);
+  return smimeKemAnswer;
+}
+
 /**
  * Encrypts a MIME entity to an S/MIME recipient certificate: a CMS
  * ContentInfo holding an EnvelopedData (the header), DER. An ML-KEM
@@ -22099,6 +22137,8 @@ module.exports = {
   OPENPGP_ENCRYPTION_ALGORITHMS: OPENPGP_ENCRYPTION_ALGORITHMS,
   OPENPGP_PQ_NAMES: OPENPGP_PQ_NAMES,
   OPENPGP_MIN_RSA_BITS: OPENPGP_MIN_RSA_BITS,
+  openpgpIsPq: openpgpIsPq,
+  smimeKemAvailable: smimeKemAvailable,
   openpgpAlgorithmProblem: openpgpAlgorithmProblem,
   openpgpRegistrationProblem: openpgpRegistrationProblem,
   openpgpReadKey: openpgpReadKey,

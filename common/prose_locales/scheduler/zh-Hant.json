@@ -399,6 +399,14 @@
     "en": "5081eadb5d5abbeb",
     "text": "向進行中的登入後活動涵蓋的人員（#1111）寄送登入提醒，登入後該活動會請他們註冊後量子通行金鑰。每次執行在游標之後讀取每個已啟動活動人群（領域，或其各群組的聯集）的一批，只向有待完成該活動的人寄送，絕不在提醒間隔內或超過其上限寄送，並為每個已啟動活動的每次執行寫一筆稽核紀錄。"
   },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "移除保留的傳統 OpenPGP 金鑰"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "在設定檔的 mailKeepClassical 天數過去後，移除登入後郵件加密活動在取代它的後量子金鑰旁保留的傳統 OpenPGP 金鑰（#2009，D3）：從此人的項目中移除，因而也從 Web Key Directory 中移除。只走訪保留金鑰的記錄，從不走訪目錄，每移除一個金鑰寫一筆稽核記錄。時間已過的金鑰已經不會出現在目錄與任何頁面中，無論此工作是否執行過。"
+  },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
     "text": "記憶體報告"

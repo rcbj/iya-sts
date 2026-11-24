@@ -144,7 +144,21 @@ const STEP_ACTS: Json = {
     } },
     skip: { op: 'post-login/skip', body: function (): Json {
       return {};
-    } } },
+    } },
+    // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): the challenge, an OpenPGP
+    // key with its signed challenge, or an S/MIME certificate.
+    'openpgp-challenge': { op: 'post-login/mail', body: function (): Json {
+      return { act: 'openpgp-challenge' };
+    } },
+    'openpgp-register': { op: 'post-login/mail',
+      body: function (f: Json): Json {
+        return { act: 'openpgp-register', publicKey: f.publicKey || '',
+                 signed: f.signed || '' };
+      } },
+    'smime-register': { op: 'post-login/mail',
+      body: function (f: Json): Json {
+        return { act: 'smime-register', certificate: f.certificate || '' };
+      } } },
   '/authn/email-code': {
     send: { op: 'email/send', body: function (): Json {
       return { kind: 'code' };

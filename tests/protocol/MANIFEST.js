@@ -696,6 +696,14 @@ const JOBS = [
   // profile a group names (#1239), not deleted while named. `local: true`: this repository's own /authn
   // and /admin-api.
   { file: 'sts_post_login_activity.js', browser: false },
+  // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): in a throwaway realm, a person
+  // whose mail is S/MIME to an RSA certificate (made here with openssl)
+  // held at /authn/post-login once the policy's mail block is on; the
+  // passkey act and an RSA certificate refused at that step, an OpenPGP
+  // challenge drawn on it, and an ML-KEM certificate finishing it, the code
+  // reaching the client and the next sign-in not asked. `local: true`: this
+  // repository's own /authn and /admin-api.
+  { file: 'sts_post_login_mail.js', browser: false, local: true },
   // DYNAMIC SELECTABLE ROLES (#1072): a dynamic role made and given its
   // ALFA eligibility policy over /admin-api, the administrator's test, the
   // sign-in screen's box, the role step (a fabricated role refused, the

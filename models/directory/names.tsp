@@ -330,6 +330,11 @@ namespace IyaSts.Directory;
   // is published in the Web Key Directory). Public by design; never a
   // secret key, which registration refuses. `common/openpgp_keys.ts`.
   "stsOpenPgpKey", "stsOpenPgpFingerprint", "stsOpenPgpKeyInfo",
+  // THE CLASSICAL OpenPGP KEY KEPT BESIDE A POST-QUANTUM ONE (#2009 P2,
+  // rcbj's D3): the replaced key and what is drawn about it, until the
+  // post-login mail-encryption activity's `keepClassical` days have passed.
+  // Public, like the key it sits beside. `common/openpgp_keys.ts`.
+  "stsOpenPgpClassicalKey", "stsOpenPgpClassicalKeyInfo",
   // HOW MAIL TO THE PERSON IS ENCRYPTED (#1955 P6): `none`, `openpgp` or
   // `smime`, chosen on the portal. `common/openpgp_keys.ts`.
   "stsMailEncryption",

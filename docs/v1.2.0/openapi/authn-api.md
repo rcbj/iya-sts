@@ -1902,6 +1902,16 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.canSkip` | boolean |  |  |
 | `view.postLogin.deadline` | string |  |  |
 | `view.postLogin.failed` | string |  |  |
+| `view.postLogin.mail` | object |  | The mail-encryption activity's step (#2009): what it offers (`openpgp`, `smime`), what the person's mail is encrypted to now, the OpenPGP challenge it issued (null until asked), and how many days a replaced classical OpenPGP key is kept. |
+| `view.postLogin.mail.challenge` | object, or null | yes |  |
+| `view.postLogin.mail.challenge.expiresAt` | string | yes |  |
+| `view.postLogin.mail.challenge.text` | string | yes |  |
+| `view.postLogin.mail.current` | object | yes |  |
+| `view.postLogin.mail.current.algorithm` | string | yes |  |
+| `view.postLogin.mail.current.kind` | string | yes |  |
+| `view.postLogin.mail.keepClassicalDays` | number | yes |  |
+| `view.postLogin.mail.offers` | list | yes |  |
+| `view.postLogin.mail.offers[]` | one of `openpgp`, `smime` |  |  |
 | `view.postLogin.method` | string |  |  |
 | `view.postLogin.reason` | string |  |  |
 | `view.postLogin.required` | boolean |  |  |
@@ -2065,6 +2075,16 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.canSkip` | boolean |  |  |
 | `view.postLogin.deadline` | string |  |  |
 | `view.postLogin.failed` | string |  |  |
+| `view.postLogin.mail` | object |  | The mail-encryption activity's step (#2009): what it offers (`openpgp`, `smime`), what the person's mail is encrypted to now, the OpenPGP challenge it issued (null until asked), and how many days a replaced classical OpenPGP key is kept. |
+| `view.postLogin.mail.challenge` | object, or null | yes |  |
+| `view.postLogin.mail.challenge.expiresAt` | string | yes |  |
+| `view.postLogin.mail.challenge.text` | string | yes |  |
+| `view.postLogin.mail.current` | object | yes |  |
+| `view.postLogin.mail.current.algorithm` | string | yes |  |
+| `view.postLogin.mail.current.kind` | string | yes |  |
+| `view.postLogin.mail.keepClassicalDays` | number | yes |  |
+| `view.postLogin.mail.offers` | list | yes |  |
+| `view.postLogin.mail.offers[]` | one of `openpgp`, `smime` |  |  |
 | `view.postLogin.method` | string |  |  |
 | `view.postLogin.reason` | string |  |  |
 | `view.postLogin.required` | boolean |  |  |
@@ -3126,6 +3146,242 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `password` | string |  |  |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**400**: Refused: `{ ok: false, errors }` — the body, the id, or the act itself.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**403**: No Origin of this service, or no CSRF token bound to this browser's session.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**415**: Not a JSON body.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**429**: Too many attempts.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+## POST /authn-api/mfa/{id}/post-login/mail
+
+`answerPostLoginMail`
+
+**Moves the person's mail encryption to a post-quantum key, as a post-login activity asks**
+
+The mail-encryption activity (#2009). `openpgp-challenge` issues the OpenPGP registration challenge, kept on the step and drawn by its page (`postLogin.mail.challenge`), and the next step is the page again. `openpgp-register` takes the signed challenge (`signed`, from `gpg --clearsign`) and the public key (`publicKey`): the proof of possession and every rule are the OpenPGP registration's, and the key's encryption key must be one of RFC 9980's ML-KEM composites (STS-OPENPGP-0033); the classical key it replaces is kept beside it, and published with it, for the profile's `mailKeepClassical` days. `smime-register` takes an uploaded certificate (`certificate`, PEM or base64 DER) whose key must be ML-KEM (STS-AUTHN-0600) and which names the entry's address. A kind the step does not offer is refused (STS-AUTHN-0601), and so is this act at another activity's step (STS-AUTHN-0602). Done, mail to the person is encrypted with the new key and the session the sign-in was held for starts; where the realm can take nothing the step offered any more, it starts without it (STS-AUTHN-0603).
+
+The door of the sign-in surface's `POST /authn/post-login`.
+
+Sent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `act` | one of `openpgp-challenge`, `openpgp-register`, `smime-register` | yes | What the person does: ask for the OpenPGP challenge, register an OpenPGP key, or upload an S/MIME certificate. |
+| `certificate` | string |  | `smime-register`: the ML-KEM certificate, PEM or base64 DER. |
+| `publicKey` | string |  | `openpgp-register`: the public key, ASCII-armored. |
+| `signed` | string |  | `openpgp-register`: the challenge as `gpg --clearsign` signed it. |
 
 **200**: The answer.
 

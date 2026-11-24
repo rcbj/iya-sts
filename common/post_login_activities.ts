@@ -113,8 +113,10 @@ const JOB = 'post-login.activity-mail';
 const EVERY_MS = 10 * 60 * 1000;
 
 // The activities an administrator may start: the post-login activities
-// there are, `post_login_kinds.ts`'s table (#2009) — one list.
-const ACTIVITIES = PostLoginKinds.ids();
+// there are that the table marks startable, `post_login_kinds.ts`'s table
+// (#2009) — one list. The mail-encryption activity (P2) is asked at a
+// sign-in and not yet started: its mail and report words are P4's.
+const ACTIVITIES = PostLoginKinds.startableIds();
 
 // The numbers a started activity is given, and their bounds.
 const LIMITS = {

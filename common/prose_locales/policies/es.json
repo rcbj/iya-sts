@@ -1987,6 +1987,66 @@
     "en": "4fa78beae92d0ce5",
     "text": "none: solo ML-DSA. classical: después de que un registro ML-DSA falle en el dispositivo, se ofrece un reintento con los algoritmos clásicos (donde la política de llaves de acceso lo permita) — una llave de acceso clásica es mejor que una contraseña, y a quien la tiene se le pide la migración más adelante como a cualquier otra persona."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "Pedir cifrado poscuántico del correo"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y cuyo correo se cifre con una clave clásica —una clave OpenPGP cuya clave de cifrado no es ML-KEM, o un certificado S/MIME cuya clave no es ML-KEM— se le pide, tras iniciar sesión, que registre una poscuántica (pqc-mail-encryption): lo que hoy se cifra con una clave clásica podrá leerse cuando esa clave caiga. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "Cifrado del correo: Omitir lo aplaza"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Cuánto tiempo aplaza Omitir la actividad de cifrado del correo para esa persona."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "Cifrado del correo: plazo concedido"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Contado desde la PRIMERA invitación de la persona a la actividad de cifrado del correo. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que se registre una clave poscuántica. 0 es sin plazo."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "Cifrado del correo: una persona cuyo correo no se cifra"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Una persona cuyo correo no se cifra en absoluto (stsMailEncryption none o ausente). leave: no se le pide. invite: se le pide que registre una clave poscuántica y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que pase el plazo concedido."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "Cifrado del correo: qué se ofrece"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Qué ofrece el paso. either: una clave OpenPGP y un certificado S/MIME, primero el tipo que la persona usa ahora. openpgp: solo una clave OpenPGP según RFC 9980. smime: solo un certificado S/MIME ML-KEM, subido (este dominio no emite ninguno). Un tipo que el dominio no puede aceptar nunca se ofrece, y no se pide nada a nadie donde no se puede ninguno."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "Cifrado del correo: conservar la clave OpenPGP clásica durante"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Cuántos días se queda la clave OpenPGP clásica de una persona en su entrada y en el Web Key Directory junto a la clave poscuántica que la sustituyó, para que un corresponsal que no pueda usar la nueva siga encontrando la antigua. El correo nuevo de este servicio va a la clave poscuántica desde ya. Después, una tarea del planificador quita la clave clásica de la entrada y del Web Key Directory. 0 la quita de inmediato."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "La clase de este servicio para un perfil de actividad posterior al inicio de sesión: lo que se pide a una persona después de iniciar sesión. Nombrada por el PERFIL (`cn=default`, o un perfil con nombre que nombra una aplicación o un grupo)."
@@ -2022,6 +2082,30 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none: solo ML-DSA. classical: después de que un registro ML-DSA falle en el dispositivo, se ofrece un reintento con los algoritmos clásicos (donde la política de llaves de acceso lo permita) — una llave de acceso clásica es mejor que una contraseña, y a quien la tiene se le pide la migración más adelante como a cualquier otra persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y cuyo correo se cifre con una clave clásica —una clave OpenPGP cuya clave de cifrado no es ML-KEM, o un certificado S/MIME cuya clave no es ML-KEM— se le pide, tras iniciar sesión, que registre una poscuántica (pqc-mail-encryption): lo que hoy se cifra con una clave clásica podrá leerse cuando esa clave caiga. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Cuánto tiempo aplaza Omitir la actividad de cifrado del correo para esa persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Contado desde la PRIMERA invitación de la persona a la actividad de cifrado del correo. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que se registre una clave poscuántica. 0 es sin plazo."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Una persona cuyo correo no se cifra en absoluto (stsMailEncryption none o ausente). leave: no se le pide. invite: se le pide que registre una clave poscuántica y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que pase el plazo concedido."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Qué ofrece el paso. either: una clave OpenPGP y un certificado S/MIME, primero el tipo que la persona usa ahora. openpgp: solo una clave OpenPGP según RFC 9980. smime: solo un certificado S/MIME ML-KEM, subido (este dominio no emite ninguno). Un tipo que el dominio no puede aceptar nunca se ofrece, y no se pide nada a nadie donde no se puede ninguno."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Cuántos días se queda la clave OpenPGP clásica de una persona en su entrada y en el Web Key Directory junto a la clave poscuántica que la sustituyó, para que un corresponsal que no pueda usar la nueva siga encontrando la antigua. El correo nuevo de este servicio va a la clave poscuántica desde ya. Después, una tarea del planificador quita la clave clásica de la entrada y del Web Key Directory. 0 la quita de inmediato."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2094,6 +2178,42 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "a una persona que no tiene llave de acceso se le pide registrar una llave de acceso poscuántica, y puede omitirlo hasta que termine el periodo de gracia"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "a una persona cuyo correo se cifra con una clave OpenPGP o un certificado S/MIME clásicos se le pide, tras iniciar sesión, que registre uno poscuántico (ML-KEM)"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "puede registrar una clave OpenPGP o subir un certificado S/MIME"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "puede registrar una clave OpenPGP"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "puede subir un certificado S/MIME"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "a una persona cuyo correo no se cifra no se le pide nada"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "a una persona cuyo correo no se cifra se la invita a registrar una clave poscuántica, y siempre puede omitirlo"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "a una persona cuyo correo no se cifra se le pide que registre una clave poscuántica, y puede omitirlo hasta que termine el periodo de gracia"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "una clave OpenPGP clásica que sustituye una poscuántica se conserva junto a ella, y se publica con ella, durante {{days}} día(s)"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "una clave OpenPGP clásica que sustituye una poscuántica se quita de inmediato"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

@@ -117,7 +117,7 @@ const { log } = helpers;
 interface PolicyField {
   key: string;
   attribute: string;
-  type: 'bool' | 'int' | 'enum';
+  type: 'bool' | 'int' | 'enum' | 'list';
   dflt: boolean | number | string;
   min?: number;
   max?: number;
@@ -125,6 +125,11 @@ interface PolicyField {
   values?: string[];
   label: string;
   what: string;
+  // A row a save may leave out, keeping what the profile stored (#2009:
+  // each activity's block after the passkey migration's).
+  optional?: boolean;
+  // A list row's word for the empty list.
+  empty?: string;
 }
 
 interface DirectoryHooks {
@@ -169,6 +174,13 @@ interface PostLoginProfile {
   method: string;
   attestation: string;
   noPasskeyFallback: string;
+  // #2009 P2: the mail-encryption activity's block.
+  mailEnabled: boolean;
+  mailSnoozeDays: number;
+  mailGraceDays: number;
+  mailNoKey: string;
+  mailPrefer: string;
+  mailKeepClassical: number;
   [field: string]: any;
 }
 
@@ -260,6 +272,24 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'post-quantum passkey, and may always skip it',
   noPasskeyRequire: 'a person holding no passkey is asked to register a ' +
     'post-quantum passkey, and may skip it until the grace period ends',
+  // #2009 P2: the mail-encryption activity's block.
+  mailMigration: 'a person whose mail is encrypted to a classical OpenPGP ' +
+    'key or S/MIME certificate is asked, after signing in, to register a ' +
+    'post-quantum (ML-KEM) one',
+  mailOfferEither: 'they may register an OpenPGP key or upload an S/MIME ' +
+    'certificate',
+  mailOfferOpenpgp: 'they may register an OpenPGP key',
+  mailOfferSmime: 'they may upload an S/MIME certificate',
+  mailNoKeyLeave: 'a person whose mail is not encrypted is not asked',
+  mailNoKeyInvite: 'a person whose mail is not encrypted is invited to ' +
+    'register a post-quantum key, and may always skip it',
+  mailNoKeyRequire: 'a person whose mail is not encrypted is asked to ' +
+    'register a post-quantum key, and may skip it until the grace period ' +
+    'ends',
+  mailKeep: 'a classical OpenPGP key a post-quantum one replaces is kept ' +
+    'beside it, and published with it, for {{days}} day(s)',
+  mailKeepNone: 'a classical OpenPGP key a post-quantum one replaces is ' +
+    'removed at once',
   appliesTo: 'applies where an application or a group names it ' +
     '(appPostLoginPolicy, stsPostLoginPolicy), at precedence ' +
     '{{precedence}}'
@@ -869,6 +899,26 @@ class PostLoginPolicy {
     ].concat(rules.noPasskey !== 'leave' &&
              rules.noPasskeyFallback === 'classical'
       ? [SENTENCES.fallbackClassical] : []);
+    // THE MAIL-ENCRYPTION BLOCK (#2009 P2), after the passkey migration's:
+    // said only where it is on, so a profile that never turned it on reads
+    // as it always did.
+    if (rules.mailEnabled === true) {
+      out.push(SENTENCES.mailMigration,
+        rules.mailPrefer === 'openpgp' ? SENTENCES.mailOfferOpenpgp
+          : (rules.mailPrefer === 'smime' ? SENTENCES.mailOfferSmime
+                                          : SENTENCES.mailOfferEither),
+        fill(SENTENCES.snooze, { days: String(rules.mailSnoozeDays) }),
+        Number(rules.mailGraceDays) > 0
+          ? fill(SENTENCES.grace, { days: String(rules.mailGraceDays) })
+          : SENTENCES.noGrace,
+        rules.mailNoKey === 'invite' ? SENTENCES.mailNoKeyInvite
+          : (rules.mailNoKey === 'require' ? SENTENCES.mailNoKeyRequire
+                                           : SENTENCES.mailNoKeyLeave),
+        Number(rules.mailKeepClassical) > 0
+          ? fill(SENTENCES.mailKeep,
+                 { days: String(rules.mailKeepClassical) })
+          : SENTENCES.mailKeepNone);
+    }
     if (rules.name !== DEFAULT_PROFILE) {
       out.unshift(fill(SENTENCES.appliesTo, {
         precedence: String(rules.precedence) }));
@@ -912,6 +962,12 @@ class PostLoginPolicy {
       if (raw === undefined && field.type === 'bool' &&
           body.form === 'console') {
         raw = 'false';
+      }
+      if (raw === undefined && field.optional) {
+        // LEFT OUT (#2009): the row keeps what the profile stored, at the
+        // save. A client written before the block existed sends none of
+        // it, and must not be refused for it.
+        return;
       }
       if (raw === undefined) {
         problems.push('`' + field.key + '` (' + field.label + ') is ' +
@@ -981,8 +1037,27 @@ class PostLoginPolicy {
       objectClass: ['top', 'stsPostLoginPolicy'],
       description: String((given && given.description) || '').slice(0, 1024)
     };
+    // An optional row LEFT OUT keeps what this realm's own entry stored
+    // (#2009, the passkey policy's #907 rule): the write replaces the whole
+    // entry, so writing nothing for it would switch a block off that a
+    // client written before the block existed never mentioned.
+    const own = this.entryIn(which);
+    const storedValue = function (attribute: string): unknown {
+      const held = (own && own.attributes) || {};
+      const key = Object.keys(held).filter(function (k) {
+        return k.toLowerCase() === attribute.toLowerCase();
+      })[0];
+      return key === undefined ? undefined : held[key];
+    };
     FIELDS.forEach(function (field) {
       const value = checked.values[field.key];
+      if (value === undefined && field.optional) {
+        const kept = storedValue(field.attribute);
+        if (kept !== undefined) {
+          attributes[field.attribute] = kept;
+        }
+        return;
+      }
       attributes[field.attribute] = field.type === 'bool'
         ? (value ? 'TRUE' : 'FALSE') : String(value);
     });

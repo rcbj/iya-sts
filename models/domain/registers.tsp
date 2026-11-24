@@ -685,6 +685,25 @@ model PostLoginPolicy {
   @fromAttr(#{attr: "stsPostLoginNoPasskeyFallback"})
   `noPasskeyFallback`?: string;
 
+  // #2009 P2: the mail-encryption activity's block.
+  @fromAttr(#{attr: "stsPostLoginMailEnabled"})
+  `mailEnabled`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailSnoozeDays"})
+  `mailSnoozeDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailGraceDays"})
+  `mailGraceDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailNoKey"})
+  `mailNoKey`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailPrefer"})
+  `mailPrefer`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailKeepClassical"})
+  `mailKeepClassical`?: string;
+
   @fromAttr(#{attr: "stsPostLoginPrecedence"})
   `precedence`?: integer;
 
