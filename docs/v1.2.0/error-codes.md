@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6076** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6078** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 17
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
-* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 33
+* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 35
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
@@ -5103,7 +5103,7 @@ Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, 
 | `STS-YUBIOTP-0010` | A YubiKey OTP credential could not be written to the directory (#1955 P5). | — |
 | `STS-YUBIOTP-0011` | No credential store is installed, so a YubiKey OTP credential cannot be kept (#1955 P5). | — |
 | `STS-YUBIOTP-0012` | YK-VAL was asked while yubiotp.ykval is off, so the endpoint answered OPERATION_NOT_ALLOWED (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0013` | A YK-VAL verify request omitted id, otp, nonce or h (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0013` | A YK-VAL verify request omitted its nonce or its id, or a known client's request omitted h (#1955 P5, #2094). | YK-VAL 2.0 |
 | `STS-YUBIOTP-0014` | A YK-VAL verify request's HMAC-SHA1 did not match the client key (#1955 P5). | YK-VAL 2.0 |
 | `STS-YUBIOTP-0015` | A YK-VAL verify request named a client id this realm has not been given (#1955 P5). | YK-VAL 2.0 |
 | `STS-YUBIOTP-0016` | A YK-VAL nonce was reused inside five minutes (#1955 P5). | YK-VAL 2.0 |
@@ -5123,6 +5123,8 @@ Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, 
 | `STS-YUBIOTP-0030` | An operator asked to clear a YubiKey OTP for a person who holds none (#1955 P5). | HTTP 400 (API) or a 303 with error= |
 | `STS-YUBIOTP-0031` | A YK-VAL nonce could not be proved unused: the cluster claim it is spent under had no store to ask, so the request was not checked (#1955). | YK-VAL 2.0 BACKEND_ERROR |
 | `STS-YUBIOTP-0032` | A YK-VAL verify named a YubiKey OTP of a disabled account; it is answered as a bad OTP and nothing is spent (#1955). | YK-VAL 2.0 BAD_OTP |
+| `STS-YUBIOTP-0033` | A YK-VAL verify request's otp is not in a YubiKey OTP's format (32 to 48 modhex characters); it is BAD_OTP before any client is looked up, the reference server's order (#2094). | YK-VAL 2.0 BAD_OTP |
+| `STS-YUBIOTP-0034` | A YK-VAL verify request's nonce is not 16 to 40 letters and digits; it is MISSING_PARAMETER before any client is looked up, the reference server's order (#2094). | YK-VAL 2.0 MISSING_PARAMETER |
 | `STS-YUBIOTP-0035` | The imported YubiKey OTP inventory could not be listed for Directory → Hardware tokens or GET /admin-api/hardware-tokens/yubiotp: the store or the person's entry threw (#2071). | HTTP 500 |
 
 ## STS-PIV

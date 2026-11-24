@@ -24,7 +24,9 @@
 //   4. YK-VAL 2.0 through `ykval.verify()`: off, the status is
 //      OPERATION_NOT_ALLOWED and unsigned. On, a signed OTP is OK, the
 //      same OTP is REPLAYED_OTP, and a bad HMAC is BAD_SIGNATURE and
-//      unsigned.
+//      unsigned. The refusals in the reference server's order (#2094):
+//      no nonce, then a malformed OTP (BAD_OTP, before any client is
+//      looked up), no id, a malformed nonce, an unknown client, no h.
 //
 // Every secret here is a published test vector or one generated in the
 // run. The programming line is never written to the log or to an
@@ -257,6 +259,40 @@ async function checkYkval(t, enrolled) {
           bad.code === 'STS-YUBIOTP-0014' && bad.key === '',
           'a bad HMAC is BAD_SIGNATURE and unsigned',
           bad.status + ' ' + bad.code + ' key=' + (bad.key ? 'set' : ''));
+  // #2094: THE REFERENCE SERVER'S ORDER. The format of the OTP is judged
+  // before any client is looked up, and h is asked for after the lookup.
+  const stranger = id === '999999' ? '999998' : '999999';
+  const unsignedOtp = yubiotp.otpFor(secret, 9, 9);
+  const order = [
+    [{ id: stranger, otp: 'x', nonce: nonce() }, 'BAD_OTP',
+     'STS-YUBIOTP-0033', false,
+     'an unknown client with a malformed OTP and no h is BAD_OTP, unsigned'],
+    [{ id: stranger, otp: unsignedOtp, nonce: nonce() }, 'NO_SUCH_CLIENT',
+     'STS-YUBIOTP-0015', false,
+     'an unknown client with a well-formed OTP and no h is NO_SUCH_CLIENT'],
+    [{ otp: 'x', nonce: nonce() }, 'BAD_OTP', 'STS-YUBIOTP-0033', false,
+     'a malformed OTP is judged before a missing id'],
+    [{ id: stranger, otp: 'x' }, 'MISSING_PARAMETER', 'STS-YUBIOTP-0013',
+     false, 'a missing nonce is judged before a malformed OTP'],
+    [{ id: id, otp: 'x', nonce: nonce() }, 'BAD_OTP', 'STS-YUBIOTP-0033',
+     true, 'a known client\'s malformed OTP is BAD_OTP, signed'],
+    [{ id: id, otp: unsignedOtp, nonce: 'short' }, 'MISSING_PARAMETER',
+     'STS-YUBIOTP-0034', true,
+     'a known client\'s malformed nonce is MISSING_PARAMETER, signed'],
+    [{ id: stranger, otp: unsignedOtp, nonce: 'short' },
+     'MISSING_PARAMETER', 'STS-YUBIOTP-0034', false,
+     'a malformed nonce is judged before the client lookup'],
+    [{ id: id, otp: unsignedOtp, nonce: nonce() }, 'MISSING_PARAMETER',
+     'STS-YUBIOTP-0013', true,
+     'a known client\'s request with no h is MISSING_PARAMETER, signed']
+  ];
+  for (const row of order) {
+    const answer = await ykval.verify(row[0]);
+    t.check(answer.status === row[1] && answer.code === row[2] &&
+            (answer.key === added.key) === row[3],
+            row[4], answer.status + ' ' + answer.code + ' key=' +
+            (answer.key ? 'set' : ''));
+  }
   // THE #1955 REVIEW: the nonce spent for the cluster, a disabled account,
   // and an audit row for every verify.
   const resent = await ykval.verify(params);

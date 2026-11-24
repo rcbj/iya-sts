@@ -46930,7 +46930,7 @@ op `getHardwareTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `paramet
   #{
     `operationId`:"reportHardwareTokenLost",
     `summary`:"Report a hardware token lost (#1955)",
-    `description`:"Marks the token lost, then retires every credential on it by its kind: a passkey is removed from its holder's entry (passing the last-way-in guard) and the sessions it signed in end, a certificate is revoked for keyCompromise; a CAEP credential-change goes for each. `retired` and `notRetired` list them; a credential not retired is still live. 404 for no such token, 409 for one already lost. Acting on a Security Administrator's token needs admin:security.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `description`:"Marks the token lost, then retires every credential on it by its kind: a passkey is removed from its holder's entry (passing the last-way-in guard) and the sessions it signed in end, a certificate is revoked for keyCompromise; a CAEP credential-change goes for each. `retired` and `notRetired` list them; a credential not retired is still live. The token is named by its `<vendor>/<serial>` or by a credential on it: an OATH token by the `key` the PSKC import answered. 404 for no such token, 409 for one already lost. Acting on a Security Administrator's token needs admin:security.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -46958,7 +46958,7 @@ op `getHardwareTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `paramet
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `reportHardwareTokenLost`(@js(#{`examples`:#[#{`key`:"yubico/12345678"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The token, `<vendor>/<serial>`.",`maxLength`:200}) `key`: string
+    @js(#{`description`:"The token: its `<vendor>/<serial>`, or the `key` the PSKC import answered for an OATH token on it (`<vendor>/<serial>/<key id>`).",`maxLength`:200}) `key`: string
   },
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;

@@ -211,7 +211,11 @@ Tokens recorded before 1.2.0 are copied onto their holders' entries by the
 
 The person, from the portal, or an administrator, from the console or with
 `POST /admin-api/hardware-tokens/lost` and `{ "key": "<vendor>/<serial>" }`,
-can report a token lost. The service then does all of the following at once:
+can report a token lost. The `key` may also be the one a
+[PSKC import](one-time-code-tokens.md) answered for an OATH token,
+`<vendor>/<serial>/<key id>`, once that token is assigned; it names the same
+token. On the portal, `POST /account-api/tokens` with `action` `lost` takes
+either key the same way. The service then does all of the following at once:
 
 1. The token is marked **lost**. From that moment none of its credentials
    counts as hardware evidence.

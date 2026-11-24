@@ -40,6 +40,20 @@ An assigned YubiKey is on its holder's entry, in `stsYubiOtpToken`: one JSON val
 
 `GET` and `POST /wsapi/2.0/verify` speak [YubiKey Validation Protocol 2.0](https://developers.yubico.com/yubikey-val/Validation_Protocol_V2.0.html). The route is always registered. While `yubiotp.ykval` is off it answers `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the HMAC-SHA1 are checked in every mode, including development. A nonce is spent for the whole cluster, by a compare-and-set in the store, and remembered for five minutes, so a request replayed to another node is `REPLAYED_REQUEST` there too. `sl` in an `OK` answer is `100`. An OTP of a **disabled account** is answered `BAD_OTP` (`STS-YUBIOTP-0032`) and nothing is spent: a PAM or RADIUS caller does not let in somebody this service refuses at its own sign-in. **Every verify is on the audit log** (`ykval.verify`): the client id, the OTP's public identity (never the OTP) and the status, with the error code of a refusal. The use counter is read as fifteen bits, as Yubico's own validation server reads it: the top bit is a flag.
 
+A refusal is decided in the order of Yubico's own validation server (`yubikey-val`), since the protocol names no order:
+
+| Check | Status |
+|---|---|
+| no `nonce` | `MISSING_PARAMETER` |
+| `otp` not 32 to 48 modhex characters | `BAD_OTP` (`STS-YUBIOTP-0033`) |
+| no `id` | `MISSING_PARAMETER` |
+| `nonce` not 16 to 40 letters and digits | `MISSING_PARAMETER` (`STS-YUBIOTP-0034`) |
+| no client with that `id` | `NO_SUCH_CLIENT`, unsigned |
+| no `h` | `MISSING_PARAMETER` |
+| `h` does not match | `BAD_SIGNATURE`, unsigned |
+
+So an unknown client with a malformed OTP is `BAD_OTP`, and an unknown client with a well-formed OTP is `NO_SUCH_CLIENT` whether it signed the request or not. The protocol makes `h` optional; this service requires it from every client. A refusal before the client lookup is signed when the `id` names a client, and unsigned otherwise.
+
 `ykval-client-add` creates a client. The id is 1 to 16 digits. The HMAC key is in the answer once and is not logged.
 
 ### pam_yubico

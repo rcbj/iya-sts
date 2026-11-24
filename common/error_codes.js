@@ -23618,8 +23618,8 @@ const CODES = [
       'endpoint answered OPERATION_NOT_ALLOWED (#1955 P5).',
     spec: 'YK-VAL 2.0' },
   { code: 'STS-YUBIOTP-0013',
-    summary: 'A YK-VAL verify request omitted id, otp, nonce or h ' +
-      '(#1955 P5).',
+    summary: 'A YK-VAL verify request omitted its nonce or its id, or a ' +
+      'known client\'s request omitted h (#1955 P5, #2094).',
     spec: 'YK-VAL 2.0' },
   { code: 'STS-YUBIOTP-0014',
     summary: 'A YK-VAL verify request\'s HMAC-SHA1 did not match the ' +
@@ -23700,6 +23700,16 @@ const CODES = [
     summary: 'A YK-VAL verify named a YubiKey OTP of a disabled account; ' +
       'it is answered as a bad OTP and nothing is spent (#1955).',
     spec: 'YK-VAL 2.0 BAD_OTP' },
+  { code: 'STS-YUBIOTP-0033',
+    summary: 'A YK-VAL verify request\'s otp is not in a YubiKey OTP\'s ' +
+      'format (32 to 48 modhex characters); it is BAD_OTP before any ' +
+      'client is looked up, the reference server\'s order (#2094).',
+    spec: 'YK-VAL 2.0 BAD_OTP' },
+  { code: 'STS-YUBIOTP-0034',
+    summary: 'A YK-VAL verify request\'s nonce is not 16 to 40 letters ' +
+      'and digits; it is MISSING_PARAMETER before any client is looked ' +
+      'up, the reference server\'s order (#2094).',
+    spec: 'YK-VAL 2.0 MISSING_PARAMETER' },
   { code: 'STS-YUBIOTP-0035',
     summary: 'The imported YubiKey OTP inventory could not be listed for ' +
       'Directory → Hardware tokens or GET /admin-api/hardware-tokens/' +
