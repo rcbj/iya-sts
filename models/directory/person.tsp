@@ -66,6 +66,12 @@ model Person {
   userSMIMECertificate?: (string)[];
   @attr(#{kind: "multi", what: "The OpenSSH user certificates the realm's SSH user CA issued the person that are live: one JSON value per certificate, its serial, the certificate itself in OpenSSH text form (absent for one issued before #2050, whose text was never kept), the key's type and fingerprint, its principals, when it expires and which authority signed it (#2050). Public. Written by issuance; removed at revocation, at the lost-key retirement of its key and when it expires, by ssh_user_ca.issued, which is authoritative."})
   stsSshUserCertificate?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The hardware tokens the person holds or holds a credential on, one JSON value per token: its key (vendor/serial), vendor, serial, model, firmware, form factor, whether it is FIPS, its status and loss, the attestation evidence, whether this person is its holder, and their credentials on it (#2051). The master: hardware_tokens.register is its index. A serial comes only from attestation. Never a secret."})
+  stsHardwareToken?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The imported OATH tokens assigned to the person, one JSON value each: the inventory key, kind (hotp or totp), vendor, serial, model, key id, status and who assigned it when and how (#2051). The master: oath_tokens.inventory is its index. Never the secret, which is the person's HOTP or TOTP credential."})
+  stsOathToken?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The imported YubiKey OTP tokens assigned to the person, one JSON value each: serial, public identity, credential id, status, and when it was imported and assigned (#2051). The master: yubiotp.inventory and yubiotp.publicIds are its indexes. Never the AES key, which is stsYubiOtpCredential."})
+  stsYubiOtpToken?: (DirectoryJson)[];
   @attr(#{what: "The person's job title, released as the job_title claim and mapped by SCIM."})
   title?: (string)[];
   @attr(#{what: "The person's relationship to the organisation, such as employee or contractor, released as the employee_type claim and mapped by SCIM."})

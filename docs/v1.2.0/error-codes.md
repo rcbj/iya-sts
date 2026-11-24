@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6062** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6065** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
-* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
+* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 16
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
@@ -5031,6 +5031,9 @@ Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/
 | `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
 | `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
 | `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
+| `STS-HWTOKEN-0014` | The directory offered the token entries library no locate(), locateAsync(), write() or holdersAsync(), so nothing was installed: no hardware, OATH or YubiKey OTP token is written onto its holder's entry until one is, and every index write is marked pending (#2051). | none — logged |
+| `STS-HWTOKEN-0015` | A token's value could not be written onto its holder's entry (stsHardwareToken, stsOathToken or stsYubiOtpToken); the index row is marked pending and the hardware-tokens.entries job writes it again (#2051). | none — logged |
+| `STS-HWTOKEN-0016` | The hardware-tokens.entries job, or the manual rebuild of the token indexes from the entries, could not read a store or the directory; nothing more was done this run (#2051). | none — logged |
 
 ## STS-OATH
 

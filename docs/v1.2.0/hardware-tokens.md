@@ -93,6 +93,40 @@ under that serial.
   the unsearched list shows the newest thousand tokens and says so. The page
   draws from `GET /admin-api/hardware-tokens`.
 
+## On the person's directory entry
+
+**The person's entry is the master record of the tokens they hold.**
+Every token is on its holder's entry, one JSON value per token, and an
+LDAP read of the person returns it:
+
+| Attribute | What each value holds |
+|---|---|
+| `stsHardwareToken` | the token's key (`vendor/serial`), vendor, serial, model, firmware, form factor, status and loss, the attestation evidence, whether this person is its holder, and their credentials on it |
+| `stsOathToken` | an imported OATH token assigned to them: its key, kind, vendor, serial, model, key id, status and who assigned it when. Never the secret, which is their HOTP or authenticator credential |
+| `stsYubiOtpToken` | an imported YubiKey OTP assigned to them: serial, public identity, status, when it was imported and assigned. Never the AES key |
+
+The hardware token register and the OATH and YubiKey OTP inventories are
+**indexes** derived from those values. They answer the questions that are
+not one person's: which token holds the credential at a sign-in, a serial
+typed at a claim, a YubiKey's public identity at YK-VAL, the console's
+lists, and a lost report. A change is written to the entry first and to
+the index after. An index row whose entry could not be written is written
+again by the `hardware-tokens.entries` scheduler job, every ten minutes.
+
+**Rebuilding an index.** Where an index disagrees with the entries — after
+a restore, say — run the manual job `hardware-tokens.rebuild-index` from
+**Monitoring → Scheduler**. It rewrites the register's rows, the inventories'
+assigned and retired rows and the YubiKey public identities from the
+entries. The job walks the realm's people, which is why it never runs on a
+schedule.
+
+An **unassigned** imported token belongs to nobody yet. Its sealed secret
+stays in the inventory until it is assigned or claimed, and from then on
+the person's entry is the master.
+
+Tokens recorded before 1.2.0 are copied onto their holders' entries by the
+`hardware-tokens.entries` job's first run.
+
 ## Reporting a token lost
 
 The person, from the portal, or an administrator, from the console or with

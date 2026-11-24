@@ -101,6 +101,10 @@ const inventory = realms.map({
     if (row.status) {
       out.push('st:' + String(row.status));
     }
+    // A row whose holder's entry was not written (#2051).
+    if (row.entrySync === 'pending') {
+      out.push('e:pending');
+    }
     return out;
   },
   sortBy: function (row: Json): number | null {
@@ -624,7 +628,7 @@ class OathTokens {
       status: 'assigned', holder: holder, secret: '', sealed: false,
       assignedAt: this.nowIso(), assignedBy: OathTokens.text(s.actor),
       assignedVia: OathTokens.text(s.via) });
-    inventory.set(key, next);
+    this.put(key, next);
     this.recordAudit('oath-token.assign', s.actor || username, username,
       'OATH token ' + key + ' was ' + (s.via === 'claim' ? 'claimed by '
                                                           : 'assigned to ') +
@@ -755,7 +759,7 @@ class OathTokens {
     }
     const row = await this.rowOf(key);
     if (row) {
-      inventory.set(key, Object.assign({}, row, {
+      this.put(key, Object.assign({}, row, {
         status: 'retired', secret: '', sealed: false,
         retiredAt: this.nowIso() }));
     }
@@ -872,6 +876,152 @@ class OathTokens {
     inventory.clear();
     log.debug("Leaving OathTokens.forgetForTests().");
   }
+
+  // -------------------------------------------------------------------------
+  // AN ASSIGNED TOKEN ON ITS HOLDER'S ENTRY (#2051, `common/token_entries.ts`):
+  // the entry's `stsOathToken` is the master once the token is assigned, and
+  // this row its index. An unassigned row has no person, so it is the
+  // staging inventory and holds the sealed secret until then.
+  // -------------------------------------------------------------------------
+
+  /**
+   * A row's value of `stsOathToken`: what the inventory knows of the token,
+   * never its secret.
+   *
+   * @param key - the inventory key
+   * @param row - the inventory row
+   * @returns the value
+   */
+  static entryValueOf(key: string, row: Json): Json {
+    helpers.log.debug("Entering OathTokens.entryValueOf().");
+    const r = row || {};
+    const value: Json = {
+      key: String(key), kind: String(r.kind || ''),
+      vendor: String(r.vendor || ''), serial: String(r.serial || ''),
+      model: String(r.model || ''), keyId: String(r.keyId || ''),
+      issuer: String(r.issuer || ''), status: String(r.status || ''),
+      importedAt: String(r.importedAt || ''),
+      assignedAt: String(r.assignedAt || ''),
+      assignedBy: String(r.assignedBy || ''),
+      assignedVia: String(r.assignedVia || ''),
+      retiredAt: String(r.retiredAt || '')
+    };
+    helpers.log.debug("Leaving OathTokens.entryValueOf().");
+    return value;
+  }
+
+  // THE ENTRY FIRST, THEN THE INDEX (above): a row with a holder is
+  // written onto their entry, and marked pending where it could not be.
+  private put(key: string, row: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering OathTokens.put().");
+    const entries = require('./token_entries');
+    const state = row.holder
+      ? entries.project('urn:uuid:' + String(row.holder),
+                        entries.ATTRIBUTES.oath, key,
+                        OathTokens.entryValueOf(key, row))
+      : 'done';
+    const next = Object.assign({}, row);
+    if (state === 'failed') {
+      next.entrySync = 'pending';
+    } else {
+      delete next.entrySync;
+    }
+    inventory.set(key, next);
+    log.debug("Leaving OathTokens.put(). " + state);
+  }
+
+  /**
+   * The entries job's part: every pending row written again, and with
+   * `backfill` every row with a holder, in the ambient realm.
+   *
+   * @param opts - `{ backfill }`
+   * @returns a promise of `{ ok, written, pending }`
+   */
+  async syncEntries(opts?: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OathTokens.syncEntries().");
+    const rows: Json[] = [];
+    if (opts && opts.backfill) {
+      await inventory.scanAsync(function (value: Json, key: unknown) {
+        if (value && value.holder) {
+          rows.push({ key: String(key), value: value });
+        }
+      });
+    } else {
+      rows.push.apply(rows, await inventory.lookupEntriesAsync('e:pending'));
+    }
+    const entries = require('./token_entries');
+    let written = 0;
+    let pending = 0;
+    for (const one of rows) {
+      if (!one || !one.value || !one.value.holder) {
+        continue;
+      }
+      const state = await entries.projectAsync(
+        'urn:uuid:' + String(one.value.holder), entries.ATTRIBUTES.oath,
+        String(one.key), OathTokens.entryValueOf(String(one.key), one.value));
+      const failed = state === 'failed';
+      if (failed) {
+        pending += 1;
+      } else {
+        written += 1;
+      }
+      if (failed !== (one.value.entrySync === 'pending')) {
+        const next = Object.assign({}, one.value);
+        if (failed) {
+          next.entrySync = 'pending';
+        } else {
+          delete next.entrySync;
+        }
+        inventory.set(String(one.key), next);
+      }
+    }
+    log.debug("Leaving OathTokens.syncEntries(). " + written + "/" +
+              pending);
+    return { ok: true, written: written, pending: pending };
+  }
+
+  /**
+   * The inventory's assigned and retired rows rebuilt from the entries,
+   * which are the master; a row the entries name and the inventory lost is
+   * made again, without a secret.
+   *
+   * @returns a promise of `{ ok, rebuilt }`
+   */
+  async rebuildFromEntries(): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OathTokens.rebuildFromEntries().");
+    const entries = require('./token_entries');
+    const holders = await entries.holdersOf(entries.ATTRIBUTES.oath);
+    let rebuilt = 0;
+    for (const person of holders) {
+      const holder = this.holderOf(person.username);
+      for (const value of person.values || []) {
+        const key = String((value && value.key) || '');
+        if (!key || !holder) {
+          continue;
+        }
+        const held = (await this.rowOf(key)) || {};
+        const next = Object.assign({}, held, {
+          key: key, kind: value.kind, vendor: value.vendor,
+          serial: value.serial, model: value.model, keyId: value.keyId,
+          issuer: value.issuer, status: value.status, holder: holder,
+          importedAt: value.importedAt, assignedAt: value.assignedAt,
+          assignedBy: value.assignedBy, assignedVia: value.assignedVia,
+          retiredAt: value.retiredAt, secret: '', sealed: false });
+        delete next.entrySync;
+        const before = Object.assign({}, held);
+        delete before.entrySync;
+        if (entries.stored(before) !== entries.stored(next)) {
+          inventory.set(key, next);
+          rebuilt += 1;
+        }
+      }
+    }
+    log.debug("Leaving OathTokens.rebuildFromEntries(). " + rebuilt);
+    return { ok: true, rebuilt: rebuilt };
+  }
 }
 
 const slot = new InstanceSlot<OathTokens>(
@@ -897,5 +1047,8 @@ export = {
   claim: slot.forward('claim'),
   remove: slot.forward('remove'),
   list: slot.forward('list'),
+  entryValueOf: OathTokens.entryValueOf,
+  syncEntries: slot.forward('syncEntries'),
+  rebuildFromEntries: slot.forward('rebuildFromEntries'),
   forgetForTests: slot.forward('forgetForTests')
 };

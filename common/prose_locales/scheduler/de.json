@@ -143,6 +143,22 @@
     "en": "71471822b228b1b8",
     "text": "Löscht die für die Limits jedes GNAP-Grants geführten laufenden Summen, sobald der Grant beendet ist und kein Token von ihm mehr vorgelegt werden kann (#432)."
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "Hardware-Token auf Einträgen"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "Schreibt die Hardware-, OATH- und YubiKey-OTP-Token, deren Schreiben auf den Eintrag nicht gelang, auf die Einträge ihrer Inhaber und kopiert bei seinem ersten Lauf in einem Prozess jedes Token, das erfasst wurde, bevor Token auf Einträgen geführt wurden, auf seinen Inhaber."
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "Hardware-Token-Indizes neu aufgebaut"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "Schreibt das Hardware-Token-Register und die OATH- und YubiKey-OTP-Bestände aus den Token auf den Einträgen der Personen neu, die maßgeblich sind: von Hand nach einer Wiederherstellung auszuführen oder wenn ein Index einem Eintrag widerspricht."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Wertanzahlen der Datenverschlüsselungsschlüssel"

@@ -23355,6 +23355,24 @@ const CODES = [
       'an unexpected error at /admin-api; the log line has the stack ' +
       '(#1955).',
     spec: 'HTTP 500' },
+  { code: 'STS-HWTOKEN-0014',
+    summary: 'The directory offered the token entries library no ' +
+      'locate(), locateAsync(), write() or holdersAsync(), so nothing was ' +
+      'installed: no hardware, OATH or YubiKey OTP token is written onto ' +
+      'its holder\'s entry until one is, and every index write is marked ' +
+      'pending (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0015',
+    summary: 'A token\'s value could not be written onto its holder\'s ' +
+      'entry (stsHardwareToken, stsOathToken or stsYubiOtpToken); the ' +
+      'index row is marked pending and the hardware-tokens.entries job ' +
+      'writes it again (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0016',
+    summary: 'The hardware-tokens.entries job, or the manual rebuild of ' +
+      'the token indexes from the entries, could not read a store or the ' +
+      'directory; nothing more was done this run (#2051).',
+    spec: 'none — logged' },
   // ===== OATH ==============================================================
   { code: 'STS-OATH-0001',
     summary: 'An HOTP code (or a pair given to resynchronise) was not ' +

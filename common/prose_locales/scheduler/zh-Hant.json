@@ -143,6 +143,22 @@
     "en": "71471822b228b1b8",
     "text": "在 GNAP 授與結束、已無其權杖可被出示時，刪除為該授與限額所保留的累計值（#432）。"
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "項目上的硬體權杖"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "把寫入項目未成功的硬體權杖、OATH 權杖和 YubiKey OTP 權杖寫到其持有人的項目上，並在一個程序中首次執行時，把在權杖保存到項目之前登記的每個權杖複製到其持有人上。"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "重建硬體權杖索引"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "根據人員項目上的權杖（它們是主資料）重寫硬體權杖登記簿以及 OATH 和 YubiKey OTP 清單：在還原之後或某個索引與項目不一致時手動執行。"
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "資料加密金鑰的值計數"

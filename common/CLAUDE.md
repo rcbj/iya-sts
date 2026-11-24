@@ -8404,6 +8404,24 @@ for a serial, a key's certificates, a person's list and the KRL, so what was
 issued before is still listed and revocable; nothing new goes on the row. A
 revocation of a row-held serial refreshes the PKI row first.
 
+**HARDWARE TOKENS ON THE PERSON'S ENTRY, THE MASTER (#2051, rcbj
+2026-11-23).** `token_entries.ts` owns `stsHardwareToken`, `stsOathToken`
+and `stsYubiOtpToken` (OIDs 1001-1003), one JSON value per token, never a
+secret. `hardware_tokens.ts` (`put()`), `oath_tokens.ts` and
+`yubiotp_store.ts` (each `put()`) write the holder's entry FIRST and then
+their store, which is an index; a row whose entry write failed is marked
+`entrySync: 'pending'` (`e:pending`), and `hardware-tokens.entries` writes
+it again — its first run in a process the backfill of every row with a
+holder. On a conflict the entry wins: the manual job
+`hardware-tokens.rebuild-index` rewrites the register, the inventories'
+assigned and retired rows and `yubiotp.publicIds` from the entries'
+holders (`holdersAsync()`, a walk, so manual only). An unassigned import
+has no person and keeps its sealed seed in the inventory until assigned or
+claimed. The directory is a rule 3e slot, `token_entries.setDirectory()`,
+filled by `ldap/ldap_server.js`, for the reason `ssh_issued.ts`'s is.
+STS-HWTOKEN-0014 (a partial slot), 0015 (an entry not written), 0016 (the
+jobs could not read).
+
 **AND ON THE HOLDER'S ENTRY (#2050, rcbj 2026-11-23: S/MIME and SSH user
 certificates are mapped to the person).** A person's live certificates are
 in `stsSshUserCertificate` (OID 1000), one JSON value each with the
