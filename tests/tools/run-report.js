@@ -2478,6 +2478,27 @@ async function main() {
         failures: [], why: why
       });
     }
+    if (job.clientLab && !process.env.CLIENT_LAB_URL) {
+      // A DELIBERATE EXCLUSION, the test peer's (#2056): the client lab is
+      // the real client software and the virtual smart cards this job
+      // drives (tests/client-lab/), and ./run-tests.sh starts it in every
+      // local mode, handing the job CLIENT_LAB_URL. An AWS target, and a
+      // service this runner starts itself, have none.
+      const why = 'no CLIENT_LAB_URL: this run has no client lab ' +
+                  '(tests/client-lab/). ./run-tests.sh brings one up in ' +
+                  'every local mode; a service handed in with ' +
+                  '--service-url — an AWS target — and ./run-coverage.sh ' +
+                  'have none, so in this run the real clients and the ' +
+                  'virtual cards this job drives are unchecked, and what ' +
+                  'stands is the job\'s run in the local modes.';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      });
+    }
     if (job.testPeer && !process.env.STS_TEST_PEER_URL) {
       // A DELIBERATE EXCLUSION, as the two above are (#586): the test peer
       // is the far party of the protocol this job drives — a resource
