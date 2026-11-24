@@ -202,7 +202,8 @@ the certificate against the Root the service publishes on its plain-HTTP
 port 8082 (an image older than 1.2.0 does not have it, which is why the file
 below falls back to an unverified check there). To add a package to an image of your own, build `FROM` this one
 and install it there. A cloud SDK is a build argument instead
-(`STS_CLOUD_SDKS`).
+(`STS_CLOUD_SDKS`), and is installed at the version `sdk/package-lock.json`
+pins.
 
 **The image's JavaScript carries no comments.** The build takes them out of
 every `.js` it ships, compiled from TypeScript or not, because Node keeps the

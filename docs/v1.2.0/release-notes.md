@@ -38,6 +38,18 @@ Until 1.2.0 a report's CSV quoted only per RFC 4180, and the passkey
 export did not catch a leading NUL. A program that reads these files and
 compared a text cell starting with one of those characters byte for byte
 now sees the quote in front. See [Reporting](reporting.md#formats).
+### Changed: the image's optional SDKs come from a lockfile
+
+The Vault client every image carries, and the SDKs the `STS_CLOUD_SDKS` build
+argument adds, were installed with a bare `npm install`: the newest version the
+registry had that day, with install scripts on. They are now pinned in the
+repository's `sdk/` directory, one npm workspace per SDK, and installed from
+`sdk/package-lock.json` with `npm ci --ignore-scripts` (ASVS 5.0.0 15.2.4).
+`STS_CLOUD_SDKS` takes the same package names as before. A name the lockfile
+does not pin, or a `name@version` whose version it does not hold, now fails the
+build instead of installing something unpinned; to move a pin, change it in
+`sdk/packages/` and run `npm install --package-lock-only --ignore-scripts` in
+`sdk/`.
 
 ### Behaviour change: an uploaded sign-in logo loses its metadata
 
