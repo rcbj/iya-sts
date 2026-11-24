@@ -295,6 +295,43 @@ class WebWsTrustProtection {
   }
 
   /**
+   * One box ticked or unticked on one application's page: the map's new
+   * values, with what it held before remembered for the page, by
+   * application and map (`REMEMBERED`), and forgotten once given back.
+   * The click handler reads the map, calls this and draws what it answers.
+   *
+   * @param application - the application the form saves
+   * @param map - the map's attribute
+   * @param part - the box changed, `body` or `header`
+   * @param on - whether it is now ticked
+   * @param values - the map's values now
+   * @returns the map's new values
+   */
+  static boxChanged(application, map, part, on, values): string[] {
+    const key = String(application || '') + ' ' + String(map || '');
+    const done = WebWsTrustProtection.toggled(values, map, part, on,
+      Object.prototype.hasOwnProperty.call(REMEMBERED, key)
+        ? REMEMBERED[key] : null);
+    if (done.remembered) {
+      REMEMBERED[key] = done.remembered;
+    } else {
+      delete REMEMBERED[key];
+    }
+    return done.values;
+  }
+
+  /**
+   * Forgets everything the boxes remembered, as a reload of the page does.
+   *
+   * @returns nothing
+   */
+  static forget(): void {
+    Object.keys(REMEMBERED).forEach(function (key) {
+      delete REMEMBERED[key];
+    });
+  }
+
+  /**
    * The part of `PARTS` and the section within it a field is drawn in.
    *
    * @param attribute - the field's attribute
@@ -730,18 +767,10 @@ class WebWsTrustProtection {
         const form = box.closest ? box.closest('form') : null;
         const owner = form
           ? form.querySelector('input[name="application"]') : null;
-        const key = String((owner && owner.value) || '') + ' ' + map;
-        const done = WebWsTrustProtection.toggled(
-          WebWsTrustProtection.listValues(cell, map), map, part,
-          !!box.checked,
-          Object.prototype.hasOwnProperty.call(REMEMBERED, key)
-            ? REMEMBERED[key] : null);
-        if (done.remembered) {
-          REMEMBERED[key] = done.remembered;
-        } else {
-          delete REMEMBERED[key];
-        }
-        WebWsTrustProtection.redrawList(doc, map, done.values, t);
+        const next = WebWsTrustProtection.boxChanged(
+          String((owner && owner.value) || ''), map, part, !!box.checked,
+          WebWsTrustProtection.listValues(cell, map));
+        WebWsTrustProtection.redrawList(doc, map, next, t);
         WebWsTrustProtection.syncBoxes(doc);
         touched();
       });

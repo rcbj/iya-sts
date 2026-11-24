@@ -37,6 +37,10 @@
 //   I. A box REPLACES its map with the presets ticked, and unticking the
 //      last one gives back what the map held (rcbj, 2026-11-23); with
 //      nothing remembered, unticking takes out only the preset.
+//   J. The same, for EVERY field and box through `boxChanged()` (the step
+//      the click handler takes, memory included): each box alone, both in
+//      either order and out in either order, a Save, an empty field, a
+//      reload, a second round, and one memory per field and application.
 //   H. Adding the dialog's list to a field appends what it lacks, once;
 //      the single recipient expression takes a list of exactly one.
 // ---------------------------------------------------------------------------
@@ -381,6 +385,113 @@ function replacing(t) {
   log.debug("Leaving replacing().");
 }
 
+// EVERY FIELD, EVERY CASE (rcbj, 2026-11-23): each of the four maps, each
+// of its two boxes, through `boxChanged()` — the step the click handler
+// takes, memory included — as an administrator presses them on one page.
+function everyField(t) {
+  log.debug("Entering everyField().");
+  const same = function (a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  };
+  const app = 'every-field-app';
+  const P = WebWsProtection.PREFIXES;
+  const press = function (map, part, on, values) {
+    return Protection.boxChanged(app, map, part, on, values);
+  };
+  t.check(same(MAPS.slice(0).sort(), [
+    'wstrustEncryptRequestElements', 'wstrustEncryptResponseElements',
+    'wstrustSignRequestElements', 'wstrustSignResponseElements']),
+          'J. the four maps a box writes', JSON.stringify(MAPS));
+  MAPS.forEach(function (map) {
+    const body = WebWsProtection.expressions(map, 'body');
+    const header = WebWsProtection.expressions(map, 'header');
+    const both = body.concat(header);
+    const mine = ['/soap12:Envelope/soap12:Header/wsa:To',
+                  "/*[namespace-uri()='" + P.wst + "']"];
+    t.check(body.length > 0 && header.length > 0 &&
+            body.every(function (one) { return header.indexOf(one) < 0; }),
+            'J. ' + map + ': Body and Header are two distinct presets');
+    Protection.forget();
+    ['body', 'header'].forEach(function (part) {
+      const preset = part === 'body' ? body : header;
+      const on = press(map, part, true, mine);
+      t.check(same(on, preset),
+              'J. ' + map + ': ticking ' + part + ' replaces the field ' +
+              'with its preset, appending nothing', JSON.stringify(on));
+      const off = press(map, part, false, on);
+      t.check(same(off, mine),
+              'J. ' + map + ': unticking ' + part + ' restores the ' +
+              'original', JSON.stringify(off));
+    });
+    // BOTH, IN EITHER ORDER, AND OUT IN EITHER ORDER.
+    [['body', 'header'], ['header', 'body']].forEach(function (order) {
+      [true, false].forEach(function (firstOutFirst) {
+        Protection.forget();
+        let held = press(map, order[0], true, mine);
+        held = press(map, order[1], true, held);
+        t.check(same(held, both),
+                'J. ' + map + ': ' + order.join(' then ') + ' holds both ' +
+                'presets, Body first, and nothing else',
+                JSON.stringify(held));
+        const out = firstOutFirst ? order : [order[1], order[0]];
+        held = press(map, out[0], false, held);
+        const left = out[1] === 'body' ? body : header;
+        t.check(same(held, left),
+                'J. ' + map + ': unticking ' + out[0] + ' leaves ' + out[1] +
+                '\'s preset only', JSON.stringify(held));
+        held = press(map, out[1], false, held);
+        t.check(same(held, mine),
+                'J. ' + map + ': unticking ' + out[1] + ' too restores ' +
+                'the original (' + order.join('/') + ' in, ' +
+                out.join('/') + ' out)', JSON.stringify(held));
+      });
+    });
+    // THE MEMORY OUTLIVES A SAVE: a redraw hands the same values back.
+    Protection.forget();
+    const saved = press(map, 'body', true, mine).slice(0);
+    t.check(same(press(map, 'body', false, saved), mine),
+            'J. ' + map + ': the original comes back after the page is ' +
+            'drawn again (a Save)');
+    // AN EMPTY FIELD stays empty.
+    Protection.forget();
+    t.check(same(press(map, 'header', false,
+                       press(map, 'header', true, [])), []),
+            'J. ' + map + ': an empty field ticked and unticked is empty');
+    // A RELOAD forgets: unticking a box the page was drawn with takes out
+    // only its preset.
+    Protection.forget();
+    t.check(same(press(map, 'body', false, body.concat(mine)), mine),
+            'J. ' + map + ': after a reload, unticking takes out only the ' +
+            'preset');
+    // RESTORED, THEN TICKED AGAIN: what the field holds then is what is
+    // remembered, not the earlier original.
+    Protection.forget();
+    let again = press(map, 'body', false, press(map, 'body', true, mine));
+    again = again.concat(['/later']);
+    t.check(same(press(map, 'header', false,
+                       press(map, 'header', true, again)), again),
+            'J. ' + map + ': a second round remembers the field as it is ' +
+            'then');
+  });
+  // ONE FIELD'S MEMORY IS NOT ANOTHER'S, NOR ANOTHER APPLICATION'S.
+  Protection.forget();
+  const a = ['/a'];
+  const b = ['/b'];
+  const encOn = Protection.boxChanged('app-1', MAPS[0], 'body', true, a);
+  const sigOn = Protection.boxChanged('app-1', MAPS[2], 'body', true, b);
+  const otherOn = Protection.boxChanged('app-2', MAPS[0], 'body', true,
+                                        ['/c']);
+  t.check(same(Protection.boxChanged('app-1', MAPS[2], 'body', false, sigOn),
+               b) &&
+          same(Protection.boxChanged('app-1', MAPS[0], 'body', false, encOn),
+               a) &&
+          same(Protection.boxChanged('app-2', MAPS[0], 'body', false,
+                                     otherOn), ['/c']),
+          'J. each field of each application gets back its own original');
+  Protection.forget();
+  log.debug("Leaving everyField().");
+}
+
 function steps(t) {
   log.debug("Entering steps().");
   const P = WebWsProtection.PREFIXES;
@@ -504,6 +615,7 @@ function run(t) {
   sections(t, tr);
   merging(t);
   replacing(t);
+  everyField(t);
   const sample = steps(t);
   tree(t, sample);
   lists(t, tr);
