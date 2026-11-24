@@ -2700,10 +2700,16 @@ class AdminActions {
     const rows = held.certificates.map(function (one) {
       return self.describeStoredCertificate(one.der, one.sha256);
     });
+    // A PERSON'S S/MIME AND SSH USER CERTIFICATES (#2050), listed where the
+    // stored ones are: both are on the entry, and neither signs anybody in.
+    const extra = application ? {}
+      : { smimeCertificates: this.describeSmimeCertificates(held.smime),
+          sshCertificates: this.describeSshCertificates(held.ssh) };
     log.debug("Leaving AdminActions.storedCertificatesFor(). " +
               rows.length + ".");
     return Object.assign(application ? { ok: true, application: name }
                                      : { ok: true, user: name },
+      extra,
       { dn: held.dn, certificates: rows,
         rule: 'A certificate from an outside certificate authority ' +
               (application ? 'authenticates this application'
@@ -2711,6 +2717,56 @@ class AdminActions {
               ' only while it is stored here, byte for byte, and on no ' +
               'other entry of the realm. A renewed certificate is stored ' +
               'again.' });
+  }
+
+  // A person's S/MIME certificates (#2050), each value as stored: base64
+  // DER or PEM, described as a stored one is; a value that holds no
+  // certificate is listed unreadable rather than left out.
+  private describeSmimeCertificates(values) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.describeSmimeCertificates().");
+    const self = this;
+    const codec = require('../persistence/directory_codec');
+    const out = [].concat(values || []).map(function (value) {
+      const der = codec.certificateDerOf(String(value));
+      return der
+        ? self.describeStoredCertificate(der,
+            stsCrypto.digest('sha256', der, 'hex'))
+        : { sha256: '', subject: '', issuer: '', serialNumber: '',
+            notBefore: '', notAfter: '', expired: false, readable: false };
+    });
+    log.debug("Leaving AdminActions.describeSmimeCertificates(). " +
+              out.length + ".");
+    return out;
+  }
+
+  // A person's live SSH user certificates (#2050), as their entry carries
+  // them (`common/ssh_issued.ts`); a value that module did not write is
+  // left out, since the register drops it at the next reconcile.
+  private describeSshCertificates(values) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.describeSshCertificates().");
+    const sshIssued = require('../common/ssh_issued');
+    const out = [];
+    [].concat(values || []).forEach(function (value) {
+      const read = sshIssued.readEntryValue(value);
+      if (read) {
+        out.push({
+          serialHex: String(read.serialHex),
+          keyType: String(read.keyType || ''),
+          keyFingerprint: String(read.keyFingerprint || ''),
+          principals: Array.isArray(read.principals)
+            ? read.principals.map(String) : [],
+          issuedAt: String(read.issuedAt || ''),
+          notAfter: String(read.notAfter || ''),
+          authority: String(read.authority || 'classical'),
+          certificate: String(read.certificate || '')
+        });
+      }
+    });
+    log.debug("Leaving AdminActions.describeSshCertificates(). " +
+              out.length + ".");
+    return out;
   }
 
   // One stored certificate, described from its DER.

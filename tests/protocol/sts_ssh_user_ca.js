@@ -882,6 +882,20 @@ async function reviewTest() {
     }), theirs.text.slice(0, 300));
   });
 
+  log.info("=== g2. the certificate on the person's entry (#2050) ===");
+  const onEntry = await send(rb + "/admin-api/users/certificates?user=" +
+                             encodeURIComponent(R_OWNER));
+  check("g2. the issued certificate is on the person's entry, in OpenSSH " +
+        "text form, as GET /admin-api/users/certificates lists it",
+        function () {
+    assert.strictEqual(onEntry.status, 200, onEntry.raw.slice(0, 300));
+    const held = (onEntry.body.sshCertificates || []).filter(function (one) {
+      return one.serialHex === issued.json.serialHex;
+    })[0];
+    assert.ok(held, onEntry.raw.slice(0, 300));
+    assert.strictEqual(held.certificate, issued.json.certificate);
+  });
+
   log.info("=== i. the administrator's list and revoke ===");
   const adminList = await send(rb + "/admin-api/hardware-tokens/" +
     "ssh-certificates?username=" + encodeURIComponent(R_OWNER));
@@ -891,6 +905,8 @@ async function reviewTest() {
     "/admin-api/hardware-tokens/revoke-ssh",
     { username: R_OWNER, serial: issued.json.serialHex });
   const after = await owner.api("GET", "/account-api/ssh/certificates");
+  const offEntry = await send(rb + "/admin-api/users/certificates?user=" +
+                              encodeURIComponent(R_OWNER));
   const krl = await getBytes(rb + "/pki/ssh-user-krl/" + R_REALM);
   check("i. an administrator lists the person's certificates, cannot " +
         "revoke one under another person's name, and revokes it under " +
@@ -912,6 +928,11 @@ async function reviewTest() {
         return n === serial;
       });
     }));
+    // OFF THE ENTRY ONCE REVOKED (#2050), while the KRL lists it.
+    assert.strictEqual(offEntry.status, 200, offEntry.raw.slice(0, 300));
+    assert.ok(!(offEntry.body.sshCertificates || []).some(function (one) {
+      return one.serialHex === issued.json.serialHex;
+    }), offEntry.raw.slice(0, 300));
   });
 
   log.info("=== j. the ssh:certificate scope ===");

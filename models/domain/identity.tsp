@@ -198,6 +198,15 @@ model Credential {
   @fromAttr(#{attr: "userCertificate"})
   `userCertificate`?: string[];
 
+  // #2050: the person's S/MIME certificates (RFC 2798), under either RFC
+  // 4522 spelling, and the live SSH user certificates the realm's SSH user
+  // CA issued them, one JSON value each.
+  @fromAttr(#{attr: "userSMIMECertificate"})
+  `smimeCertificate`?: string[];
+
+  @fromAttr(#{attr: "stsSshUserCertificate"})
+  `sshUserCertificate`?: string[];
+
   @fromAttr(#{attr: "stsKrb5KeyInfo"})
   `krb5KeyInfo`?: string;
 

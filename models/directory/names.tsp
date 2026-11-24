@@ -338,6 +338,12 @@ namespace IyaSts.Directory;
   // HOW MAIL TO THE PERSON IS ENCRYPTED (#1955 P6): `none`, `openpgp` or
   // `smime`, chosen on the portal. `common/openpgp_keys.ts`.
   "stsMailEncryption",
+  // A PERSON'S LIVE SSH USER CERTIFICATES (#2050, rcbj 2026-11-23): what the
+  // realm's SSH user CA issued them, one JSON value per certificate, on the
+  // entry as `userCertificate` and `userSMIMECertificate` are. The entry is
+  // the master and the CA's register (`ssh_user_ca.issued`) its index, the
+  // KRL's source: removing a value revokes it. `common/ssh_issued.ts`.
+  "stsSshUserCertificate",
   // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
   // person, that every passkey they register is created under and that a
   // discoverable credential hands back to say whose it is. Not a secret —

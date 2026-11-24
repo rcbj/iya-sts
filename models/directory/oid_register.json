@@ -654,6 +654,7 @@
   "stsPasswordRotatedAt": 624,
   "stsPepApplication": 966,
   "stsPivCardUuid": 790,
+  "stsSshUserCertificate": 1000,
   "stsPostLoginActivity": 625,
   "stsPostLoginAttestation": 626,
   "stsPostLoginEnabled": 627,

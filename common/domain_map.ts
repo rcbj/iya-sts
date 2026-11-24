@@ -72,6 +72,14 @@ class DomainMap {
   /**
    * An attribute's values, whatever case the directory answered in.
    *
+   * **AND UNDER ITS RFC 4522 `;binary` SPELLING** (#2050): the transfer
+   * option is not part of the attribute type, and an LDAP client writing a
+   * certificate (`userSMIMECertificate;binary`) leaves it under that name.
+   * The `;binary` values come first and the plain ones after, the order the
+   * store's own S/MIME read (`ldap_server.js`'s OpenPGP `locate()`) has
+   * always handed them over in, so the first that can receive mail is the
+   * same one.
+   *
    * @param attributes - the entry's attributes
    * @param name - the attribute
    * @returns its values, empty when there are none
@@ -80,11 +88,21 @@ class DomainMap {
       name: string): string[] {
     log.debug("Entering DomainMap.valuesOf().");
     const wanted = name.toLowerCase();
-    const key = Object.keys(attributes || {}).find(function (one) {
+    const keys = Object.keys(attributes || {});
+    const plain = keys.find(function (one) {
       return one.toLowerCase() === wanted;
     });
-    const held = key === undefined ? [] : attributes[key];
-    const values = (Array.isArray(held) ? held : [held])
+    const binary = keys.find(function (one) {
+      return one.toLowerCase() === wanted + ';binary';
+    });
+    const held: unknown[] = [];
+    [binary, plain].forEach(function (key) {
+      if (key !== undefined) {
+        const one = attributes[key];
+        Array.prototype.push.apply(held, Array.isArray(one) ? one : [one]);
+      }
+    });
+    const values = held
       .filter(function (one) {
         return one !== undefined && one !== null;
       }).map(String);

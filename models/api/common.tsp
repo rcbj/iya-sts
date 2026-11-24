@@ -1836,7 +1836,20 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithIdClientRequestingPartyEtc5 { `id`?: string; `client`?: string; `requestingParty`?: string; `permissions`?: (WithResourceIdResourceScopes)[]; `expiresAt`?: numeric }
 
-@hoisted model WithOkErrorsUserEtc6 { `ok`?: boolean; `errors`?: (string)[]; `user`?: string; `dn`?: string; `certificates`?: (WithSha256SubjectIssuerEtc8)[]; `rule`?: string }
+@hoisted model WithOkErrorsUserEtc6 { `ok`?: boolean; `errors`?: (string)[]; `user`?: string; `dn`?: string; `certificates`?: (WithSha256SubjectIssuerEtc8)[]; `smimeCertificates`?: (WithSha256SubjectIssuerEtc8)[]; `sshCertificates`?: (PersonSshCertificateOnEntry)[]; `rule`?: string }
+
+// #2050: one live SSH user certificate as its holder's entry carries it
+// (`stsSshUserCertificate`, `common/ssh_issued.ts`).
+@hoisted model PersonSshCertificateOnEntry {
+  @js(#{`description`:"The serial, lower-case hex."}) `serialHex`: string;
+  @js(#{`description`:"The certified key's OpenSSH type."}) `keyType`: string;
+  @js(#{`description`:"The certified key's SHA256 fingerprint."}) `keyFingerprint`: string;
+  `principals`: string[];
+  `issuedAt`: string;
+  `notAfter`: string;
+  @js(#{`description`:"`classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed."}) `authority`: string;
+  @js(#{`description`:"The certificate in OpenSSH text form; empty for one issued before #2050, whose text was never kept."}) `certificate`: string
+}
 
 @hoisted model WithIdFormatNameEtc6 { `id`?: string; `format`?: string; `name`?: string; `issuerDid`?: boolean; `signingAlgs`?: (WithAlgWhatSpec)[]; `defaultSigningAlg`?: string }
 

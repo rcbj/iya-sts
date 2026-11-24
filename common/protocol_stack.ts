@@ -1404,6 +1404,9 @@ class ProtocolStack {
     // not require the scheduler; this is where the scheduler is in hand.
     require('./yubiotp_store').installScheduler(jobScheduler);
     require('./ssh_user_ca').installScheduler(jobScheduler);
+    // #2050: the SSH user certificates on their holders' entries, kept in
+    // step with the register (`ssh-user-ca.entries`), for the same reason.
+    require('./ssh_issued').installScheduler(jobScheduler);
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);

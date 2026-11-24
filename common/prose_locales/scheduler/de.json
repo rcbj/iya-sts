@@ -663,6 +663,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Pausiert, deaktiviert oder löscht einen Stream, dessen Receiver seit ssf.inactivityTimeoutS inaktiv ist (SSF 1.0 section 8.1.1), kündigt eine Pause oder Deaktivierung zuerst mit einem stream-updated-Ereignis an und sendet ein verification-Ereignis an jeden aktivierten Stream, der von diesem Transmitter seit ssf.verificationEveryS keines erhalten hat (section 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "SSH-Benutzerzertifikate auf Einträgen"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "Schreibt die SSH-Benutzerzertifikate, deren Schreiben auf den Eintrag bei der Ausstellung fehlschlug, auf die Einträge ihrer Inhaber (stsSshUserCertificate), nimmt abgelaufene herunter und kopiert bei seinem ersten Lauf in einem Prozess die Zertifikate, die ausgestellt wurden, bevor sie auf Einträgen geführt wurden, auf ihre Inhaber."
+  },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",
     "text": "Sperrliste der SSH-Benutzer-CA"

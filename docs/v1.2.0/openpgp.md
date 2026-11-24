@@ -182,7 +182,10 @@ On the same page, under **Encrypted mail**, a person chooses:
 The S/MIME certificate is the person's `userSMIMECertificate`. They can set
 it on the same page (a PEM certificate that can receive S/MIME now and names
 their address), an administrator can, and so can anything that writes the
-attribute over LDAP.
+attribute over LDAP. An administrator sees it on the person's console page
+under **Stored certificates**, and in `GET /admin-api/users/certificates`
+(`smimeCertificates`), described as the stored certificates are; it signs
+nobody in.
 
 An encrypted message's **Subject is not encrypted**, so it goes out under a
 neutral subject for its kind — "A security notice from …", "A message from
