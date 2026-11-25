@@ -36,6 +36,11 @@
 //      of sdk/package.json is the version the lockfile holds (npm's
 //      `--package-lock-only` leaves an existing entry as it was, so an
 //      override added without `npm update <name>` would not take).
+//   7. (#2220) every `npm ci` in the Dockerfile passes `--ignore-scripts`,
+//      the service's own included, and the only packages of the root
+//      lockfile with an install script are the ones the Dockerfile names
+//      as building nothing the service loads — so a new one cannot arrive
+//      unbuilt without failing here.
 // ===========================================================================
 
 const fs = require('fs');
@@ -243,6 +248,41 @@ function run(t) {
           ' overrides is the version the lockfile holds');
   t.check(!(lock.packages || {})['node_modules/request'],
           'and the lockfile holds no `request` (node-gyp 7\'s, #2159)');
+
+  t.log.info('=== 7. no install script runs in the image build (#2220) ===');
+  const installs = runs.filter(function (one) {
+    return /\bnpm ci\b/.test(one);
+  });
+  const scripted = installs.filter(function (one) {
+    return !/\bnpm ci\b[^&;]*--ignore-scripts/.test(one) &&
+      one.indexOf('--prefix ./tests') < 0;
+  });
+  t.check(installs.length >= 3 && scripted.length === 0,
+          'every `npm ci` of the service and the SDKs passes ' +
+          '--ignore-scripts (' + installs.length + ' installs)',
+          scripted.join(' / '));
+  t.check(installs.some(function (one) {
+    return /npm ci --omit=dev --ignore-scripts && npm cache clean --force/
+      .test(one) && one.indexOf('npm sbom') >= 0;
+  }), 'the dependencies stage installs the service\'s tree with ' +
+      '--ignore-scripts before writing its SBOM');
+  // What the Dockerfile's dependencies-stage comment argues needs no
+  // rebuild. A name added here owes that comment a line saying why.
+  const NEEDS_NO_BUILD = ['dtrace-provider', 'protobufjs'];
+  const rootLock = readJson('package-lock.json');
+  const withScripts = Object.keys(rootLock.packages || {})
+    .filter(function (key) {
+      const one = rootLock.packages[key];
+      return key && one.hasInstallScript && !one.dev;
+    })
+    .map(function (key) {
+      return key.replace(/^.*node_modules\//, '');
+    })
+    .sort();
+  t.equal(withScripts.join(', '), NEEDS_NO_BUILD.join(', '),
+          'the root lockfile\'s only shipped packages with an install ' +
+          'script are the ones whose script builds nothing the service ' +
+          'loads');
   log.debug("Leaving run().");
 }
 

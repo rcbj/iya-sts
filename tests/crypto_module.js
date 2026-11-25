@@ -30,8 +30,9 @@
 // reference; what the SAML 2.0 half still lacks is recorded in
 // `saml/CLAUDE.md` rather than implied to be covered.
 //
-// **`xml-crypto` IS KEPT AS A DEPENDENCY FOR THIS FILE AND FOR NOTHING ELSE.**
-// No module in the service requires it any more. Removing it would save a
+// **`xml-crypto` IS KEPT AS A TEST DEPENDENCY FOR THIS FILE AND ITS KIN.**
+// No module in the service requires it any more, so since #2220 it is in
+// tests/package.json rather than in the service image. Removing it would save a
 // package and cost the only independent reading of XMLDSIG in this repository,
 // which is the reading that makes the interop assertions mean anything — if
 // both ends of the comparison came from one implementation, a shared

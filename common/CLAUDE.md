@@ -410,10 +410,13 @@ signature as something it is not. Everything else in `options.header` is merged.
 `helpers.signJwtAs()` and `signJwtAsAsync()` thread it through, which is how the
 one caller that needs it reaches it.
 
-**xml-crypto IS STILL A DEPENDENCY AND NOTHING IN THE SERVICE REQUIRES IT.** It
+**xml-crypto IS A TEST DEPENDENCY AND NOTHING IN THE SERVICE REQUIRES IT.** It
 is there for `tests/crypto_module.js`, which is the only independent reading of
 XMLDSIG in this repository — the thing that makes "our signature verifies"
-mean something. Removing it saves a package and costs that.
+mean something. Since #2220 (2026-11-25) it is in `tests/package.json`, so the
+service image no longer carries it; a service module that required it again
+would fail to load in the image. `tests/package.json` says why
+`@xmldom/xmldom` is a link there.
 
 ### Held to Wycheproof and ACVP (#202, #203, 2026-09-24)
 

@@ -190,6 +190,33 @@ async function run(t) {
   t.check(fs.existsSync(path.join(ROOT, 'rust', 'bins', 'xacml-pep',
                                   'Cargo.toml')),
           'the package the Dockerfile names exists');
+  // The inventory and the OpenSSL built in (#2220): an OS scan cannot see a
+  // crate, so the image carries cargo-cyclonedx's SBOM, and the version of
+  // OpenSSL the page publishes is the one Cargo.lock's openssl-src builds.
+  t.check(/cargo install cargo-cyclonedx --version \d+\.\d+\.\d+ --locked/
+            .test(dockerfile) &&
+          /cargo cyclonedx --manifest-path bins\/xacml-pep\/Cargo\.toml/
+            .test(dockerfile) &&
+          /^COPY --from=build \S+\/xacml-pep\.cdx\.json \.\/sbom\.cdx\.json$/m
+            .test(dockerfile),
+          'the Dockerfile writes a pinned cargo-cyclonedx SBOM of the PEP ' +
+          'and the image carries it at /usr/src/pep/sbom.cdx.json');
+  const cargoLock = fs.readFileSync(path.join(ROOT, 'rust', 'Cargo.lock'),
+                                    'utf8');
+  const opensslSrc = /\[\[package\]\]\nname = "openssl-src"\nversion = "([^"+]+)\+([^"]+)"/
+    .exec(cargoLock);
+  const risky = fs.readFileSync(path.join(ROOT, 'docs', 'v1.2.0',
+                                          'risky-components.md'), 'utf8');
+  t.check(!!opensslSrc &&
+          risky.indexOf('OpenSSL ' + opensslSrc[2] +
+                        ' built in (`openssl-src` ' + opensslSrc[1] + ')') >= 0,
+          'docs/v1.2.0/risky-components.md names the OpenSSL Cargo.lock ' +
+          'builds into the PEP (' + (opensslSrc ?
+            opensslSrc[2] + ', openssl-src ' + opensslSrc[1] : 'none') + ')');
+  t.check(/^ignore = \[/m.test(fs.readFileSync(
+    path.join(ROOT, 'rust', '.cargo', 'audit.toml'), 'utf8')),
+  'rust/.cargo/audit.toml, where a reviewed RustSec exception is recorded, ' +
+  'is there for the CI `cargo audit`');
 
   // -------------------------------------------------------------------------
   // 2. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE — THROUGH ONE TABLE.

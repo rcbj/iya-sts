@@ -684,6 +684,22 @@ jobs:
           -e CARGO_TERM_COLOR=always -e CARGO_INCREMENTAL=0
           ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
           bash -c "rustup component add rustfmt && cargo fmt --check && cargo check --workspace --locked && cargo test --workspace --locked"
+      # THE RUSTSEC ADVISORY AUDIT OF rust/Cargo.lock (#2220, ASVS 5.0.0
+      # 15.2.1). The remote PEP's crates are not in either npm lockfile, so
+      # dependency-windows never saw them, and its built-in OpenSSL is the
+      # `openssl-src` crate, which only an audit of Cargo.lock can name.
+      # `cargo audit` fails on every vulnerability not listed, with its
+      # reason, in rust/.cargo/audit.toml; unmaintained and unsound
+      # warnings are printed and do not fail. The tool is pinned and built
+      # `--locked` in the same mirrored image; it reads the RustSec database
+      # from GitHub at run time, so a new advisory fails this job the day it
+      # is published.
+      - name: Audit Cargo.lock against the RustSec advisories
+        run: >-
+          docker run --rm -v "${PWD}:/src" -w /src/rust
+          -e CARGO_TERM_COLOR=always
+          ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
+          bash -c "cargo install cargo-audit --version 0.22.2 --locked --quiet && cargo audit"
 
   openapi-breaking:
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')
