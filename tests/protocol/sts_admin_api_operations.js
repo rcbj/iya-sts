@@ -3942,8 +3942,13 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     credential: "password",
     password: ownPassword.temporaryFor(MINT_PASSWORD)
   }, "created a person in the directory");
-  await mintPasswordIsTheirs(username, false);
-  mintedParties["realm:user:" + username] = true;
+  // THE REGISTER IS READ BEFORE THE PERSON SIGNS IN. Since #2238 they are
+  // given their own password by signing in with it (`own_password.js`), and
+  // a sign-in is exactly what turns `knownBy: "created"` into
+  // "authentication" (`admin_stats.js`, `noteKnownIdentity()`): a person who
+  // has signed in is no longer one who merely exists. Read after it, the
+  // answer depended on whether the sign-in had reached the register yet, and
+  // the single-node and mariadb runs of 2026-11-25 saw "authentication".
   assert.ok(String(created.dn || "").indexOf("dc=" + REALM + ",") > 0,
     "the entry should land in THIS realm's ou=users; its DN is " + created.dn);
   const listedUsers = await get("/users?q=" + encodeURIComponent(username));
@@ -3960,6 +3965,8 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     "only one on this API that puts a person in the directory without a " +
     "sign-in, and that provenance is the whole difference. It says " +
     JSON.stringify((listedUsers.body.users[0] || {}).knownBy));
+  await mintPasswordIsTheirs(username, false);
+  mintedParties["realm:user:" + username] = true;
 
   // With the attributes the realm's policy (#396) requires in product mode,
   // so that what refuses it is the duplicate and not a missing name.

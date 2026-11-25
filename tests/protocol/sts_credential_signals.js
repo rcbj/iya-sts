@@ -482,6 +482,18 @@ async function test() {
       assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
       assert.strictEqual(caep(found.hit).initiating_entity, "admin");
     });
+  // ALICE'S PASSWORD WAS TYPED BY AN ADMINISTRATOR, SO IT IS TEMPORARY
+  // (#2160): her entry has carried `pwdReset: TRUE` since the create, and a
+  // write of TRUE over TRUE changes nothing and is announced as nothing —
+  // the door notices `pwdReset` going ON, not being written. The run of
+  // 2026-11-25 (45608374617) failed here in every mode with nothing on the
+  // stream. So the flag is taken off first, and then put on.
+  const cleared = await modify(client, dns[ALICE], "delete", "pwdReset",
+                               []);
+  check("the administrator clears the pwdReset the create set (#2160)",
+    function () {
+      assert.strictEqual(cleared.code, 0, cleared.message);
+    });
   const reset = await modify(client, dns[ALICE], "replace", "pwdReset",
                              ["TRUE"]);
   check("the administrator sets pwdReset", function () {

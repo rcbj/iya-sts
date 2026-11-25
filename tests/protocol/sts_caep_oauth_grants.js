@@ -599,10 +599,28 @@ async function test() {
   check("the person's sign-on session is listed", function () {
     assert.ok(rows.length >= 1, sessions.raw.slice(0, 800));
   });
-  const sessionId = String(rows[0].sessionId ||
-                           String(rows[0].id).slice("session:".length));
-  const under = await send(api + "/tokens?session=" +
-                           encodeURIComponent(sessionId));
+  // ALICE HAS TWO SIGN-ON SESSIONS SINCE #2238: the one `own_password.js`
+  // left when she chose her own password at the screen, and `b`'s. The
+  // first row was the former in the cells and mariadb runs of 2026-11-25,
+  // with no tokens under it. So each listed session is asked, and the one
+  // whose tokens are the CIBA ones is the session the approval rested on —
+  // which `b` holds and nothing else could, the code-grant tokens of a. and
+  // b. being under it too.
+  let approving = null;
+  let under = null;
+  for (const row of rows) {
+    const sid = String(row.sessionId ||
+                       String(row.id).slice("session:".length));
+    const listed = await send(api + "/tokens?session=" +
+                              encodeURIComponent(sid));
+    if (!under || (listed.status === 200 && /ciba/i.test(listed.raw))) {
+      under = listed;
+      approving = row;
+    }
+    if (listed.status === 200 && /ciba/i.test(listed.raw)) {
+      break;
+    }
+  }
   check("the CIBA tokens are listed UNDER that sign-on session", function () {
     assert.strictEqual(under.status, 200, under.raw.slice(0, 300));
     assert.ok(/ciba/i.test(under.raw), under.raw.slice(0, 1200));
@@ -631,8 +649,8 @@ async function test() {
   });
 
   log.info("=== d, continued. the approving session ends ===");
-  await ok(api + "/sessions/revoke", { key: rows[0].key,
-    select: rows[0].id }, "ended the sign-on session");
+  await ok(api + "/sessions/revoke", { key: approving.key,
+    select: approving.id }, "ended the sign-on session");
   const introspected = await postForm(base + "/oauth2/introspect", {
     token: cibaTokens.body.refresh_token, client_id: CLIENT,
     client_secret: SECRET });

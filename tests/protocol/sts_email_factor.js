@@ -599,8 +599,15 @@ async function aCodeAsTheFirstFactor() {
   const got = await arrived(address, /sign-in code/, seen);
   r = await stepAct(b, step2, "email/code", { code: codeIn(got.message) });
   await finish(b, r);
+  // THE CODE'S SESSION, NOT THE PASSWORD'S. `person()` gives the person
+  // their own password by signing in with it (#2238, `own_password.js`), so
+  // a `["pwd"]` session of theirs is already listed, and the first row was
+  // that one in the cells and mariadb runs of 2026-11-25. The row wanted is
+  // the one an emailed code made; that it holds ONLY `otp` is the check.
   const session = await until("the session", function () {
-    return sessionOf(who);
+    return sessionOf(who, function (row) {
+      return row.amr.indexOf("otp") >= 0;
+    });
   }, 10000);
   check("2. a username and the mailed code sign in: amr [\"otp\"], acr \"1\"",
         function () {

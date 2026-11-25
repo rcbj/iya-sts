@@ -36,6 +36,19 @@
 // Either way the person ends up holding `password` with no change owed. The
 // sign-in leaves a sign-on session in a cookie jar nobody keeps.
 //
+// WHAT THAT SIGN-IN LEAVES BEHIND, IN PRODUCT (#2258): a job converted to
+// this helper now has, for that person, a `["pwd"]` sign-on session it did
+// not make, a sign-in in the users register (`knownBy` is "authentication"
+// from then on, no longer "created"), the sign-in's and the change's
+// signals, and `pwdReset` cleared. Four jobs read the old picture after
+// conversion: one took the first of the person's sessions to be its own
+// (sts_email_factor, sts_caep_oauth_grants), one read the register after
+// the sign-in (sts_admin_api_operations). And a person created with a
+// typed password and NOT passed through here keeps `pwdReset` on from the
+// create, so writing it on again is no change (sts_credential_signals).
+// Select the session the job made, read what the create left before
+// calling this, and turn a flag off before asking what turning it on sends.
+//
 // `setPassword(username, value)` is the JOB's door, because jobs reach
 // `/admin-api` differently (a client-credentials token, the console's DPoP
 // token, development's open API, a realm prefix). It resolves when the
