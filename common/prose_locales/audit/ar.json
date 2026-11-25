@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "غُيّر مخزن ثقة الموقّعين أو إعداد PKI paranoid"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "تم تغيير مخزن ثقة مسمى أو تعيين مخازن الثقة لحالة استخدام"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "اشتُقت مفاتيح Kerberos لشخص من كلمة المرور الخاصة به"

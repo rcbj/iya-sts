@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "Der Signierer-Truststore oder eine Einstellung der paranoiden PKI wurde geändert"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Ein benannter Truststore oder die Truststore-Zuweisung eines Anwendungsfalls wurde geändert"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Die Kerberos-Schlüssel einer Person wurden aus ihrem Passwort abgeleitet"
