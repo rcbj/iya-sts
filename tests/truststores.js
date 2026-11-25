@@ -456,6 +456,46 @@ module.exports = {
         { kind: 'client', id: acme }, 'default').registered,
               'unassigned, client-jws is the registration again');
 
+      // E5. SSH CA KEYS (#2151): they pool, and no other kind stands in.
+      t.log.info('E5. SSH CA keys');
+      const sshString = function (buf) {
+        const len = Buffer.alloc(4);
+        len.writeUInt32BE(buf.length, 0);
+        return Buffer.concat([len, buf]);
+      };
+      const edRaw = require('crypto').generateKeyPairSync('ed25519')
+        .publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+      const sshLine = 'ssh-ed25519 ' + Buffer.concat([
+        sshString(Buffer.from('ssh-ed25519')), sshString(edRaw)])
+        .toString('base64') + ' ca@example.net';
+      const sshName = 'ks-ssh-' + stamp;
+      t.check(truststores.create('default', { name: sshName + '-bad',
+        kind: 'ssh', sshKeys: 'ssh-ed25519 not-base64' }).code ===
+              'STS-PKI-0308', 'a line that is not an SSH key is refused');
+      t.check(truststores.create('default', { name: sshName, kind: 'ssh',
+        sshKeys: sshLine }).ok, 'an SSH CA truststore is created');
+      t.check(truststores.create('default', { name: certs + '-2' }).ok,
+              'a certificate truststore beside it');
+      t.check(truststores.assign('default', 'spiffe-sshpop',
+                                 [certs + '-2']).code === 'STS-PKI-0309' &&
+              truststores.assign('default', 'saml-signer',
+                                 [sshName]).code === 'STS-PKI-0309',
+              'SSH CA keys and certificates never stand in for each other');
+      t.check(truststores.assign('default', 'spiffe-sshpop',
+        ['setting:spiffe.sshpopCertAuthorities', sshName]).ok &&
+              truststores.sshAuthorities('spiffe-sshpop', 'default')
+                .keys.indexOf(sshLine) >= 0,
+              'spiffe-sshpop trusts the setting and the truststore');
+      t.check(truststores.setKeys('default', sshName,
+                                  { sshKeys: sshLine + '\n' + sshLine })
+        .ok && truststores.stores('default').filter(function (one) {
+        return one.name === sshName;
+      })[0].keys === 2, 'its keys are replaced and counted');
+      t.check(truststores.assign('default', 'spiffe-sshpop', []).ok &&
+              truststores.remove('default', sshName).ok &&
+              truststores.remove('default', certs + '-2').ok,
+              'unassigned, both are deleted');
+
       // F. THE SLOT.
       t.log.info('F. the slot');
       t.check(truststores.setDirectory({ listStores: function () {

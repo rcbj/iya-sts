@@ -122,5 +122,9 @@
   "createKindJwks": "綁定到某一方的金鑰集",
   "createParty": "參與方（僅金鑰集）：client:、federation:、claims-provider: 或 oidfed-anchor:…",
   "createJwks": "公開金鑰，作為 JSON Web Key Set",
-  "createJwksUri": "或 jwks_uri"
+  "createJwksUri": "或 jwks_uri",
+  "createKindSsh": "SSH 憑證授權單位金鑰",
+  "createSshKeys": "SSH CA 公開金鑰，authorized_keys 格式，每行一個",
+  "sshKeys": "{n} 個 SSH CA 金鑰",
+  "kindSshCa": "SSH CA 金鑰"
 }

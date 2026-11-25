@@ -122,5 +122,9 @@
   "createKindJwks": "एक पक्ष से बंधा कुंजी सेट",
   "createParty": "पक्ष (केवल कुंजी सेट): client:, federation:, claims-provider: या oidfed-anchor:…",
   "createJwks": "सार्वजनिक कुंजियाँ, JSON Web Key Set के रूप में",
-  "createJwksUri": "या एक jwks_uri"
+  "createJwksUri": "या एक jwks_uri",
+  "createKindSsh": "SSH प्रमाणपत्र प्राधिकरण कुंजियाँ",
+  "createSshKeys": "SSH CA सार्वजनिक कुंजियाँ, authorized_keys रूप में, प्रति पंक्ति एक",
+  "sshKeys": "{n} SSH CA कुंजी",
+  "kindSshCa": "SSH CA कुंजियाँ"
 }

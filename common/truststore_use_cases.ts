@@ -57,7 +57,9 @@ const log = helpers.log;
 type Scope = 'service' | 'realm';
 // `jwks` (#2149): a JSON Web Signature verified against a key set bound to the
 // party that signed it, never against a pool.
-type Kind = 'x509' | 'spiffe' | 'pins' | 'fixed' | 'admission' | 'jwks';
+// `ssh` (#2151): an SSH certificate checked against SSH CA public keys.
+type Kind = 'x509' | 'spiffe' | 'pins' | 'fixed' | 'admission' | 'jwks' |
+  'ssh';
 
 interface UseCase {
   id: string;
@@ -273,6 +275,11 @@ const ROWS: UseCase[] = [
     title: 'A Security Event Token an SSF transmitter partner signed',
     sites: ['ssf/ssf_transmitters.ts'],
     defaults: ['registered-keys'] },
+  // #2151: SSH CA public keys, which pool like X.509 anchors.
+  { id: 'spiffe-sshpop', scope: 'realm', kind: 'ssh', direction: 'inbound',
+    title: 'An SSH host certificate a SPIFFE sshpop agent presents',
+    sites: ['spiffe/spiffe_attestor_sshpop.ts attest'],
+    defaults: [setting('spiffe.sshpopCertAuthorities')] },
   // #2150: the Trust Anchors a realm's OpenID Federation chains end at. A
   // key set bound to `oidfed-anchor:<entity id>` makes that entity an anchor
   // with those keys (pasted, never fetched); `registered-keys` is the
@@ -453,7 +460,7 @@ class TruststoreUseCases {
     log.debug("Entering TruststoreUseCases.assignable().");
     log.debug("Leaving TruststoreUseCases.assignable().");
     return !!row && (row.kind === 'x509' || row.kind === 'spiffe' ||
-                     row.kind === 'jwks');
+                     row.kind === 'jwks' || row.kind === 'ssh');
   }
 
   /**
