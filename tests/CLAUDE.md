@@ -3740,6 +3740,15 @@ nothing.
   smartcard-logon, and still refuses piv-sign for a 9a key (STS-PIV-0008).
   **The verifier was not changed for either card.** The finding and the
   verbatim results are on #2056.
+* **BOTH PIVAPPLET BUILDS WRITE THE ATTESTATION'S SERIAL IN DER'S SHORTEST
+  FORM (#2265). Do not remove the edit.** PivApplet draws a 16-byte
+  certificate serial and clears only its top bit, so one attestation in 512
+  began `00` before a byte below `80`: a redundant leading zero that
+  OpenSSL refuses as illegal padding, and `yubico-piv-tool -a attest` exits
+  1 with "Failed parsing x509 information." (`sts_piv_smime`, cells mode,
+  run 45666573002; the mode was chance). `build-cards.sh` makes the first
+  byte `40`-`7F` in the source before either build and checks that the
+  edit took. The stock card is otherwise as published.
 * **WHAT THE PIV CLIENTS NEED, AND WHY EACH IS THERE (#2059).** These are the traps a job meets, each found by `sts_piv_card.js`:
   * **The PIV card answers a YubiKey 5 NFC's ATR.** jcardsim's default, `3B80800101`, is a PIVKey card in OpenSC 0.23's table, and OpenSC turns EC off for every PIVKey (`CI_NO_EC`), so a P-256 key had no signing mechanism at all. The stock card answers a generic ATR (`card-lib.sh`).
   * **OpenSC lists a PIV key only beside a certificate in its slot.** `bin/lab-piv-placeholder` writes one over the card's own key; the issued certificate replaces it.

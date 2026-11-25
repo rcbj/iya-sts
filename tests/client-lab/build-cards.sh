@@ -22,7 +22,8 @@
 #   smartpgp/           SmartPGP's class files
 #   pivapplet-yubikey/  PivApplet's class files, patched to attest as a
 #                       YubiKey 5 (patches/pivapplet-yubikey-attestation.patch)
-#   pivapplet-stock/    PivApplet's class files as published
+#   pivapplet-stock/    PivApplet's class files as published, but for its
+#                       attestation serial's DER (#2265, below)
 #   PINS                what was built, from which commit
 # ---------------------------------------------------------------------------
 set -euo pipefail
@@ -106,6 +107,24 @@ javac -nowarn --release 11 -cp "${OUT}/jcardsim.jar" -d "${OUT}/smartpgp" \
   $(find smartpgp/src -name '*.java')
 
 fetch arekinath/PivApplet "${PIVAPPLET_COMMIT}" pivapplet
+# ONE CHANGE TO BOTH PIVAPPLET BUILDS (#2265): ITS ATTESTATION'S SERIAL IN
+# DER'S SHORTEST FORM. PivApplet draws a 16-byte certificate serial and
+# clears only its top bit, so in one attestation in 512 the INTEGER starts
+# 00 before a byte below 80 — a redundant leading zero (X.690 8.3.2) that
+# OpenSSL refuses as illegal padding, and `yubico-piv-tool -a attest` then
+# fails "Failed parsing x509 information." (sts_piv_smime, cells mode, run
+# 45666573002; the same fault as 1a3049bb9 and 3288ba038). The first byte
+# is made 40-7F, positive and never zero; the stock card's attestation is
+# otherwise as published, so its refusal (STS-PIV-0006, 0007) is unchanged.
+# Applied to the source before either build, so the yubikey patch's
+# context is untouched.
+pivsrc=pivapplet/src/net/cooperi/pivapplet/PivApplet.java
+was='certSerial\[0\] = (byte)(certSerial\[0\] \& (byte)0x7F);'
+now='certSerial[0] = (byte)((byte)(certSerial[0] \& (byte)0x3F) | (byte)0x40); /* MODIFIED (#2265): a minimal DER INTEGER */'
+sed -i "s@${was}@${now}@" "${pivsrc}"
+grep -q 'MODIFIED (#2265): a minimal DER INTEGER' "${pivsrc}"
+echo "  patched: PivApplet's attestation serial a minimal DER INTEGER" \
+  >> "${OUT}/PINS"
 # Its own build preprocesses the sources (the feature flags in build.xml,
 # YKPIV_ATTESTATION among them, all as shipped) and then converts them to a
 # CAP; only the first step is needed for jcardsim. TWICE: stock, and with
