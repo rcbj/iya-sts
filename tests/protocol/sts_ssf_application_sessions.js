@@ -44,6 +44,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const ssfRoles = require("./ssf_roles.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -76,7 +77,6 @@ const RISC = "https://schemas.openid.net/secevent/risc/event-type/";
 const SSF = "https://schemas.openid.net/secevent/ssf/event-type/";
 const POLL = "urn:ietf:rfc:8936";
 const PASSWORD = "App-2234-Passw0rd!-" + String(Date.now()).slice(-6);
-const VERIFIER = "v".repeat(43);
 const APPS = {
   A: { id: "as2234-a-" + STAMP.toLowerCase(),
        secret: "as-2234-a-" + String(Date.now()).slice(-8),
@@ -210,7 +210,10 @@ function decode(token) {
 async function signInTo(app, who) {
   log.debug("Entering signInTo(). " + who + " -> " + app.id);
   const b = browser(who);
-  const challenge = nodeCrypto.createHash("sha256").update(VERIFIER)
+  // A FRESH VERIFIER PER SIGN-IN: product (RFC 9700 section 2.1.1) refuses a
+  // code_challenge another client's transaction already used.
+  const verifier = nodeCrypto.randomBytes(32).toString("base64url");
+  const challenge = nodeCrypto.createHash("sha256").update(verifier)
     .digest("base64url");
   const params = { response_type: "code", client_id: app.id,
     redirect_uri: app.redirect, scope: "openid profile", state: "st",
@@ -235,7 +238,7 @@ async function signInTo(app, who) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form({ grant_type: "authorization_code", code: code,
                  redirect_uri: app.redirect, client_id: app.id,
-                 client_secret: app.secret, code_verifier: VERIFIER }) });
+                 client_secret: app.secret, code_verifier: verifier }) });
   assert.ok(t.body && t.body.id_token, "an ID Token for " + who + ": " +
             t.raw.slice(0, 300));
   log.debug("Leaving signInTo().");
@@ -328,7 +331,8 @@ function anyAbout(which, sub) {
 async function makeApplication(app) {
   log.debug("Entering makeApplication(). " + app.id);
   await ok(realmApi + "/applications/create", { identifier: app.id,
-    kind: "oauth2-client", name: app.id, protocols: ["oauth2", "ssf"],
+    kind: "oauth2-client", name: app.id,
+    protocols: ["oauth2", "oidc", "ssf"],
     fields: { oauthClientId: [app.id], oauthClientSecret: app.secret,
               oauthTokenEndpointAuthMethod: "client_secret_post",
               oauthAllowedScope: ["openid", "profile", "ssf.read",
@@ -404,11 +408,19 @@ async function test() {
     "created the realm");
   await makeApplication(APPS.A);
   await makeApplication(APPS.B);
+  // Temporary, then the person's own (#2160, `own_password.js`): a password
+  // an administrator types is temporary in product, and the sign-ins below
+  // use PASSWORD.
   for (const who of [ALICE, BOB, CAROL]) {
     await ok(realmApi + "/users/create", { username: who, invent: false,
-      credential: "password", password: PASSWORD,
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "AS " + who, givenName: "AS", sn: who,
                     mail: who + "@as2234.test" } }, "created " + who);
+    await ownPassword.ownPassword(realmBase, who, PASSWORD,
+      function (one, value) {
+        return postJson(realmApi + "/users/set-password",
+                        { user: one, password: value });
+      });
   }
   const alice = await signInTo(APPS.A, ALICE);
   const bob = await signInTo(APPS.B, BOB);
