@@ -15,9 +15,16 @@
 // — and is the only file of this service that requires this one
 // (`tests/crypto_centralised.js`).
 //
-// **SLH-DSA (algorithms 32, 33 and 34) IS REFUSED, NAMED.** RFC 9980
-// makes those three MAY. Nothing here parses them, so a key that uses
-// one is "not accepted" rather than a fingerprint this service invented.
+// **SLH-DSA (algorithms 32, 33 and 34) IS READ SINCE #2220.** RFC 9980
+// section 7 makes SLH-DSA-SHAKE-128s, -128f and -256s MAY signing
+// algorithms, standalone rather than composite, for v6 keys only, each
+// bound to one digest (its Table 9: SHA3-256 for the two 128-bit sets,
+// SHA3-512 for 256s). The signature is SLH-DSA-Sign over the dataDigest
+// with an empty context, exactly as the ML-DSA half of a composite is, so
+// it is checked by the same `pqc.js` (node's OpenSSL). A v4 key, a
+// signature over another digest, or one of the wrong length is refused;
+// a runtime without SLH-DSA leaves the key `unchecked`, never accepted.
+// Until #2220 a key that used one was "not accepted" by name.
 //
 // **A COMPOSITE SIGNATURE IS VALID ONLY WHEN BOTH HALVES ARE.** The
 // Ed25519 or Ed448 half is checked here, over the OpenPGP dataDigest
@@ -47,10 +54,13 @@ const log = bunyan.createLogger({
   level: process.env.STS_LOG_LEVEL || 'info'
 });
 
-// RFC 9980 tables 4, 5, 6 and 7. Lengths are octets. The secret-key
-// columns are the seed forms (ML-DSA xi is 32, ML-KEM d||z is 64); this
-// reader never stores a secret, and uses the lengths only to refuse a
-// secret packet that was pasted by mistake.
+// RFC 9980 tables 4, 5, 6 and 7, and its section 7's SLH-DSA (Table 8
+// for the sizes, Table 9 for the digest each is bound to; FIPS 205 Table
+// 2 gives the same sizes). Lengths are octets. The secret-key columns are
+// the seed forms (ML-DSA xi is 32, ML-KEM d||z is 64; SLH-DSA has no
+// seed form and its secret is the whole key); this reader never stores a
+// secret, and uses the lengths only to refuse a secret packet that was
+// pasted by mistake.
 const ALGS = Object.freeze({
   30: { name: 'ML-DSA-65+Ed25519', use: 'sign',
         ecc: 'ed25519', pq: 'ML-DSA-65',
@@ -60,6 +70,15 @@ const ALGS = Object.freeze({
         ecc: 'ed448', pq: 'ML-DSA-87',
         eccPub: 57, pqPub: 2592, eccSig: 114, pqSig: 4627,
         eccSecret: 57, pqSecret: 32 },
+  32: { name: 'SLH-DSA-SHAKE-128s', use: 'sign', standalone: true,
+        pq: 'SLH-DSA-SHAKE-128s', pqPub: 32, pqSig: 7856, pqSecret: 64,
+        hashAlg: 12 },
+  33: { name: 'SLH-DSA-SHAKE-128f', use: 'sign', standalone: true,
+        pq: 'SLH-DSA-SHAKE-128f', pqPub: 32, pqSig: 17088, pqSecret: 64,
+        hashAlg: 12 },
+  34: { name: 'SLH-DSA-SHAKE-256s', use: 'sign', standalone: true,
+        pq: 'SLH-DSA-SHAKE-256s', pqPub: 64, pqSig: 29792, pqSecret: 128,
+        hashAlg: 14 },
   35: { name: 'ML-KEM-768+X25519', use: 'encrypt',
         ecc: 'x25519', pq: 'ML-KEM-768',
         eccPub: 32, pqPub: 1184, eccCt: 32, pqCt: 1088,
@@ -70,7 +89,10 @@ const ALGS = Object.freeze({
         eccSecret: 56, pqSecret: 64 }
 });
 
-const SIGNING_NAMES = Object.freeze(['ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448']);
+const SIGNING_NAMES = Object.freeze(['ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+                                     'SLH-DSA-SHAKE-128s',
+                                     'SLH-DSA-SHAKE-128f',
+                                     'SLH-DSA-SHAKE-256s']);
 const ENCRYPTION_NAMES = Object.freeze(['ML-KEM-768+X25519',
                                         'ML-KEM-1024+X448']);
 
@@ -563,6 +585,12 @@ function verifyComposite(sig, toSign, key) {
     return { ok: false, eddsa: false, mldsa: false, leftMatches: false,
              why: 'the signature algorithm is not this key\'s' };
   }
+  if (spec.standalone) {
+    const standalone = verifyStandalone(sig, toSign, key);
+    log.debug("Leaving verifyComposite(). " + spec.name + " " +
+              standalone.ok);
+    return standalone;
+  }
   const digest = dataDigest(sig, toSign);
   const leftMatches = digest[0] === sig.left[0] && digest[1] === sig.left[1];
   const pubs = splitPublic(key.material, spec);
@@ -576,6 +604,54 @@ function verifyComposite(sig, toSign, key) {
            why: ok ? '' : (mldsa === 'unavailable'
              ? 'ML-DSA could not be verified on this runtime'
              : 'a composite signature did not verify') };
+}
+
+/**
+ * One SLH-DSA signature over `toSign` (RFC 9980 section 7, #2220): a v6
+ * signature, over the digest its parameter set is bound to, of the
+ * length FIPS 205 gives, verified over the dataDigest.
+ *
+ * @param sig - a parsed signature
+ * @param toSign - the signed material
+ * @param key - `{ spec, material }`
+ * @returns the shape `verifyComposite()` answers; `eddsa` is true (there
+ *   is no classical half to fail) and `mldsa` holds the SLH-DSA verdict
+ */
+function verifyStandalone(sig, toSign, key) {
+  log.debug("Entering verifyStandalone().");
+  const spec = key.spec;
+  const refuse = function (why) {
+    log.debug("Leaving verifyStandalone(). " + why);
+    return { ok: false, eddsa: true, mldsa: false, leftMatches: false,
+             why: why };
+  };
+  if (sig.version !== 6) {
+    return refuse(spec.name + ' is used only in a v6 signature');
+  }
+  if (sig.hashAlg !== spec.hashAlg) {
+    return refuse(spec.name + ' signatures are made over ' +
+                  HASHES[spec.hashAlg].name + ' (RFC 9980 section 7), ' +
+                  'not hash algorithm ' + sig.hashAlg);
+  }
+  if (key.material.length !== spec.pqPub) {
+    return refuse(spec.name + ' public key is ' + key.material.length +
+                  ' octets, not ' + spec.pqPub);
+  }
+  if (sig.params.length !== spec.pqSig) {
+    return refuse(spec.name + ' signature is ' + sig.params.length +
+                  ' octets, not ' + spec.pqSig);
+  }
+  const digest = dataDigest(sig, toSign);
+  const leftMatches = digest[0] === sig.left[0] && digest[1] === sig.left[1];
+  const verdict = leftMatches
+    ? verifyMlDsa(spec, key.material, sig.params, digest) : false;
+  const ok = verdict === true;
+  log.debug("Leaving verifyStandalone(). " + ok);
+  return { ok: ok, eddsa: true, mldsa: verdict, digest: digest,
+           leftMatches: leftMatches, created: sig.created,
+           why: ok ? '' : (verdict === 'unavailable'
+             ? spec.name + ' could not be verified on this runtime'
+             : 'an ' + spec.name + ' signature did not verify') };
 }
 
 /**
@@ -690,6 +766,14 @@ function readPublicKey(input, at) {
     log.debug("Leaving readPublicKey(). Encryption primary.");
     return { ok: false, reason: 'unreadable',
              why: 'the primary key is an encryption algorithm' };
+  }
+  // RFC 9980 section 7: SLH-DSA MUST be used only with v6 keys (#2220).
+  if (primary.spec.standalone && primary.version !== 6) {
+    log.debug("Leaving readPublicKey(). SLH-DSA on a v" + primary.version +
+              " key.");
+    return { ok: false, reason: 'unreadable',
+             why: primary.spec.name + ' is used only with a v6 key, and ' +
+                  'this one is v' + primary.version };
   }
   const fp = fingerprintOf(primary.body);
   const subkeys = [];

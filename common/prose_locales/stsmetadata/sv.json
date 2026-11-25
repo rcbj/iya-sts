@@ -2567,6 +2567,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls som JSON: tls.*-inställningarna, som alla kräver omstart eftersom certifikatet skapas och socketarna binds innan något lyssnar. Om HUVUDporten är HTTPS avgörs av global.https, på /admin-api/config med processens egna inställningar. Skrivskyddad."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Den nyckelutbytesgrupp som varje slutförd TLS-handskakning på den här nodens lyssnare förhandlade sedan dess frontprocess startade, räknad per lyssnare och grupp, och hur många som var postkvant (en ML-KEM-grupp). Visas på /admin/crypto-metadata. Ändrar ingenting."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust som JSON: varje förtroendeankare för klientcertifikat med dess subjekt, utfärdare, serienummer, giltighet, fingeravtryck, PEM och källa (`file` eller `runtime`), sidindelat med ?page= och ?per=. Ett truststore för PROCESSEN, så det svarar likadant under varje sfärprefix. Ingen privat nyckel finns i det — truststoret innehåller certifikat och inget annat. Ett runtime-ankare sparas i katalogen; ett `file`-ankare gör inte det."

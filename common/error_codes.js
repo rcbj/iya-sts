@@ -24290,6 +24290,38 @@ const CODES = [
       'again and audited with the writer: an S/MIME certificate on the ' +
       'entry is the master mail is encrypted to (#2050).',
     spec: 'none — audited' },
+  { code: 'STS-OPENPGP-0035',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) with a ' +
+      'public key that is not an RFC 9935 ML-KEM key: not a PEM ' +
+      'SubjectPublicKeyInfo, another algorithm, parameters present, or a ' +
+      'public key of the wrong length. Nothing was encapsulated.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0036',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) where ' +
+      'this runtime cannot encapsulate to ML-KEM ' +
+      '(`crypto.smimeKemAvailable()`), so no proof of possession could ' +
+      'be asked for and nothing was issued.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0037',
+    summary: 'An ML-KEM S/MIME certificate was asked to be issued (#2220) ' +
+      'with no outstanding proof-of-possession challenge for the person, ' +
+      'or one that lapsed (`openpgp.challengeLifetimeS`), or one already ' +
+      'answered. Ask for a new challenge.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0038',
+    summary: 'The secret sent back for an ML-KEM S/MIME proof of ' +
+      'possession (#2220) is not the one this service encapsulated to the ' +
+      'key — it was not recovered with the private key (`openssl pkeyutl ' +
+      '-decap`), or is not 32 octets of hex or base64. The challenge is ' +
+      'spent; nothing was issued. Audited.',
+    spec: 'none (HTTP 400 from /account-api) — audited' },
+  { code: 'STS-OPENPGP-0039',
+    summary: 'The realm\'s EST Issuing CA did not issue the ML-KEM S/MIME ' +
+      'certificate a person proved possession of (#2220): the email ' +
+      'profile is not in est.allowedProfiles, the entry holds ' +
+      'pki.enrollmentMaxCertificatesPerEntry certificates, or the ' +
+      'authority refused. The refusal\'s own sentence says which.',
+    spec: 'none (HTTP 400 from /account-api)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

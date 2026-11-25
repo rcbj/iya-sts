@@ -71,6 +71,10 @@ hybrids, not instead of them.
   algorithm is not used. **Key establishment, surface by surface** shows the
   same for encryption. `GET /admin-api/crypto` returns it as JSON, and
   `GET /crypto/metadata` publishes it with no sign-in.
+* The same page's **Post-quantum** tab counts the TLS handshakes on this
+  node by the key exchange they negotiated, and how many were ML-KEM
+  (`GET /admin-api/tls/key-exchange`): whether clients are ready for
+  `tls.pqcOnly`.
 * `/admin/keys` and `/admin/pki` mark every post-quantum key with **PQC**, a
   composite with **PQC+**, an ML-KEM key with **PQC KEM** and a classical key
   with an alternative post-quantum key with **PQC alt**
@@ -88,6 +92,14 @@ Each section gives today's default, the post-quantum options and their
 settings, what the ecosystem limits, and the next steps. Settings are per
 realm unless the section says otherwise. Every one is described in
 [Configuration](configuration.md).
+
+**Every *Future* step has a trigger**: the named specification reaching
+RFC (or W3C Recommendation, or a published ISO amendment), or a named
+library shipping the support, and what iya-sts does when it arrives. A
+date cannot be given, because none of these depend on iya-sts. When a
+trigger fires, the change follows the rules above: the new algorithm is
+added beside the old ones, nothing is removed, and a default changes only
+in a release whose notes say so.
 
 ### JOSE and JWT signing
 
@@ -124,9 +136,11 @@ realm's JOSE signing Issuing CA.
   `keys.pqcOnly` on, RS256 stays for a client that registered it or
   registered no algorithm.
 * The composites and SLH-DSA in JOSE are Internet-Drafts and may change.
-* In an HSM, ML-DSA is made in the module only when it offers PKCS#11 3.2's
-  ML-DSA mechanisms; SLH-DSA and the published post-quantum set are made in
-  software ([Keys in an HSM](hsm.md#a-realms-signing-keys-in-the-hsm)).
+* In an HSM, the realm's published ML-DSA and SLH-DSA keys are made in the
+  module when it offers PKCS#11 3.2's `CKM_ML_DSA` or `CKM_SLH_DSA`
+  mechanisms, and in software when it does not; the six composites are
+  always made in software, because no PKCS#11 mechanism signs one
+  ([Keys in an HSM](hsm.md#a-realms-signing-keys-in-the-hsm)).
 
 **Next steps.**
 
@@ -139,8 +153,19 @@ realm's JOSE signing Issuing CA.
 4. *Operator's step*: put an ML-DSA algorithm first in `keys.signingAlgorithms`
    for a realm whose clients all verify it, then `keys.pqcOnly`. Waits on the
    same.
-5. *Future*: an RS256-free ID Token default. Waits on OpenID Connect
-   Discovery no longer requiring RS256.
+5. *Future*: an RS256-free ID Token default. **Trigger**: an OpenID
+   Foundation errata set or successor of OpenID Connect Discovery 1.0
+   (section 3, `id_token_signing_alg_values_supported`) and Core 1.0
+   (section 15.1) that no longer requires RS256. **Then** a realm with
+   `keys.pqcOnly` on signs the ID Token of a client that registered no
+   algorithm with the first ML-DSA algorithm in `keys.signingAlgorithms`;
+   RS256 stays for a client that asks for it.
+6. *Future*: the composite and SLH-DSA JWS identifiers made final.
+   **Trigger**: draft-ietf-jose-pq-composite-sigs and
+   draft-ietf-cose-sphincs-plus published as RFCs. **Then** the RFC's
+   identifiers are added beside the draft ones, which are still accepted
+   from a client that registered them, and a release note says which
+   identifier a new key is published under.
 
 ### SAML and XML signatures
 
@@ -173,8 +198,18 @@ post-quantum XML key to exist. See
    verification of post-quantum XML signatures.
 2. *Operator's step*: move a partner to an ML-DSA signature once it verifies
    one.
-3. *Future*: post-quantum XML Encryption. Waits on a W3C or IETF
-   specification.
+3. *Future*: post-quantum XML Encryption. **Trigger**: a W3C
+   Recommendation or an IETF RFC (a successor of RFC 9231, *Additional XML
+   Security Uniform Resource Identifiers*) that defines a key-encapsulation
+   key transport for XML Encryption 1.1 with ML-KEM, and an XML security
+   library a service provider uses (xmlsec1, Apache Santuario) that
+   implements it. **Then** a realm can publish an ML-KEM encryption
+   KeyDescriptor in SAML metadata and encrypt assertions to it, per service
+   provider, with RSA kept for everybody else.
+4. *Future*: the ML-DSA and SLH-DSA XML signature identifiers made final.
+   **Trigger**: a W3C or IETF document publishing the xmldsig-more
+   identifiers this service uses today. **Then** the published identifiers
+   are added and the draft ones stay accepted.
 
 ### X.509 and the certificate authority hierarchy
 
@@ -213,8 +248,14 @@ know the extensions sees an ordinary chain.
   client that limits an enroll response to 4 KB, for example). A process
   branch whose chain would exceed a TLS client's 102400-byte certificate list
   is refused (`STS-PKI-0270`).
-* **CRLs and OCSP responses are signed classically only.** No published
-  profile defines an alternative signature on either.
+* **CRLs and OCSP responses carry one signature.** In a hybrid hierarchy
+  (`pki.alternativeKeyAlgorithm`) they are signed with the authority's
+  classical key only. ITU-T X.509 (10/2019) clause 9.8 lets the
+  `altSignatureAlgorithm` and `altSignatureValue` extensions appear in a
+  CRL, but RFC 5280 does not profile them, no verifier checks them, and an
+  OCSP response (RFC 6960) has no place for a second signature at all. An
+  authority built with an ML-DSA or SLH-DSA `pki.keyAlgorithm` signs its CRLs
+  and OCSP responses with that key.
 * **Stock OpenSSH cannot verify an ML-DSA certificate.** `ssh-mldsa-65` is
   this service's own wire name.
 
@@ -229,10 +270,27 @@ know the extensions sees an ordinary chain.
    smart-card certificates once the realm's EST Issuing CA is post-quantum
    ([The PIV re-issue](post-login-activities.md#the-piv-re-issue)). The rest
    of the smart-card migration is still open (#2009).
-4. *Future*: composite-keyed authorities. Waits on the TLS library reading a
-   composite key on a chain.
-5. *Future*: post-quantum CRL and OCSP signatures. Waits on a profile that
-   defines them.
+4. *Future*: composite-keyed authorities. **Trigger**:
+   draft-ietf-lamps-pq-composite-sigs published as an RFC **and** an OpenSSL
+   release whose default provider loads a composite ML-DSA key from a
+   certificate on a TLS chain (OpenSSL 3.5 and 3.6 do not), shipped in the
+   node release the image uses. **Then** `STS-PKI-0272` and `STS-PKI-0274`
+   no longer refuse a composite `pki.keyAlgorithm`, and `STS-PKI-0273` and
+   `STS-PKI-0275` no longer fall back.
+5. *Future*: a second, post-quantum signature on CRLs and OCSP responses in
+   a hybrid hierarchy. **Trigger**: an IETF RFC (LAMPS) profiling X.509
+   clause 9.8's alternative signature for CRLs, or defining one for RFC 6960
+   OCSP responses, and a verifier (OpenSSL) that checks it. **Then** a
+   hybrid authority signs its CRLs (and, if profiled, its OCSP responses)
+   with both keys, and a classical verifier sees what it sees today.
+6. *Future*: an SSH user CA a stock `sshd` verifies post-quantum.
+   **Trigger**: an RFC from the IETF sshm working group defining ML-DSA
+   public keys and signatures for SSH (RFC 4253) and its certificates, and
+   an OpenSSH release implementing it (OpenSSH 10 has post-quantum key
+   exchange, `mlkem768x25519-sha256`, and no post-quantum signature).
+   **Then** the standard name is added beside `ssh-mldsa-65`, which stays
+   accepted, and the ML-DSA authority's line is published for
+   `TrustedUserCAKeys`.
 
 ### TLS listeners
 
@@ -261,18 +319,27 @@ with ML-DSA is accepted.
 
 * An ML-DSA server certificate is refused by everything older than OpenSSL
   3.5, so RSA stays the default and comes first.
-* LDAPS on 636 serves only the first certificate in
-  `tls.certificateAlgorithms` ([TLS](tls.md#post-quantum-server-certificates)).
 * `tls.pqcOnly` does not restrict signatures, because a recorded handshake
   cannot be forged later and few clients accept an ML-DSA certificate.
 * Composite certificates cannot be loaded (above).
 
+**How many clients come post-quantum.** Every completed handshake on the
+main port, LDAPS, the debugger and the custom listeners is counted by the
+key exchange group it negotiated, read from the session OpenSSL holds.
+**Cryptography** (`/admin/crypto-metadata`), tab **Post-quantum**, draws
+the counts per listener and group, and `GET /admin-api/tls/key-exchange`
+answers them. **Monitoring → TLS connection** (`GET
+/admin-api/tls-connection`) shows the group of the connection the request
+came on ([TLS](tls.md#which-key-exchange-clients-negotiated)).
+
 **Next steps.**
 
-1. *Done*: hybrid key exchange by default, `tls.pqcOnly`, and ML-DSA
-   certificates served beside RSA.
+1. *Done*: hybrid key exchange by default, `tls.pqcOnly`, ML-DSA
+   certificates served beside RSA on every listener, LDAPS included, and a
+   count of the key exchanges clients negotiated.
 2. *Operator's step*: turn on `tls.pqcOnly` once every client offers an
-   ML-KEM group. Waits on clients.
+   ML-KEM group. Waits on clients; the key exchange counts show when the
+   classical ones have stopped.
 3. *Operator's step*: add an ML-DSA certificate with `rsa,ml-dsa-65`, and
    later put it first. Waits on clients' TLS stacks.
 
@@ -293,33 +360,46 @@ signature. PKINIT's Diffie-Hellman key agreement is the quantum-exposed part.
 
 **Next steps.**
 
-1. *Future*: ML-KEM key agreement and ML-DSA CMS signatures in PKINIT. Waits
-   on a standard and on a client that sends them.
+1. *Future*: ML-KEM key agreement and ML-DSA CMS signatures in PKINIT.
+   **Trigger**: an IETF RFC updating RFC 4556 with an ML-KEM key
+   establishment (no kitten working-group document defines one as of
+   November 2026; the ML-DSA signature itself is RFC 9882 in CMS), **and**
+   a PKINIT client that sends it: MIT Kerberos, Heimdal or Windows. **Then**
+   the KDC accepts the ML-KEM exchange beside Diffie-Hellman and may sign
+   its reply with an ML-DSA `krb5.pkinitKdcKeyAlgorithm`; Diffie-Hellman
+   stays for every other client.
 
 ### S/MIME and OpenPGP
 
 **Today.** Mail encrypted with S/MIME is RFC 5083 AuthEnvelopedData under
 AES-256-GCM (`mail.smimeContentEncryption`). A recipient certificate may be
 RSA, ECDH on P-256, P-384 or P-521, or **ML-KEM** (RFC 9935), carried as a
-KEMRecipientInfo (RFC 9629) (#2124). OpenPGP accepts RFC 9980's composites
-first and the classical algorithms after them (`openpgp.algorithms`).
+KEMRecipientInfo (RFC 9629) (#2124). OpenPGP accepts RFC 9980's composites and
+its three SLH-DSA algorithms first, and the classical algorithms after them
+(`openpgp.algorithms`).
 [OpenPGP](openpgp.md) has the full list.
 
 **Post-quantum options now.**
 
 | Setting | Default | What it does |
 |---|---|---|
-| `openpgp.algorithms` | every supported algorithm, composites first | Which algorithms a registered key may use |
-| `openpgp.pqcOnly` | `false` | A newly registered key must use a post-quantum composite. Keys already registered keep working |
+| `openpgp.algorithms` | every supported algorithm, post-quantum first | Which algorithms a registered key may use: RFC 9980's ML-DSA composites and SLH-DSA-SHAKE-128s, -128f and -256s (v6 keys) sign, its ML-KEM composites encrypt |
+| `openpgp.pqcOnly` | `false` | A newly registered key must use a post-quantum algorithm (a composite or SLH-DSA). Keys already registered keep working |
+| the portal's **An ML-KEM certificate from this service** (`/portal/openpgp`; the account API's `smime-kem-challenge` and `smime-kem-issue`) | | The realm's EST Issuing CA issues an ML-KEM S/MIME certificate on a proof of possession (below) |
 | `openpgp.pqcAlongsideClassical` | `false` | A newly registered key must carry a post-quantum and a separate classical algorithm |
 | the `pqc-mail-encryption` post-login activity | off | Asks people whose mail is encrypted to a classical key to register an ML-KEM OpenPGP key or upload an ML-KEM S/MIME certificate. The classical OpenPGP key is kept beside the new one for the profile's `mailKeepClassical` days (90 by default) |
 
 **What the ecosystem limits.**
 
-* **This service issues no ML-KEM S/MIME certificate.** A person uploads one.
-  A KEM key cannot sign a certification request, so issuing one needs a
-  separate proof of possession (`common/post_login_mail.ts`, decision D4).
-* SLH-DSA is not implemented for OpenPGP (`openpgp.algorithms`).
+* **A KEM key cannot sign a certification request**, so an ML-KEM S/MIME
+  certificate is issued on RFC 9810 (CMP) section 5.2.8.3's
+  challenge-response proof of possession instead: the person sends their
+  ML-KEM public key, the service encapsulates to it, the person recovers
+  the shared secret with `openssl pkeyutl -decap` (OpenSSL 3.5) and sends
+  it back, and only then does the realm's EST Issuing CA issue the
+  certificate (the `email` profile, `keyEncipherment` alone as RFC 9935
+  requires). A person may still upload one instead
+  ([OpenPGP](openpgp.md#an-ml-kem-smime-certificate-issued-here)).
 * An OpenPGP card cannot hold an RFC 9980 key, so nothing registered by the
   mail activity is hardware-bound.
 * **DKIM has no post-quantum algorithm registered** ([Mail](mail.md)).
@@ -330,10 +410,17 @@ first and the classical algorithms after them (`openpgp.algorithms`).
 
 **Next steps.**
 
-1. *Done*: ML-KEM S/MIME recipients and RFC 9980 OpenPGP keys, and the
-   post-login mail activity (#2009 phase 2).
-2. *Future*: issuing ML-KEM S/MIME certificates (#2009, decision D4).
-3. *Future*: post-quantum DKIM. Waits on a registered algorithm.
+1. *Done*: ML-KEM S/MIME recipients and RFC 9980 OpenPGP keys, SLH-DSA
+   among them, and the post-login mail activity (#2009 phase 2).
+2. *Done*: ML-KEM S/MIME certificates issued by the realm on a proof of
+   possession (#2220).
+3. *Future*: post-quantum DKIM. **Trigger**: an RFC that registers a
+   post-quantum signing algorithm (ML-DSA or a composite) in the IANA
+   DomainKeys Identified Mail *Key Type* registry of RFC 6376, as RFC 8463
+   did for Ed25519, and a receiving mail provider that verifies it.
+   **Then** `mail.dkimAlgorithm` gains the value, the DNS record to publish
+   is shown beside the RSA or Ed25519 one, and a message can carry both
+   signatures.
 
 ### WebAuthn and passkeys
 
@@ -402,8 +489,16 @@ algorithm when they make an offer on the portal.
 2. *Operator's step*: move `oid4vci.credentialSigningAlgorithm` to ML-DSA once
    the realm's wallets and verifiers accept it. A credential already issued
    keeps its algorithm.
-3. *Future*: a post-quantum mdoc signature (#1862 covers mdoc issuance). Waits
-   on ISO/IEC 18013-5 support.
+3. *Future*: a post-quantum mdoc signature (#1862 covers mdoc issuance).
+   **Trigger**: an amendment or revision of ISO/IEC 18013-5 (section 9.1.2,
+   the Mobile Security Object's `COSE_Sign1`) that lists an ML-DSA COSE
+   algorithm (RFC 9964's identifiers), and a wallet that verifies it.
+   **Then** an mdoc's Mobile Security Object may be signed with ML-DSA, per
+   credential configuration, with ES256 kept for every other wallet.
+4. *Future*: the W3C quantum-resistant cryptosuites made final.
+   **Trigger**: the W3C *Quantum-Resistant Cryptosuites* reaching
+   Recommendation. **Then** the final cryptosuite names are added beside
+   `mldsa44-jcs-2024` and `slhdsa128-jcs-2024`, which stay accepted.
 
 ### KEM and encryption at rest
 
@@ -442,7 +537,12 @@ JWE encryption to and from clients can use ML-KEM and HPKE
    sealing at rest.
 2. *Operator's step*: turn on `keys.offerKemEncryption` and set
    `keys.encryptionKemAlgs` for a realm whose clients handle AKP keys.
-3. *Future*: on by default. Waits on the JOSE drafts becoming RFCs.
+3. *Future*: on by default. **Trigger**: draft-ietf-jose-pqc-kem and
+   draft-ietf-jose-hpke-encrypt published as RFCs (the hybrid HPKE draft,
+   draft-reddy-cose-jose-pqc-hybrid-hpke, has expired and is not a
+   trigger). **Then** a release turns `keys.offerKemEncryption` on by
+   default under the RFC identifiers, the draft ones still accepted, and
+   `keys.encryptionKemAlgs` stays empty until clients handle AKP keys.
 
 ## Moving a realm today
 
@@ -484,20 +584,14 @@ What the plan cannot do yet, and what would close each one.
 
 | Gap | Where | What would close it |
 |---|---|---|
-| No ML-KEM S/MIME certificate is issued, only uploaded | `common/post_login_mail.ts:25` | A proof of possession for a KEM key, then issuance (#2009, D4) |
-| No composite-keyed certificate authority | `common/config.js:8457` (`pki.keyAlgorithm`), `STS-PKI-0272`–`0275` | The TLS library reading a composite key on a listener chain |
-| CRLs and OCSP responses are classical only | `docs/v1.2.0/pki.md:449` | A published profile for an alternative signature on either |
-| No post-quantum PKINIT | `common/config.js:15572` (`krb5.pkinitKdcKeyAlgorithm`) | A PKINIT standard and a client that uses it |
-| No post-quantum XML Encryption | `docs/v1.2.0/post-quantum-encryption.md:152` | A W3C or IETF specification |
-| No post-quantum DKIM | `docs/v1.2.0/mail.md:163`, `common/config.js:22157` (`mail.dkimAlgorithm`) | A registered DKIM algorithm |
-| SLH-DSA is not implemented for OpenPGP | `common/config.js:7667` (`openpgp.algorithms`) | An implementation |
-| An mdoc's Mobile Security Object is not post-quantum | `docs/v1.2.0/verifiable-credentials.md:892` | ISO/IEC 18013-5 support for a post-quantum COSE algorithm |
-| LDAPS serves only the first listener certificate, so it cannot offer RSA and ML-DSA side by side | `docs/v1.2.0/tls.md:281` | Serving every certificate on 636, as the main port does |
-| Nothing reports whether a TLS connection's key exchange was post-quantum | `docs/v1.2.0/tls.md:282` | A per-connection or aggregate report of the negotiated group |
-| SLH-DSA and the published post-quantum set are made in software even with an HSM | `common/crypto_impl/pkcs11.js:95` | PKCS#11 mechanisms for SLH-DSA, and making the published set in the module |
-| `ssh-mldsa-65` is this service's own wire name; stock OpenSSH cannot verify it | `docs/v1.2.0/pki.md:157` | An OpenSSH post-quantum signature algorithm |
+| No composite-keyed certificate authority | `common/config.js` (`pki.keyAlgorithm`), `STS-PKI-0272`–`0275` | draft-ietf-lamps-pq-composite-sigs as an RFC, and an OpenSSL release (with the node release that links it) that loads a composite ML-DSA key from a certificate on a TLS chain; OpenSSL 3.5 and 3.6 do not |
+| A hybrid hierarchy's CRLs and OCSP responses carry the classical signature only | [PKI](pki.md) | An IETF RFC profiling ITU-T X.509 (10/2019) clause 9.8's `altSignatureAlgorithm` and `altSignatureValue` for CRLs, or defining a second signature for RFC 6960 OCSP responses, and a verifier that checks it |
+| No post-quantum PKINIT | `common/config.js` (`krb5.pkinitKdcKeyAlgorithm`) | An IETF RFC updating RFC 4556 with ML-KEM key establishment (none adopted as of November 2026), and a PKINIT client (MIT Kerberos, Heimdal, Windows) that sends it |
+| No post-quantum XML Encryption | [Post-quantum key establishment](post-quantum-encryption.md) | A W3C Recommendation or IETF RFC (a successor of RFC 9231) defining an ML-KEM key transport for XML Encryption 1.1, and xmlsec1 or Apache Santuario implementing it |
+| No post-quantum DKIM | [Mail](mail.md), `common/config.js` (`mail.dkimAlgorithm`) | An RFC registering a post-quantum algorithm in RFC 6376's IANA DKIM Key Type registry, as RFC 8463 did for Ed25519, and receivers that verify it |
+| An mdoc's Mobile Security Object is not post-quantum | [Verifiable credentials](verifiable-credentials.md) | An amendment of ISO/IEC 18013-5 listing an ML-DSA COSE algorithm (RFC 9964) for the Mobile Security Object, and wallets that verify it |
+| `ssh-mldsa-65` is this service's own wire name; stock OpenSSH cannot verify it | [PKI](pki.md) | An RFC from the IETF sshm working group defining ML-DSA public keys and signatures for SSH (RFC 4253) and its certificates, and an OpenSSH release that implements it; OpenSSH 10 has post-quantum key exchange (`mlkem768x25519-sha256`) and no post-quantum signature |
 | Credential-signing keys have no scheduled rotation, so a move to a new algorithm does not retire the old key on a schedule | `docs/v1.2.0/verifiable-credentials.md:958` | A rotation job for credential-signing keys |
-| No date or trigger is set for any *Future* step above; each waits on a standard or a library | this page | A dated roadmap, once the dependencies publish |
 
 ## Related
 

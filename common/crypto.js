@@ -4493,6 +4493,63 @@ function pqPrivateBytes(key) {
     : Buffer.from(key);
 }
 
+// ---------------------------------------------------------------------------
+// A POST-QUANTUM SIGNATURE OVER RAW BYTES, IN SOFTWARE OR IN THE HSM (#2220).
+// The realm's published ML-DSA and SLH-DSA keys are made in the token where
+// it offers CKM_ML_DSA or CKM_SLH_DSA (`helpers.js`'s `pqKeysFor`), so the
+// doors that sign raw bytes with a post-quantum key — Data Integrity's
+// `signRawSignature()`, COSE's `coseSign1Sign()` — ask here, and an HSM
+// key's reference goes to C_Sign rather than being read as the 32 bytes of
+// a seed. The JWS doors already ask `isHsmKey()` first (`hsmSignJws()`).
+// ---------------------------------------------------------------------------
+/**
+ * Signs bytes with a post-quantum key: the token's for an HSM key,
+ * `pq_jose.js`'s otherwise.
+ *
+ * @param alg - the JOSE name (`ML-DSA-65`, `SLH-DSA-SHA2-128s`, a composite)
+ * @param key - the raw private key, `{ priv }`, an HSM key or its reference
+ * @param data - the bytes to sign
+ * @returns the signature
+ */
+function pqSignBytes(alg, key, data) {
+  log.debug('Entering pqSignBytes(). ' + alg);
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const out = hsmKey.signSync(hsmSigningAlg(hsmKey, alg),
+                                Buffer.from(data || []));
+    log.debug('Leaving pqSignBytes(). In the HSM.');
+    return out;
+  }
+  const out = Buffer.from(pqJose.sign(alg, pqPrivateBytes(key),
+                                      Buffer.from(data || [])));
+  log.debug('Leaving pqSignBytes().');
+  return out;
+}
+
+/**
+ * `pqSignBytes()`, off the event loop: C_SignAsync for an HSM key, libuv
+ * for a software one.
+ *
+ * @param alg - the JOSE name
+ * @param key - as for `pqSignBytes()`
+ * @param data - the bytes to sign
+ * @returns a promise of the signature
+ */
+async function pqSignBytesAsync(alg, key, data) {
+  log.debug('Entering pqSignBytesAsync(). ' + alg);
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const signed = Buffer.from(await hsmKey.sign(hsmSigningAlg(hsmKey, alg),
+                                                 Buffer.from(data || [])));
+    log.debug('Leaving pqSignBytesAsync(). In the HSM.');
+    return signed;
+  }
+  const out = Buffer.from(await pqJose.signAsync(alg, pqPrivateBytes(key),
+                                                 Buffer.from(data || [])));
+  log.debug('Leaving pqSignBytesAsync().');
+  return out;
+}
+
 function pqPublicBytes(key) {
   log.debug('Entering pqPublicBytes().');
   log.debug('Leaving pqPublicBytes().');
@@ -11643,8 +11700,7 @@ function signRawSignature(scheme, privateKey, data) {
   log.debug("Entering signRawSignature(). " + s.family + "/" +
             (s.hash || ''));
   if (s.family === 'pq') {
-    const pq = Buffer.from(pqJose.sign(s.alg, pqPrivateBytes(privateKey),
-                                       Buffer.from(data || [])));
+    const pq = pqSignBytes(s.alg, privateKey, data);
     log.debug("Leaving signRawSignature(). " + s.alg);
     return pq;
   }
@@ -11693,8 +11749,7 @@ async function signRawSignatureAsync(scheme, privateKey, data) {
     log.debug("Leaving signRawSignatureAsync(). In process.");
     return signRawSignature(s, privateKey, data);
   }
-  const out = Buffer.from(await pqJose.signAsync(s.alg,
-    pqPrivateBytes(privateKey), Buffer.from(data || [])));
+  const out = await pqSignBytesAsync(s.alg, privateKey, data);
   log.debug("Leaving signRawSignatureAsync(). " + s.alg);
   return out;
 }
@@ -12430,7 +12485,7 @@ function coseSign1Sign(coseAlg, key, protectedBytes, payload, options) {
   const toBeSigned = coseSigStructure(protectedBytes,
                                       options && options.external, payload);
   const signature = spec.family === 'pq'
-    ? Buffer.from(pqJose.sign(spec.name, pqPrivateBytes(key), toBeSigned))
+    ? pqSignBytes(spec.name, key, toBeSigned)
     : signBytes(spec.hash, toBeSigned, coseSignParams(spec, key));
   log.debug("Leaving coseSign1Sign().");
   return signature;
@@ -12454,8 +12509,8 @@ async function coseSign1SignAsync(coseAlg, key, protectedBytes, payload,
     log.debug("Leaving coseSign1SignAsync(). In process.");
     return coseSign1Sign(coseAlg, key, protectedBytes, payload, options);
   }
-  const out = Buffer.from(await pqJose.signAsync(spec.name, pqPrivateBytes(key),
-    coseSigStructure(protectedBytes, options && options.external, payload)));
+  const out = await pqSignBytesAsync(spec.name, key,
+    coseSigStructure(protectedBytes, options && options.external, payload));
   log.debug("Leaving coseSign1SignAsync().");
   return out;
 }
@@ -20277,7 +20332,9 @@ function hsmRefOf(text) {
 // `openpgp.algorithms` names it (the default names every one):
 //
 //   signing     RFC 9980's ML-DSA-65+Ed25519 (MUST) and ML-DSA-87+Ed448
-//               (SHOULD), then Ed25519 and Ed448 (v6 `ed25519`/`ed448`,
+//               (SHOULD), its standalone SLH-DSA-SHAKE-128s, -128f and
+//               -256s (MAY, v6 keys only; #2220), then Ed25519 and Ed448
+//               (v6 `ed25519`/`ed448`,
 //               v4 `eddsaLegacy` on `ed25519Legacy`), ECDSA on P-256, P-384
 //               and P-521, RSA of at least `minRsaBits` (3072 at least)
 //   encryption  RFC 9980's ML-KEM-768+X25519 (MUST) and ML-KEM-1024+X448
@@ -20285,8 +20342,10 @@ function hsmRefOf(text) {
 //               (v4) and on P-256, P-384 and P-521, RSA of `minRsaBits`
 //
 // DSA and ElGamal are refused outright (RFC 9580 section 9.1 deprecates
-// both), and so are the Brainpool curves. SLH-DSA (RFC 9980 ids 32–34) is
-// a MAY and is not implemented, so a key that uses it is refused too.
+// both), and so are the Brainpool curves. SLH-DSA (RFC 9980 ids 32–34)
+// was refused until #2220; `openpgp_pqc.js` reads it now, and it counts as
+// post-quantum for `openpgp.pqcOnly` — a pure post-quantum signature, not
+// a composite.
 //
 // **openpgp.js DOES NOT READ AN RFC 9980 KEY.** Those algorithm ids fail
 // inside it, so `crypto_impl/openpgp_pqc.js` reads them, checks BOTH halves
@@ -20344,6 +20403,7 @@ const openpgpPqc = LazyModule.of('common/crypto_impl/openpgp_pqc.js',
 /** The OpenPGP signing algorithms a key may use (the header). */
 const OPENPGP_SIGNING_ALGORITHMS = Object.freeze([
   'ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+  'SLH-DSA-SHAKE-128s', 'SLH-DSA-SHAKE-128f', 'SLH-DSA-SHAKE-256s',
   'ed25519', 'ed448', 'eddsaLegacy/ed25519Legacy', 'ecdsa/nistP256',
   'ecdsa/nistP384', 'ecdsa/nistP521', 'rsaSign', 'rsaEncryptSign']);
 
@@ -20354,12 +20414,14 @@ const OPENPGP_ENCRYPTION_ALGORITHMS = Object.freeze([
   'ecdh/nistP384', 'ecdh/nistP521', 'rsaEncrypt', 'rsaEncryptSign']);
 
 /**
- * The RFC 9980 composite names. A composite counts as post-quantum for
- * `openpgp.pqcOnly` and `openpgp.pqcAlongsideClassical`: the classical
- * half is bound to the post-quantum half and is not a separate key.
+ * The RFC 9980 post-quantum names: the composites, and SLH-DSA (#2220). A
+ * composite counts as post-quantum for `openpgp.pqcOnly` and
+ * `openpgp.pqcAlongsideClassical`: the classical half is bound to the
+ * post-quantum half and is not a separate key.
  */
 const OPENPGP_PQ_NAMES = Object.freeze([
   'ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+  'SLH-DSA-SHAKE-128s', 'SLH-DSA-SHAKE-128f', 'SLH-DSA-SHAKE-256s',
   'ML-KEM-768+X25519', 'ML-KEM-1024+X448']);
 
 /** The smallest RSA key the allow list ever accepts, whatever is asked. */
@@ -20412,7 +20474,7 @@ function openpgpAcceptNames(accept) {
 }
 
 /**
- * Whether a name is one of the RFC 9980 composites.
+ * Whether a name is one of the RFC 9980 post-quantum algorithms.
  *
  * @param name - the allow-list name
  * @returns true when it is
@@ -21207,8 +21269,12 @@ function hsmSigningAlg(key, jwsAlg) {
   // names that algorithm. An RSA key asked for ML-DSA still fails here
   // (STS-KEYS-0206). The token must also offer CKM_ML_DSA; that check is
   // `Pkcs11Token.sign()`, because this function does not hold the token.
+  // The kind is node's: `ml-dsa-65`, `slh-dsa-sha2-128s` on a runtime that
+  // imports the key (node 24), `ml-dsa` or `slh-dsa` with the parameter set
+  // beside it on one that cannot (#2220: node 24's spelling was refused).
   const mldsa = !!(signing && signing.kty === 'AKP' && spec &&
-    spec.family === 'pq' && (kind === 'ml-dsa' || kind === 'akp') &&
+    spec.family === 'pq' &&
+    (/^(ml-dsa|slh-dsa)(-|$)/.test(String(kind)) || kind === 'akp') &&
     parameter === jwsAlg);
   const fits = spec && ((spec.family === 'rsa' && kind === 'rsa') ||
     (spec.family === 'ec' && kind === 'ec' &&
@@ -21217,9 +21283,9 @@ function hsmSigningAlg(key, jwsAlg) {
     mldsa);
   if (!fits || signing === undefined) {
     throw errorCodes.mark(new Error('the HSM key (' + kind + ') does not ' +
-      'sign ' + jwsAlg + '; ML-DSA is asked of the HSM only for an ML-DSA ' +
-      'key of that parameter set, and SLH-DSA, HMAC and Ed448 stay in ' +
-      'software'), 'STS-KEYS-0206');
+      'sign ' + jwsAlg + '; ML-DSA and SLH-DSA are asked of the HSM only ' +
+      'for a key of that parameter set, and the composites, HMAC and ' +
+      'Ed448 stay in software'), 'STS-KEYS-0206');
   }
   log.debug('Leaving hsmSigningAlg().');
   return jwsAlg;
@@ -21261,6 +21327,13 @@ function jsonwebtokenFraming(payload, algorithm, options) {
 function hsmSigningInput(payload, key, algorithm, spec, options) {
   log.debug('Entering hsmSigningInput(). ' + algorithm);
   const asked = options || {};
+  // A POST-QUANTUM KEY IN THE HSM (#2220): the framing every post-quantum
+  // JWS here has (`pqSigningInput()`), which neither branch below makes —
+  // jsonwebtoken knows no ML-DSA or SLH-DSA.
+  if (spec.family === 'pq') {
+    log.debug('Leaving hsmSigningInput(). pqSigningInput().');
+    return pqSigningInput(payload, algorithm, asked);
+  }
   if (spec.ownSigner) {
     const header = protectedHeaderFor(algorithm, asked);
     const body = Object.assign({}, payload);
@@ -21692,9 +21765,7 @@ function generatePkcs11KeyPair(token, tokenUri, spec, label) {
   log.debug('Entering generatePkcs11KeyPair(). ' + spec.kty);
   const id = nodeCrypto.randomBytes(16);
   const made = token.generateKeyPair(spec, label, id);
-  const ref = { token: String(tokenUri), id: id.toString('hex'),
-                kty: spec.kty, crv: spec.crv || '',
-                bits: spec.bits || 0 };
+  const ref = hsmRefFor(tokenUri, id, spec);
   const key = makeHsmKey(token, made.key, made.publicKey, ref);
   log.debug('Leaving generatePkcs11KeyPair().');
   return { privateKey: key, publicKey: made.publicKey };
@@ -21710,13 +21781,26 @@ function generatePkcs11KeyPair(token, tokenUri, spec, label) {
  * @param label - CKA_LABEL
  * @returns a promise of `{ privateKey, publicKey }`
  */
+// The reference a generated key is stored under. A post-quantum key's
+// carries its algorithm too (#2220): the parameter set is what finding it
+// again needs, and a reference made before has no `alg` and is classical.
+function hsmRefFor(tokenUri, id, spec) {
+  log.debug('Entering hsmRefFor().');
+  const ref = { token: String(tokenUri), id: id.toString('hex'),
+                kty: spec.kty, crv: spec.crv || '',
+                bits: spec.bits || 0 };
+  if (spec.kty === 'AKP') {
+    ref.alg = String(spec.alg || '');
+  }
+  log.debug('Leaving hsmRefFor().');
+  return ref;
+}
+
 async function generatePkcs11KeyPairAsync(token, tokenUri, spec, label) {
   log.debug('Entering generatePkcs11KeyPairAsync(). ' + spec.kty);
   const id = nodeCrypto.randomBytes(16);
   const made = await token.generateKeyPairAsync(spec, label, id);
-  const ref = { token: String(tokenUri), id: id.toString('hex'),
-                kty: spec.kty, crv: spec.crv || '',
-                bits: spec.bits || 0 };
+  const ref = hsmRefFor(tokenUri, id, spec);
   const key = makeHsmKey(token, made.key, made.publicKey, ref);
   log.debug('Leaving generatePkcs11KeyPairAsync().');
   return { privateKey: key, publicKey: made.publicKey };
@@ -21740,7 +21824,8 @@ async function generatePkcs11KeyPairAsync(token, tokenUri, spec, label) {
 async function findPkcs11KeyPairAsync(token, ref) {
   log.debug('Entering findPkcs11KeyPairAsync().');
   const found = await token.keyPairAsync(Buffer.from(String(ref.id), 'hex'),
-                                         { kty: ref.kty, crv: ref.crv });
+                                         { kty: ref.kty, crv: ref.crv,
+                                           alg: ref.alg });
   log.debug('Leaving findPkcs11KeyPairAsync().');
   return { token: token, key: found.key, publicKey: found.publicKey };
 }
@@ -21748,7 +21833,7 @@ async function findPkcs11KeyPairAsync(token, ref) {
 function findPkcs11KeyPair(token, ref) {
   log.debug('Entering findPkcs11KeyPair().');
   const found = token.keyPair(Buffer.from(String(ref.id), 'hex'),
-                              { kty: ref.kty, crv: ref.crv });
+                              { kty: ref.kty, crv: ref.crv, alg: ref.alg });
   log.debug('Leaving findPkcs11KeyPair().');
   return { token: token, key: found.key, publicKey: found.publicKey };
 }
@@ -21776,6 +21861,9 @@ function pkcs11Capabilities(token) {
   }
   if (flags.has(CK.CKM_ML_DSA_KEY_PAIR_GEN)) {
     generates.push('ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87');
+  }
+  if (flags.has(CK.CKM_SLH_DSA_KEY_PAIR_GEN)) {
+    generates.push('SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s');
   }
   log.debug('Leaving pkcs11Capabilities().');
   return { signs: token.signingAlgorithms(), generates: generates };
@@ -22371,6 +22459,147 @@ function smimeKemAvailable() {
   return smimeKemAnswer;
 }
 
+// ---------------------------------------------------------------------------
+// PROOF OF POSSESSION OF AN ML-KEM KEY, FOR AN S/MIME CERTIFICATE THIS REALM
+// ISSUES (#2220; #2009's D4 left issuance to a later ticket).
+//
+// A KEM key cannot sign, so it cannot sign a certification request, and a
+// certificate authority that certified a KEM key on the strength of a
+// request alone would be certifying a key nobody showed they hold. RFC 9810
+// (CMP v3) section 5.2.8.3 names the answer for a key that cannot sign: the
+// CHALLENGE-RESPONSE method — the authority encapsulates to the key, and only
+// the holder of the private key can recover the shared secret. So:
+//
+//   * `smimeKemPublicKeyOf()` reads the person's SubjectPublicKeyInfo and
+//     holds it to RFC 9935 (id-alg-ml-kem-512/768/1024, parameters absent,
+//     the public key the length FIPS 203 gives);
+//   * `smimeKemChallenge()` encapsulates to it (FIPS 203 ML-KEM.Encaps, the
+//     same `pq_native.js` the mail path uses) and answers the ciphertext and
+//     the SHA-256 of the shared secret — the secret itself is never kept;
+//   * `smimeKemAnswerMatches()` compares what the person sends back, the
+//     secret `openssl pkeyutl -decap` recovered, in constant time.
+//
+// Nothing here issues: `common/openpgp_keys.ts` asks the realm's EST Issuing
+// CA, through `common/cert_enrollment.ts`, once the answer matched.
+// ---------------------------------------------------------------------------
+/**
+ * Reads an ML-KEM public key (a SubjectPublicKeyInfo, PEM or DER) for an
+ * S/MIME certificate request.
+ *
+ * @param input - the PEM text, or the DER
+ * @returns `{ ok, name, oid, raw, spkiPem }`, or a refusal with `error`
+ */
+function smimeKemPublicKeyOf(input) {
+  log.debug("Entering smimeKemPublicKeyOf().");
+  let der = null;
+  try {
+    if (Buffer.isBuffer(input)) {
+      der = input;
+    } else {
+      const text = String(input || '');
+      const m = /-----BEGIN PUBLIC KEY-----([\s\S]*?)-----END PUBLIC KEY-----/
+        .exec(text);
+      der = m ? Buffer.from(m[1].replace(/\s+/g, ''), 'base64') : null;
+    }
+  } catch (e) {
+    log.debug("Caught in smimeKemPublicKeyOf(): " + ((e && e.message) || e));
+    der = null;
+  }
+  if (!der || !der.length || der.length > 4096) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Not a public key.");
+    return { ok: false, error: 'that is not a PEM public key (-----BEGIN ' +
+             'PUBLIC KEY-----, what openssl pkey -pubout writes)' };
+  }
+  let oid = '';
+  let params = false;
+  let raw = null;
+  try {
+    const parsed = asn1js.fromBER(smimeAsn1View(der));
+    // asn1js types `result` as every block kind at once, and only a
+    // constructed one has `valueBlock.value`; a block of another kind
+    // throws below and is caught as no key.
+    const top = /** @type {any} */ (parsed.result);
+    const algSeq = top.valueBlock.value[0];
+    oid = String(algSeq.valueBlock.value[0].valueBlock.toString());
+    params = algSeq.valueBlock.value.length > 1;
+    const bits = top.valueBlock.value[1];
+    raw = Buffer.from(bits.valueBlock.valueHexView ||
+                      bits.valueBlock.valueHex || []);
+  } catch (e) {
+    log.debug("Caught in smimeKemPublicKeyOf(): " + ((e && e.message) || e));
+    raw = null;
+  }
+  const row = SMIME_KEM[oid];
+  if (!raw || !row) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Not ML-KEM.");
+    return { ok: false, error: 'the key is not an ML-KEM key (RFC 9935: ' +
+             'ML-KEM-512, ML-KEM-768 or ML-KEM-1024)' };
+  }
+  if (params) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Parameters.");
+    return { ok: false, error: row.name + ' carries parameters, and its ' +
+             'identifier has none (RFC 9935)' };
+  }
+  if (raw.length !== row.publicBytes) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Length.");
+    return { ok: false, error: 'an ' + row.name + ' public key is ' +
+             row.publicBytes + ' octets, and this one is ' + raw.length };
+  }
+  const spkiPem = '-----BEGIN PUBLIC KEY-----\n' +
+    (der.toString('base64').match(/.{1,64}/g) || []).join('\n') +
+    '\n-----END PUBLIC KEY-----\n';
+  log.debug("Leaving smimeKemPublicKeyOf(). " + row.name);
+  return { ok: true, name: row.name, oid: oid, raw: raw, spkiPem: spkiPem };
+}
+
+/**
+ * Encapsulates to an ML-KEM key for a proof of possession: the ciphertext
+ * the holder decapsulates, and the SHA-256 of the shared secret, which is
+ * all that is kept.
+ *
+ * @param key - `smimeKemPublicKeyOf()`'s answer
+ * @returns `{ cipherText, secretDigest }`
+ * @throws Error where this runtime cannot encapsulate
+ */
+function smimeKemChallenge(key) {
+  log.debug("Entering smimeKemChallenge(). " + key.name);
+  const row = SMIME_KEM[key.oid];
+  const share = nobleMlKem[row.kem].encapsulate(new Uint8Array(key.raw));
+  const out = {
+    cipherText: Buffer.from(share.cipherText),
+    secretDigest: nodeCrypto.createHash('sha256')
+      .update(Buffer.from(share.sharedSecret)).digest('hex')
+  };
+  log.debug("Leaving smimeKemChallenge().");
+  return out;
+}
+
+/**
+ * Whether the secret a person sent back is the one encapsulated: 32 octets,
+ * as base64 or hex, compared by digest in constant time.
+ *
+ * @param secretDigest - `smimeKemChallenge()`'s digest
+ * @param presented - the secret, base64 or hex
+ * @returns true when it matches
+ */
+function smimeKemAnswerMatches(secretDigest, presented) {
+  log.debug("Entering smimeKemAnswerMatches().");
+  const text = String(presented || '').trim();
+  let bytes = null;
+  if (/^[0-9a-fA-F]{64}$/.test(text)) {
+    bytes = Buffer.from(text, 'hex');
+  } else if (/^[A-Za-z0-9+/_-]{43}=?$/.test(text)) {
+    bytes = Buffer.from(text.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  }
+  if (!bytes || bytes.length !== 32) {
+    log.debug("Leaving smimeKemAnswerMatches(). Not a 32-octet secret.");
+    return false;
+  }
+  const digest = nodeCrypto.createHash('sha256').update(bytes).digest('hex');
+  log.debug("Leaving smimeKemAnswerMatches().");
+  return constantTimeEquals(digest, String(secretDigest || ''));
+}
+
 /**
  * The RSA or EC RecipientInfo for one certificate, carrying `cek`, built by
  * pkijs (the header: pkijs has no AuthEnvelopedData, and its recipient code
@@ -22505,6 +22734,9 @@ module.exports = {
   OPENPGP_MIN_RSA_BITS: OPENPGP_MIN_RSA_BITS,
   openpgpIsPq: openpgpIsPq,
   smimeKemAvailable: smimeKemAvailable,
+  smimeKemPublicKeyOf: smimeKemPublicKeyOf,
+  smimeKemChallenge: smimeKemChallenge,
+  smimeKemAnswerMatches: smimeKemAnswerMatches,
   openpgpAlgorithmProblem: openpgpAlgorithmProblem,
   openpgpRegistrationProblem: openpgpRegistrationProblem,
   openpgpReadKey: openpgpReadKey,

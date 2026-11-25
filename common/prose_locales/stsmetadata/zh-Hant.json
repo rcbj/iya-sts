@@ -2567,6 +2567,10 @@
     "en": "019419feb342ad45",
     "text": "以 JSON 提供的 GET /admin/tls：tls.* 設定，全部僅能在重新啟動時生效，因為憑證是在任何東西開始接聽之前產生、通訊端也在那時繫結。「主」連接埠是否使用 HTTPS 由 global.https 決定，它與程序本身的設定一起位於 /admin-api/config。唯讀。"
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220)。自本節點前端程序啟動以來，其監聽器上每次完成的 TLS 交握協商出的金鑰交換群組，依監聽器與群組計數，以及其中有多少是後量子的（ML-KEM 群組）。顯示於 /admin/crypto-metadata。它不變更任何內容。"
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "以 JSON 提供的 GET /admin/tls/trust：每個用戶端憑證信任錨點，附上其主體、簽發者、序號、有效期間、指紋、PEM 與來源（`file` 或 `runtime`），以 ?page= 與 ?per= 分頁。整個「程序」只有一個信任存放區，因此在每個領域前置路徑下的回答都相同。其中沒有私密金鑰——信任存放區只保存憑證。執行階段錨點會持久保存在目錄中；`file` 錨點則不會。"

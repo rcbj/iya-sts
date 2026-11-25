@@ -278,10 +278,38 @@ also a leaf of the TLS Issuing CA.
 * `GET /tls/server-certificate` returns **every** certificate; a truststore
   built from the first alone may not verify the connection a client actually
   gets.
-* LDAPS on 636 serves the first certificate only.
-* Nothing reports the post-quantum posture of a connection's key exchange any
-  more; `GET /tls/server-certificate` and `/admin/crypto-metadata` list the
+* LDAPS on 636 serves every certificate too, chosen the same way (#2220;
+  until then it served the first only).
+* `GET /tls/server-certificate` and `/admin/crypto-metadata` list the
   certificates.
+
+### Which key exchange clients negotiated
+
+`tls.groups` puts the ML-KEM hybrids first, so a client that offers one gets
+one. To see how many do, every completed handshake on the main port, LDAPS,
+the protocol debugger and each custom listener is counted by the key
+exchange group it negotiated (#2220):
+
+* **Cryptography** (`/admin/crypto-metadata`), tab **Post-quantum**, section
+  **TLS key exchange, as negotiated**, draws the counts per listener and
+  group, and how many were post-quantum (an ML-KEM group, alone or in a
+  hybrid such as `X25519MLKEM768`).
+* `GET /admin-api/tls/key-exchange` answers the same: `connections`,
+  `postQuantum`, `classical`, `unknown`, and per listener (`main`, `ldaps`,
+  `debugger`, `custom:<id>`) each group's IANA code point and count. Admin
+  Read; a realm administrator's token is refused it, because the counts are
+  the process's.
+* **Monitoring → TLS connection** (`GET /admin-api/tls-connection`) shows, in
+  `connection.keyExchange`, the group of the connection the request came on.
+
+The group is read from the session OpenSSL keeps for the connection (the
+`kex_group` field of its SSL_SESSION encoding), which is the group the
+server put in its ServerHello: observed, not inferred from what the client
+offered. Node's `getEphemeralKeyInfo()` answers on a client socket only. A
+TLS 1.2 connection with RSA key transport exchanged no ephemeral key and is
+counted as `none`. The counts are the node's front process's, since it
+started; they are not kept across a restart, and at most 32 groups are
+counted per listener (the rest as `other`).
 
 ### Client certificates on the main port
 

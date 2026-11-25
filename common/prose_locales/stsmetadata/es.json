@@ -2567,6 +2567,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls en JSON: los ajustes tls.*, todos solo modificables con un reinicio porque el certificado se acuña y los sockets se enlazan antes de que nada escuche. Si el puerto PRINCIPAL es HTTPS lo decide global.https, en /admin-api/config con los ajustes propios del proceso. Solo lectura."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). El grupo de intercambio de claves que negoció cada negociación TLS completada en los listeners de este nodo desde que se inició su proceso frontal, contado por listener y grupo, y cuántos fueron poscuánticos (un grupo ML-KEM). Se muestra en /admin/crypto-metadata. No cambia nada."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust en JSON: cada ancla de confianza de certificados de cliente con su sujeto, emisor, número de serie, validez, huella, PEM y origen (`file` o `runtime`), paginado con ?page= y ?per=. Un único almacén de confianza para el PROCESO, así que responde lo mismo bajo cualquier prefijo de dominio. No contiene ninguna clave privada: el almacén de confianza guarda certificados y nada más. Un ancla de tiempo de ejecución se persiste en el directorio; un ancla `file`, no."

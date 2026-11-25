@@ -23,6 +23,14 @@
 //   mail-encryption    `{ choice }`: none, openpgp or smime
 //   smime              `{ certificate }`: set the S/MIME certificate mail is
 //                      encrypted to; empty removes it
+//   smime-kem-challenge `{ publicKey }`: an ML-KEM public key, answered with
+//                      a ciphertext encapsulated to it (#2220), in the
+//                      view's `smimeKemChallenge`
+//   smime-kem-issue    `{ secret }`: the shared secret decapsulated from it;
+//                      on a match the realm issues an ML-KEM S/MIME
+//                      certificate, sets it, and answers it in the view's
+//                      `smimeKemIssued`
+//                      (`common/openpgp_keys.ts` argues the route)
 //
 // **IT ASKS FOR A RECENT SIGN-IN** (`recentAuth`), as every act that changes
 // how a person is reached does: a key registered here is what mail to them
@@ -45,7 +53,8 @@ const OPENPGP_FORM = ModelZod.body('account', 'actOnOpenPgp');
 
 /** The acts, in the order the page offers them. */
 const ACTIONS = ['challenge', 'register', 'remove', 'publish', 'withdraw',
-                 'mail-encryption', 'smime'];
+                 'mail-encryption', 'smime', 'smime-kem-challenge',
+                 'smime-kem-issue'];
 
 interface AccountOpenPgpDeps {
   log: typeof helpers.log;
@@ -91,6 +100,9 @@ class AccountOpenPgp {
     log.debug("Entering AccountOpenPgp.view().");
     const out = AccountOpenPgp.shape(this.deps.openpgpKeys.view(
       caller.username));
+    // The ML-KEM S/MIME challenge (#2220), the portal's alone.
+    out.smimeKemChallenge = this.deps.openpgpKeys.smimeKemChallengeOf(
+      caller.username);
     log.debug("Leaving AccountOpenPgp.view().");
     return out;
   }
@@ -111,10 +123,12 @@ class AccountOpenPgp {
                       domainServed: false, hash: '', url: '' },
                mailEncryption: { choice: 'none', openpgpUsable: false,
                                  smimeUsable: false, smimeCertificate: null,
-                                 smimeProblem: '' } };
+                                 smimeProblem: '' },
+               smimeKemChallenge: null };
     }
     return { mail: view.mail, key: view.key, challenge: view.challenge,
-             wkd: view.wkd, mailEncryption: view.mailEncryption };
+             wkd: view.wkd, mailEncryption: view.mailEncryption,
+             smimeKemChallenge: null };
   }
 
   /**
@@ -167,6 +181,16 @@ class AccountOpenPgp {
           done = keys.setMailEncryption(username, String(b.choice || ''),
                                         where);
           break;
+        case 'smime-kem-challenge':
+          done = keys.issueSmimeKemChallenge(username,
+                                             String(b.publicKey || ''),
+                                             where);
+          break;
+        case 'smime-kem-issue':
+          done = await keys.issueSmimeKemCertificate(username,
+                                                     String(b.secret || ''),
+                                                     where);
+          break;
         default:
           done = keys.setSmimeCertificate(username,
                                           String(b.certificate || ''), where);
@@ -194,8 +218,16 @@ class AccountOpenPgp {
     log.debug("Leaving AccountOpenPgp.act(). " + action);
     // `account-api/CLAUDE.md`'s members (*What an answer is*): the
     // sentence, and the page as it now is.
-    return ctx.json(res, 200, { ok: true, message: message,
-                                view: this.view(caller) });
+    const view: Json = this.view(caller);
+    // The certificate just issued, in this answer's view only (#2220), as
+    // `/portal/kerberos` draws a keytab it just made: once.
+    if (action === 'smime-kem-issue') {
+      view.smimeKemIssued = { certificate: String(done.certificate),
+                              chain: [].concat(done.chain || []),
+                              serial: String(done.serial),
+                              algorithm: String(done.algorithm) };
+    }
+    return ctx.json(res, 200, { ok: true, message: message, view: view });
   }
 
   /**
@@ -228,6 +260,15 @@ class AccountOpenPgp {
         break;
       case 'withdraw':
         out = t.text('portalOpenpgp.done.withdrawn');
+        break;
+      case 'smime-kem-challenge':
+        out = t.text('portalOpenpgp.done.kemChallenge',
+                     { algorithm: String(done.challenge.algorithm) });
+        break;
+      case 'smime-kem-issue':
+        out = t.text('portalOpenpgp.done.kemIssued',
+                     { algorithm: String(done.algorithm),
+                       serial: String(done.serial) });
         break;
       case 'mail-encryption':
         out = t.text(done.choice === 'openpgp'

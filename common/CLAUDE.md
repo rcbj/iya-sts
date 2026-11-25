@@ -13521,6 +13521,24 @@ The file's header is the argument; what a maintainer needs beside it:
   AuthEnvelopedData parsed and opened with node alone, a tampered one
   refused, the CBC setting, the mode row), `tests/protocol/sts_openpgp.js`.
 
+### An ML-KEM S/MIME certificate issued on a proof of possession (#2220, 2026-11-25)
+
+#2009's D4 made an ML-KEM certificate uploaded only, because a KEM key
+cannot sign a request. `openpgp_keys.ts`'s `issueSmimeKemChallenge()` and
+`issueSmimeKemCertificate()` are the later ticket's route, RFC 9810
+section 5.2.8.3's challenge-response: `crypto.js`'s
+`smimeKemPublicKeyOf()` holds the key to RFC 9935, `smimeKemChallenge()`
+encapsulates and answers the ciphertext and the SHA-256 of the secret
+(all that is kept, in the OpenPGP challenge store under `kem:<entryUUID>`),
+and `smimeKemAnswerMatches()` compares the person's decapsulated secret in
+constant time. The challenge is spent by the first answer (a cluster claim
+on its nonce). A match is issued by `cert_enrollment.ts`'s `issue()` —
+family `est`, profile `email`, the person as their own principal — so
+every enrollment rule applies, and `pki.js`'s `issueEnrolled()` certifies
+`keyEncipherment` alone for an ML-KEM key. The certificate is then set
+through `setSmimeCertificate()`, unchanged. `portal/account_openpgp.ts`
+carries the two acts; `tests/smime_kem_issuance.js` holds it.
+
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
 A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —

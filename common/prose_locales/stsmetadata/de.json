@@ -2567,6 +2567,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls über JSON: die Einstellungen tls.*, sämtlich nur beim Neustart, weil das Zertifikat geprägt und die Sockets gebunden werden, bevor irgendetwas lauscht. Ob der HAUPT-Port HTTPS ist, entscheidet global.https, auf /admin-api/config bei den eigenen Einstellungen des Prozesses. Nur lesend."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Die Schlüsselaustauschgruppe, die jeder abgeschlossene TLS-Handshake auf den Listenern dieses Knotens seit dem Start seines Front-Prozesses ausgehandelt hat, gezählt pro Listener und Gruppe, und wie viele davon Post-Quanten waren (eine ML-KEM-Gruppe). Angezeigt auf /admin/crypto-metadata. Ändert nichts."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust über JSON: jeder Vertrauensanker für Client-Zertifikate mit Subject, Issuer, Seriennummer, Gültigkeit, Fingerabdruck, PEM und Quelle (`file` oder `runtime`), seitenweise mit ?page= und ?per=. Ein Truststore für den PROZESS, daher antwortet er unter jedem Präfix eines Vertrauensbereichs gleich. Kein privater Schlüssel liegt darin — der Truststore hält Zertifikate und sonst nichts. Ein Laufzeit-Anker wird im Verzeichnis persistiert; ein Anker `file` nicht."

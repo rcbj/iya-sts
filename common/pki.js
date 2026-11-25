@@ -9146,12 +9146,22 @@ async function issueEnrolled(scopeId, useCaseId, spec) {
     }
     row = rawRowFor(id);
   }
+  // AN ML-KEM KEY CERTIFIES `keyEncipherment` AND NOTHING ELSE (RFC 9935
+  // section 5, #2220): a KEM key cannot sign, so a profile's
+  // digitalSignature or nonRepudiation would claim a use it cannot have.
+  // `stsCrypto.smimeKemPublicKeyOf()` is the reading of an ML-KEM key; any
+  // other key keeps the profile's usages.
+  const profiled = x509.defaultExtensions(asked.profile);
+  if (stsCrypto.smimeKemPublicKeyOf(asked.publicKeyPem).ok) {
+    profiled.keyUsage = Object.assign({}, profiled.keyUsage,
+                                      { usages: ['keyEncipherment'] });
+  }
   const issued = await issueUnder(id, uc.id, {
     subject: asked.subject,
     publicKeyPem: asked.publicKeyPem,
     profile: asked.profile,
     notAfter: Date.now() + Math.max(1, Number(asked.days)) * 86400000,
-    extensions: Object.assign({}, x509.defaultExtensions(asked.profile), {
+    extensions: Object.assign({}, profiled, {
       subjectKeyIdentifier: { present: true, critical: false },
       authorityKeyIdentifier: { present: true, critical: false,
                                 includeIssuerAndSerial: false },

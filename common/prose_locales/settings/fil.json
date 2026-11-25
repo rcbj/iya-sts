@@ -3464,16 +3464,16 @@
     "text": "Mga algorithm na tinatanggap"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Ang mga algorithm ng OpenPGP na maaaring gamitin ng isang key, ayon sa pagkakasunud-sunod ng preferensiya. Una ang mga composite ng RFC 9980: lumalagda ang ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, nag-e-encrypt ang ML-KEM-768+X25519 at ML-KEM-1024+X448. Pagkatapos ang mga classical na pangalan: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sa nistP256, nistP384 at nistP521, rsaSign at rsaEncryptSign, x25519, x448, ecdh sa curve25519Legacy at sa parehong mga NIST curve, at rsaEncrypt. Tinatanggihan sa pagrehistro at sa pag-verify ang pangalang wala sa listahang ito (STS-OPENPGP-0004). Hindi ipinatupad ang SLH-DSA. Pinangalanan ng default ang bawat isa sa mga ito."
+    "en": "f51a30de72243d25",
+    "text": "Ang mga OpenPGP algorithm na maaaring gamitin ng isang key, ayon sa pagkakasunod ng kagustuhan. Una ang mga post-quantum algorithm ng RFC 9980: pumipirma ang ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, gayundin ang SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f at SLH-DSA-SHAKE-256s sa isang v6 key; nag-e-encrypt ang ML-KEM-768+X25519 at ML-KEM-1024+X448. Pagkatapos ang mga klasikong pangalan: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sa nistP256, nistP384 at nistP521, rsaSign at rsaEncryptSign, x25519, x448, ecdh sa curve25519Legacy at sa parehong mga NIST curve, at rsaEncrypt. Ang pangalang wala sa listahang ito ay tinatanggihan sa pagrehistro at sa pag-verify (STS-OPENPGP-0004). Pinangangalanan ng default ang bawat isa sa mga ito."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Magrehistro lamang ng post-quantum na key"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat gumamit ng post-quantum na algorithm na pinangalanan ng openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para sa signing key, at ML-KEM-768+X25519 o ML-KEM-1024+X448 kapag may encryption key. Pagrehistro lamang ang nililimitahan: ang classical na key na rehistrado na ay patuloy na bini-verify at tumatanggap pa rin ng mail. Hindi maaaring naka-on habang naka-on ang openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Naka-off bilang default."
+    "en": "b0c222dfa3cda337",
+    "text": "Kapag naka-on, ang bagong nirehistrong key ay dapat gumamit ng post-quantum algorithm na pinangalanan ng openpgp.algorithms: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 o isa sa tatlong SLH-DSA algorithm para sa signing key, at ML-KEM-768+X25519 o ML-KEM-1024+X448 kapag may encryption key ito. Pagrehistro lang ang nililimitahan nito: ang klasikong key na nakarehistro na ay nave-verify pa rin at tumatanggap pa rin ng mail. Hindi maaaring naka-on habang naka-on ang openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Naka-off bilang default."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",

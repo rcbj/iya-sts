@@ -855,6 +855,49 @@ const STANDBY_META = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                       'reason', 'publicJwk', 'certPem', 'certB64',
                       'publicKeyB64', 'group', 'memberKind', 'pairedSlot'];
 
+// ---------------------------------------------------------------------------
+// A POST-QUANTUM PRIVATE KEY AS IT TRAVELS (#2220): base64 of its raw bytes,
+// as ever — or, for an ML-DSA or SLH-DSA key the realm made IN THE HSM
+// (`helpers.js`'s `pqPairFor()`), its reference, `pkcs11-key:v1:…`, as is.
+// The two cannot be confused: the reference has a colon, and base64 none.
+// A blob written before #2220 holds base64 only and reads as it did.
+// ---------------------------------------------------------------------------
+/**
+ * Encodes a post-quantum private key for storage.
+ *
+ * @param key - the raw bytes, or an HSM key's reference
+ * @returns the stored text
+ */
+function pqPrivateOut(key) {
+  log.debug("Entering pqPrivateOut().");
+  if (typeof key === 'string' && crypto.isHsmKey(key)) {
+    log.debug("Leaving pqPrivateOut(). An HSM reference.");
+    return key;
+  }
+  log.debug("Leaving pqPrivateOut().");
+  return Buffer.from(key).toString('base64');
+}
+
+/**
+ * Decodes a stored post-quantum private key.
+ *
+ * @param stored - what `pqPrivateOut()` wrote, or bytes already
+ * @returns the raw bytes, or the HSM key's reference
+ */
+function pqPrivateIn(stored) {
+  log.debug("Entering pqPrivateIn().");
+  if (Buffer.isBuffer(stored)) {
+    log.debug("Leaving pqPrivateIn(). Bytes.");
+    return stored;
+  }
+  if (typeof stored === 'string' && crypto.isHsmKey(stored)) {
+    log.debug("Leaving pqPrivateIn(). An HSM reference.");
+    return stored;
+  }
+  log.debug("Leaving pqPrivateIn().");
+  return Buffer.from(String(stored), 'base64');
+}
+
 // Does a standby row's private half travel as raw bytes (base64) — a
 // post-quantum or BBS key, or a signer-group member that is one (#68)?
 function standbyIsRaw(row) {
@@ -881,7 +924,7 @@ function serialiseGenerations(held) {
         }
       });
       if (standbyIsRaw(one)) {
-        row.privateKey = Buffer.from(one.privateKey).toString('base64');
+        row.privateKey = pqPrivateOut(one.privateKey);
       } else if (one.kind === 'rsa') {
         row.privateKeyPem = one.privateKeyPem;
       } else {
@@ -924,8 +967,7 @@ function deserialiseStandbyEntry(row) {
     }
   });
   if (standbyIsRaw(row)) {
-    one.privateKey = Buffer.isBuffer(row.privateKey) ? row.privateKey
-      : Buffer.from(String(row.privateKey), 'base64');
+    one.privateKey = pqPrivateIn(row.privateKey);
   } else {
     one.privateKey = crypto.privateKeyFrom(row.privateKeyPem);
     if (row.kind === 'rsa') {
@@ -1093,7 +1135,8 @@ function serialise(keys) {
     pqKeys: (keys.pqKeys || []).map(function (one) {
       return {
         alg: one.alg,
-        privateKey: Buffer.from(one.privateKey).toString('base64'),
+        // An HSM key's reference as is (#2220, pqPrivateOut()).
+        privateKey: pqPrivateOut(one.privateKey),
         publicJwk: one.publicJwk
       };
     }),
@@ -1187,7 +1230,7 @@ function deserialise(blob) {
       ? blob.pqKeys.map(function (one) {
           return {
             alg: one.alg,
-            privateKey: Buffer.from(one.privateKey, 'base64'),
+            privateKey: pqPrivateIn(one.privateKey),
             publicJwk: one.publicJwk
           };
         })
@@ -2535,9 +2578,7 @@ function privateMaterialFor(realmId) {
       ? blob.pqKeys.map(function (one) {
           return {
             alg: one.alg,
-            privateKey: Buffer.isBuffer(one.privateKey)
-              ? one.privateKey
-              : Buffer.from(String(one.privateKey), 'base64'),
+            privateKey: pqPrivateIn(one.privateKey),
             publicJwk: one.publicJwk
           };
         })
@@ -6959,6 +7000,9 @@ module.exports = {
   // without driving the key channel to get one. Pure; it writes nothing.
   serialise: serialise,
   deserialise: deserialise,
+  // How a post-quantum private key travels, raw or an HSM reference (#2220).
+  pqPrivateOut: pqPrivateOut,
+  pqPrivateIn: pqPrivateIn,
   rotate: rotate,
   // The certificate authority material. See the block above attachPki() for
   // why it is in this file and why it has a channel of its own.

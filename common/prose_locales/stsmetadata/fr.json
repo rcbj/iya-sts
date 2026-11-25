@@ -2567,6 +2567,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls en JSON : les paramètres tls.*, tous pris en compte au seul redémarrage, car le certificat est émis et les sockets liés avant que quoi que ce soit n’écoute. Le fait que le port PRINCIPAL soit en HTTPS relève de global.https, sur /admin-api/config avec les paramètres propres au processus. Lecture seule."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Le groupe d'échange de clés négocié par chaque négociation TLS terminée sur les listeners de ce nœud depuis le démarrage de son processus frontal, compté par listener et par groupe, et combien étaient post-quantiques (un groupe ML-KEM). Affiché sur /admin/crypto-metadata. Ne change rien."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust en JSON : chaque ancre de confiance pour les certificats clients avec son sujet, son émetteur, son numéro de série, sa validité, son empreinte, son PEM et sa source (`file` ou `runtime`), paginé avec ?page= et ?per=. Un seul magasin de confiance pour le PROCESSUS, donc la réponse est la même sous chaque préfixe de domaine. Il ne contient aucune clé privée — le magasin de confiance ne contient que des certificats. Une ancre d’exécution est persistée dans l’annuaire ; une ancre `file` ne l’est pas."

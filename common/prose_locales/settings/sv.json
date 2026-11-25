@@ -3464,16 +3464,16 @@
     "text": "Accepterade algoritmer"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "De OpenPGP-algoritmer en nyckel får använda, i preferensordning. Först RFC 9980-kompositer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, och rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). SLH-DSA är inte implementerat. Standardvärdet namnger vart och ett av dessa."
+    "en": "f51a30de72243d25",
+    "text": "De OpenPGP-algoritmer en nyckel får använda, i prioritetsordning. Först RFC 9980:s postkvantalgoritmer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, liksom SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f och SLH-DSA-SHAKE-256s på en v6-nyckel; ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, samt rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). Standardvärdet nämner alla dessa."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Registrera endast postkvantnycklar"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "På innebär att en nyregistrerad nyckel måste använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519 eller ML-DSA-87+Ed448 för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot post. Kan inte vara på samtidigt som openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Av som standard."
+    "en": "b0c222dfa3cda337",
+    "text": "På måste en nyregistrerad nyckel använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 eller någon av de tre SLH-DSA-algoritmerna för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot e-post. Kan inte vara på medan openpgp.pqcAlongsideClassical är det (STS-OPENPGP-0027). Av som standard."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",

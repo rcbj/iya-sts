@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6130** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6135** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 35
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
-* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 39
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
@@ -5255,6 +5255,11 @@ Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/accou
 | `STS-OPENPGP-0032` | The job post-login.mail-classical-retire could not remove a classical OpenPGP key whose kept time had passed (#2009, D3). It is already left out of the Web Key Directory and every page, and the next run tries again. | none (a log line and the run's result) |
 | `STS-OPENPGP-0033` | An OpenPGP key registered where a post-quantum one is asked for (the post-login mail-encryption activity, #2009) has an encryption key that is not one of RFC 9980's ML-KEM composites. Refused before its proof is checked; nothing is spent or written. | none (HTTP 400 from /authn-api) |
 | `STS-OPENPGP-0034` | A userSMIMECertificate value written onto a person's entry holds no certificate this service can read, so it was taken off again and audited with the writer: an S/MIME certificate on the entry is the master mail is encrypted to (#2050). | none — audited |
+| `STS-OPENPGP-0035` | An ML-KEM S/MIME certificate was asked for (#2220) with a public key that is not an RFC 9935 ML-KEM key: not a PEM SubjectPublicKeyInfo, another algorithm, parameters present, or a public key of the wrong length. Nothing was encapsulated. | none (HTTP 400 from /account-api) |
+| `STS-OPENPGP-0036` | An ML-KEM S/MIME certificate was asked for (#2220) where this runtime cannot encapsulate to ML-KEM (`crypto.smimeKemAvailable()`), so no proof of possession could be asked for and nothing was issued. | none (HTTP 400 from /account-api) |
+| `STS-OPENPGP-0037` | An ML-KEM S/MIME certificate was asked to be issued (#2220) with no outstanding proof-of-possession challenge for the person, or one that lapsed (`openpgp.challengeLifetimeS`), or one already answered. Ask for a new challenge. | none (HTTP 400 from /account-api) |
+| `STS-OPENPGP-0038` | The secret sent back for an ML-KEM S/MIME proof of possession (#2220) is not the one this service encapsulated to the key — it was not recovered with the private key (`openssl pkeyutl -decap`), or is not 32 octets of hex or base64. The challenge is spent; nothing was issued. Audited. | none (HTTP 400 from /account-api) — audited |
+| `STS-OPENPGP-0039` | The realm's EST Issuing CA did not issue the ML-KEM S/MIME certificate a person proved possession of (#2220): the email profile is not in est.allowedProfiles, the entry holds pki.enrollmentMaxCertificatesPerEntry certificates, or the authority refused. The refusal's own sentence says which. | none (HTTP 400 from /account-api) |
 
 ## STS-SVCACCT
 

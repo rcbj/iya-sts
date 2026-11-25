@@ -2567,6 +2567,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls sa JSON: ang mga tls.* setting, lahat ay restart-only dahil mina-mint ang certificate at bina-bind ang mga socket bago may makinig. Kung HTTPS ang MAIN port ay global.https, nasa /admin-api/config kasama ang sariling mga setting ng process. Read-only."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Ang grupo ng palitan ng susi na napagkasunduan ng bawat natapos na TLS handshake sa mga listener ng node na ito mula nang magsimula ang front process nito, binilang bawat listener at grupo, at kung ilan ang post-quantum (isang grupong ML-KEM). Ipinapakita sa /admin/crypto-metadata. Walang binabago."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust sa JSON: bawat client-certificate trust anchor kasama ang subject, issuer, serial, validity, fingerprint, PEM at pinagmulan nito (`file` o `runtime`), naka-page gamit ang ?page= at ?per=. Iisang truststore para sa PROCESS, kaya pareho ang sagot nito sa ilalim ng bawat realm prefix. Walang private key dito — certificate lang ang hawak ng truststore at wala nang iba. Ang runtime anchor ay pine-persist sa directory; ang `file` anchor ay hindi."

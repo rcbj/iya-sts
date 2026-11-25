@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "Das S/MIME-Zertifikat einer Person wurde festgelegt oder entfernt"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "Eine ML-KEM-S/MIME-Challenge zum Besitznachweis wurde ausgestellt"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "Ein ML-KEM-S/MIME-Zertifikat wurde nicht ausgestellt"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "Ein klassischer OpenPGP-Schlüssel wurde neben dem Post-Quanten-Schlüssel behalten, der ihn ersetzt"

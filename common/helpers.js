@@ -1375,10 +1375,11 @@ function hsmKeyReport() {
     place(one.publicJwk && one.publicJwk.crv && one.alg === 'EdDSA'
       ? 'EdDSA (' + one.publicJwk.crv + ')' : one.alg, one.privateKey);
   });
-  // The published post-quantum set stays in software even when the token
-  // offers CKM_ML_DSA. An ML-DSA key in the HSM is generated on its own.
+  // The published post-quantum set (#2220): each key where it was made —
+  // the ML-DSA and SLH-DSA keys in the token where it offers CKM_ML_DSA or
+  // CKM_SLH_DSA, the composites always in software.
   (keys.pqKeys || []).forEach(function (one) {
-    inSoftware.push(one.alg);
+    place(one.alg, one.privateKey);
   });
   const held = require('./secrets').heldSigningToken();
   log.debug("Leaving hsmKeyReport().");
@@ -6645,7 +6646,10 @@ async function mintStandbyKey(unitRow, role, realmId) {
       kid: kid, privateKey: Buffer.from(pair.secretKey),
       publicKeyB64: Buffer.from(pair.publicKey).toString('base64') });
   }
-  const pq = pqKeyFrom(unitRow.alg, await pqJose.generateAsync(unitRow.alg));
+  // In the token where it offers the algorithm, as the current key was
+  // (#2220); a composite, and a token without the mechanism, in software.
+  const pq = pqKeyFrom(unitRow.alg, await pqPairForAsync(unitRow.alg, hsm,
+    realmId === undefined ? realms.currentId() : realmId));
   log.debug("Leaving mintStandbyKey(). Post-quantum " + pq.publicJwk.kid);
   return Object.assign(base, { kid: pq.publicJwk.kid,
                                privateKey: pq.privateKey,
@@ -7881,6 +7885,98 @@ function oauthError(res, status, error, description) {
 // be far worse — a client that cached it would be missing the key it needs —
 // which is why the JWKS triggers the whole set rather than one at a time.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PUBLISHED SET IN THE HSM, WHERE THE TOKEN OFFERS IT (#2220).
+//
+// A realm that keeps its signing keys in the HSM (`keys.signingKeyStore`
+// `pkcs11`) made its RSA and curve keys there and these eleven in software
+// until #2220. Now each of the five pure keys — ML-DSA-44, -65 and -87 and
+// SLH-DSA-SHA2-128s and -SHAKE-128s — is made in the token when it lists
+// PKCS#11 3.2's generation mechanism and CKM_ML_DSA or CKM_SLH_DSA with
+// CKF_SIGN (`Pkcs11Token.canGenerate()`), and in software only when it does
+// not; the six composites stay in software, because no PKCS#11 mechanism
+// signs one. `hsmKeyReport()` says which went where, per key.
+//
+// The private key of a key made in the token is its REFERENCE (a string,
+// `pkcs11-key:v1:…`), which every signing door asks `isHsmKey()` of; the
+// keystore stores it as the reference (`keystore.js`'s `pqKeys`). A
+// generation the token refuses for want of the mechanism (STS-KEYS-0207) is
+// made in software, logged, as a curve key is (`curveInSoftware()`).
+// Anything else the HSM answers is thrown, as it is for every other key.
+// ---------------------------------------------------------------------------
+// The realm's token where its keys are in the HSM; null in software, or
+// where the realm's store cannot be had (the classical keys refused that
+// already, with STS-KEYS-0206, so the published set is not where it shows).
+function pqHsmFor(keys) {
+  log.debug("Entering pqHsmFor().");
+  let hsm = null;
+  try {
+    hsm = hsmSigningFor(keys.realm);
+  } catch (e) {
+    log.debug("Caught in pqHsmFor(): " + ((e && e.message) || e));
+    hsm = null;
+  }
+  log.debug("Leaving pqHsmFor(). " + (hsm ? hsm.uri : 'software'));
+  return hsm;
+}
+
+// What `pq_jose.js` makes, from a key pair made in the token: the raw
+// public key and the private key's reference.
+function pqPairFromHsm(made) {
+  log.debug("Entering pqPairFromHsm().");
+  log.debug("Leaving pqPairFromHsm().");
+  return { pub: Buffer.from(made.publicKey.raw),
+           priv: made.privateKey.ref };
+}
+
+// One key of the published set: in the token where it offers the
+// algorithm, in software otherwise. Synchronous (`pqKeysFor()`'s door).
+function pqPairFor(alg, hsm, realmId) {
+  log.debug("Entering pqPairFor(). " + alg);
+  const spec = { kty: 'AKP', alg: alg };
+  if (hsm && hsm.token.canGenerate(spec)) {
+    try {
+      const made = realms.run(realmForKeys(realmId), function () {
+        return stsCrypto.generatePkcs11KeyPair(hsm.token, hsm.uri, spec,
+                                               hsmLabel(alg.toLowerCase()));
+      });
+      log.debug("Leaving pqPairFor(). In the HSM.");
+      return pqPairFromHsm(made);
+    } catch (e) {
+      log.debug("Caught in pqPairFor(): " + ((e && e.message) || e));
+      realms.run(realmForKeys(realmId), function () {
+        curveInSoftware({ alg: alg }, e);
+      });
+    }
+  }
+  log.debug("Leaving pqPairFor(). Software.");
+  return pqJose.generate(alg);
+}
+
+// The same off the event loop: the token's async generation, or the
+// child processes `pq_jose.js` makes the rest in.
+function pqPairForAsync(alg, hsm, realmId) {
+  log.debug("Entering pqPairForAsync(). " + alg);
+  const spec = { kty: 'AKP', alg: alg };
+  if (hsm && hsm.token.canGenerate(spec)) {
+    const label = realms.run(realmForKeys(realmId), function () {
+      return hsmLabel(alg.toLowerCase());
+    });
+    log.debug("Leaving pqPairForAsync(). In the HSM.");
+    return stsCrypto.generatePkcs11KeyPairAsync(hsm.token, hsm.uri, spec,
+                                                label)
+      .then(pqPairFromHsm, function (e) {
+        log.debug("Caught in pqPairForAsync(): " + ((e && e.message) || e));
+        realms.run(realmForKeys(realmId), function () {
+          curveInSoftware({ alg: alg }, e);
+        });
+        return pqJose.generateAsync(alg);
+      });
+  }
+  log.debug("Leaving pqPairForAsync(). Software.");
+  return pqJose.generateAsync(alg);
+}
+
 function pqKeysFor(keys) {
   log.debug("Entering pqKeysFor().");
   if (keys.pqKeys) {
@@ -7888,8 +7984,9 @@ function pqKeysFor(keys) {
   } else {
     pqKeysCount.miss();
     const started = Date.now();
+    const hsm = pqHsmFor(keys);
     keys.pqKeys = pqJose.PQ_ALGS.map(function (alg) {
-      return pqKeyFrom(alg, pqJose.generate(alg));
+      return pqKeyFrom(alg, pqPairFor(alg, hsm, keys.realm));
     });
     log.info('The post-quantum signing keys were generated for the "' +
              keys.realm + '" realm: ' + keys.pqKeys.length + ' key(s) in ' +
@@ -7988,8 +8085,9 @@ function pqKeysForAsync(keys) {
     pqKeysCount.hit();
   } else {
     pqKeysCount.miss();
+    const hsm = pqHsmFor(keys);
     generation = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
-      return pqJose.generateAsync(alg).then(function (pair) {
+      return pqPairForAsync(alg, hsm, keys.realm).then(function (pair) {
         return pqKeyFrom(alg, pair);
       });
     }));
@@ -10368,6 +10466,10 @@ module.exports = {
   kidOf: kidOf,
   groupKidOf: groupKidOf,
   pqKeyFrom: pqKeyFrom,
+  // One key of the published post-quantum set, in the token where it offers
+  // the algorithm (#2220) — for the test that plays a token.
+  pqPairFor: pqPairFor,
+  pqPairForAsync: pqPairForAsync,
   curveKeyFrom: curveKeyFrom,
   listedSigningAlgs: listedSigningAlgs,
   withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,
