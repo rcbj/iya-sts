@@ -6,5 +6,9 @@
   "description": "The optional SDKs the image installs into /opt/sts-sdk, one workspace per package so a build installs only those it names (Dockerfile, sdk/).",
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "overrides": {
+    "usocket": "1.1.0",
+    "xml2js": "0.6.2"
+  }
 }
