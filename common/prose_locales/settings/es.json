@@ -9271,6 +9271,14 @@
     "en": "581ff0b61393c1af",
     "text": "Un flujo creado con la credencial de una PERSONA — un token de acceso que un cliente obtuvo para ella, o su propio nombre y contraseña mediante Basic — trata solo sobre esa persona: los eventos sobre cualquier otra no se le entregan, digan lo que digan su lista de sujetos y default_subjects, y Add Subject se niega a nombrar a nadie más (403). SSF 1.0 sección 10.1 exige que solo las partes autorizadas accedan a las señales compartidas, y una persona lo es para las suyas. Desactivado, el flujo de una persona se trata como el de un cliente y, con default_subjects ALL, recibe todos los eventos del dominio. No se ven afectados el flujo propio de un cliente (client credentials), el de una aplicación GNAP ni los receptores propios de este servicio."
   },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "De qué personas oye hablar el flujo de una aplicación"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "Un flujo que posee una APLICACIÓN (creado con sus credenciales de cliente, una clave GNAP o su certificado, no con el token de una persona) transporta un evento CAEP o RISC sobre una persona solo mientras esa persona tenga una sesión activa en esa aplicación: una sesión de inicio de sesión activa de la que la aplicación es una parte de confianza (un cliente OpenID Connect u OAuth, un proveedor de servicios SAML 2.0 o 1.1, una parte de confianza WS-Federation), o una concesión GNAP activa que la persona le aprobó. El evento que TERMINA dicha sesión sigue llegando a la aplicación cuya sesión terminó. Los eventos sin sujeto, y los eventos que no se refieren a ninguna persona, no se ven afectados, y un Add Subject que nombra a una persona sin sesión activa en la aplicación se rechaza (403). default_subjects sigue siendo ALL, que ahora significa cada sujeto con una sesión activa en la aplicación del receptor (SSF 1.0, secciones 7.1, 9.2 y 10.1). all es el comportamiento anterior a #2234: el flujo de una aplicación oye hablar de todos en el dominio, lo que elige deliberadamente una implantación que depende de flujos de todos los sujetos (un receptor MDM o EDR). El flujo propio de una persona (ssf.personStreamsSelfOnly), los receptores propios de este servicio y el flujo de un servidor de recursos GNAP no se ven afectados."
+  },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
     "text": "Estado con el que se crea un flujo nuevo"

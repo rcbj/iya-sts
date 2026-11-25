@@ -9271,6 +9271,14 @@
     "en": "581ff0b61393c1af",
     "text": "Ang stream na ginawa gamit ang credential ng isang TAO — access token na nakuha ng client para sa kanya, o sarili niyang pangalan at password sa Basic — ay tungkol sa taong iyon lang: hindi inihahatid dito ang mga event tungkol sa iba, anuman ang sinasabi ng subject list at default_subjects nito, at tumatanggi ang Add Subject na pangalanan ang iba (403). Hinihingi ng SSF 1.0 section 10.1 na mga awtorisadong partido lang ang makaka-access sa mga shared signal, at awtorisado ang tao para sa sarili niya. Kapag naka-off, tinatrato ang stream ng tao gaya ng sa client at, sa ilalim ng default_subjects ALL, pinapadalhan ito ng bawat event sa realm. Hindi apektado ang sariling stream ng client (client credentials), ang sa isang GNAP application at ang sariling mga receiver ng serbisyong ito."
   },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "Kung sinong mga tao ang naririnig ng stream ng isang application"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "Ang isang stream na pag-aari ng isang APPLICATION (ginawa gamit ang client credentials nito, isang GNAP key o ang certificate nito — hindi ang token ng isang tao) ay nagdadala ng CAEP o RISC na event tungkol sa isang tao habang may aktibong session lamang ang taong iyon sa application na iyon: isang aktibong sign-on session kung saan relying party ang application (isang OpenID Connect o OAuth client, isang SAML 2.0 o 1.1 service provider, isang WS-Federation relying party), o isang aktibong GNAP grant na inaprubahan ng tao para dito. Ang event na TUMATAPOS sa ganoong session ay nakararating pa rin sa application na ang session ay natapos nito. Hindi apektado ang mga event na walang subject at ang mga event na hindi tungkol sa isang tao, at tinatanggihan (403) ang Add Subject na nagpapangalan sa isang taong walang aktibong session sa application. Nananatiling ALL ang default_subjects, na ngayon ay nangangahulugang bawat subject na may aktibong session sa application ng receiver (SSF 1.0, mga seksyon 7.1, 9.2 at 10.1). Ang all ay ang asal bago ang #2234: naririnig ng stream ng isang application ang lahat sa realm, na sadyang pinipili ng isang deployment na umaasa sa mga stream para sa lahat ng subject (isang MDM o EDR na receiver). Hindi apektado ang sariling stream ng isang tao (ssf.personStreamsSelfOnly), ang sariling mga receiver ng serbisyong ito at ang stream ng isang GNAP resource server."
+  },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
     "text": "Status kung saan ginagawa ang bagong stream"
