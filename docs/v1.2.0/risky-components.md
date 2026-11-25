@@ -180,13 +180,13 @@ leave with it.
   `sdk/`'s. It fails when an advisory is past the window
   [`SECURITY.md`](https://github.com/rcbj/iya-sts/blob/main/SECURITY.md) sets:
   7 days for critical, 30 for high, 90 for moderate, counted from publication.
-* **The remote PEP's advisories.** The same daily workflow runs `cargo audit`
-  over `rust/Cargo.lock` against the RustSec database, which names advisories
-  in the OpenSSL that `openssl-src` builds as well as in the crates. It fails
-  the daily run on every vulnerability not recorded, with its reason, in
-  `rust/.cargo/audit.toml`. It is daily rather than on every push so that an
-  advisory published today fails the check meant to catch it, not every
-  merge. The one recorded is RUSTSEC-2023-0071 in `rsa`
+* **The remote PEP's advisories.** The daily workflow of the next item also
+  runs `cargo audit` over `rust/Cargo.lock` against the RustSec database,
+  which names advisories in the OpenSSL that `openssl-src` builds as well as
+  in the crates. It fails the daily run on every vulnerability not recorded,
+  with its reason, in `rust/.cargo/audit.toml`. It is daily rather than on
+  every push so that an advisory published today fails the check meant to
+  catch it, not every merge. The one recorded is RUSTSEC-2023-0071 in `rsa`
   0.9, which has no fixed release.
 * **The image scan.** A daily workflow (`.github/workflows/dependency-windows.yml`)
   scans four images with Trivy: the iya-sts image, the remote PEP's, the ICAP
@@ -194,10 +194,14 @@ leave with it.
   the operating systems' packages and the Node.js runtime as well as the npm
   trees, and the PEP's crates through the SBOM its image carries. Every
   finding is held to the same windows.
-* **The 90-day review.** The same daily run fails on a direct dependency whose
-  first newer release is more than 90 days old, unless
-  `.github/dependency-reviews.json` records a review of the pinned version in
-  the last 90 days and the reason it stays.
+* **The 90-day review.** The daily run checks security advisories only. The
+  update review runs when asked for: the daily workflow dispatched with
+  `updates`, or `node tests/tools/dependency-windows.js --updates`. It fails on
+  a direct dependency of the root lockfile whose first newer release is more
+  than 90 days old, unless `.github/dependency-reviews.json` records a review
+  of the pinned version in the last 90 days and the reason it stays. The
+  optional SDKs in `sdk/` are held to the advisory windows, not to this
+  review.
 * **The inventory.** The image carries a CycloneDX SBOM of its npm
   dependencies at `/usr/src/sts/sbom.cdx.json`, one of its optional SDKs at
   `/usr/src/sts/sbom-sdks.cdx.json`, and its operating-system packages in
@@ -216,7 +220,6 @@ leave with it.
 None. The one advisory the remote PEP's audit lets through, RUSTSEC-2023-0071
 in `rsa` 0.9, has no fixed release, and its reason is recorded in
 `rust/.cargo/audit.toml` (see [How the list is kept](#how-the-list-is-kept)).
-
 
 ## Related
 

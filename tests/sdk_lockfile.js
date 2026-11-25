@@ -31,8 +31,11 @@
 //      not hold;
 //   5. .dockerignore lets sdk/ into the build context;
 //   6. (#2159) tests/tools/dependency-windows.js audits sdk/package-lock.json
-//      as well as the root's, names the lockfile on every finding, reads the
-//      workspaces' pins as direct dependencies, and every `overrides` entry
+//      as well as the root's and names the lockfile on every finding; (#2219)
+//      its 90-day update review reads the root lockfile only, never the 27
+//      workspaces' pins, and the daily workflow runs the advisory windows
+//      alone, the update review only when a dispatch asks; and every
+//      `overrides` entry
 //      of sdk/package.json is the version the lockfile holds (npm's
 //      `--package-lock-only` leaves an existing entry as it was, so an
 //      override added without `npm update <name>` would not take).
@@ -214,7 +217,8 @@ function run(t) {
             'and .dockerignore names no rule that would leave it out');
   }
 
-  t.log.info('=== 6. the advisory windows cover sdk/ (#2159) ===');
+  t.log.info('=== 6. the advisory windows cover sdk/ (#2159), the update ' +
+             'review does not (#2219) ===');
   const windows = require(path.join(ROOT, 'tests', 'tools',
                                     'dependency-windows.js'));
   t.equal(JSON.stringify(windows.LOCKFILES.map(function (one) {
@@ -230,14 +234,25 @@ function run(t) {
                             package: 'tar',
                             lockfile: 'sdk/package-lock.json' }]),
           'a finding names the lockfile it came from');
-  const pins = workspaces.map(function (dir) {
-    return Object.keys(readJson('sdk/packages/' + dir + '/package.json')
-      .dependencies || {})[0];
-  }).sort();
-  t.equal(JSON.stringify(windows.directDependencies(SDK)),
-          JSON.stringify(pins),
-          'the 90-day review reads every workspace\'s pin as a direct ' +
-          'dependency (' + pins.length + ')');
+  t.equal(JSON.stringify(windows.UPDATE_REVIEW_LOCKFILES.map(function (one) {
+    return one.name;
+  })), JSON.stringify(['package-lock.json']),
+  'the 90-day update review reads the root lockfile only, not the ' +
+  workspaces.length + ' sdk/ workspace pins (#2219)');
+  const daily = fs.readFileSync(path.join(ROOT, '.github', 'workflows',
+                                          'dependency-windows.yml'), 'utf8');
+  const dailyRuns = daily.split('\n').filter(function (line) {
+    return /node tests\/tools\/dependency-windows\.js/.test(line);
+  });
+  t.check(dailyRuns.length === 1 && !/--updates/.test(dailyRuns[0]) &&
+          /--image-report=/.test(dailyRuns[0]),
+          'the daily workflow runs the advisory windows and the image scan, ' +
+          'without --updates', dailyRuns.join(' | '));
+  t.check(/^\s+if \[ "\$\{UPDATE_REVIEW\}" = true \]; then args\+=\(--updates\); fi$/m
+            .test(daily) &&
+          /UPDATE_REVIEW: \$\{\{ inputs\.updates && 'true' \|\| 'false' \}\}/
+            .test(daily),
+          'and adds the update review only when a dispatch asks for it');
   const overrides = root.overrides || {};
   const unheld = Object.keys(overrides).filter(function (name) {
     const held = (lock.packages || {})['node_modules/' + name] || {};

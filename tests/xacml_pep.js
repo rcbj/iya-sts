@@ -217,9 +217,16 @@ async function run(t) {
     path.join(ROOT, 'rust', '.cargo', 'audit.toml'), 'utf8')),
   'rust/.cargo/audit.toml, where a reviewed RustSec exception is recorded, ' +
   'is there for the daily `cargo audit`');
-  // The audit is daily (dependency-windows.yml, which the tests image does
-  // not carry), never in the merge-gating `rust` job: an advisory published
-  // today must fail the check that watches for it, not every merge.
+  // The audit is daily (dependency-windows.yml), never in the merge-gating
+  // `rust` job: an advisory published today must fail the check that
+  // watches for it, not every merge.
+  const daily = fs.readFileSync(path.join(ROOT, '.github', 'workflows',
+                                          'dependency-windows.yml'), 'utf8');
+  t.check(/cargo install cargo-audit --version \d+\.\d+\.\d+ --locked/
+            .test(daily) && /&& cargo audit"/.test(daily) &&
+          /-w \/src\/rust/.test(daily),
+          'the daily workflow audits rust/Cargo.lock with a pinned ' +
+          'cargo-audit');
   t.check(!/cargo audit/.test(fs.readFileSync(
     path.join(ROOT, '.github', 'workflows', 'tests.yml'), 'utf8')),
   'and no job of tests.yml, which gates the merge queue, runs it');
