@@ -416,6 +416,7 @@
   "password.reused": "That password has been used for this account recently. This realm's password policy refuses the current password and the {history} before it (profile \"{profile}\"). Choose one you have not used here.",
   "password.rotates": "{account} is a service account whose password rotates through its push destination, so it cannot be set by hand: the destination is where its consumers read it. Use Rotate now on its page, or POST /admin-api/users/rotate-password.",
   "policy.compliantDeviceRequired": "A compliant registered device is required.",
+  "policy.adminCompliantDeviceRequired": "The admin console requires a compliant registered device. Sign in from a device registered to you and marked compliant: register one on the user portal's Devices page, and ask another administrator or your device management to mark it compliant.",
   "policy.deviceBoundPending": "The application requires a device-bound session, and registration for this one has not finished.",
   "policy.deviceBoundRefused": "The application requires a device-bound session, and this one {fact, select, skipped {was skipped.} other {was not bound in time.}}",
   "policy.indeterminate": "the issuance policy could not be evaluated{anyStatus, select, yes {: {status}} other {}}. Nothing is issued on an Indeterminate, because the alternative is issuing on an error.",

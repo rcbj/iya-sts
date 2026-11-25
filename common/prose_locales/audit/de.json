@@ -1187,6 +1187,38 @@
     "en": "d4a30614c3be855a",
     "text": "Der Speicher anfragbarer AuthZEN-Ablehnungen war voll"
   },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "Eine Administratoraktion wurde für einen zweiten Administrator zurückgehalten"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "Eine zurückgehaltene Administratoraktion wurde freigegeben und ausgeführt"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "Eine zurückgehaltene Administratoraktion wurde abgelehnt"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "Eine zurückgehaltene Administratoraktion wurde von ihrem Anforderer zurückgezogen"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "Eine zurückgehaltene Administratoraktion lief unentschieden ab"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "Eine zurückgehaltene Administratoraktion wurde freigegeben und nicht ausgeführt"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "Jemandem wurde die Entscheidung über eine zurückgehaltene Administratoraktion verweigert"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "Eine risikoreiche Administratoraktion lief ohne zweiten Administrator"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Der Ausstellungs-PEP hat es abgelehnt, diesen Dienst etwas prägen zu lassen"
@@ -2358,6 +2390,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "Die Risikostufe eines registrierten Geräts wurde gesetzt"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Die Administratoren des Vertrauensbereichs brauchen jetzt ein konformes registriertes Gerät"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

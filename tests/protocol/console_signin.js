@@ -343,13 +343,111 @@ function consoleBundle() {
 // process holds.
 //
 // Answers the client described at the top of this file.
+// The DPoP key an account signs in with, kept for the process (#2179).
+const dpopKeys = {};
+
+function dpopKeyFor(user) {
+  log.debug("Entering dpopKeyFor().");
+  const name = String(user);
+  if (!dpopKeys[name]) {
+    dpopKeys[name] = dpopKey();
+  }
+  log.debug("Leaving dpopKeyFor().");
+  return dpopKeys[name];
+}
+
+// The label this helper's devices carry, so a later run removes its own and
+// nothing else.
+const DEVICE_LABEL = "console_signin.js device";
+
+// The accounts whose device this process has registered already.
+const registeredDevices = {};
+
+// THE ADMINISTRATIVE SURFACE NEEDS A COMPLIANT REGISTERED DEVICE (#2179) where
+// `devices.requireCompliantDeviceForAdmin` is in force — `auto` is on in
+// product — so every console sign-in this helper makes proves one: the DPoP
+// key it signs the token request with is registered as the account's device
+// (`jwk`, by value — an administrator's act, in both modes) and marked
+// compliant, and the token endpoint recognises the device by that key's
+// thumbprint (`common/device_recognition.ts`). The realm's answer says
+// whether it is in force; where it is not (development's default), nothing
+// is registered, so a development stack's accounts hold no device and their
+// risk scoring is what it was. A device this helper left in an earlier run
+// is removed first, so the per-person cap is never reached.
+async function ensureCompliantDevice(base, user, key, say) {
+  log.debug("Entering ensureCompliantDevice().");
+  const name = String(user);
+  if (registeredDevices[name]) {
+    log.debug("Leaving ensureCompliantDevice(). Registered already.");
+    return;
+  }
+  async function apiCall(method, path, payload) {
+    log.debug("Entering apiCall().");
+    const r = await fetch(base + "/admin-api" + path, {
+      method: method,
+      headers: payload ? { "Content-Type": "application/json" } : {},
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+    const raw = await r.text();
+    let body = {};
+    try {
+      body = JSON.parse(raw);
+    } catch (e) {
+      log.debug("Caught in apiCall(): " + ((e && e.message) || e));
+      // Not JSON: kept raw for the message.
+      body = { raw: raw };
+    }
+    log.debug("Leaving apiCall().");
+    return { status: r.status, body: body };
+  }
+  const registration = await apiCall("GET", "/device-registration");
+  const state = registration.body && registration.body.decisions &&
+    registration.body.decisions.adminDevice;
+  if (!state || !state.inForce) {
+    say("[console] the realm requires no device of its administrators.");
+    log.debug("Leaving ensureCompliantDevice(). Not in force.");
+    return;
+  }
+  const held = await apiCall("GET", "/devices?owner=" +
+                             encodeURIComponent(name) + "&per=100");
+  const mine = ((held.body && held.body.devices) || [])
+    .filter(function (d) {
+      return d && d.label === DEVICE_LABEL;
+    });
+  for (const old of mine) {
+    await apiCall("POST", "/devices/remove", { id: old.id });
+  }
+  const created = await apiCall("POST", "/devices/create", {
+    owner: name, label: DEVICE_LABEL, keyKind: "jwk",
+    key: key.publicJwk });
+  assert.ok(created.status === 200 && created.body && created.body.ok &&
+            created.body.device,
+    "registering " + name + "'s console device through POST " +
+    "/admin-api/devices/create answered " + created.status + " " +
+    JSON.stringify(created.body).slice(0, 300));
+  const marked = await apiCall("POST", "/devices/set-compliance", {
+    id: created.body.device.id, status: "compliant",
+    reason: "console_signin.js: the device management's report" });
+  assert.ok(marked.status === 200 && marked.body && marked.body.ok,
+    "marking " + name + "'s console device compliant through POST " +
+    "/admin-api/devices/set-compliance answered " + marked.status + " " +
+    JSON.stringify(marked.body).slice(0, 300));
+  registeredDevices[name] = created.body.device.id;
+  say("[console] " + name + " holds compliant device " +
+      created.body.device.id + ", proven by the sign-in's DPoP key.");
+  log.debug("Leaving ensureCompliantDevice(). Registered.");
+}
+
 async function signInToTheConsole(base, user, log2, options) {
   log.debug("Entering signInToTheConsole().");
   const say = (log2 && log2.info) ? log2.info.bind(log2) : function () {};
   const opts = options || {};
   const cookies = jar();
   const crypto = require("crypto");
-  const key = dpopKey();
+  // ONE KEY PER ACCOUNT PER PROCESS (#2179), as the passwords are: it is the
+  // key registered as the account's device below, so a job signing the same
+  // account in twice proves the same device rather than registering another.
+  const key = dpopKeyFor(user);
 
   function fromLocation(location) {
     return new URL(String(location || ""), base).toString();
@@ -399,6 +497,18 @@ async function signInToTheConsole(base, user, log2, options) {
         (await r.text()).slice(0, 200));
     }
     say("[console] " + user + " holds Admin " + roles.join(" and ") + ".");
+  }
+
+  // A COMPLIANT REGISTERED DEVICE (#2179), where the realm requires one of
+  // its administrators — product's default. Done the way a managed
+  // deployment does it: the device is registered to the person, and the
+  // device management (here this process's management credential, a
+  // program, which the rule never asks) marks it compliant.
+  // `options.noDevice` signs in with NO registered device whatever the
+  // realm requires — what sts_admin_device_requirement.js asks to see the
+  // unarmed admission and the armed refusal.
+  if (!opts.noDevice) {
+    await ensureCompliantDevice(base, user, key, say);
   }
 
   // THE SHELL FIRST, as a browser opens the console: serving it registers
@@ -866,6 +976,15 @@ async function signInToTheConsole(base, user, log2, options) {
   };
 }
 
+// The id of the compliant device this process registered for an account
+// (#2179), or '' where it registered none.
+function deviceOf(user) {
+  log.debug("Entering deviceOf().");
+  log.debug("Leaving deviceOf().");
+  return String(registeredDevices[String(user)] || "");
+}
+
 module.exports = { signInToTheConsole: signInToTheConsole, jar: jar,
                    ensureConsoleAccount: ensureConsoleAccount,
-                   consolePasswordFor: consolePasswordFor };
+                   consolePasswordFor: consolePasswordFor,
+                   deviceOf: deviceOf };

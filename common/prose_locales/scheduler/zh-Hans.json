@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "双人审批的过期"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "将每项为第二位管理员而暂缓、且已过截止时间的管理员操作（#2166）改为已过期并写入其审计行，在已完成的操作完成一周后将其删除，并修复待决操作列表。读取本身会应用截止时间，因此这是记录与清理，而从不是作出决定的部分。"
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "属性源：定时刷新"

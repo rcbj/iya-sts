@@ -153,6 +153,7 @@
   "registrationHtml.signalsNote": "CAEP：{caep}。RISC，针对人员的设备失陷或被移除：{risc}。主体是 {subject}。只有当接收方可被告知的内容发生变化时，才会发出合规性更改：CAEP 只知道 compliant 和 not-compliant，unknown 会作为 not-compliant 发送。",
   "registrationHtml.decidesHeading": "由什么来决定设备",
   "registrationHtml.decidesNote": "风险评分：信号 {signals}——最后两个会降低分数；unregistered-device {expect, select, yes {对此处的任何人都会触发（devices.expectRegistered）} other {只对注册过设备的人员触发}}。签发策略（{policy}）：已失陷的设备{refuse, select, yes {会被<strong>拒绝</strong>} other {只是一个风险信号}}；合规的已注册设备{require, select, yes {是<strong>必需的</strong>} attested {是<strong>必需的</strong>，且须经证明} other {不是必需的（默认关闭）}}。acr 为 <code>{acr}</code>，声明为 {claim}。",
+  "registrationHtml.adminDeviceNote": "管理控制台和个人的 admin:* 令牌：{state, select, armed {每位管理员都<strong>必须</strong>使用合规的已注册设备（devices.requireCompliantDeviceForAdmin），自 {armedAt} 起已启用。} pending {<strong>尚未生效</strong>：还没有管理员从合规的已注册设备登录，因此每位管理员都会被放行。请在用户门户的“设备”页面注册您的设备，在设备列表中将其标记为合规，然后使用其上的通行密钥或证书登录：这次登录会启用该要求，并且它会保持启用。} other {不要求设备（此处 devices.requireCompliantDeviceForAdmin 已关闭；在产品模式下默认开启）。}}",
   "registrationHtml.settings": "设置",
   "monitorHtml.devices": "设备",
   "monitorHtml.keys": "密钥",

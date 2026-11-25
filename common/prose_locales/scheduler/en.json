@@ -1,4 +1,6 @@
 {
+  "sched.jobs.admin.dual-control.title": "Two-person approval expiry",
+  "sched.jobs.admin.dual-control.describe": "Moves every administrator act held for a second administrator (#2166) past its deadline to expired, writing its audit row, removes a finished one a week after it finished, and repairs the list of pending ones. A read applies the deadline itself, so this is the record and the clean-up, never what decides.",
   "sched.jobs.attribute-sources.refresh.title": "Attribute sources: scheduled refresh",
   "sched.jobs.attribute-sources.refresh.describe": "Reads the next page of the realm's people from each attribute source whose scheduled interval is due, onto their entries (#94). attributeSources.refreshBatch people per source per run.",
   "sched.jobs.audit.export.title": "Audit export",

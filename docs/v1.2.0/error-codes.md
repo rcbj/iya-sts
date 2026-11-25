@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6114** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6128** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 44
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
-* [Device register (`STS-DEVICE`)](#sts-device) — 53
+* [Device register (`STS-DEVICE`)](#sts-device) — 54
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 17
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 35
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 307
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 320
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
@@ -5035,6 +5035,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0051` | An Android-attested key was registered and the Android attestation recheck could not be told (its registration mark not moved); the key was checked at registration, and a recheck after the next status list reaches it (#615). | — |
 | `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
 | `STS-DEVICE-0053` | A device of a deleted person could not be removed from the register, so a person made again under the name owns it. Remove it on the Devices page. | — |
+| `STS-DEVICE-0054` | A person's credential for the administrative surface — a token to the admin console, or one carrying an admin:* scope — was refused by the issuance policy's device-required-admin rule: the realm requires its administrators to use a compliant registered device (devices.requireCompliantDeviceForAdmin, on in product, armed once an administrator signed in from one) and this did not come from their own (or an application's) compliant, uncompromised device (#2179). | the token endpoint's access_denied, whose description says the admin console requires a compliant registered device |
 
 ## STS-HWTOKEN
 
@@ -6308,6 +6309,19 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0956` | /admin-api/truststores was asked for an action it does not have; the refusal names the seven it has (#2118). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0957` | A named truststore write was not made and the truststore registry gave no code of its own for why: the directory carried out nothing (#2118). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0969` | A password reset for a Kerberos keytab was refused because the person must change their password at their next sign-in (pwdReset), where passwords are verified: the KDC refuses that password, so the keytab would not work, and the reset no longer clears the forced change (#2160). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0970` | A decision on a held administrator act (two-person approval, #2166) named no act this realm holds, or an action POST /admin-api/approvals does not have. | HTTP 404 (or 400 for an unknown action) { ok: false, errors } |
+| `STS-ADMIN-0971` | The administrator who asked for a held act tried to approve or refuse it themselves; a second, different administrator must (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0972` | A held administrator act was approved or refused by a caller that is not a person: an application's token, or nobody where the management API is open (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0973` | A held administrator act was approved or refused by a person whose token does not carry the authority the act needs (Admin Write, or Security Administrator for a security change) (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0974` | A held administrator act was approved, refused or withdrawn after it expired (admin.dualControlLifetimeHours); it is never run (#2166). | HTTP 409 { ok: false, errors } |
+| `STS-ADMIN-0975` | A high-risk administrator act was neither held nor run: the realm already holds the most acts awaiting a second administrator it keeps (#2166). | HTTP 400 { ok: false, errors } |
+| `STS-ADMIN-0976` | A high-risk administrator act ran without a second administrator, though two-person approval is on: nobody but its requester holds the authority it needs, and the act runs rather than locking the realm out (#2166). Recorded, not refused. | none (an audit row; the act's own answer) |
+| `STS-ADMIN-0977` | A high-risk administrator act ran without a second administrator, though two-person approval is on: the management API is open (adminApi.authRequired off, development only) and names no administrator (#2166). Recorded, not refused. | none (an audit row; the act's own answer) |
+| `STS-ADMIN-0978` | A held administrator act was approved, refused or withdrawn after it had already been decided or withdrawn (#2166). | HTTP 409 { ok: false, errors } |
+| `STS-ADMIN-0979` | A held administrator act was approved, and not run: the administrator who asked for it no longer holds the authority it needs (#2166). | HTTP 409 { ok: false, errors } |
+| `STS-ADMIN-0980` | A held administrator act was approved and run, and the act itself was refused when it ran against the state as it is now; its own answer is `result` (#2166). | HTTP 409 { ok: false, errors, result } |
+| `STS-ADMIN-0981` | Somebody other than the administrator who asked for a held act tried to withdraw it; they may refuse it instead (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0982` | The two-person approval expiry job (admin.dual-control) failed in a realm; the job reports the run failed and a read still applies each deadline (#2166). | none (logged; the scheduler's run row) |
 
 ## STS-API
 

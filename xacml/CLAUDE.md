@@ -3011,7 +3011,7 @@ something stricter (`tests/delegation_policy.js` section I).
 minutes). A rule changed here changes the oracle in the same commit, or both
 files fail.
 
-### The registered device, and two rules that settings switch (#164 phase 6, 2026-09-26)
+### The registered device, and three rules that settings switch (#164 phase 6, 2026-09-26; #2179)
 
 rcbj's decision 3 is that enforcement is XACML. So the device register's
 facts go into the issuance request, and the built-in `role-issuance` policy
@@ -3030,7 +3030,7 @@ decides on them. There is no `if` at an issuance site.
 * **Ownership is decided in the PEP** against the subject the gate names: a
   person's own device, or an application's own device for a
   `client_credentials` subject. The policy reads a boolean.
-* **The two rules come FIRST in the document**, so that under
+* **The device rules come FIRST in the document**, so that under
   ordered-deny-overrides their obligation is the one the PEP reads. A risk
   Deny may only ask for a step-up; a device refused after a step-up would
   be one refusal made in two steps.
@@ -3039,6 +3039,14 @@ decides on them. There is no `if` at an issuance site.
   * `device-required`: applies while `compliant` is required
     (`devices.requireCompliantDevice`, OFF by default in both modes), and
     `attested` beside it.
+  * `device-required-admin` (#2179): applies while `compliant-admin` is
+    required (`devices.requireCompliantDeviceForAdmin` in force, on in
+    product, AND the realm armed on first proof:
+    `../common/admin_device_requirement.ts`) to a request whose
+    `device-admin-surface` is true: a person's console or `admin:*` token
+    at the token endpoint. It asks the same compliant-device test, is not
+    subject to `deviceExempt`, and its refusal `admin-not-compliant` is
+    STS-DEVICE-0054 with its own sentence.
   An application's device satisfies `device-required` for a person, and
   another person's device does not. `deviceExempt` (by default the console
   and the portal) is never refused by it: the console for #226's reason,

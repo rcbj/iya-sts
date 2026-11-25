@@ -1295,6 +1295,18 @@
     "en": "1ddc02b9b0701d2a",
     "text": "AN (pki.paranoid=auto): common/certificate_trust.ts unterzieht jedes Zertifikat — bei einem TLS-Handshake in beiden Richtungen, unter einer Signatur, als Empfänger einer Verschlüsselung, in einer Attestierung — einem Pfad zu einem Anker, den dieser Dienst genannt bekommen hat (der Client- oder der Signierer-Truststore, die CA des Vertrauensbereichs, die eigene Einstellung einer Familie), der Gültigkeit zum jetzigen Zeitpunkt, dem Widerruf sowie basicConstraints, keyUsage und extendedKeyUsage, wie sein Anwendungsfall sie verlangt; eine Prüfung, die der Anwendungsfall nie ausgeführt hat, ist eine Ablehnung. Eine Zeile pki.paranoid<UseCase> je Anwendungsfall stellt, wenn sie aus ist, das frühere Verhalten dieses Anwendungsfalls wieder her und wird unter /admin/pki/trust rot dargestellt (STS-PKI-0239)."
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "Die Berechtigung einer Person für die Administrationsoberfläche (die Konsole, ein admin:*-Scope) braucht ein konformes registriertes Gerät"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "AUS (devices.requireCompliantDeviceForAdmin=auto): Ein Administrator meldet sich wie bisher von jedem Browser an der Konsole an. Setzen Sie es auf on, um die Regel hier auszuprobieren."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "AN (devices.requireCompliantDeviceForAdmin=auto): Die Regel device-required-admin der Ausstellungsrichtlinie lehnt am Token-Endpunkt jedes Konsolen-Token und jedes admin:*-Token einer Person ab, das nicht von einem eigenen konformen registrierten Gerät kam (STS-DEVICE-0054). Sie wird pro Vertrauensbereich SCHARF GESCHALTET, sobald ein Konsolenadministrator zum ersten Mal eines von einem konformen Gerät erhält, und bis dahin wird jeder Administrator zugelassen, sodass eine Installation ohne konformes Gerät nie ausgesperrt wird; einmal scharf bleibt sie scharf, und ein Programm (die Verwaltungsberechtigung der Bereitstellung) ist der Weg zurück. Verzeichnis > Geräte zeigt, ob dieser Vertrauensbereich scharf geschaltet ist."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Ein durch gegenseitiges TLS nachgewiesener GNAP-Schlüssel ist ein Zertifikat, das eine vertrauenswürdige Stelle dem Client ausgestellt hat"

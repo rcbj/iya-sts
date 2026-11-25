@@ -30,5 +30,16 @@
   "waivedBy": "WAIVED IN THIS REALM BY AN ADMINISTRATOR: <code>{requirement}</code> ({section}, a {level}), because <code>{setting}</code> is on. Every other requirement of the BCP stays in force.",
   "requirementNotMet": "NOT MET HERE: <code>{requirement}</code> ({section}), because of <code>{setting}</code>.",
   "waivedPerApplication": "PER APPLICATION: an application uses these response types only when its <code>{attribute}</code> lists the one it asks for, set by an administrator or the application's owner. A client registering itself may enable only what <code>{setting}</code> names: {value}.",
-  "waivedPerApplicationNone": "PER APPLICATION: an application uses these response types only when its <code>{attribute}</code> lists the one it asks for, set by an administrator or the application's owner. A client registering itself may enable none of them, because <code>{setting}</code> is empty."
+  "waivedPerApplicationNone": "PER APPLICATION: an application uses these response types only when its <code>{attribute}</code> lists the one it asks for, set by an administrator or the application's owner. A client registering itself may enable none of them, because <code>{setting}</code> is empty.",
+  "dualHeading": "Two-person approval",
+  "dualLead": "Whether high-risk administrator acts wait for a second administrator in this realm (<code>admin.dualControl</code>). It is a realm's setting in either mode, not a mode difference; it is here because whether it is in force is a question this page answers.",
+  "dualInForce": "In force: a held act waits for a second administrator.",
+  "dualOnNotInForce": "On, but not in force for every authority.",
+  "dualOff": "Off.",
+  "dualThAuthority": "Authority",
+  "dualThHolders": "People who could decide",
+  "dualThInForce": "In force",
+  "dualYes": "yes",
+  "dualNo": "no",
+  "dualLink": "Pending approvals ({n, plural, =1 {one act waiting} other {# acts waiting}})"
 }

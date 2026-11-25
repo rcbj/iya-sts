@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "雙人審批的過期"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "將每項為第二位管理員而暫緩、且已過截止時間的管理員操作（#2166）改為已過期並寫入其稽核列，在已完成的操作完成一週後將其刪除，並修復待決操作清單。讀取本身會套用截止時間，因此這是記錄與清理，而從不是作出決定的部分。"
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "屬性來源：排程重新整理"

@@ -1295,6 +1295,18 @@
     "en": "1ddc02b9b0701d2a",
     "text": "PÅ (pki.paranoid=auto): common/certificate_trust.ts underkastar varje certifikat — vid en TLS-handskakning i någondera riktningen, under en signatur, som krypteringsmottagare, i ett intyg — en kedja till ett ankare som den här tjänsten fått veta om (förtroendelagret för klienter eller signerare, sfärens CA, en familjs egen inställning), giltighet vid nu, återkallelse, samt de basicConstraints, keyUsage och extendedKeyUsage som dess användningsfall frågar efter; en kontroll som användningsfallet aldrig körde är ett avslag. En pki.paranoid<UseCase>-rad per användningsfall återställer det användningsfallets tidigare beteende när den är av, och ritas röd på /admin/pki/trust (STS-PKI-0239)."
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "En persons behörighet för administrationsytan (konsolen, ett admin:*-omfång) kräver en kompatibel registrerad enhet"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "AV (devices.requireCompliantDeviceForAdmin=auto): en administratör loggar in i konsolen från vilken webbläsare som helst, som tidigare. Sätt den till on för att pröva regeln här."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "PÅ (devices.requireCompliantDeviceForAdmin=auto): utfärdandepolicyns regel device-required-admin avvisar vid tokenslutpunkten varje konsoltoken och varje persons admin:*-token som inte kom från en egen kompatibel registrerad enhet (STS-DEVICE-0054). Den AKTIVERAS per sfär första gången en konsoladministratör får en från en kompatibel enhet, och fram till dess släpps varje administratör in, så en installation utan kompatibel enhet låses aldrig ute; när den väl är aktiverad förblir den aktiverad, och ett program (driftsättningens hanteringsbehörighet) är vägen tillbaka. Katalog > Enheter visar om den här sfären är aktiverad."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "En GNAP-nyckel bevisad med ömsesidig TLS är ett certifikat som en betrodd utfärdare utfärdat till klienten"

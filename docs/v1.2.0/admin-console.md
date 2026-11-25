@@ -223,6 +223,71 @@ checked there, so anybody who can reach the port can sign in as anybody,
 including an administrator, and the console can revoke tokens, add claims to
 every future token and assertion, and create people in the directory.
 
+### Two-person approval
+
+**Off by default.** Turn on `admin.dualControl` on **Admin roles**, in the
+realm it should hold (each realm has its own setting). While it is on, the
+high-risk acts below are not done when an administrator asks for them. Each
+one is stored and waits on **Pending approvals** (`/admin/approvals`) until a
+second, different administrator who holds the same authority approves or
+refuses it. Approved, it then runs as the first administrator's act.
+
+| Act | Held when |
+|---|---|
+| Removing a trust realm | always |
+| Granting an administrator role (`/admin/rbac`, a member of `ADMIN_READ`, `ADMIN_WRITE` or `SECURITY_ADMIN` on `/admin/roles` or a client conferring one, a member of one of their groups) | always, for those roles |
+| Revoking Admin Write or Security Administrator from one of its last two holders | when it would leave fewer than two |
+| Re-keying the Root, an Intermediate's branch or an Issuing CA | always |
+| Revoking a CA certificate (a serial on the Root's or an Intermediate's list) | always |
+| Importing a CA, and adding or removing a client-certificate or signer trust anchor | always |
+| Rotating signing keys on demand or as compromised, importing (pinning) a signing key, retiring (unpinning) one | always |
+| Rotating the key-encryption key | always |
+| Turning `admin.dualControl` off, or changing `admin.dualControlLifetimeHours` | always |
+
+**What the first administrator sees.** The console says the act is waiting. A
+program calling `/admin-api` gets HTTP **202** with `pending: true`,
+`approval.id`, and a `Location` header naming
+`GET /admin-api/approvals?id=…`. Nothing has been done yet.
+
+**Deciding.** On Pending approvals, or with
+`POST /admin-api/approvals/approve`, `…/refuse` or `…/withdraw` and
+`{ "id": "dc_…" }`:
+
+* **Approve or refuse.** Who may decide:
+  * A person, not an application.
+  * Not the administrator who asked.
+  * Someone who holds the authority the act needs: Admin Write, or Security
+    Administrator for a security change.
+* **Approving needs a recent sign-in.** It asks for one within
+  `account.recentAuthMinutes`, and the console signs you in again first if
+  needed.
+* **What happens on approval.** The act runs through the same operation, as
+  the requester's act, against the state as it is at that moment, so an act
+  that is no longer possible is refused then. It does not run if the
+  requester has since lost the authority.
+* **Withdraw.** Only the administrator who asked may withdraw the act.
+* **Expiry.** An act nobody decides expires after
+  `admin.dualControlLifetimeHours` (24 by default) and never runs. Ask
+  again.
+
+Every step is in the audit log under `admin.dual-control.*`, and an approved
+act's row names both administrators.
+
+**A realm cannot be locked out.** When fewer than two people could decide an
+act (nobody but the requester holds the authority, or the management API is
+open in development), the act runs at once. The audit row says nobody
+approved it (`STS-ADMIN-0976`, `STS-ADMIN-0977`). **Mode** (`/admin/mode`)
+shows whether two-person approval is on and in force, and how many people
+could decide each kind of act.
+
+* **Why acts run instead of the setting being refused.** Refusing to turn the
+  setting on with one administrator would only check the roster on that day.
+  A realm whose administrators later left would have every held act waiting
+  for ever, including turning the setting off.
+* **The remaining gap.** Administrators can also be removed over LDAP, over
+  SCIM or by deleting the person, and two-person approval does not see those
+  changes. Watch for the audit row and the Mode page.
+
 ## How the console is laid out
 
 ### The navigation
