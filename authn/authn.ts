@@ -19961,6 +19961,8 @@ class Authn {
     const written = credentials.setPassword(step.username, chosen,
                                             { via: 'the forced password ' +
                                                 'change',
+                                              // #2236: the person's own.
+                                              initiatingEntity: 'user',
                                               application: String(
                                                 (step.authn &&
                                                  step.authn.application) ||

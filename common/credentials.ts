@@ -1329,14 +1329,26 @@ class Credentials {
   // the work: a derivation queued for the old password and started after a
   // reset landed would otherwise stamp the old password's keys as the new
   // one's (seen on the cluster stack, 2026-09-24 — sts_kerberos_keytab).
+  //
+  // WHO ACTED, AND WHEN (#2236). What the observer derives is a CONSEQUENCE
+  // of this act, and the Kerberos keys' own credential-change carries the
+  // act's initiating entity and instant rather than its own: they were
+  // derived after it, asynchronously, and a `system` change dated after a
+  // sign-in revoked the console token the person had just been issued (the
+  // hosted surfaces act on every change not the person's own). A
+  // verification is always the person's own password, so `user`; a set says
+  // who made it where its caller knows (`setPassword()`'s
+  // `opts.initiatingEntity`), and nothing where it does not.
   private notifyPassword(name, password, event, hash?, retainPreviousMs?,
-                         previousHash?) {
+                         previousHash?, initiatingEntity?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.notifyPassword().");
     if (!this.passwordObserver || !name || !password) {
       log.debug("Leaving Credentials.notifyPassword().");
       return;
     }
+    const initiator = initiatingEntity
+      ? String(initiatingEntity) : (event === 'set' ? '' : 'user');
     try {
       // `retainPreviousMs` (#221): a service account's rotation overlap, for
       // which the KDC holds the retired key version at least as long.
@@ -1344,7 +1356,9 @@ class Credentials {
                             { event: event, hash: hash || null,
                               retainPreviousMs: Number(retainPreviousMs) ||
                                                 0,
-                              previousHash: previousHash || null });
+                              previousHash: previousHash || null,
+                              initiatingEntity: initiator,
+                              atMs: Date.now() });
     } catch (e) {
       // Swallowed with a reason: see the header. What is lost is whatever the
       // observer derives, and the log says so; the credential act it observed
@@ -2750,8 +2764,10 @@ class Credentials {
    *
    * @param username - the person
    * @param password - the new password
-   * @param opts - `generated` for a password from `generatePassword()`, and
-   *   `application`, the application it is set for where known (#1236)
+   * @param opts - `generated` for a password from `generatePassword()`,
+   *   `application`, the application it is set for where known (#1236), and
+   *   `initiatingEntity`, CAEP's word for who set it where the caller knows
+   *   (`user` for the person's own choice, #2236)
    * @returns `{ ok: true, username, … }`, or a refusal `{ ok: false, errors }`
    */
   setPassword(username, password, opts?) {
@@ -2839,7 +2855,10 @@ class Credentials {
     // The plaintext was just WRITTEN — see the password observer above. After
     // the write and not before it, so an observer reading the stored hash back
     // reads the one this password produced.
-    this.notifyPassword(name, password, 'set', prepared.hash, overlapMs);
+    // `opts.initiatingEntity` (#2236): who set it, for what the observer
+    // derives from it; see `notifyPassword()`.
+    this.notifyPassword(name, password, 'set', prepared.hash, overlapMs,
+                        null, (opts && opts.initiatingEntity) || '');
     log.debug('Leaving Credentials.setPassword(). Written.');
     return { ok: true, username: name,
              message: 'The password for ' + name + ' is set. It is stored as ' +

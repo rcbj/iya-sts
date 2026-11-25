@@ -170,7 +170,9 @@ class AccountPassword {
              : 'Give a new password.', { view: view });
     }
     await this.deps.breachedPasswords().screen(next);
-    const set = credentials.setPassword(username, next);
+    // The person's own choice (#2236): what is derived from it says so.
+    const set = credentials.setPassword(username, next,
+                                        { initiatingEntity: 'user' });
     if (!set.ok) {
       log.debug("Leaving AccountPassword.change(). Refused by the policy.");
       return ctx.refuse(res, 400, ctx.errorCodes.codeOf(set) ||

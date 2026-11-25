@@ -410,6 +410,35 @@ async function keytabChild() {
   out.state = personKeys.personKerberosState('ktowner');
   out.viewKerberos = (views.userDetailJson({ query: {} }, 'ktowner') ||
                       { json: {} }).json.kerberos || null;
+  // --- G3. keys derived from the person's OWN choice say so (#2236) ---
+  // The forced change at the sign-in screen (and the portal's change, reset
+  // and activation) set the password with `initiatingEntity: 'user'`. The
+  // keys are derived after it, asynchronously; their credential-change must
+  // carry the act's initiator and instant, or the console — which acts on
+  // every change not the person's own — revokes the token it just issued.
+  if (product) {
+    const before = recorded.length;
+    const PW3 = 'Own-Chosen-Passw0rd!-3';
+    const actAt = Math.floor(Date.now() / 1000);
+    out.ownChoice = credentials.setPassword('ktowner', PW3,
+      { initiatingEntity: 'user' }).ok;
+    await personKeys.idle();
+    out.ownChoiceSignals = recorded.slice(before).filter(function (n) {
+      return n.credentialType === 'urn:iya:sts:credential-type:kerberos-key';
+    }).map(function (n) {
+      return { change: n.changeType, initiating: n.initiatingEntity,
+               at: n.eventTimestamp, actAt: actAt };
+    });
+    // And one an administrator's door set, which names nobody: as before.
+    const before2 = recorded.length;
+    credentials.setPassword('ktowner', 'Admin-Typed-Passw0rd!-5');
+    await personKeys.idle();
+    out.unstatedSignals = recorded.slice(before2).filter(function (n) {
+      return n.credentialType === 'urn:iya:sts:credential-type:kerberos-key';
+    }).map(function (n) {
+      return n.changeType + ':' + n.initiatingEntity;
+    });
+  }
   // --- G2. a person's Kerberos keys over CAEP (#236) ---
   if (product) {
     out.dropped = brief(personKeys.dropPreviousPersonKeys('ktowner',
@@ -662,6 +691,20 @@ function productAssertions(t, r) {
           'create for the first key, update for a new password\'s kvno, ' +
           'revoke when the previous versions are dropped and delete when ' +
           'they are cleared', JSON.stringify(seen));
+  const chosen = r.ownChoiceSignals || [];
+  t.check(r.ownChoice === true && chosen.length === 1 &&
+          chosen[0].change === 'update' && chosen[0].initiating === 'user' &&
+          typeof chosen[0].at === 'number' &&
+          chosen[0].at >= chosen[0].actAt &&
+          chosen[0].at <= chosen[0].actAt + 1,
+          'keys derived from a password the person chose are their own ' +
+          'change (initiating_entity user), dated at the act, so the ' +
+          'console does not revoke the token it just issued (#2236)',
+          JSON.stringify(chosen));
+  t.check(JSON.stringify(r.unstatedSignals) ===
+          JSON.stringify(['update:system']),
+          'and a set that names nobody still sends a system change',
+          JSON.stringify(r.unstatedSignals));
   log.debug("Leaving productAssertions().");
 }
 
