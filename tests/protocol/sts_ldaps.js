@@ -57,6 +57,7 @@ const { Command, Option } = require("commander");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -334,12 +335,29 @@ function handshakeOf(host, port, version) {
   });
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product and an LDAP bind refuses it, so the person is made with a
+// temporary one and chooses PASSWORD at the sign-in screen
+// (`own_password.js`; in development it is simply set).
+async function setPassword(who, value) {
+  log.debug("Entering setPassword(). " + who);
+  const r = await fetch(base + "/admin-api/users/set-password", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user: who, password: value }) });
+  const json = await r.json().catch(function (e) {
+    log.debug("Caught in setPassword(): " + ((e && e.message) || e));
+    return null;
+  });
+  log.debug("Leaving setPassword(). " + r.status);
+  return { status: r.status, json: json };
+}
+
 async function createThePerson() {
   log.debug("Entering createThePerson().");
   const r = await fetch(base + "/admin-api/users/create", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: PERSON, invent: false,
-      credential: "password", password: PASSWORD,
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "LDAPS " + PERSON, givenName: "LDAPS", sn: PERSON,
                     displayName: "LDAPS " + PERSON,
                     mail: PERSON + "@ldaps.test" } }) });
@@ -348,6 +366,7 @@ async function createThePerson() {
     "POST /admin-api/users/create should create " + PERSON + " with a " +
     "password and name its DN; it answered " + r.status + " " +
     JSON.stringify(body).slice(0, 300));
+  await ownPassword.ownPassword(base, PERSON, PASSWORD, setPassword);
   log.debug("Leaving createThePerson(). " + body.dn);
   return String(body.dn);
 }
