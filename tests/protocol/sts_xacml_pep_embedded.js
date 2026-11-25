@@ -14,12 +14,12 @@
 // running service, in a realm of its own:
 //
 //   R. REGISTER: bound to nothing (403, STS-XACML-0340 on the audit log),
-//      bound to another application (403, 0339), an unsupported protocol
-//      version (400, 0340), mode with a container (400, 0341); then the
+//      bound to another application (403, 0341), an unsupported protocol
+//      version (400, 0342), mode with a container (400, 0343); then the
 //      package's body accepted, and `/admin-api/xacml/peps` carrying kind,
 //      application, mode and protocol version;
 //   H. HEARTBEAT: `policyEvents` stored and on the row; the binding moved,
-//      the next heartbeat refused (403, 0339);
+//      the next heartbeat refused (403, 0341);
 //   Z. AUTHZEN, central MODE: the bound PEP, in no AuthZEN group, asks
 //      `POST /access/v1/evaluation` about its application (200) and about
 //      another (403, STS-AUTHZEN-0025); the batch the same.

@@ -1248,18 +1248,18 @@ class PepRegistry {
   // #1206), read ONCE, here, for both doors. Refused, in this order, each
   // before anything is written:
   //
-  //   * a `kind` that is neither `container` nor `embedded` (0342). ABSENT
+  //   * a `kind` that is neither `container` nor `embedded` (0344). ABSENT
   //     IS THE ROW'S on a heartbeat and `container` on a registration, so a
   //     PEP built before this — which sends none — is a container, as it
   //     always was;
-  //   * `mode` with a container (0341): `central` and `local` are an
+  //   * `mode` with a container (0343): `central` and `local` are an
   //     embedded PEP's, and a container that sends one has been configured
-  //     as something it is not; an embedded PEP's mode that is neither (0342);
-  //   * a `protocolVersion` this service does not speak (0340), and none
+  //     as something it is not; an embedded PEP's mode that is neither (0344);
+  //   * a `protocolVersion` this service does not speak (0342), and none
   //     at all from an embedded PEP, whose package always sends one: a
   //     library that fell behind is refused on its own registration;
-  //   * a `policyEvents` outside the four words (0342);
-  //   * AN EMBEDDED PEP NOT BOUND, OR BOUND ELSEWHERE (0338, 0339), against
+  //   * a `policyEvents` outside the four words (0344);
+  //   * AN EMBEDDED PEP NOT BOUND, OR BOUND ELSEWHERE (0340, 0341), against
   //     `boundTo` — `stsPepApplication` on its entry, which the caller reads
   //     (`xacml_pep_binding.ts`) because this module holds no directory of
   //     people. 403, not 400: the PEP's request is well formed and it is

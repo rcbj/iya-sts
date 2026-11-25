@@ -1452,11 +1452,11 @@ carry `pep-policies-changed`).
 * **ONE READING, `PepRegistry.identityOf()`**, asked by `xacml.ts`'s
   `pepIdentity()` on both doors before anything is written: an unknown kind,
   an embedded mode that is neither, or a `policyEvents` outside the four
-  (`STS-XACML-0344`); `mode` with a container (`0341`); a `protocolVersion`
+  (`STS-XACML-0344`); `mode` with a container (`0343`); a `protocolVersion`
   outside `PROTOCOL_VERSIONS` (`{1}`), or none from an embedded PEP
-  (`0340`); all 400. **And the binding** (`xacml_pep_binding.ts`'s `of()`,
-  read only for a PEP that says or was embedded): bound to nothing (`0338`)
-  or to another application than it names (`0339`), 403 `access_denied`.
+  (`0342`); all 400. **And the binding** (`xacml_pep_binding.ts`'s `of()`,
+  read only for a PEP that says or was embedded): bound to nothing (`0340`)
+  or to another application than it names (`0341`), 403 `access_denied`.
   That is what stops a PEP key copied into another application posing as
   its PEP.
 * **A HEARTBEAT ASKS THE SAME**, an absent member taking the row's value, so

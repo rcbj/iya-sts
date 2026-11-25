@@ -2654,7 +2654,7 @@
             }
           },
           "400": {
-            "description": "No usable name (STS-XACML-0019), a bad hostname (0261), an unknown kind or an embedded PEP's mode that is neither central nor local (0342), mode with a container (0341) or an unsupported protocolVersion (0340): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "description": "No usable name (STS-XACML-0019), a bad hostname (0261), an unknown kind or an embedded PEP's mode that is neither central nor local (0344), mode with a container (0343) or an unsupported protocolVersion (0342): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2674,7 +2674,7 @@
             }
           },
           "403": {
-            "description": "The gate; or an embedded registration whose entry is bound to no application (STS-XACML-0340) or to another than it names (0339): access_denied.",
+            "description": "The gate; or an embedded registration whose entry is bound to no application (STS-XACML-0340) or to another than it names (0341): access_denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2780,7 +2780,7 @@
             }
           },
           "400": {
-            "description": "No name (STS-XACML-0020), a bad hostname (0261), a value the service cannot hold (0303; see HeartbeatRequest), or the identity's refusals as at register (0340, 0341, 0342). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "description": "No name (STS-XACML-0020), a bad hostname (0261), a value the service cannot hold (0303; see HeartbeatRequest), or the identity's refusals as at register (0342, 0343, 0344). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2812,7 +2812,7 @@
             }
           },
           "403": {
-            "description": "The gate; or an embedded PEP whose entry is no longer bound to its application (STS-XACML-0340, 0339): access_denied.",
+            "description": "The gate; or an embedded PEP whose entry is no longer bound to its application (STS-XACML-0340, 0341): access_denied.",
             "content": {
               "application/json": {
                 "schema": {

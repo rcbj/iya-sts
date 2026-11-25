@@ -14,7 +14,7 @@
 // the `iya-pep` package does.
 //
 //   I. `identityOf()`, the one reading, case by case with its code: kind,
-//      mode, protocol version, policyEvents, the binding (0338-0342).
+//      mode, protocol version, policyEvents, the binding (0340-0342).
 //   R. THE REGISTRATION: no kind is a container, as an older PEP is;
 //      embedded and bound to nothing (403), bound elsewhere (403), an
 //      unsupported protocolVersion (400), mode with a container (400); then
@@ -154,7 +154,7 @@ function childMain() {
       const ok = one[4] === true
         ? got.ok && got.kind === one[5]
         : !got.ok && got.code === one[4] &&
-          got.status === (/0338|0339/.test(one[4]) ? 403 : 400);
+          got.status === (/0340|0341/.test(one[4]) ? 403 : 400);
       note(ok, one[0] + (one[4] === true ? '' : ' (' + one[4] + ')'),
            JSON.stringify(got));
     });
