@@ -430,20 +430,23 @@ async function passkeyOptions(base, opened) {
  * @param {string} base - the service's base
  * @param {string} where - the page's address or the step's id
  * @param {object} fields - `new_password`, `confirm_password`
- * @param {object} [options] - `cookie`
+ * @param {object} [options] - `cookie`; `headers`, sent on every request
+ *   (a User-Agent), as `submit()` sends them: the sign-in resumes here, and
+ *   a product realm scores its risk on this request
  * @returns {Promise<object>} the answer
  */
 async function changePassword(base, where, fields, options) {
   log.debug("Entering changePassword().");
   const opts = options || {};
   const opened = await screen(base, where, { cookie: opts.cookie,
+                                             headers: opts.headers,
                                              page: "password-change" });
   const answer = await act(base, "/authn-api/password-change/" +
     encodeURIComponent(opened.id), {
       new_password: fields.new_password,
       confirm_password: fields.confirm_password },
     { cookie: opened.cookie, csrf: opened.csrf,
-      setCookies: opened.setCookies });
+      setCookies: opened.setCookies, headers: opts.headers });
   answer.view = opened.view;
   log.debug("Leaving changePassword(). " + answer.next);
   return answer;

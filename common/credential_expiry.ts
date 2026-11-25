@@ -113,6 +113,7 @@ import config = require('./config');
 import errorCodes = require('./error_codes');
 import stsCrypto = require('./crypto');
 import entryObserver = require('./entry_observer');
+import DomainMap = require('./domain_map');
 
 type Json = any;
 
@@ -726,7 +727,9 @@ class CredentialExpiry {
       readLimit: BACKFILL_PER_RUN, wanted: Number.MAX_SAFE_INTEGER,
       rowOf: function (stored: Json): Json {
         const attributes = (stored && stored.attributes) || {};
-        const uuid = String((attributes.entryuuid || [])[0] || '');
+        // The subject through its concept (#1579), not entryUUID by name.
+        const uuid = String(DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+                                              attributes) || '');
         return { id: String(directory.usernameOfEntry(stored) || ''),
                  subject: uuid ? 'urn:uuid:' +
                    uuid.replace(/^urn:uuid:/i, '') : '',

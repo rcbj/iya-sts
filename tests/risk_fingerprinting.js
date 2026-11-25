@@ -150,14 +150,19 @@ function childMain() {
     config.setOverride('risk.fingerprinting', true);
     const on = await screen(browser(port));
     const csp = String(on.headers['content-security-policy'] || '');
+    // The browser check first since #2220 (`common/shell_document.ts`),
+    // then the screen's one bundle: the shell names no fingerprint script
+    // of its own.
     const scripts = on.text.match(/<script [^>]*>/g) || [];
-    note(scripts.length === 1 &&
-         /src="\/authn\/signin\.js"/.test(scripts[0]) &&
+    note(scripts.length === 2 &&
+         /src="\/web\/browser-check\.js"/.test(scripts[0]) &&
+         /src="\/authn\/signin\.js"/.test(scripts[1]) &&
          on.view.fingerprint === true &&
          /script-src 'self'/.test(csp) && /frame-ancestors/.test(csp),
          'B1. on: the view asks for the fingerprint (the screen\'s script ' +
          'loads /authn/fingerprint.js beside it, #571), under script-src ' +
-         '\'self\' with frame-ancestors kept', csp);
+         '\'self\' with frame-ancestors kept',
+         csp + ' ' + JSON.stringify(scripts));
     const script = await browser(port).go('GET', '/authn/fingerprint.js');
     note(script.status === 200 &&
          /javascript/.test(String(script.headers['content-type'])) &&
