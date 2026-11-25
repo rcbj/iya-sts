@@ -4123,6 +4123,14 @@ const CODES = [
       'whose operation outlived its caller is discarded when the module ' +
       'answers (#2220).',
     spec: '' },
+  { code: 'STS-KEYS-0217',
+    summary: 'The keys.encryption-key-rotate job could not replace a ' +
+      'realm\'s request-decryption keys (#2220): the key set could not ' +
+      'be replaced (a newer generation was already held, or the store ' +
+      'refused the write). The keys go on as they are and the next run ' +
+      'tries again.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -5716,6 +5724,24 @@ const CODES = [
       'certificates were confused the same way (#2151).',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0310',
+    summary: 'A CA certificate inside its renewal lead could not be ' +
+      'renewed over the same key by the pki.ca-renew job (#2220): the ' +
+      'encoder refused, or its parent could not sign. The CA goes on as ' +
+      'it is and expires on its old date.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
+  { code: 'STS-PKI-0311',
+    summary: 'A CA certificate renewal was refused because the renewed ' +
+      'certificate\'s subject was not the subject it renews (#2220): a ' +
+      'renewal must keep the name every child names as its issuer.',
+    spec: 'an error log line and a failure audit row; nothing is stored' },
+  { code: 'STS-PKI-0312',
+    summary: 'A dedicated credential signer\'s key family could not be ' +
+      'moved on to its next generation by the scheduled rotation ' +
+      '(#2220). The current key goes on signing.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -16475,6 +16501,11 @@ const CODES = [
       'which krb5.pkinitRequirePaChecksum2 requires (#2125).',
     spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
       'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
+  { code: 'STS-KRB-0263',
+    summary: 'The krb5.service-key-rotate job could not rotate a service ' +
+      'principal key that was due (#2220): it could not be sealed or ' +
+      'written. The key goes on as it is.',
+    spec: 'an error log line; the scheduler run fails with this code' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -19194,6 +19225,13 @@ const CODES = [
       'a sha256: prefix allowed) nor spki: followed by the SHA-256 of a ' +
       'SubjectPublicKeyInfo in the same form (#2012).',
     spec: '' },
+  { code: 'STS-TLS-0078',
+    summary: 'The listener certificate was due for renewal (less than a ' +
+      'third of its validity left, or inside ' +
+      'tls.serverCertificateRenewLeadDays) and the ' +
+      'tls.server-certificate-renew job could not re-issue it (#2220). ' +
+      'The socket goes on presenting the certificate it has.',
+    spec: 'a warning or error log line and a failure audit row' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

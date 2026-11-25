@@ -597,6 +597,48 @@ function deserialiseKemEncKeys(blob) {
 }
 
 // ---------------------------------------------------------------------------
+// A RETIRED REQUEST-DECRYPTION KEY (#2220): a request object encryption
+// pair, the OpenID4VCI request-encryption key or one KEM key, replaced by
+// `helpers.rotateEncryptionKeys()` and kept ONLY to decrypt what a client
+// encrypted to it before it read the new one, until `retiredUntil`. Each kind
+// in the shape its own member is written in above, so one reader opens both.
+// ---------------------------------------------------------------------------
+function serialiseRetiredEncKeys(one) {
+  log.debug("Entering serialiseRetiredEncKeys(). " + (one && one.kind));
+  let keys = null;
+  if (one && one.kind === 'ro') {
+    keys = serialiseRequestObjectKeys(one.keys);
+  } else if (one && one.kind === 'vci' && one.keys &&
+             one.keys.privateKey && one.keys.publicJwk) {
+    keys = { privateKeyPem: one.keys.privateKey.export({ type: 'pkcs8',
+                                                         format: 'pem' }),
+             publicJwk: one.keys.publicJwk };
+  } else if (one && one.kind === 'kem') {
+    keys = serialiseKemEncKeys([one.keys])[0] || null;
+  }
+  log.debug("Leaving serialiseRetiredEncKeys(). " + (keys ? 'Kept.'
+                                                          : 'None.'));
+  return keys ? { kind: one.kind, kid: one.kid, retiredAt: one.retiredAt,
+                  retiredUntil: one.retiredUntil, keys: keys } : null;
+}
+
+function deserialiseRetiredEncKeys(row) {
+  log.debug("Entering deserialiseRetiredEncKeys(). " + (row && row.kind));
+  let keys = null;
+  if (row && row.kind === 'ro') {
+    keys = deserialiseRequestObjectKeys(row.keys);
+  } else if (row && row.kind === 'vci' && row.keys &&
+             row.keys.privateKeyPem) {
+    keys = { privateKey: crypto.privateKeyFrom(row.keys.privateKeyPem),
+             publicJwk: row.keys.publicJwk };
+  } else if (row && row.kind === 'kem') {
+    keys = (deserialiseKemEncKeys([row.keys]) || [])[0] || null;
+  }
+  log.debug("Leaving deserialiseRetiredEncKeys().");
+  return keys;
+}
+
+// ---------------------------------------------------------------------------
 // THE BROWSER DEVICE KEYS (2026-09-26, #265): the realm's key pair that signs
 // a remembered browser's device token and the key pair it is encrypted to —
 // used for nothing else, so a token can never be minted with a key that signs
@@ -943,6 +985,14 @@ function serialiseGenerations(held) {
                keys: serialiseRefreshTokenKeys(one.keys) };
     })
   };
+  // THE RETIRED REQUEST-DECRYPTION KEYS (#2220), the retired refresh-token
+  // sets' arrangement. Omitted when empty, so a blob written before the
+  // field existed still compares equal to one that has never rotated them.
+  const retiredEnc = (held.retiredEnc || []).map(serialiseRetiredEncKeys)
+    .filter(Boolean);
+  if (retiredEnc.length) {
+    out.retiredEnc = retiredEnc;
+  }
   // THE BIRTH CERTIFICATES THIS GENERATION DESCENDS FROM (2026-11-01).
   // Omitted when empty, so a blob written before the field existed still
   // compares equal to one that has never rotated. A later generation names
@@ -999,6 +1049,13 @@ function deserialiseGenerations(blob) {
       return { kid: row.kid, retiredAt: row.retiredAt,
                retiredUntil: row.retiredUntil,
                keys: deserialiseRefreshTokenKeys(row.keys) };
+    }).filter(function (one) {
+      return !!one.keys;
+    }),
+    retiredEnc: (blob.retiredEnc || []).map(function (row) {
+      return { kind: row.kind, kid: row.kid, retiredAt: row.retiredAt,
+               retiredUntil: row.retiredUntil,
+               keys: deserialiseRetiredEncKeys(row) };
     }).filter(function (one) {
       return !!one.keys;
     })
@@ -2634,6 +2691,12 @@ function privateMaterialFor(realmId) {
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
       parsed.standby.set(row.kid, deserialiseStandbyEntry(row));
+    });
+  // And the retired request-decryption keys (#2220), by kid.
+  parsed.retiredEnc = new Map();
+  ((blob.generations && blob.generations.retiredEnc) || []).forEach(
+    function (row) {
+      parsed.retiredEnc.set(row.kid, deserialiseRetiredEncKeys(row));
     });
   parsed.retiredRefresh = new Map();
   ((blob.generations && blob.generations.retiredRefresh) || []).forEach(

@@ -1831,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Welcher Schlüssel die Credentials dc+sd-jwt und jwt_vc_json dieses Vertrauensbereichs und deren Token Status List Tokens signiert. `dedicated` — der Standard — ist ein eigener Schlüssel je Algorithmusfamilie, für nichts anderes verwendet, unter einem Zertifikat, dessen subjectAltName jeden Issuer-Bezeichner, unter dem der Vertrauensbereich antwortet, als URI nennt (kein DNS-Name), mit der erweiterten Schlüsselverwendung id-kp-documentSigning (RFC 9336) und nichts, was ein TLS-Stack akzeptieren würde, sodass eine Wallet die iss des Credentials mit seinem x5c abgleichen kann (HAIP 1.0 Abschnitt 6.1.1). Das Zertifikat wird neu ausgestellt, wenn sich die Issuer-Bezeichner ändern (global.publicBaseUrl, tls.hostnames, ein Listener). `realm-key` signiert sie mit dem allgemeinen JOSE-Schlüssel des Vertrauensbereichs, wie 1.0.0 es tat, dessen Zertifikat keinen Issuer nennt. Bereits ausgestellte Credentials bleiben auf beide Arten überprüfbar. ldp_vc und mso_mdoc sind nicht betroffen."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Credential-Signaturschlüssel rotieren alle (Tage)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Wie lange der Schlüssel eines dedizierten Credential-Signierers (keys.credentialSigner dedicated) signiert, bevor der Job keys.credential-signer-rotate den nächsten Schlüssel seiner Familie erzeugt, der von da an signiert. Der ersetzte Schlüssel signiert nichts mehr und bleibt im JWKS und im DID-Dokument des Credential-Ausstellers, sodass jedes von ihm signierte Credential weiterhin verifiziert wird. Gezählt ab dem Zeitpunkt, zu dem der Job den Schlüssel zuerst gesehen hat. 0 schaltet den Zeitplan ab. Nur im Produktmodus."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Post-Quanten- / Hybrid-Entschlüsselungsschlüssel"
@@ -1838,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "Die ML-KEM- und HPKE-JWE-Algorithmen, für die dieser Vertrauensbereich einen Entschlüsselungsschlüssel hält — ein Schlüsselpaar je Algorithmus, veröffentlicht im JWKS des Vertrauensbereichs (`use: enc`, mit `alg`) und angekündigt in `request_object_encryption_alg_values_supported` und `assertion_encryption_alg_values_supported`, sodass ein Client ein Request Object oder eine Assertion nach RFC 7523 / 7522 an diesen Vertrauensbereich mit Post-Quanten- oder PQ/T-Hybrid-Schlüsselvereinbarung verschlüsseln kann. HPKE-10-KE ist X-Wing (ML-KEM-768 + X25519). Das Verschlüsseln AN einen Client, der einen dieser Algorithmen registriert hat, braucht hier nichts. **Leer ist der Standard, und die Wahl eines Administrators:** jeder dieser Algorithmen stammt aus einem Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), und ein AKP-Schlüssel in einem JWKS ist ein Schlüsseltyp, den die JOSE-Bibliotheken vieler Clients noch nicht parsen — manche lehnen den ganzen Schlüsselsatz ab. Nennen Sie einen Algorithmus hier nur dort, wo bekannt ist, dass die Clients, die das JWKS dieses Vertrauensbereichs lesen, damit zurechtkommen. Einen zu entfernen beendet das Veröffentlichen und Akzeptieren; ihn erneut zu nennen bringt denselben Schlüssel zurück."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Anfrage-Entschlüsselungsschlüssel ersetzen alle (Tage)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Wie lange die Verschlüsselungsschlüssel für Request Objects, der OpenID4VCI-Anfrageverschlüsselungsschlüssel und die KEM-Entschlüsselungsschlüssel behalten werden, bevor der Job keys.encryption-key-rotate sie ersetzt. Der neue Schlüssel wird sofort veröffentlicht (/oauth2/jwks, die Metadaten des Credential-Ausstellers), und der ersetzte entschlüsselt noch für keys.encryptionKeyOverlapDays. Gezählt ab dem Zeitpunkt, zu dem der Job den Schlüssel zuerst gesehen hat. 0 schaltet den Zeitplan ab. Nur im Produktmodus."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "Ein ersetzter Anfrage-Entschlüsselungsschlüssel entschlüsselt noch (Tage)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Wie lange ein von keys.encryption-key-rotate ersetzter Anfrage-Entschlüsselungsschlüssel noch öffnet, was ein Client an ihn verschlüsselt hat, bevor er den neuen Schlüssel gelesen hat. Er wird währenddessen nirgends veröffentlicht, und signing.retire entfernt ihn, wenn diese Zeit vorbei ist."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -4234,6 +4258,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Wie lange jede Issuing CA gilt, wenn der Aufbau keine Lebensdauer nennt. Null entspricht den fünf Jahren des Profils `issuing-ca`. Auf den Ablauf ihrer Intermediate begrenzt."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "CA-Zertifikate vor ihrem Ablauf erneuern"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Ob der tägliche Job pki.ca-renew die Root, jede Intermediate und jede Issuing CA innerhalb ihrer Vorlaufzeit (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) mit DEMSELBEN Schlüssel und Subject erneuert, sodass jedes von ihr signierte Zertifikat weiterhin verifiziert wird und ein Pin auf ihren Schlüssel gültig bleibt. Eine erneuerte Root wird neben der ersetzten unter /pki/ca/service/root-previous.cer veröffentlicht, bis diese abläuft. Eine importierte CA wird nie erneuert. Aus: nichts erneuert eine CA, und sie läuft ab wie vor 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Die Root so lange vor ihrem Ablauf erneuern (Tage)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Wie lange vor dem Ablauf der Root-CA pki.ca-renew sie erneuert, höchstens ihre halbe Laufzeit. Standardmäßig lang (drei Jahre), weil eine erneuerte Root ein neues Vertrauensanker-Zertifikat ist, das jede vertrauende Partei erhalten sollte, bevor das alte abläuft."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Eine Intermediate- oder Issuing-CA so lange vor ihrem Ablauf erneuern (Tage)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Wie lange vor dem Ablauf einer Intermediate- oder Issuing-CA pki.ca-renew sie erneuert, höchstens ihre halbe Laufzeit. Eine CA kann ihre Eltern-CA nicht überdauern, daher wartet eine, deren Eltern-CA zuerst abläuft, auf deren Erneuerung."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -6651,6 +6699,22 @@
     "en": "74971dd9b68d3a40",
     "text": "In einem Active-Active-Cluster versiegeln der LDAPS-Listener und der Hauptport jedes Knotens (sofern tls.mainPortSharedTickets nicht aus ist) Sitzungstickets unter einem gemeinsamen Schlüssel, sodass ein Ticket, das ein Knoten ausgestellt hat, auf einem anderen fortgesetzt wird (der Listener des Debuggers behält einen Schlüssel je Knoten). So oft, in Sekunden, ersetzt der Job tls.ticket-key-rotate ihn; der ersetzte Schlüssel wird gelöscht, sodass die Geheimnisse einer fortgesetzten Sitzung aus einem mitgeschnittenen Ticket nur wiederhergestellt werden können, solange sein Schlüssel existiert, und ein Client, dessen Ticket älter ist, einen vollständigen Handshake macht. Der Schlüssel wird im Store aufbewahrt, versiegelt unter dem Schlüsselverschlüsselungsschlüssel. 0 schaltet das Teilen aus, und außerhalb des Active-Active-Modus wird nichts geteilt: Ein Knoten, der antwortet, setzt mit den eigenen Schlüsseln je Listener von OpenSSL fort, die den Prozess nie verlassen."
   },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Das Listener-Zertifikat ohne Neustart erneuern"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Ob der stündliche Job tls.server-certificate-renew das Zertifikat, das der Hauptport, LDAPS und der Debugger präsentieren, mit demselben Schlüssel erneuert, sobald weniger als ein Drittel seiner Gültigkeit übrig ist (oder es innerhalb von tls.serverCertificateRenewLeadDays liegt), und es ohne Neustart auf jeden Socket setzt. Jeder Knoten erneuert sein eigenes. Aus: es wird nur bei einem Start und durch Erneuern in der Konsole erneuert. Ein Zertifikat, das Sie in tls.certificateFile liefern, erneuern Sie selbst."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Das Listener-Zertifikat so lange vor seinem Ablauf erneuern (Tage, 0 = bei einem Drittel seiner Gültigkeit)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Das Listener-Zertifikat so viele Tage vor seinem Ablauf erneuern, wenn das früher ist als der Punkt, an dem ein Drittel seiner Gültigkeit übrig ist. 0, der Standard, behält das Drittel."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "Der Hauptport teilt den Sitzungsticket-Schlüssel des Clusters"
@@ -8010,6 +8074,14 @@
   "krb5.krbtgtRotationIntervalDays|description": {
     "en": "0ef945c098a1eeac",
     "text": "Wie lange der krbtgt-Schlüssel eines Vertrauensbereichs — der Schlüssel, unter dem jedes Ticket-Granting Ticket versiegelt ist — aktuell bleibt, bevor der Job krb5.krbtgt-rotate ihn bei der nächsten kvno durch einen neuen Zufallsschlüssel ersetzt. Der ersetzte Schlüssel wird behalten (krb5.retainedKeyVersions, für krb5.retainedKeyTtlS), damit ein unmittelbar vor der Rotation ausgestelltes TGT noch funktioniert, bis es abläuft, und der Job rotiert nie, solange dieses Fenster offen ist. 180 Tage sind die übliche Leitlinie von Active Directory. 0 schaltet die geplante Rotation aus; eine Rotation von Hand (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) funktioniert weiter. Nur Produktmodus. Steht krb5.retainedKeyVersions auf 0, bleibt auch der Job aus, weil eine Rotation, die nichts behielte, jeden Kerberos-Benutzer im Bereich unangekündigt abmelden würde."
+  },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Den eigenen Akzeptor-Schlüssel dieses Dienstes rotieren alle (Tage)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Wie alt ein Dienstprinzipal-Schlüssel werden darf, bevor der Job krb5.service-key-rotate ihn durch einen neuen Zufallsschlüssel mit der nächsten kvno ersetzt; der ersetzte bleibt erhalten (krb5.retainedKeyVersions, für krb5.retainedKeyTtlS), damit bereits ausgestellte Tickets weiter funktionieren, und nie wird rotiert, solange dieses Fenster offen ist. Nur der Schlüssel, den dieser Dienst für seinen eigenen Akzeptor erzeugt hat, wird rotiert: Ein Schlüssel, dessen Keytab an einen anderen Dienst ausgegeben wurde, wird auf /admin/scheduler als fällig gemeldet, und ihn zu rotieren – was die neue Keytab ausgibt – bleibt Sache des Betreibers. Gezählt ab der letzten Rotation des Schlüssels oder seiner Erstellung. 0 schaltet den Zeitplan ab. Nur im Produktmodus."
   },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",

@@ -587,6 +587,31 @@ changes, whatever happened to its earlier certificate. To stop trusting a
 signing key, rotate it (`signing.rotate-now`), which retires the key and
 revokes its certificates.
 
+### A CA certificate is renewed before it expires
+
+The daily `pki.ca-renew` job renews the Root, then each Intermediate, then each
+Issuing CA, once it is inside its lead: `pki.rootRenewalLeadDays` (1095) for
+the Root and `pki.caRenewalLeadDays` (365) for the others, at most half the
+CA's lifetime. A renewal is **Renew** for the authority itself: the same key,
+the same subject, a fresh certificate signed by its parent, so
+
+* everything the CA signed keeps verifying, against the old certificate and
+  the renewed one alike;
+* a pin on the CA's key (its SubjectPublicKeyInfo) holds;
+* the replaced certificate is not revoked, and its parent's OCSP responder
+  goes on answering `good` for its serial until it expires, which is what
+  paranoid PKI mode asks.
+
+**A renewed Root is published beside the one it replaced**, at
+`/pki/ca/service/root-previous.cer`, until that one expires, and
+`/pki/ca/service/root.cer` is the renewed one. Give relying parties the
+renewed Root before the old one expires. A CA cannot outlive its parent, so a
+CA whose parent expires first waits for the parent's renewal. An imported CA
+is never renewed. A new key for a CA is still **Replace the Root**, **Reissue
+this CA** or **Rebuild this branch**, and each of those needs a second
+administrator when `admin.dualControl` is on. `pki.caRenewal` off turns the
+job off.
+
 ### Your own CAs and your own keys
 
 **Import a CA** — paste a certificate and its private key, as the Root or as one

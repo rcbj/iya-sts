@@ -11292,6 +11292,361 @@ function subjectCnOf(subject) {
   return found ? found[1].trim() : '';
 }
 
+// ===========================================================================
+// A CA CERTIFICATE RENEWED OVER THE SAME KEY, BEFORE IT EXPIRES (#2220, ASVS
+// 5.0.0 L3; key-management.md's Known gaps).
+//
+// Nothing renewed the Root, an Intermediate or an Issuing CA: each lived its
+// 20, 10 or 5 years and then every chain under it stopped validating, unless
+// somebody had pressed Replace the Root, Rebuild this branch or Reissue this
+// CA first — and each of those is a NEW KEY, which is a different authority:
+// a new Root is a new trust anchor everybody must be given, a rebuilt branch
+// supersedes everything under it. So the scheduled renewal does the one
+// thing none of them does: it issues the SAME authority a fresh certificate,
+// over the SAME key and with the SAME subject, signed by its parent (a Root
+// by itself). Everything follows from the key and the name not moving:
+//
+//   * **every certificate the authority signed still verifies**, against the
+//     old certificate and the renewed one alike, because a path is built on
+//     the issuer's name and checked with its key (RFC 5280 section 6.1); the
+//     authorityKeyIdentifier a child carries is the key's, and unchanged;
+//   * **a pin on the authority's key (its SubjectPublicKeyInfo) holds**, which
+//     is the pin the signer truststore and every `*TrustAnchors` setting
+//     compare by; a pin on the certificate's bytes is the one that moves, and
+//     the renewal never removes the certificate it replaced (below);
+//   * **paranoid PKI mode (#1360) keeps answering**: the certificate replaced
+//     is not revoked — a renewal is not a supersession — and its serial stays
+//     in the parent's register (`previous`, read by `pki_revocation.js`'s
+//     `issuedList()`), so an OCSP question about a chain a client still holds
+//     is answered `good` rather than `unknown`, until that certificate
+//     expires.
+//
+// **A ROOT RENEWAL IS A TRUST-ANCHOR CHANGE AND IS PUBLISHED, NEVER SWAPPED IN
+// SILENTLY.** The renewed Root is what `/pki/ca/service/root.cer` answers from
+// then on; the Root it replaced stays published at
+// `/pki/ca/service/root-previous.cer` until it expires, and every chain still
+// validates against either. The lead is long (`pki.rootRenewalLeadDays`,
+// three years) so that a relying party has the new certificate long before
+// the old one expires. A renewal keeps the key, so an anchor installed by key
+// keeps working through it; a NEW Root key is Replace the Root, which is an
+// on-demand act and is held for a second administrator when
+// `admin.dualControl` is on (`admin-core/dual_control.ts`, `buildPkiRoot`).
+// This job is scheduled, not on demand, and has no Run now.
+//
+// **AN IMPORTED AUTHORITY IS THE OPERATOR'S**, as its key is: its renewal is
+// theirs, and this renews none. **A RENEWAL THAT WOULD GAIN NOTHING IS NOT
+// MADE**: a CA cannot outlive its parent, so an Intermediate inside its lead
+// under a Root that expires first waits for the Root's renewal — which is
+// why the job renews top down, Root first.
+// ===========================================================================
+const CA_RENEW_DAY_MS = 86400000;
+// The fewest days a renewal must add to an authority's expiry, or it is not
+// made (a parent's own expiry clips it).
+const CA_RENEW_MIN_GAIN_MS = CA_RENEW_DAY_MS;
+// How many renewed-away certificates a tier keeps for the register.
+const CA_RENEW_KEPT = 4;
+
+// The lead before expiry inside which a tier is renewed, in milliseconds.
+function caRenewalLeadMs(tierName) {
+  log.debug("Entering caRenewalLeadMs(). " + tierName);
+  const days = Number(config.value(tierName === 'root'
+    ? 'pki.rootRenewalLeadDays' : 'pki.caRenewalLeadDays'));
+  log.debug("Leaving caRenewalLeadMs().");
+  return days > 0 ? days * CA_RENEW_DAY_MS : 0;
+}
+
+// The validity a renewal of `tier` under `parent` would get, from `nowMs`:
+// the configured lifetime of its tier (the profile's when 0), clipped to the
+// parent's expiry, as `issueCaTier()` clips it.
+function caRenewedValidity(tier, parent, nowMs) {
+  log.debug("Entering caRenewedValidity().");
+  const profile = x509.profile(tier.tier === 'root' ? 'root-ca'
+    : tier.tier === 'intermediate' ? 'intermediate-ca' : 'issuing-ca');
+  const configured = configuredTierYears(tier.tier);
+  const years = configured > 0 ? configured : profile.years;
+  const notBefore = certificateInstant(nowMs);
+  const notAfter = certificateInstant(notBefore.getTime());
+  notAfter.setUTCFullYear(notAfter.getUTCFullYear() + years);
+  if (parent && notAfter.getTime() > new Date(parent.notAfter).getTime()) {
+    notAfter.setTime(new Date(parent.notAfter).getTime());
+  }
+  log.debug("Leaving caRenewedValidity().");
+  return { notBefore: notBefore, notAfter: notAfter, profile: profile };
+}
+
+/**
+ * Whether one CA tier is due for its scheduled renewal at `nowMs`: inside
+ * its lead, not imported, and a renewal under its parent would extend it.
+ * Pure. Answers `{ due, why }`.
+ *
+ * @param tier - the tier record
+ * @param parent - its parent's tier record; null for the Root
+ * @param nowMs - the time, in epoch milliseconds
+ * @returns `{ due, why, notAfter }`
+ */
+function caTierDue(tier, parent, nowMs) {
+  log.debug("Entering caTierDue().");
+  const now = Number(nowMs) || Date.now();
+  if (!tier || !tier.certificatePem || !tier.privateKeyPem) {
+    log.debug("Leaving caTierDue(). Nothing held.");
+    return { due: false, why: 'nothing is held', notAfter: '' };
+  }
+  const ends = new Date(tier.notAfter).getTime();
+  if (tier.imported) {
+    log.debug("Leaving caTierDue(). Imported.");
+    return { due: false, notAfter: tier.notAfter,
+             why: 'it was imported, so its renewal is the operator\'s' };
+  }
+  // NEVER MORE THAN HALF ITS OWN LIFE: a CA made shorter than its lead
+  // would otherwise be due from the day it was made, and renewed daily.
+  const begins = new Date(tier.notBefore).getTime();
+  const lead = Math.min(caRenewalLeadMs(tier.tier),
+                        ends > begins ? (ends - begins) / 2 : 0);
+  if (!(lead > 0) || ends - now > lead) {
+    log.debug("Leaving caTierDue(). Not inside its lead.");
+    return { due: false, notAfter: tier.notAfter,
+             why: 'not due until ' +
+                  new Date(ends - lead).toISOString() };
+  }
+  const renewed = caRenewedValidity(tier, parent, now);
+  if (renewed.notAfter.getTime() < ends + CA_RENEW_MIN_GAIN_MS) {
+    log.debug("Leaving caTierDue(). Clipped by its parent.");
+    return { due: false, notAfter: tier.notAfter,
+             why: 'its parent expires first, so a renewal would gain ' +
+                  'nothing until the parent is renewed' };
+  }
+  log.debug("Leaving caTierDue(). Due.");
+  return { due: true, notAfter: tier.notAfter,
+           why: 'it expires ' + tier.notAfter + ', inside its renewal lead' };
+}
+
+/**
+ * The CA tiers the scheduled renewal would look at now, top down — the
+ * Root, then every scope's Intermediate, then their Issuing CAs — with
+ * whether each is due.
+ *
+ * @param nowMs - the time; now when omitted
+ * @returns `{ scope, tier, useCase, notAfter, due, why }` rows
+ */
+function caRenewalPlan(nowMs) {
+  log.debug("Entering caRenewalPlan().");
+  const out = [];
+  const root = serviceRoot();
+  if (root) {
+    out.push(Object.assign({ scope: SERVICE_SCOPE, tier: 'root',
+                             useCase: null },
+                           caTierDue(root, null, nowMs)));
+  }
+  const scopes = [PROCESS_SCOPE].concat(knownScopes().filter(function (id) {
+    return id !== PROCESS_SCOPE;
+  }));
+  scopes.forEach(function (scopeId) {
+    const row = rawRowFor(scopeId);
+    if (!row || !row.intermediate) {
+      return;
+    }
+    out.push(Object.assign({ scope: scopeId, tier: 'intermediate',
+                             useCase: null },
+                           caTierDue(row.intermediate, root, nowMs)));
+    Object.keys(row.issuing || {}).forEach(function (useCaseId) {
+      out.push(Object.assign({ scope: scopeId, tier: 'issuing',
+                               useCase: useCaseId },
+                             caTierDue(row.issuing[useCaseId],
+                                       row.intermediate, nowMs)));
+    });
+  });
+  log.debug("Leaving caRenewalPlan(). " + out.length + " tier(s).");
+  return out;
+}
+
+// The subject of a held certificate as the encoder takes it, read from the
+// certificate itself so the renewal names exactly what its children name as
+// their issuer.
+function caSubjectOf(certificatePem) {
+  log.debug("Entering caSubjectOf().");
+  const read = stsCrypto.parseCertificate(certificatePem);
+  const out = String(read.subject || '').split('\n').filter(Boolean)
+    .map(function (line) {
+      const at = line.indexOf('=');
+      return { name: line.slice(0, at), value: line.slice(at + 1) };
+    });
+  log.debug("Leaving caSubjectOf(). " + out.length + " attribute(s).");
+  return { attributes: out, text: String(read.subject || '') };
+}
+
+// The certificate a tier is renewed with: its own key, its own subject, its
+// parent's signature (its own, for the Root), and the extensions
+// `issueCaTier()` gives a tier of its kind.
+async function issueRenewedCaCertificate(tier, parent, scopeId, nowMs) {
+  log.debug("Entering issueRenewedCaCertificate(). " + tier.tier);
+  const validity = caRenewedValidity(tier, parent, nowMs);
+  const subject = caSubjectOf(tier.certificatePem);
+  const publicKeyPem = tier.publicKeyPem ||
+    stsCrypto.parseCertificate(tier.certificatePem).publicKey
+             .export({ type: 'spki', format: 'pem' });
+  const sigAlgId = signatureForIssuer(parent, tier.signatureAlg, tier.keyAlg);
+  const altSigner = parent
+    ? parent
+    : (tier.altPrivateKeyPem ? { altKeyAlg: tier.altKeyAlg,
+                                 altPrivateKeyPem: tier.altPrivateKeyPem }
+                             : null);
+  const kind = scopeKindOf(String(scopeId));
+  const pathLen = tier.tier === 'intermediate' ? intermediatePathLen(kind)
+    : tier.tier === 'issuing' ? issuingPathLen(tier.useCase)
+    : validity.profile.pathLen;
+  const issued = await x509.issueCertificate(Object.assign({
+    subject: subject.attributes,
+    subjectPublicKey: publicKeyPem,
+    subjectAltPublicKey: tier.altPublicKeyPem || undefined,
+    signatureAlg: sigAlgId,
+    profile: validity.profile.id || (tier.tier === 'root' ? 'root-ca'
+      : tier.tier === 'intermediate' ? 'intermediate-ca' : 'issuing-ca'),
+    notBefore: validity.notBefore.toISOString(),
+    notAfter: validity.notAfter.toISOString(),
+    issuer: parent
+      ? { certificatePem: parent.certificatePem,
+          privateKeyPem: parent.privateKeyPem, keyAlg: parent.keyAlg }
+      : { privateKeyPem: tier.privateKeyPem, keyAlg: tier.keyAlg },
+    extensions: Object.assign({
+      basicConstraints: { present: true, critical: true, ca: true,
+                          pathLen: pathLen },
+      keyUsage: { present: true, critical: true,
+                  usages: validity.profile.keyUsage },
+      subjectKeyIdentifier: { present: true },
+      authorityKeyIdentifier: { present: true }
+    }, parent
+      ? revocationExtensionsFor(parent.scope || scopeId,
+                                parent.useCase || parent.tier)
+      : {})
+  }, alternativeSignatureBy(altSigner)));
+  // THE NAME MUST NOT MOVE: a renewal whose subject differs is another
+  // authority, and every child would stop finding its issuer.
+  const renewedSubject = caSubjectOf(issued.pem).text;
+  if (renewedSubject !== subject.text) {
+    log.debug("Leaving issueRenewedCaCertificate(). The subject moved.");
+    throw errorCodes.mark(new Error('the renewed certificate\'s subject (' +
+      renewedSubject.replace(/\n/g, ', ') + ') is not the one it renews (' +
+      subject.text.replace(/\n/g, ', ') + ')'), 'STS-PKI-0311');
+  }
+  const previous = [{ serialHex: tier.serialHex, subject: tier.subject,
+                      notBefore: tier.notBefore, notAfter: tier.notAfter,
+                      certificatePem: tier.certificatePem,
+                      renewedAt: Date.now() }]
+    .concat(tier.previous || [])
+    .filter(function (one) {
+      return one && new Date(one.notAfter).getTime() > Date.now();
+    }).slice(0, CA_RENEW_KEPT);
+  log.debug("Leaving issueRenewedCaCertificate(). " + issued.serialHex);
+  return Object.assign({}, tier, {
+    serialHex: issued.serialHex,
+    subject: issued.subject || tier.subject,
+    notBefore: validity.notBefore.toISOString(),
+    notAfter: validity.notAfter.toISOString(),
+    certificatePem: issued.pem,
+    signatureAlg: sigAlgId,
+    altSignatureAlg: (altSigner && altSigner.altPrivateKeyPem &&
+                      altSigner.altKeyAlg) || tier.altSignatureAlg || null,
+    thumbprint: thumbprintOf(issued.pem),
+    renewedAt: Date.now(),
+    previous: previous
+  });
+}
+
+/**
+ * Renews one CA tier's certificate over the same key and subject, signed by
+ * its parent, and stores it; the certificate it replaces is kept, public
+ * only, in the tier's `previous` (the register, and for the Root the
+ * published `root-previous.cer`). One build of the scope at a time.
+ *
+ * @param scopeId - `SERVICE_SCOPE` for the Root, else a realm id or
+ *   `PROCESS_SCOPE`
+ * @param tierName - 'root', 'intermediate' or 'issuing'
+ * @param useCaseId - the Issuing CA's use case, for 'issuing'
+ * @param nowMs - the time; now when omitted
+ * @returns a promise of `{ ok, tier, from, to }` or `{ ok: false, errors }`
+ *   marked STS-PKI-0310
+ */
+function renewCaCertificate(scopeId, tierName, useCaseId, nowMs) {
+  log.debug("Entering renewCaCertificate(). scope=" + scopeId + " tier=" +
+            tierName + " use=" + (useCaseId || ''));
+  const id = tierName === 'root' ? SERVICE_SCOPE : String(scopeId);
+  log.debug("Leaving renewCaCertificate(). Queued behind any build.");
+  return oneBuildAtATime(id, async function () {
+    const root = serviceRoot();
+    const row = tierName === 'root' ? serviceRow() : rawRowFor(id);
+    const tier = tierName === 'root' ? root
+      : tierName === 'intermediate' ? (row && row.intermediate)
+      : (row && row.issuing && row.issuing[useCaseId]);
+    const parent = tierName === 'root' ? null
+      : tierName === 'intermediate' ? root : (row && row.intermediate);
+    const verdict = caTierDue(tier, parent, nowMs);
+    if (!verdict.due) {
+      return { ok: true, renewed: false, why: verdict.why };
+    }
+    let renewed = null;
+    try {
+      renewed = await issueRenewedCaCertificate(tier, parent, id, nowMs);
+    } catch (e) {
+      log.error(errorCodes.tag(errorCodes.codeOf(e) || 'STS-PKI-0310') +
+                'pki: the ' + (tier.label || tierName) + ' of "' +
+                (id || 'default') + '" could not be renewed: ' + e.message +
+                '. It goes on as it is, and expires ' + tier.notAfter + '.');
+      return errorCodes.mark({ ok: false, errors: ['The ' +
+        (tier.label || tierName) + ' could not be renewed: ' + e.message] },
+        errorCodes.codeOf(e) || 'STS-PKI-0310');
+    }
+    // ON THE ROW AS IT IS NOW (buildScopeNow()'s reason): the issue above
+    // awaited, and a revocation or a row adopted meanwhile must survive.
+    if (tierName === 'root') {
+      keystore.attachPki(SERVICE_SCOPE, Object.assign({}, serviceRow() || {},
+                                                      { root: renewed }));
+    } else {
+      const now = Object.assign({}, rawRowFor(id) || row);
+      if (tierName === 'intermediate') {
+        now.intermediate = renewed;
+      } else {
+        now.issuing = Object.assign({}, now.issuing || {});
+        now.issuing[useCaseId] = renewed;
+      }
+      delete now.tiers;
+      saveRow(id, now);
+    }
+    log.info('pki: the ' + (tier.label || tierName) + ' of "' +
+             (tierName === 'root' ? 'the service' : (id || 'default')) +
+             '" was renewed over the same key and subject: serial ' +
+             tier.serialHex + ' (expires ' + tier.notAfter + ') -> ' +
+             renewed.serialHex + ' (expires ' + renewed.notAfter + ').' +
+             (tierName === 'root'
+               ? ' The Root it replaced is still published at ' +
+                 '/pki/ca/service/root-previous.cer until it expires; give ' +
+                 'relying parties the renewed one before then.' : ''));
+    return { ok: true, renewed: true, tier: describeTier(renewed),
+             from: { serialHex: tier.serialHex, notAfter: tier.notAfter },
+             to: { serialHex: renewed.serialHex,
+                   notAfter: renewed.notAfter } };
+  });
+}
+
+/**
+ * The Root certificates a renewal replaced that have not expired, newest
+ * first, public only — what `/pki/ca/service/root-previous.cer` serves.
+ *
+ * @returns `{ serialHex, notAfter, certificatePem }` rows
+ */
+function previousRootCertificates() {
+  log.debug("Entering previousRootCertificates().");
+  const root = serviceRoot();
+  const out = ((root && root.previous) || []).filter(function (one) {
+    return one && one.certificatePem &&
+           new Date(one.notAfter).getTime() > Date.now();
+  }).map(function (one) {
+    return { serialHex: one.serialHex, notAfter: one.notAfter,
+             certificatePem: one.certificatePem };
+  });
+  log.debug("Leaving previousRootCertificates(). " + out.length + ".");
+  return out;
+}
+
 // A NEW KEY for one Issuing CA, and everything under it re-certified from it.
 /**
  * Gives one Issuing CA a new key and re-certifies everything under it.
@@ -12778,9 +13133,13 @@ function registerCertifiable(spec) {
  * @param useCaseId - the use case it was issued under
  * @param held - `{ certificatePem, chainPem }`
  * @param publicKeyPem - the key being certified
+ * @param options - optional; `renewWithinMs`, a lead before expiry inside
+ *   which the certificate is due as well (#2220: the listener renewal job's
+ *   `tls.serverCertificateRenewLeadDays`), on top of the third
  * @returns `{ current: true }`, or `{ current: false, why }`
  */
-function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem) {
+function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem,
+                                options) {
   log.debug('Entering heldCertificateCurrent(). scope=' + scopeId + ' use=' +
             useCaseId);
   const id = String(scopeId);
@@ -12829,6 +13188,14 @@ function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem) {
     return { current: false,
              why: 'less than a third of its validity remains' };
   }
+  // THE LEAD AN OPERATOR ASKED FOR (#2220), where it is longer than the
+  // third: a certificate inside it is renewed as one past the third is.
+  const lead = Number(options && options.renewWithinMs) || 0;
+  if (lead > 0 && !(to - now > lead)) {
+    log.debug('Leaving heldCertificateCurrent(). Inside the renewal lead.');
+    return { current: false,
+             why: 'it expires within the renewal lead' };
+  }
   const revocation = require('./pki_revocation');
   const serial = read.serialNumber;
   if (!revocation.issuedHere(id, uc.id, serial)) {
@@ -12857,13 +13224,15 @@ function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem) {
  * Certifies everything registered through `registerCertifiable()`.
  *
  * @param opts - `repairBranch: false` leaves a stale branch for the process
- *   rebuilding it
+ *   rebuilding it; `renewWithinMs`, a lead before expiry inside which a held
+ *   certificate is renewed too (#2220, `heldCertificateCurrent()`)
  * @returns a promise of how many registrations were certified
  */
 async function certifyRegistered(opts) {
   log.debug('Entering certifyRegistered(). ' + certifiable.length +
             ' registration(s).');
   const repairBranch = !(opts && opts.repairBranch === false);
+  const renewWithinMs = Number(opts && opts.renewWithinMs) || 0;
   let done = 0;
   for (let i = 0; i < certifiable.length; i++) {
     const one = certifiable[i];
@@ -12896,7 +13265,8 @@ async function certifyRegistered(opts) {
         held = null;
       }
       const verdict = held
-        ? heldCertificateCurrent(scope, one.useCase, held, publicPem)
+        ? heldCertificateCurrent(scope, one.useCase, held, publicPem,
+                                 { renewWithinMs: renewWithinMs })
         : { current: false, why: 'nothing is held' };
       if (verdict.current) {
         log.info('pki: the ' + one.useCase + ' key "' + one.slot + '" ' +
@@ -17445,6 +17815,11 @@ module.exports = {
   // Editing the hierarchy: a new key for one authority, a renewal under the
   // same one, and the two doors for material an operator supplied.
   reissueUseCase: reissueUseCase,
+  // A CA certificate renewed over the same key, on the scheduler (#2220).
+  caTierDue: caTierDue,
+  caRenewalPlan: caRenewalPlan,
+  renewCaCertificate: renewCaCertificate,
+  previousRootCertificates: previousRootCertificates,
   recertifyUseCase: recertifyUseCase,
   recertifyOrphanedSlots: recertifyOrphanedSlots,
   importCa: importCa,

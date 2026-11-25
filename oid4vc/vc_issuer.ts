@@ -175,6 +175,7 @@ interface VcIssuerDeps {
   vciError: typeof helpers.vciError;
   signingKeyFor: typeof helpers.signingKeyFor;
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
+  retiredEncryptionKeysFor: typeof helpers.retiredEncryptionKeysFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
   certificateHeaderForAsync: typeof helpers.certificateHeaderForAsync;
   publishedKidFor: typeof helpers.publishedKidFor;
@@ -519,6 +520,7 @@ class VcIssuer {
       vciError: helpers.vciError,
       signingKeyFor: helpers.signingKeyFor,
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
+      retiredEncryptionKeysFor: helpers.retiredEncryptionKeysFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
       certificateHeaderForAsync: helpers.certificateHeaderForAsync,
       publishedKidFor: helpers.publishedKidFor,
@@ -3234,6 +3236,31 @@ class VcIssuer {
   //
   // Throws with a reason a caller can hand back to the wallet; every failure
   // here is the wallet's request being unusable, not an issuer fault.
+  // The retired request-decryption key of `kind` the header's kid names, or
+  // null — the current key's kid is never one of them.
+  private retiredRequestKeys(kind: string, alg: string, kid: string) {
+    const { log, retiredEncryptionKeysFor } = this.deps;
+    log.debug("Entering VcIssuer.retiredRequestKeys(). " + kind);
+    if (!kid) {
+      log.debug("Leaving VcIssuer.retiredRequestKeys(). No kid.");
+      return null;
+    }
+    let found = null;
+    try {
+      found = (retiredEncryptionKeysFor(kind) || []).filter(function (one) {
+        return one && one.publicJwk && String(one.publicJwk.kid) === kid &&
+               (kind !== 'kem' || one.alg === alg);
+      })[0] || null;
+    } catch (e) {
+      log.debug("Caught in VcIssuer.retiredRequestKeys(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    log.debug("Leaving VcIssuer.retiredRequestKeys(). " +
+              (found ? 'Retired.' : 'None.'));
+    return found;
+  }
+
   /**
    * Decrypts an encrypted credential request: RSA-OAEP-256 unwrap of the
    * content key, then AES-GCM.
@@ -3261,17 +3288,31 @@ class VcIssuer {
     // opens only with the realm's key for exactly that alg, and only where
     // one is published; everything else is the RSA key, as it always was.
     let headerAlg = '';
+    let headerKid = '';
     try {
-      headerAlg = String(JSON.parse(Buffer.from(String(compact || '')
-        .split('.')[0], 'base64url').toString('utf8')).alg || '');
+      const header = JSON.parse(Buffer.from(String(compact || '')
+        .split('.')[0], 'base64url').toString('utf8'));
+      headerAlg = String(header.alg || '');
+      headerKid = String(header.kid || '');
     } catch (e) {
       log.debug("Caught in VcIssuer.decryptJweRequest(): " +
                 ((e && e.message) || e));
       headerAlg = '';
     }
-    const kemKey = this.requestKemKeys().filter(function (one) {
+    let kemKey = this.requestKemKeys().filter(function (one) {
       return one.alg === headerAlg;
     })[0];
+    // A KEY A SCHEDULED ROTATION RETIRED (#2220), named by the header's
+    // kid: it still opens what a wallet encrypted to it before it read the
+    // issuer metadata again, until its overlap ends. The kid is still
+    // required to be one of this issuer's.
+    const retired = this.retiredRequestKeys(kemKey ? 'kem' : 'vci',
+                                            headerAlg, headerKid);
+    if (kemKey && retired) {
+      kemKey = retired;
+    }
+    const rsaKey = !kemKey && retired ? retired
+                                      : this.requestEncryptionKeys();
     const result = kemKey
       ? stsCrypto.decryptJweCompact(compact, {
           privateJwk: kemKey.privateJwk,
@@ -3280,9 +3321,9 @@ class VcIssuer {
           expectedKid: kemKey.publicJwk.kid
         })
       : stsCrypto.decryptJweCompact(compact, {
-          privateKey: this.requestEncryptionKeys().privateKey,
+          privateKey: rsaKey.privateKey,
           allowedEnc: this.requestEncValues(),
-          expectedKid: this.requestEncryptionKeys().publicJwk.kid
+          expectedKid: rsaKey.publicJwk.kid
         });
     logArtifact('OID4VCI Credential Request',
                 'JWE protected header as received', result.header);

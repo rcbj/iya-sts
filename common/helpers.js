@@ -2180,6 +2180,33 @@ function generationsView(realmId, stored, privateOf) {
     }
     return entry;
   });
+  // The retired request-decryption keys (#2220): the same rule again.
+  const retiredEnc = (stored.retiredEnc || []).map(function (one) {
+    const entry = /** @type {any} */ ({ kind: one.kind, kid: one.kid,
+                                        retiredAt: one.retiredAt,
+                                        retiredUntil: one.retiredUntil });
+    const kid = one.kid;
+    if (typeof privateOf === 'function') {
+      Object.defineProperty(entry, 'keys', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          const held = privateOf();
+          const own = held && held.retiredEnc && held.retiredEnc.get(kid);
+          if (!own) {
+            throw new Error('the "' + realmId + '" realm\'s retired ' +
+              'request-decryption key ' + kid + ' is held encrypted and ' +
+              'could not be decrypted; see the keystore errors above.');
+          }
+          log.debug("Leaving get().");
+          return own;
+        }
+      });
+    } else {
+      entry.keys = one.keys;
+    }
+    return entry;
+  });
   const parentCerts = (stored.parentCerts || []).filter(function (one) {
     return typeof one === 'string' && one.length > 0;
   });
@@ -2187,7 +2214,8 @@ function generationsView(realmId, stored, privateOf) {
   return { generation: Number(stored.generation) || 0,
            rotated: Object.assign({}, stored.rotated || {}),
            parentCerts: parentCerts,
-           standby: standby, retiredRefresh: retiredRefresh };
+           standby: standby, retiredRefresh: retiredRefresh,
+           retiredEnc: retiredEnc };
 }
 
 // ---------------------------------------------------------------------------
@@ -6780,7 +6808,13 @@ function plainCopyOf(keys, overrides) {
         return copy;
       }),
       retiredRefresh: ((keys.generations && keys.generations.retiredRefresh) ||
-                       []).slice()
+                       []).slice(),
+      // The retired request-decryption keys (#2220), each read once.
+      retiredEnc: ((keys.generations && keys.generations.retiredEnc) || [])
+        .map(function (one) {
+          return { kind: one.kind, kid: one.kid, retiredAt: one.retiredAt,
+                   retiredUntil: one.retiredUntil, keys: one.keys };
+        })
     }
   };
   log.debug("Leaving plainCopyOf().");
@@ -7172,7 +7206,12 @@ function retireExpiredGenerations(realmId, nowMs) {
     .filter(function (one) {
       return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
     });
-  if (!expired.length && !refreshGone.length) {
+  // And the retired request-decryption keys past theirs (#2220).
+  const encGone = ((keys.generations && keys.generations.retiredEnc) || [])
+    .filter(function (one) {
+      return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
+    });
+  if (!expired.length && !refreshGone.length && !encGone.length) {
     log.debug("Leaving retireExpiredGenerations(). Nothing due.");
     return { ok: true, dropped: [],
              generation: Number(keys.generations &&
@@ -7192,8 +7231,16 @@ function retireExpiredGenerations(realmId, nowMs) {
     .filter(function (one) {
       return refreshKids.indexOf(one.kid) < 0;
     });
+  const encKids = encGone.map(function (one) {
+    return one.kid;
+  });
+  copy.generations.retiredEnc = copy.generations.retiredEnc
+    .filter(function (one) {
+      return encKids.indexOf(one.kid) < 0;
+    });
   const answer = replaceGeneration(id, copy, (gone.length +
-    refreshKids.length) + ' retired key(s) past their grace dropped');
+    refreshKids.length + encKids.length) +
+    ' retired key(s) past their grace dropped');
   log.debug("Leaving retireExpiredGenerations(). " + gone.length +
             " signing and " + refreshKids.length + " refresh set(s) dropped.");
   return { ok: answer.ok, generation: answer.generation, why: answer.reason,
@@ -7202,6 +7249,9 @@ function retireExpiredGenerations(realmId, nowMs) {
                       slot: one.slot, role: 'retired' };
            }).concat(refreshGone.map(function (one) {
              return { unit: 'refresh:enc', kid: one.kid, useCase: 'refresh',
+                      slot: '', role: 'retired' };
+           })).concat(encGone.map(function (one) {
+             return { unit: 'request:enc', kid: one.kid, useCase: one.kind,
                       slot: '', role: 'retired' };
            })) : [] };
 }
@@ -7270,6 +7320,197 @@ function retiredRefreshTokenKeysFor(keySet) {
       return one.keys;
     });
   log.debug("Leaving retiredRefreshTokenKeysFor(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE REQUEST-DECRYPTION KEYS, REPLACED ON A SCHEDULE (#2220, ASVS 5.0.0 L3;
+// key-management.md's Known gaps).
+//
+// The request object encryption keys (RFC 9101), the OpenID4VCI
+// request-encryption key and the KEM decryption keys (#82) were carried over
+// every signing rotation (`plainCopyOf()`) and never replaced, so one of them
+// leaked opened every request a client ever encrypted to it. They are now
+// replaced by `rotateEncryptionKeys()` — what the `keys.encryption-key-rotate`
+// job in `common/key_renewal.ts` calls — and the key replaced is RETIRED, as
+// a refresh-token set is (D7): kept in `generations.retiredEnc` only to
+// DECRYPT what a client encrypted to it before it read the new one, until
+// `retiredUntil`, and published nowhere. `signing.retire`'s
+// `retireExpiredGenerations()` drops it then.
+//
+// **THE NEW KEY IS PUBLISHED FIRST.** It is in `/oauth2/jwks` and the
+// credential issuer metadata from the moment of the rotation, before the key
+// it replaces stops opening anything: a client that refreshes its copy within
+// the overlap (`keys.encryptionKeyOverlapDays`) never encrypts to a key this
+// service cannot open. Only the kinds a set already holds are replaced; a
+// member a set lacks is still made lazily, as before.
+// ---------------------------------------------------------------------------
+/** The kinds of request-decryption key `rotateEncryptionKeys()` replaces. */
+const ENCRYPTION_KEY_KINDS = Object.freeze(['ro', 'vci', 'kem']);
+
+// One KEM decryption key pair for `alg`, as `kemEncryptionKeysFor()` makes
+// one: the kid from the public key's thumbprint.
+function makeKemKey(alg) {
+  log.debug("Entering makeKemKey(). " + alg);
+  const pair = stsCrypto.generateJweKemKeyPair(alg);
+  const kid = 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '') +
+              '-' + stsCrypto.jwkThumbprint(
+                stsCrypto.publicJweKemJwk(pair.publicJwk), { truncate: 16 });
+  pair.publicJwk.kid = kid;
+  pair.privateJwk.kid = kid;
+  log.debug("Leaving makeKemKey(). " + kid);
+  return { alg: alg, publicJwk: pair.publicJwk, privateJwk: pair.privateJwk };
+}
+
+/**
+ * The current request-decryption keys of a set, one row per key, as the
+ * rotation and its clock read them: `{ kind, kid, keys }`.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the rows
+ */
+function encryptionKeysHeld(keySet) {
+  log.debug("Entering encryptionKeysHeld().");
+  const keys = keySet || stsKeysFor();
+  const out = [];
+  const ro = keys.requestObjectEncKeys;
+  if (ro && ro.rsa && ro.rsa.publicJwk) {
+    out.push({ kind: 'ro', kid: ro.rsa.publicJwk.kid, keys: ro });
+  }
+  const vci = keys.vciRequestEncKey;
+  if (vci && vci.publicJwk) {
+    out.push({ kind: 'vci', kid: vci.publicJwk.kid, keys: vci });
+  }
+  (keys.kemEncKeys || []).forEach(function (one) {
+    if (one && one.publicJwk) {
+      out.push({ kind: 'kem', kid: one.publicJwk.kid, keys: one });
+    }
+  });
+  log.debug("Leaving encryptionKeysHeld(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Replaces a realm's request-decryption keys of the kinds named, the new
+ * ones made off the event loop; each key replaced is retired, kept only to
+ * decrypt until `overlapMs` has passed.
+ *
+ * @param realmId - the realm
+ * @param kinds - a subset of `ENCRYPTION_KEY_KINDS`
+ * @param overlapMs - how long a replaced key still decrypts
+ * @param why - the reason, for the log
+ * @returns a promise of `{ ok, why, generation, rotated: [{ kind, from,
+ *   to }] }`
+ */
+async function rotateEncryptionKeys(realmId, kinds, overlapMs, why) {
+  log.debug("Entering rotateEncryptionKeys(). realm=" + realmId + " " +
+            (kinds || []).join(','));
+  const id = String(realmId || '');
+  const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
+  const wanted = (kinds || []).filter(function (one) {
+    return ENCRYPTION_KEY_KINDS.indexOf(one) >= 0;
+  });
+  const keys = stsKeysFor.of(id);
+  const held = encryptionKeysHeld(keys).filter(function (one) {
+    return wanted.indexOf(one.kind) >= 0;
+  });
+  if (!held.length) {
+    log.debug("Leaving rotateEncryptionKeys(). Nothing held to replace.");
+    return { ok: true, rotated: [], generation: 0, why: 'none held' };
+  }
+  const bits = realms.run(realm, function () {
+    return { ro: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits'),
+             vci: rsaBitsFor('oid4vci.requestEncryptionKeyBits') };
+  });
+  const overrides = {};
+  const rotated = [];
+  const has = function (kind) {
+    log.debug("Entering has().");
+    log.debug("Leaving has().");
+    return held.some(function (one) {
+      return one.kind === kind;
+    });
+  };
+  if (has('ro')) {
+    const pair = await generateRsaPairAsync(bits.ro);
+    overrides.requestObjectEncKeys = realms.run(realm, function () {
+      return makeRequestObjectEncryptionKeys(pair);
+    });
+  }
+  if (has('vci')) {
+    const pair = await generateRsaPairAsync(bits.vci);
+    overrides.vciRequestEncKey = realms.run(realm, function () {
+      return makeRequestEncryptionKey(pair);
+    });
+  }
+  if (has('kem')) {
+    overrides.kemEncKeys = (keys.kemEncKeys || []).map(function (one) {
+      return makeKemKey(one.alg);
+    });
+  }
+  const now = Date.now();
+  const until = now + Math.max(0, Number(overlapMs) || 0);
+  const retired = held.map(function (one) {
+    let to = '';
+    if (one.kind === 'ro') {
+      to = overrides.requestObjectEncKeys.rsa.publicJwk.kid;
+    } else if (one.kind === 'vci') {
+      to = overrides.vciRequestEncKey.publicJwk.kid;
+    } else {
+      to = (overrides.kemEncKeys.filter(function (fresh) {
+        return fresh.alg === one.keys.alg;
+      })[0] || { publicJwk: {} }).publicJwk.kid || '';
+    }
+    rotated.push({ kind: one.kind, from: one.kid, to: to });
+    // Read ONCE, here, on the leader: the copy below is written sealed.
+    const material = one.kind === 'ro'
+      ? { rsa: { privateKey: one.keys.rsa.privateKey,
+                 publicJwk: one.keys.rsa.publicJwk },
+          ec: { privateKey: one.keys.ec.privateKey,
+                publicJwk: one.keys.ec.publicJwk } }
+      : one.kind === 'vci'
+        ? { privateKey: one.keys.privateKey, publicJwk: one.keys.publicJwk }
+        : { alg: one.keys.alg, publicJwk: one.keys.publicJwk,
+            privateJwk: one.keys.privateJwk };
+    return { kind: one.kind, kid: one.kid, retiredAt: now,
+             retiredUntil: until, keys: material };
+  });
+  const copy = plainCopyOf(keys, overrides);
+  copy.generations.retiredEnc = (copy.generations.retiredEnc || [])
+    .concat(retired);
+  wanted.forEach(function (kind) {
+    copy.generations.rotated['enc:' + kind] = now;
+  });
+  const answer = replaceGeneration(id, copy, why ||
+                                   'a rotation of the request-decryption keys');
+  log.debug("Leaving rotateEncryptionKeys(). " + JSON.stringify(answer));
+  return { ok: answer.ok, why: answer.reason, generation: answer.generation,
+           rotated: answer.ok ? rotated : [] };
+}
+
+/**
+ * The retired request-decryption keys of one kind still inside their
+ * overlap, newest first — what a decrypt site tries after the current key.
+ *
+ * @param kind - 'ro', 'vci' or 'kem'
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the keys, each in its kind's own shape
+ */
+function retiredEncryptionKeysFor(kind, keySet) {
+  log.debug("Entering retiredEncryptionKeysFor(). " + kind);
+  const keys = keySet || stsKeysFor();
+  const now = Date.now();
+  const out = ((keys.generations && keys.generations.retiredEnc) || [])
+    .filter(function (one) {
+      return one.kind === kind &&
+             !(Number(one.retiredUntil) > 0 &&
+               Number(one.retiredUntil) <= now);
+    }).sort(function (a, b) {
+      return (Number(b.retiredAt) || 0) - (Number(a.retiredAt) || 0);
+    }).map(function (one) {
+      return one.keys;
+    }).filter(Boolean);
+  log.debug("Leaving retiredEncryptionKeysFor(). " + out.length + ".");
   return out;
 }
 
@@ -10446,6 +10687,13 @@ module.exports = {
   refreshTokenKeysFor: refreshTokenKeysFor,
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
+  // The request-decryption keys on a schedule (#2220).
+  ENCRYPTION_KEY_KINDS: ENCRYPTION_KEY_KINDS,
+  encryptionKeysHeld: encryptionKeysHeld,
+  rotateEncryptionKeys: rotateEncryptionKeys,
+  retiredEncryptionKeysFor: retiredEncryptionKeysFor,
+  // The curve keys' table, for the credential signers' rotation (#2220).
+  CURVE_KEY_SPECS: CURVE_KEY_SPECS,
   requestObjectKeysFor: requestObjectKeysFor,
   kemEncryptionKeysFor: kemEncryptionKeysFor,
   kemDecryptionKeyFor: kemDecryptionKeyFor,

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6145** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6151** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -57,8 +57,8 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 89
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 205
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 296
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 206
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 299
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -70,14 +70,14 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 262
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 263
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 180
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 77
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 78
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
@@ -867,6 +867,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0214` | A call to the OpenBao or Vault secret store still failed after keys.storeAttempts attempts (no answer, a timeout, a 5xx or a 429 each time); the failure is the caller's (#2220). | — |
 | `STS-KEYS-0215` | An HSM operation was refused because keys.pkcs11QueueLimit operations were already waiting for a session of the token in this thread (#2220). | — |
 | `STS-KEYS-0216` | An HSM operation, or the wait for a session to run it on, took longer than keys.pkcs11TimeoutMs: it is refused, and a session whose operation outlived its caller is discarded when the module answers (#2220). | — |
+| `STS-KEYS-0217` | The keys.encryption-key-rotate job could not replace a realm's request-decryption keys (#2220): the key set could not be replaced (a newer generation was already held, or the store refused the write). The keys go on as they are and the next run tries again. | an error log line and a failure audit row; the scheduler run fails with this code |
 
 ## STS-PKI
 
@@ -1172,6 +1173,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0307` | A named truststore a use case of the realm still trusts was asked to be deleted (#2118); the assignment is changed first. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0308` | A key-set truststore was refused its party or its keys (#2149): the party is not client:, federation:, claims-provider: or oidfed-anchor:<id>; the key set is not JSON, holds no key, more than 32, a key without kty, or a private or symmetric key; neither or both of pasted keys and a jwks_uri were given; or a Trust Anchor's key set was given a jwks_uri (#2150); or an SSH CA truststore was given no key, more than 32, or a line that is not an SSH public key (#2151); or a cosign, sigstore-root or tuf-root truststore was given no document, one over 256 KiB, or one that is not PEM public keys, a trusted root or a TUF root (#2152). Also recorded where a stored key set or a setting's file no longer reads. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0309` | A key set and a certificate truststore were confused (#2149): a key-set use case was assigned a certificate truststore, another use case a key set, a certificate was added to a key set, or keys were set on a certificate truststore; or SSH CA keys and certificates were confused the same way (#2151). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0310` | A CA certificate inside its renewal lead could not be renewed over the same key by the pki.ca-renew job (#2220): the encoder refused, or its parent could not sign. The CA goes on as it is and expires on its old date. | an error log line and a failure audit row; the scheduler run fails with this code |
+| `STS-PKI-0311` | A CA certificate renewal was refused because the renewed certificate's subject was not the subject it renews (#2220): a renewal must keep the name every child names as its issuer. | an error log line and a failure audit row; nothing is stored |
+| `STS-PKI-0312` | A dedicated credential signer's key family could not be moved on to its next generation by the scheduled rotation (#2220). The current key goes on signing. | an error log line and a failure audit row; the scheduler run fails with this code |
 
 ## STS-ENROLL
 
@@ -3511,6 +3515,7 @@ Raised from: kerberos/.
 | `STS-KRB-0260` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 over an algorithm this KDC does not accept: one MS-PKCA does not list, or SHA-1 in product mode without crypto.allowLegacyHashes (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
 | `STS-KRB-0261` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 that is not the digest of the KDC-REQ-BODY under the algorithm it names (#2125). | MS-PKCA section 2.2.3: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0262` | A PKINIT PKAuthenticator carried no MS-PKCA paChecksum2, which krb5.pkinitRequirePaChecksum2 requires (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
+| `STS-KRB-0263` | The krb5.service-key-rotate job could not rotate a service principal key that was due (#2220): it could not be sealed or written. The key goes on as it is. | an error log line; the scheduler run fails with this code |
 
 ## STS-LDAP
 
@@ -4137,6 +4142,7 @@ Raised from: tls/.
 | `STS-TLS-0075` | A certificate sign-in handoff arrived without the sign-on session cookie of the browser that started it, so the certificate was not bound to that sign-in: the listener does not share the main port's host name and is not under authn.cookieDomain, or another browser opened the link (#2012). | HTTP 403 |
 | `STS-TLS-0076` | Only one of tls.trustedProxyCertificates and tls.trustedProxyAddresses is set, so no forwarded client certificate is read: a TLS-terminating proxy is trusted by both its certificate and its address (#2012). | none (logged) |
 | `STS-TLS-0077` | A write of tls.trustedProxyCertificates was refused: an entry is neither the SHA-256 of a certificate (64 hex digits, colons and a sha256: prefix allowed) nor spki: followed by the SHA-256 of a SubjectPublicKeyInfo in the same form (#2012). | — |
+| `STS-TLS-0078` | The listener certificate was due for renewal (less than a third of its validity left, or inside tls.serverCertificateRenewLeadDays) and the tls.server-certificate-renew job could not re-issue it (#2220). The socket goes on presenting the certificate it has. | a warning or error log line and a failure audit row |
 
 ## STS-VC
 
