@@ -130,6 +130,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -583,8 +584,16 @@ async function buildTheWorld() {
     attributes: { cn: "Builtin Person", givenName: "Builtin", sn: "Person",
                   displayName: "Builtin Person",
                   mail: PERSON + "@roles-builtin.test" },
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   }, "created " + PERSON + " in the realm, with a password");
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so the person chooses PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(realmUrl(""), PERSON, PASSWORD,
+    function (who, value) {
+      return postJson(api("/users/set-password"),
+                      { user: who, password: value });
+    });
 
   for (const [identifier, role] of apps) {
     await act("applications", "create",

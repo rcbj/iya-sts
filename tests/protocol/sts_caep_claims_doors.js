@@ -36,6 +36,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -392,10 +393,17 @@ async function test() {
   await ok(realmApi + "/policies/save-attributes-policy",
     { profile: "default", requiredAttributes: ["givenName"] },
     "this realm's attribute policy requires no address");
+  // Temporary, then the person's own (#2160, `own_password.js`): the
+  // sign-in below uses PASSWORD.
   await ok(realmApi + "/users/create", { username: ALICE, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "CAEP " + ALICE, givenName: "Caep", sn: "Doors" } },
     "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   const scimToken = await tokenFor("scim:read scim:write");
   const scimAuth = { Authorization: "Bearer " + scimToken };
   SUBJECTS[ALICE] = "urn:uuid:" + await scimIdOf(scimAuth, ALICE);

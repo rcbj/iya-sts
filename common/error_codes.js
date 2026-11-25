@@ -1417,6 +1417,22 @@ const CODES = [
       'refused as a file the scanner could not answer for is. The warning ' +
       'is logged when the queue first fills (#2220).',
     spec: 'HTTP 503' },
+  { code: 'STS-CORE-0183',
+    summary: 'A setting that holds a list of regular expressions ' +
+      '(spiffe.httpChallengeAllowedDnsPatterns, ' +
+      'spiffe.dockerSigstoreAllowedIdentities) was refused at a save: an ' +
+      'entry is longer than 256 characters, uses a backreference, applies ' +
+      'a quantifier to a group that is itself quantified or an alternation ' +
+      '(the shape that makes a match take exponential time), or does not ' +
+      'compile (#2220).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0184',
+    summary: 'A list of regular expressions in the environment or an ' +
+      'appconfig file holds an entry the console would refuse ' +
+      '(STS-CORE-0183). The service starts and uses it as configured; ' +
+      '/admin/config and the management API refuse it on the next save ' +
+      '(#2220).',
+    spec: 'none — a warning logged at startup; nothing is refused' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -2341,6 +2357,12 @@ const CODES = [
       'its own). The caller\'s own failure path decides what follows: a ' +
       'refused request, or a retried flush (#2220).',
     spec: '' },
+  { code: 'STS-STORE-0179',
+    summary: 'The database password could not be read again from its ' +
+      'secret store (persistence.database-password-refresh, or after the ' +
+      'database refused a login, #2220); new connections go on using the ' +
+      'password already held.',
+    spec: 'Log line and audit row' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2502,6 +2524,17 @@ const CODES = [
       'whose row the flush dropped because the block claim\'s fence was ' +
       'gone: the token in the discarded body is not delivered.',
     spec: 'RFC 9110 section 15.6.4' },
+  { code: 'STS-CLUSTER-0167',
+    summary: 'A shared secret could not be read again from the store by ' +
+      'the per-process refresh (cluster.secret-refresh, #2220); the ' +
+      'process keeps the value it holds and tries again at the next run.',
+    spec: 'Log line' },
+  { code: 'STS-CLUSTER-0168',
+    summary: 'A step of a shared secret\'s rotation (cluster.secret-rotate, ' +
+      '#2220) failed: the stored value would not open or the new one would ' +
+      'not seal. The secret keeps its value and the step is tried again at ' +
+      'the next run.',
+    spec: 'Log line' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -2945,6 +2978,11 @@ const CODES = [
       'cells.maxAnswerBytes: the connection was closed and the call ' +
       'failed without reading the answer (#2220).',
     spec: '' },
+  { code: 'STS-CELL-0213',
+    summary: 'keys.previousCellKekProvider is set and its location is ' +
+      'empty, or no cell key is configured for it to be the previous one ' +
+      'of (#2220); the service does not start.',
+    spec: 'Log line (fatal at start)' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
@@ -17456,6 +17494,14 @@ const CODES = [
       'its substring assertions held more components (initial, any, ' +
       'final) than the limit of 32 (#2137).',
     spec: 'LDAP adminLimitExceeded (11)' },
+  { code: 'STS-LDAP-0227',
+    summary: 'An LDAP connection was closed before its next message was ' +
+      'read: the length the message\'s BER header declared was over ' +
+      'ldap.maxMessageBytes (or, before a bind, ' +
+      'ldap.maxMessageBytesBeforeBind), or it used the indefinite length ' +
+      'LDAP does not allow. None of the message was buffered (#2220). ' +
+      'Logged at most once a minute, with a count of the rest.',
+    spec: 'RFC 4511 section 5.1 — the connection is closed with no result' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -21358,6 +21404,12 @@ const CODES = [
       'holds mail.maxRows unsent messages; nothing already queued is ' +
       'dropped to make room (#2220).',
     spec: 'none — the sender is told the message was refused' },
+  { code: 'STS-MAIL-0245',
+    summary: 'A DKIM selector switch is held back (#2220): ' +
+      'mail.dkimNextSelector\'s key cannot sign, or mail.dkimSwitchAt has ' +
+      'passed and DNS does not answer the next selector with its key. ' +
+      'Messages are signed with the current selector until it does.',
+    spec: 'RFC 6376 section 3.6.1 (log only)' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -25922,6 +25974,22 @@ const CODES = [
       'changed.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0338',
+    summary: 'A policy document was refused at write: a regexp-match ' +
+      'function\'s literal pattern is longer than 1024 characters, uses a ' +
+      'backreference, or applies a quantifier to a group that is itself ' +
+      'quantified or an alternation, the shape that makes a match take ' +
+      'exponential time (#2220). A policy stored before the rule still ' +
+      'loads; the console lists the pattern among its problems.',
+    spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
+      '400 { ok: false, errors }' },
+  { code: 'STS-XACML-0339',
+    summary: 'A regexp-match was Indeterminate at evaluation: its pattern ' +
+      'uses a backreference or a nested quantifier (one stored before ' +
+      'STS-XACML-0338, written by ldapmodify, or fetched from an ' +
+      'attribute), or the value was longer than 4096 characters (#2220). ' +
+      'Logged once per pattern; the remote PEP decides alike.',
+    spec: 'XACML 3.0 section B.8 processing-error (Indeterminate)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -31749,6 +31817,24 @@ const CODES = [
       'Logged at the request; remove the certificate from all but one ' +
       '(#1668).',
     spec: 'none (logged; the request is then refused STS-WSTRUST-0075)' },
+  { code: 'STS-REG-0374',
+    summary: 'An oauthAuthorizationDetailsType definition was refused at ' +
+      'write: its schema uses a JSON Schema keyword outside the subset a ' +
+      'limits schema may use, or a pattern in its schema or its limits is ' +
+      'longer than 1024 characters, uses a backreference, applies a ' +
+      'quantifier to a group that is itself quantified or an alternation, ' +
+      'or does not compile (#2220). A definition the application already ' +
+      'holds is not refused, and is still used; /admin/mode reports it ' +
+      'on the access-type-schemas row.',
+    spec: 'console: the refusal banner; /admin-api: HTTP 400 { ok: false, ' +
+      'errors }' },
+  { code: 'STS-REG-0375',
+    summary: 'An application listed in oauth2.clientSecretAutoRotate was ' +
+      'not rotated by the daily job (#2220): its new secret could not be ' +
+      'pushed to its secret destination, or the rotation was refused. ' +
+      'Nothing changed; the old secret still authenticates and the job ' +
+      'tries again the next day.',
+    spec: 'Log line and audit row' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger was refused to a subject that is not a person, ' +
       'is not named, or did not authenticate.',

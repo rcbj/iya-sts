@@ -55,6 +55,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -234,14 +235,19 @@ function authorizeUrl(clientId, scope, extra) {
 // afterwards. Returns the browser and that answer.
 async function signIn(who, clientId, scope, extra) {
   log.debug("Entering signIn(). who=" + who);
+  // Temporary, then the person's own (#2160, `own_password.js`): the
+  // sign-in below uses PASSWORD.
   await ok("/users/create", {
     username: who, invent: false,
     attributes: { cn: "Consent Person " + who, givenName: "Consent",
                   sn: who, displayName: "Consent Person " + who,
                   mail: who + "@" + MAIL_DOMAIN },
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   }, "created " + who + " with a password and real attributes before they " +
                         "sign in");
+  await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+    return post("/users/set-password", { user: one, password: value });
+  });
   const b = browser(who);
   let r = await b.go("GET", authorizeUrl(clientId, scope, extra));
   assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),

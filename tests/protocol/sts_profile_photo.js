@@ -30,6 +30,7 @@
 const assert = require("assert");
 const { usernameFor } = require("./random_username.js");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -115,13 +116,20 @@ async function signedIn(tag) {
   log.debug("Entering signedIn(). " + tag);
   const who = usernameFor(tag);
   const made = await apiPost("/users/create", {
-    username: who, invent: false, credential: "password", password: PASSWORD,
+    username: who, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: who, sn: "Photo", givenName: "Pat",
                   mail: who + "@example.com" }
   });
   assert.ok(made.status === 200 && made.body && made.body.ok,
             "POST /admin-api/users/create: " + made.status + " " +
             String(made.raw).slice(0, 300));
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+    return apiPost("/users/set-password", { user: one, password: value });
+  });
   const client = await portalSignin.signInToThePortal(base, who, log,
     { password: PASSWORD });
   log.debug("Leaving signedIn().");

@@ -50,6 +50,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -357,13 +358,23 @@ async function test() {
 
   log.info("=== 2. a person in each ===");
   for (const realm of REALMS) {
+    // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+    // product, so the person is made with a temporary one and chooses
+    // realm.password at the sign-in screen (`own_password.js`; in
+    // development it is simply set).
     await ok(realm.base + "/admin-api/users/create", {
       username: realm.user, invent: false, credential: "password",
-      password: realm.password,
+      password: ownPassword.temporaryFor(realm.password),
       attributes: { cn: "Two realms " + realm.user, givenName: "Two",
                     sn: realm.user, displayName: "Two realms " + realm.user,
                     mail: realm.user + "@" + realm.domain } },
       "created " + realm.user);
+    await ownPassword.ownPassword(realm.base, realm.user, realm.password,
+      function (who, value) {
+        return send(realm.base + "/admin-api/users/set-password",
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user: who, password: value }) });
+      });
     realm.person = await personAt(realm, realm.user);
   }
   check("each person is at uid=<username>,ou=users,<its realm's base>, the " +

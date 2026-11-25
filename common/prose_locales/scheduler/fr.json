@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "Supprime de la table que partagent tous les nœuds les fenêtres de limitation de débit écoulées."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Relecture des secrets partagés"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Relit les secrets partagés depuis le stockage dans ce processus, afin qu’une rotation effectuée sur n’importe quel nœud soit utilisée ici."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotation des secrets partagés"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Effectue la rotation de chaque secret partagé qui est une clé (les clés CSRF, de nonce ACME, du récepteur Shared Signals, de page OpenID Federation, du résultat de déconnexion et DBSC) tous les cluster.secretRotationDays : une valeur suivante est publiée, devient courante dix minutes plus tard, et l’ancienne reste acceptée pendant cluster.secretOverlapS. Les secrets de sujet pairwise et de nom d’amorçage sont des identifiants et ne changent jamais."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "Nouvelle vérification de l’attestation Android"
@@ -292,8 +308,8 @@
     "text": "Expiration des secrets client"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Vérifie chaque secret client de chaque application : une ligne d’audit pour une application qui en détient un expirant dans les oauth2.clientSecretExpiryWarningDays, et pour une application dont tous les secrets ont expiré ; et supprime les secrets expirés qu’une application détient à côté d’un secret non expiré — jamais son dernier, qui reste et est refusé en mode produit."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Vérifie chaque secret client de chaque application : une ligne d’audit pour une application qui en détient un expirant dans les oauth2.clientSecretExpiryWarningDays, et pour une application dont tous les secrets ont expiré ; et supprime les secrets expirés qu’une application détient à côté d’un secret non expiré — jamais son dernier, qui reste et est refusé en mode produit. Il renouvelle d’abord le secret de chaque application listée dans oauth2.clientSecretAutoRotate qui expire dans les oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",

@@ -518,6 +518,7 @@
   "a3.factIntrospection": "内省声明",
   "a3.factLimits": "限制模式",
   "a3.limitsRefused": "无：限制会被拒绝",
+  "a3.writeWouldRefuse": "在更严格的规则之前保存：仍按原样使用，但如今保存它会被拒绝",
   "a3.factInteraction": "交互（第 6 阶段）",
   "a3.consentForcedBy": "；强制同意的操作：",
   "a3.factAcr": "认证级别（第 6 阶段）",

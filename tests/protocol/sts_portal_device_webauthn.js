@@ -99,6 +99,7 @@ const {
   VirtualAuthenticatorOptions, Transport, Protocol
 } = require("selenium-webdriver/lib/virtual_authenticator");
 const browserFlags = require("./browser_flags.js");
+const ownPassword = require("./own_password");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
@@ -225,11 +226,17 @@ async function createThePerson() {
     attributes: { cn: "Device Link " + PERSON, givenName: "Device",
                   sn: "Link", displayName: "Device Link Tester",
                   mail: PERSON + "@device-link.test" },
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   });
   assert.ok(r.status === 200 && r.body && r.body.ok,
     "creating " + PERSON + " answered " + r.status + " " +
     String(r.text).slice(0, 300));
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, PERSON, PASSWORD, function (who, value) {
+    return apiPost("/users/set-password", { user: who, password: value });
+  });
   log.info("Created " + PERSON + ".");
   log.debug("Leaving createThePerson().");
 }

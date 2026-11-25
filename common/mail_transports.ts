@@ -100,6 +100,11 @@ interface TransportDeps {
   secrets: typeof secrets;
   readFile: (path: string) => string;
   dkimSign: typeof crypto.dkimSign;
+  // #2220: the selector switch's DNS record and its DNS lookup. Optional, so
+  // a test's deps built before them sign with the current selector only.
+  dkimDnsRecord?: typeof crypto.dkimDnsRecord;
+  resolveTxt?: (name: string) => Promise<string[][]>;
+  now?: () => number;
   // #1955 P6: the two encryptions, `common/crypto.js`'s. Optional, so a
   // test's deps built before them still compose a cleartext message.
   openpgpEncrypt?: typeof crypto.openpgpEncrypt;
@@ -218,6 +223,13 @@ class MailTransports {
         return fs.readFileSync(path, 'utf8');
       },
       dkimSign: crypto.dkimSign,
+      dkimDnsRecord: crypto.dkimDnsRecord,
+      resolveTxt: function (name: string): Promise<string[][]> {
+        return require('dns').promises.resolveTxt(name);
+      },
+      now: function (): number {
+        return Date.now();
+      },
       openpgpEncrypt: crypto.openpgpEncrypt,
       smimeEnvelope: crypto.smimeEnvelope
     };
@@ -482,6 +494,110 @@ class MailTransports {
   }
 
   // -------------------------------------------------------------------------
+  // A DKIM SELECTOR SWITCH, WITH AN OVERLAP (#2220).
+  //
+  // A DKIM key is replaced by publishing a NEW selector, switching to it, and
+  // keeping the OLD selector's record in DNS until mail signed with it has
+  // been delivered and checked (RFC 6376 section 3.1, M3AAWG's rotation
+  // practice). This service holds the keys and decides which one signs; DNS
+  // is the operator's:
+  //
+  //   1. put the new private key in the DKIM key's secret, under
+  //      `mail.dkimNextKeyField` (`dkimNextKey`), and name its selector in
+  //      `mail.dkimNextSelector` — the record to publish is logged here, at
+  //      info, every time the transport is built;
+  //   2. publish it as the TXT record `<selector>._domainkey.<domain>`;
+  //   3. set `mail.dkimSwitchAt` to when signing should move to it.
+  //
+  // From that moment the transport signs with the next selector, BUT ONLY
+  // ONCE DNS ANSWERS WITH ITS KEY: a record not (yet) published, or carrying
+  // another key, keeps the current selector and says so (STS-MAIL-0245), so
+  // a forgotten step 2 is a warning and not every message failing DMARC.
+  // The transport is rebuilt within an hour (`common/mail.ts`) and when the
+  // moment passes, so the check is made again. Once the switch has held for
+  // a week, the operator makes the next selector the current one
+  // (`mail.dkimSelector`, the key under `mail.dkimKeyField`) and clears the
+  // three settings; the old record can then be withdrawn.
+  // -------------------------------------------------------------------------
+  /**
+   * Decides which DKIM selector and key a transport signs with.
+   *
+   * @param cfg - the realm's mail settings
+   * @param currentKey - the current selector's private key
+   * @returns `{ selector, key }`
+   */
+  async dkimSigning(cfg: Json, currentKey: string): Promise<Json> {
+    const { log, readSecret, secrets, dkimDnsRecord, resolveTxt,
+            now } = this.deps;
+    log.debug("Entering MailTransports.dkimSigning().");
+    const current = { selector: String(cfg.dkimSelector || ''),
+                      key: currentKey };
+    const nextSelector = String(cfg.dkimNextSelector || '').trim();
+    if (!nextSelector || typeof dkimDnsRecord !== 'function' ||
+        !secrets.MAIL_DKIM_NEXT_KEY) {
+      log.debug("Leaving MailTransports.dkimSigning(). No switch.");
+      return current;
+    }
+    const name = nextSelector + '._domainkey.' + String(cfg.dkimDomain);
+    let nextKey = '';
+    let expected: Json = null;
+    try {
+      nextKey = String(await readSecret(secrets.MAIL_DKIM_NEXT_KEY) || '');
+      this.deps.dkimSign('From: probe@' + cfg.dkimDomain + '\r\n\r\n',
+        { domain: cfg.dkimDomain, selector: nextSelector,
+          algorithm: cfg.dkimAlgorithm, privateKeyPem: nextKey });
+      expected = dkimDnsRecord(nextKey);
+    } catch (e) {
+      log.debug("Caught in MailTransports.dkimSigning(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0245') + 'mail: ' +
+               'mail.dkimNextSelector is "' + nextSelector + '" and its key ' +
+               '(mail.dkimNextKeyField) cannot sign, so messages are signed ' +
+               'with the current selector: ' + ((e && e.message) || e));
+      log.debug("Leaving MailTransports.dkimSigning(). Next key unusable.");
+      return current;
+    }
+    log.info('mail: publish the DKIM record for the next selector as the ' +
+             'TXT record ' + name + ': ' + expected.record);
+    const at = Date.parse(String(cfg.dkimSwitchAt || ''));
+    const clock = typeof now === 'function' ? now() : Date.now();
+    if (!isFinite(at) || clock < at) {
+      log.debug("Leaving MailTransports.dkimSigning(). Not yet.");
+      return current;
+    }
+    let published = false;
+    try {
+      const answers = typeof resolveTxt === 'function'
+        ? await withTimeout(resolveTxt(name), 5000, 'the DKIM record lookup')
+        : [];
+      published = (answers || []).some(function (parts: string[]) {
+        const text = (parts || []).join('');
+        const m = /(?:^|;)\s*p=([^;]*)/.exec(text);
+        return !!m && m[1].replace(/\s+/g, '') === expected.p;
+      });
+    } catch (e) {
+      log.debug("Caught in MailTransports.dkimSigning(): " +
+                ((e && e.message) || e));
+      published = false;
+    }
+    if (!published) {
+      log.warn(errorCodes.tag('STS-MAIL-0245') + 'mail: mail.dkimSwitchAt ' +
+               'has passed, but DNS does not answer ' + name + ' with the ' +
+               'next DKIM key, so messages are still signed with the ' +
+               'current selector "' + current.selector + '". Publish: ' +
+               expected.record);
+      log.debug("Leaving MailTransports.dkimSigning(). Not published.");
+      return current;
+    }
+    log.info('mail: messages are signed with the DKIM selector "' +
+             nextSelector + '" from now on; keep the record of "' +
+             current.selector + '" published until mail signed with it has ' +
+             'been delivered.');
+    log.debug("Leaving MailTransports.dkimSigning(). Switched.");
+    return { selector: nextSelector, key: nextKey };
+  }
+
+  // -------------------------------------------------------------------------
   // SMTP (header points 2 and 3).
   // -------------------------------------------------------------------------
   /**
@@ -596,6 +712,12 @@ class MailTransports {
                         'STS-MAIL-0022', false);
       }
     }
+    // THE SELECTOR SWITCH (#2220): which selector and key this transport
+    // signs with — the next one once its moment has come and DNS publishes
+    // it, the current one otherwise.
+    const signing = cfg.dkimDomain
+      ? await this.dkimSigning(cfg, dkimKey)
+      : { selector: String(cfg.dkimSelector || ''), key: dkimKey };
     const nodemailer = load('nodemailer');
     const implicit = cfg.smtpTls === 'implicit';
     const transporter = nodemailer.createTransport({
@@ -618,11 +740,11 @@ class MailTransports {
       name: 'smtp',
       send: async function (message: OutMessage): Promise<SentResult> {
         let raw = await self.compose(message);
-        if (dkimKey) {
+        if (signing.key) {
           try {
             const header = dkimSign(raw, { domain: cfg.dkimDomain,
-              selector: cfg.dkimSelector, algorithm: cfg.dkimAlgorithm,
-              privateKeyPem: dkimKey });
+              selector: signing.selector, algorithm: cfg.dkimAlgorithm,
+              privateKeyPem: signing.key });
             raw = Buffer.concat([Buffer.from(header + '\r\n', 'binary'), raw]);
           } catch (e) {
             throw sendError('the message could not be DKIM-signed: ' +

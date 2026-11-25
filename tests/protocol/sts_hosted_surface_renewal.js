@@ -43,6 +43,7 @@ const assert = require("assert");
 const { runStamp, usernameFor } = require("./random_username.js");
 const signin = require("./console_signin.js");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -192,12 +193,19 @@ async function setUp() {
 async function ensurePerson(who) {
   log.debug("Entering ensurePerson(). who=" + who);
   const r = await call("POST", realmApi + "/users/create", {
-    username: who, invent: false, credential: "password", password: PASSWORD,
+    username: who, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Renewal " + who, sn: who, givenName: "Renewal",
                   displayName: "Renewal " + who,
                   mail: who + "@renewal.test" } });
   assert.ok(r.status === 200 && r.body.ok,
             "created " + who + ": " + r.raw.slice(0, 300));
+  // Temporary, then the person's own (#2160, `own_password.js`).
+  await ownPassword.ownPassword(base + R, who, PASSWORD,
+    function (one, value) {
+      return call("POST", realmApi + "/users/set-password",
+                  { user: one, password: value });
+    });
   log.debug("Leaving ensurePerson().");
 }
 

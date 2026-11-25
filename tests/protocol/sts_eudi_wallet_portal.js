@@ -91,6 +91,7 @@ const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -707,13 +708,22 @@ async function prepare(wallet) {
              "set " + one[0]);
   }
   // A PASSWORD THIS JOB CHOOSES: one the service generates must be changed at
-  // first use in product (#1446), and this job signs in with it.
+  // first use in product (#1446), and this job signs in with it. A typed
+  // one is temporary there too (#2160), so the holder is made with a
+  // temporary one and chooses this one (`own_password.js`).
   const password = "Eudi-" +
     require("crypto").randomBytes(18).toString("base64url");
   await ok(api + "/users/create", { username: HOLDER,
-    invent: false, credential: "password", password: password,
+    invent: false, credential: "password",
+    password: ownPassword.temporaryFor(password),
     attributes: { cn: "eudi " + HOLDER, givenName: "Eudi", sn: "Holder",
                   mail: HOLDER + "@eudi668.test" } }, "created " + HOLDER);
+  await ownPassword.ownPassword(base, HOLDER, password,
+    function (who, value) {
+      return send(api + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
   const batch = Number(await facts.setting(api, "oid4vci.batchSize")) || 1;
   log.debug("Leaving prepare(). batch=" + batch);
   return { password: password, batch: batch };

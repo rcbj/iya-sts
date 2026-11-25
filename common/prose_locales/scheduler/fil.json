@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "Binubura ang mga lumipas nang rate-limit window mula sa table na pinagsasaluhan ng bawat node."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Pag-refresh ng shared secret"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Binabasa ulit ang mga shared secret mula sa store sa process na ito, para magamit dito ang rotation na ginawa sa alinmang node."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotation ng shared secret"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Nire-rotate ang bawat shared secret na isang key (ang CSRF, ACME nonce, Shared Signals receiver, OpenID Federation page, sign-out result at DBSC key) tuwing cluster.secretRotationDays: may inilalathalang susunod na value, ginagawang kasalukuyan makalipas ang sampung minuto, at tinatanggap pa rin ang luma sa loob ng cluster.secretOverlapS. Ang pairwise subject at bootstrap name secret ay mga identifier at hindi kailanman nire-rotate."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "Muling pagsusuri ng Android attestation"
@@ -292,8 +308,8 @@
     "text": "Pag-expire ng client secret"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Sinusuri ang bawat client secret ng bawat application: isang audit row para sa application na may hawak na secret na mag-e-expire sa loob ng oauth2.clientSecretExpiryWarningDays, at para sa application na expired na ang lahat ng secret; at inaalis ang mga expired na secret na hawak ng application kasabay ng isang hindi pa expired — hindi kailanman ang huli nito, na nananatili at tinatanggihan sa product."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Sinusuri ang bawat client secret ng bawat application: isang audit row para sa application na may hawak na secret na mag-e-expire sa loob ng oauth2.clientSecretExpiryWarningDays, at para sa application na expired na ang lahat ng secret; at inaalis ang mga expired na secret na hawak ng application kasabay ng isang hindi pa expired — hindi kailanman ang huli nito, na nananatili at tinatanggihan sa product. Una, ni-rorotate nito ang secret ng bawat application na nakalista sa oauth2.clientSecretAutoRotate na mag-e-expire sa loob ng oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",

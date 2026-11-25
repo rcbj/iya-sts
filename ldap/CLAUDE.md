@@ -3667,6 +3667,22 @@ server emits later — a client's malformed BindRequest is enough — is logged 
 `STS-LDAP-0028` "could not bind" and sets `tlsListening` false on a listener that
 is still answering.
 
+**THE MESSAGE SIZE GUARD (#2220, ASVS L3).** ldapjs's parser buffers a
+connection's bytes until the length a message's BER header declares has
+arrived, so one unauthenticated connection could make the process hold
+whatever it declared. `ldap/ldap_message_guard.ts` reads each message's tag
+and length from the stream and closes the connection (`STS-LDAP-0227`, one
+line a minute) when it is over `ldap.maxMessageBytesBeforeBind` (128 KiB)
+before a bind or `ldap.maxMessageBytes` (5 MiB) after, or uses the indefinite
+length. **It is done here, not in the fork, and patches nothing**: the
+`connection`/`secureConnection` handler that holds the socket runs after
+ldapjs's own (registered when `createServer()` ran), finds the `data` listener
+ldapjs added, and moves it behind the guard (`guardMessages()`). The raw
+socket under the TLS server has no `parser` and is skipped; the TLS socket
+gets the guard after the handshake. A PROXY header is read before ldapjs's
+handler runs, so it is not counted. The numbers are argued on the two rows in
+`common/config.js`; `tests/ldap_message_guard.js` holds it.
+
 ## `ou=kerberosTrusts`, THE KERBEROS TRUST REGISTER (#430, 2026-10-19)
 
 **One entry per partner Kerberos realm**, of this service's class

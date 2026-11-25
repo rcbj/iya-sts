@@ -518,6 +518,7 @@
   "a3.factIntrospection": "Introspection claims",
   "a3.factLimits": "Limits schema",
   "a3.limitsRefused": "none: limits are refused",
+  "a3.writeWouldRefuse": "STORED BEFORE A STRICTER RULE: it is still used as written, and a save of it today would be refused",
   "a3.factInteraction": "Interaction (phase 6)",
   "a3.consentForcedBy": "; consent forced by ",
   "a3.factAcr": "Authentication level (phase 6)",

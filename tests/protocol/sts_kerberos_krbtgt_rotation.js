@@ -54,6 +54,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 const signin = require("./console_signin");
 const wire = require("./krb5_wire.js");
 
@@ -237,11 +238,18 @@ async function test() {
              "password!");
   await ok(realmApi + "/users/create",
            { username: USER, invent: false, credential: "password",
-             password: PASSWORD,
+             password: ownPassword.temporaryFor(PASSWORD),
              attributes: { cn: "krbtgt " + USER, givenName: "krbtgt",
                            sn: USER, displayName: "krbtgt " + USER,
                            mail: USER + "@" + DOMAIN } },
            "created " + USER + " in " + RID);
+  // Temporary, then the person's own (#2160, `own_password.js`): the KDC
+  // refuses a password that has to be changed first (STS-KRB-0257).
+  await ownPassword.ownPassword(base + "/realm/" + RID, USER, PASSWORD,
+    function (one, value) {
+      return call("POST", realmApi + "/users/set-password",
+                  { user: one, password: value });
+    });
   const made = await ok(realmApi + "/kerberos/principals/create-service",
                         { spn: SPN }, "created " + SPN);
   check("the service principal " + SPN + " holds a key, and its keytab is " +

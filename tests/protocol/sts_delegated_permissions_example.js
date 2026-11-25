@@ -138,6 +138,7 @@ const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
 // The authorization code walk (#551: a delegated permission needs a person).
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -921,13 +922,19 @@ async function theTokenSaysBothHalves() {
   const password = "Dpx-" + require("crypto").randomBytes(12)
     .toString("base64url") + "-9a!";
   // The realm's attribute policy (#396) requires givenName, sn and mail of
-  // every person in product mode.
+  // every person in product mode. Temporary, then the person's own
+  // (#2160, `own_password.js`): the code flow below signs in with it.
+  const temporary = ownPassword.temporaryFor(password);
   await ok("/users/create", { username: person, invent: false,
-    credential: "password", password: password,
-    passwordConfirm: password,
+    credential: "password", password: temporary,
+    passwordConfirm: temporary,
     attributes: { givenName: "Dpx", sn: person,
                   mail: person + "@dpx.example.test" } },
     "created the person the token is for");
+  await ownPassword.ownPassword(base, person, password,
+    function (who, value) {
+      return post("/users/set-password", { user: who, password: value });
+    });
   const redirectUri = SPENDER_REDIRECT_URI;
   const granted = await registry.authorizationCode(base, {
     clientId: SPENDER.id, redirectUri: redirectUri, username: person,

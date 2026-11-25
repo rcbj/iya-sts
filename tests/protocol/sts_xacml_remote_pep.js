@@ -3373,6 +3373,7 @@ async function itKeepsEnforcingWhenThePdpIsGone() {
 const http = require("http");
 const nodeCrypto = require("crypto");
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const ssfRoles = require("./ssf_roles.js");
 
 const OUTSIDER_PERSON = "pep-outsider-person";
@@ -5712,6 +5713,7 @@ async function createThePeople() {
   log.debug("Entering createThePeople().");
   for (const one of [[ADMIN_PERSON, "admin", "Admin"],
                      [STAFF_PERSON, "staff", "Staff"]]) {
+    const password = "Pep-" + nodeCrypto.randomBytes(18).toString("base64url");
     const r = await postJson(api("/users/create"), {
       username: one[0], invent: false,
       attributes: { cn: "Remote PEP " + one[2] + " Person", givenName: "Remote",
@@ -5723,14 +5725,21 @@ async function createThePeople() {
       // one and sets pwdReset (#1446), and section 10's browser sign-in —
       // in the realm switched to development, which checks no password but
       // still honours pwdReset — was sent to the password-change step
-      // instead of on. An administrator's typed password sets no pwdReset.
+      // instead of on. SINCE #2160 A TYPED ONE SETS pwdReset TOO, so it is
+      // a temporary one and the person chooses their own at the sign-in
+      // screen (`own_password.js`; in development it is simply set).
       credential: "password",
-      password: "Pep-" + nodeCrypto.randomBytes(18).toString("base64url")
+      password: ownPassword.temporaryFor(password)
     });
     assert.ok(r.status === 200 && r.body && r.body.ok,
       "POST /admin-api/users/create should put " + one[0] + " (employeeType=" +
       one[1] + ") in " + REALM + "; it answered " + r.status + " " +
       String(r.text).slice(0, 300));
+    await ownPassword.ownPassword(realmUrl(""), one[0], password,
+      function (who, value) {
+        return postJson(api("/users/set-password"),
+                        { user: who, password: value });
+      });
   }
   log.debug("Leaving createThePeople().");
 }

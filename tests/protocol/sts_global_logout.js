@@ -110,6 +110,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const krb5 = require("./krb5_drive.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 const anchors = require("../tools/pep-credential.js");
 // The two scenario CAs this job posts. Removed when it finishes, pass or
 // fail (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
@@ -1092,10 +1093,19 @@ async function createUser(username) {
     attributes: { cn: "Global Logout " + username, givenName: "Global",
                   sn: username, displayName: "Global Logout " + username,
                   mail: username + "@" + MAIL_DOMAIN },
-    credential: "password", password: PERSON_PASSWORD });
+    credential: "password",
+    password: ownPassword.temporaryFor(PERSON_PASSWORD) });
   assert.ok(r.status === 200 || /already/i.test(r.text),
     "the person should be created before anybody signs in; POST " +
     "/users/create answered " + r.status + " " + r.text.slice(0, 200));
+  // Temporary, then the person's own (#2160, `own_password.js`): every
+  // protocol below presents PERSON_PASSWORD, and in product a typed one is
+  // temporary.
+  await ownPassword.ownPassword(base, username, PERSON_PASSWORD,
+    function (who, value) {
+      return postJson(api("/users/set-password"),
+                      { user: who, password: value });
+    });
   log.debug("Leaving createUser().");
 }
 

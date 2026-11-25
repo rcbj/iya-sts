@@ -51,6 +51,7 @@ const nodeCrypto = require("crypto");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
 const ssfRoles = require("./ssf_roles.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -318,9 +319,13 @@ async function test() {
   // The realm's attribute policy (#396) requires givenName, sn and mail of
   // every person in product mode — of the LDAP add below too, so that what
   // refuses it is the credential attribute and not a missing name.
+  // The administrator binds with PASSWORD at c., so theirs is made their
+  // own (#2160, `own_password.js`), before the drain below sweeps the
+  // signals that sets off. Alice's is never used.
   for (const who of [ALICE, ADMIN]) {
     const made = await ok(realmApi + "/users/create", { username: who,
-      invent: false, credential: "password", password: PASSWORD,
+      invent: false, credential: "password",
+      password: who === ADMIN ? ownPassword.temporaryFor(PASSWORD) : PASSWORD,
       attributes: { cn: "CS " + who, givenName: "CS", sn: who,
                     mail: who + "@cs231.test" } },
       "created " + who);
@@ -328,6 +333,11 @@ async function test() {
   }
   await ok(realmApi + "/rbac/grant", { username: ADMIN, role: "write" },
            "granted " + ADMIN + " Admin Write on the realm's own roster");
+  await ownPassword.ownPassword(realmBase, ADMIN, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   await drain(token, streamId);
 
   log.info("=== a. #236: EAB, SCEP challenge, self-issued subject ===");

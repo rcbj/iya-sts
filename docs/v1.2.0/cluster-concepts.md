@@ -566,6 +566,8 @@ restart.
 | `cluster.nodeTtlMs` | `STS_CLUSTER_NODE_TTL_MS` | `30000` | How long a membership row and a lease last after their last renewal. The longest a crashed node's roles wait for a takeover, and the longest the node's thread may be blocked. At least three heartbeats. |
 | `cluster.acceptMissingCapabilities` | `STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES` | *(empty)* | Capability ids active-active may start without. Each one is a known way nodes disagree. |
 | `cluster.nodeSnapshotRetentionHours` | `STS_CLUSTER_NODE_SNAPSHOT_RETENTION_HOURS` | `24` | How long a gone node stays on Worker Pools and Node Health. Changes while running. |
+| `cluster.secretRotationDays` | `STS_CLUSTER_SECRET_ROTATION_DAYS` | `90` | How often each shared secret that is a key is rotated, with a next value published ten minutes before it is used. 0 turns it off. See [Key management](key-management.md#rotation-schedule). |
+| `cluster.secretOverlapS` | `STS_CLUSTER_SECRET_OVERLAP_S` | `86400` | How long a rotated shared secret is still accepted. |
 
 The settings the cluster depends on from other groups:
 

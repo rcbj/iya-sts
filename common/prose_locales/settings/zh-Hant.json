@@ -2479,6 +2479,66 @@
     "en": "d51b3caaa6125e92",
     "text": "在啟動時讀取一次"
   },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "先前 Cell 金鑰加密金鑰的讀取來源"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "輪替此 Cell 的金鑰加密金鑰：將 keys.cellKek* 指向新金鑰，將本項指向舊金鑰，然後啟動。此 Cell 中仍以舊金鑰包裝的每個資料加密金鑰，都會以新金鑰重新包裝並寫回；當該 Cell 的每個節點都已如此啟動後，將本項設回 none。沒有 Cell 金鑰時會被拒絕。"
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "金鑰在還原儲存區之前讀取一次"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "先前 Cell 金鑰加密金鑰的位置"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "先前的 Cell 金鑰在 keys.previousCellKekProvider 所指名之提供者中的位置：路徑、ARN、資源或 Vault 讀取路徑。它沒有任何備援。"
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "先前 Cell 金鑰所在欄位"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "JSON 秘密中存放先前 Cell 金鑰的成員。空白時取整個值。"
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "先前 Cell 金鑰的 AWS 區域"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "讀取先前 Cell 金鑰的 AWS 區域。空白時使用 SDK 自己的解析方式。"
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "先前 Cell 金鑰的 Key Vault URL"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "讀取先前 Cell 金鑰的 Azure Key Vault URL 或 HashiCorp Vault 端點。它沒有任何備援。"
+  },
+  "keys.previousCellKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
   "global.mode|label": {
     "en": "5e23ec6a300dc60a",
     "text": "模式"
@@ -3210,6 +3270,22 @@
   "oauth2.clientSecretsMax|description": {
     "en": "c20e5f5d3aa6062e",
     "text": "一個應用程式同時可持有多少個用戶端秘密（每個都是 oauthClientSecret 上一筆有自己到期時間的紀錄）。超過此數的新增或輪替會被拒絕（STS-REG-0208）；請先移除一個。過期的秘密在每日工作 oauth2.client-secret-expiry 移除它們之前仍會計入。"
+  },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "自動輪替這些用戶端的密碼"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "每日的 oauth2.client-secret-expiry 工作會在其到期之前予以輪替的應用程式，以逗號分隔。每一項是一個 `client_id`，或 `client_id=destination/secret-name`，表示在提交之前將新密碼推送至該機密目的地（目錄 → 機密目的地）；推送失敗則不輪替任何項目，並於隔天重試。沒有目的地時，用戶端從其 RFC 7592 用戶端組態端點讀取新密碼。舊密碼在 oauth2.clientSecretOverlapS 內仍可用於驗證。sts-api-client 在此處從不輪替。空白：不輪替任何用戶端，並在每個用戶端到期前預先發出警告。"
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "提前幾天輪替所列用戶端的密碼"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "在 oauth2.clientSecretAutoRotate 中列出的應用程式，其主要用戶端密碼到期前多久進行輪替。永不到期的密碼永遠不會被輪替。"
   },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
@@ -8239,6 +8315,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "搜尋的伺服器端時間限制，以秒為單位，這就是產生 LDAP_TIME_LIMIT_EXCEEDED 的原因；用戶端自己的 timeLimit 較短時以其為準。在此之前已送出的項目即為答覆，並標示為不完整。"
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "已繫結用戶端的最大訊息（位元組）"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "已繫結的用戶端可傳送的最大 LDAP 訊息，以位元組計，依其 BER 標頭宣告的長度計算：下一則訊息宣告超過此值的連線，會在讀取其任何內容之前被關閉（STS-LDAP-0227）。搜尋結果由伺服器傳送，不計入。預設 5 MiB，即此處每個 HTTP 請求主體的上限。"
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "繫結前的最大訊息（位元組）"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "用戶端在繫結之前可傳送的最大 LDAP 訊息，以位元組計：一次繫結、StartTLS 或根 DSE 搜尋。超過此值時，會在讀取訊息任何內容之前關閉連線（STS-LDAP-0227）。預設 128 KiB，是 SASL 繫結可攜帶的最大 Kerberos 權杖的兩倍。實際生效時從不超過 ldap.maxMessageBytes。"
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "一般 LDAP 接聽程式"
@@ -11707,6 +11799,14 @@
     "en": "81c3618a73d5aca7",
     "text": "在啟動時、連線集區開啟之前讀取一次"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "每隔多久重新讀取資料庫密碼（秒）"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "每個程序多久從 `persistence.databasePasswordProvider` 所指名的機密儲存區重新讀取一次資料庫密碼（persistence.database-password-refresh 工作）。變更後的密碼會用於其後建立的每個連線，無需重新啟動；已開啟的連線持續運作。資料庫拒絕登入時也會立即重新讀取。在資料庫中輪替密碼是機密儲存區或維運人員的工作，舊密碼在那裡至少必須在這段時間內保持有效。0 表示僅在啟動時以及登入被拒絕後讀取。"
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "驗證資料庫憑證"
@@ -11950,6 +12050,22 @@
   "cluster.acceptMissingCapabilities|restartReason": {
     "en": "43d39d2a6820f37a",
     "text": "功能檢查在節點加入時執行一次"
+  },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "每隔幾天輪替共用機密（天）"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "cluster.secret-rotate 工作多久替換一次屬於金鑰的每個共用機密：CSRF 金鑰、ACME nonce 金鑰、Shared Signals 接收端機密、OpenID Federation 頁面金鑰、登出結果金鑰與 DBSC 金鑰。新值會先發布，十分鐘後（每個程序都已讀取之後）成為目前值，舊值在 `cluster.secretOverlapS` 內仍被接受。成對主體機密與啟動名稱機密是識別碼，永不輪替；由環境變數設定的值則由維運人員自行變更。0 表示關閉輪替。早期版本所儲存的機密會在工作首次執行時標註日期，並在此天數之後首次輪替，絕不在升級時輪替。"
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "接受已輪替共用機密的時間（秒）"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "被輪替取代的共用機密在新機密之外仍被接受多久，使得在輪替前不久產生的表單、nonce、頁面指標或綁定的 Cookie 在輪替後仍然有效。不會再以它產生任何新內容。預設為一天。"
   },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
@@ -12454,6 +12570,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "要從 JSON 值中取出的成員。空白表示 `dkimKey`。"
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "下一個 DKIM 選擇器"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "輪替 DKIM 金鑰：新金鑰的選擇器，其記錄在簽署切換到它之前發布於 <selector>._domainkey.<domain>。要發布的記錄會在建立傳輸時記入日誌。空白：沒有進行中的輪替。"
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "下一個 DKIM 私密金鑰的欄位"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "DKIM 金鑰機密（mail.dkimKeyProvider 與 mail.dkimKeyRef 所指名的那個）中存放下一個選擇器 PEM 私密金鑰的成員。空白表示 `dkimNextKey`。"
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "從何時起以下一個 DKIM 選擇器簽署"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "郵件何時開始以 mail.dkimNextSelector 簽署，格式為 ISO 8601 時間（2026-12-01T00:00:00Z）——且須在 DNS 以其金鑰回應下一個選擇器的名稱之後；在此之前由目前的選擇器簽署，並發出警告。切換後讓舊選擇器的記錄繼續發布一週，然後將下一個選擇器設為 mail.dkimSelector，並清除這三項。空白：永不切換。"
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",

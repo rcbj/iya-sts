@@ -924,6 +924,40 @@ function auditAppendOnlyWaivers() {
       level: 'MUST', setting: 'persistence.databaseUrl' }] : [];
 }
 
+// AN ACCESS TYPE STORED BEFORE A STRICTER WRITE RULE (#2220, ASVS 5.0.0
+// 1.3.12): a definition whose JSON Schema uses a keyword outside the subset,
+// or a `pattern` of the exponential shape, is still used as stored, and
+// carried on the `access-type-schemas` row as data — one entry per type,
+// naming the application and the attribute — so it shows in either mode
+// until somebody rewrites it. The catalogue is the one requests read
+// (`authorization_details.ts`'s `declaredTypes()`, kept per registry
+// version), so this costs no scan of its own; at most fifty are listed.
+function accessTypeSchemaWaivers() {
+  log.debug("Entering accessTypeSchemaWaivers().");
+  const out = [];
+  try {
+    const applications = require('./applications');
+    const declared = require('../oauth-oidc/authorization_details')
+      .declaredTypes() || {};
+    Object.keys(declared).sort().forEach(function (type) {
+      const one = declared[type] || {};
+      if (out.length >= 50 || !one.source ||
+          !applications.accessTypeWriteProblem(one.source)) {
+        return;
+      }
+      out.push({ requirement: 'access-type-schema-subset',
+                 section: 'ASVS 5.0.0 1.3.12', level: 'MUST',
+                 setting: String(one.identifier) +
+                          ': oauthAuthorizationDetailsType ' + type });
+    });
+  } catch (e) {
+    log.debug("Caught in accessTypeSchemaWaivers(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving accessTypeSchemaWaivers(). " + out.length);
+  return out;
+}
+
 // HSTS PRELOAD ASKED FOR AND WITHHELD (#2165, ASVS 5.0.0 3.7.4):
 // `security.hstsPreload` on with `security.hstsIncludeSubDomains` off, so
 // `common/cookie_wire.ts` sends the header without `preload` — the list
@@ -3014,6 +3048,20 @@ const REQUIREMENTS = [
              'nothing is not refused.',
     where: 'common/issuance_gate.js, xacml/xacml_role_pep.ts, ' +
            'xacml/xacml_templates.ts' },
+  // #2220 (ASVS 5.0.0 1.3.12): the same in both modes; what a realm still
+  // holds from before the rule is carried as data, accessTypeSchemaWaivers().
+  { id: 'access-type-schemas',
+    what: 'An access type\'s JSON Schema is held to a subset, and each ' +
+          'of its patterns to a bound',
+    development: 'A definition written through the console or the ' +
+                 'management API keeps its schema to the keywords a limits ' +
+                 'schema may use, and every pattern to the bound on a ' +
+                 'regular expression; anything else is refused ' +
+                 '(STS-REG-0374). One stored before that rule is still ' +
+                 'used as stored, and this row reports ASVS 5.0.0 1.3.12 ' +
+                 'as not met for it.',
+    product: 'The same.',
+    where: 'common/applications.js, common/pattern_safety.js' },
   { id: 'uncatalogued-access',
     what: 'A GNAP access right is granted only of a type the access-type ' +
           'catalogue declares',
@@ -5052,6 +5100,7 @@ function report() {
   const auditLog = auditAppendOnlyWaivers();
   const smime = product ? smimeCbcWaivers() : [];
   const preload = product ? hstsPreloadWaivers() : [];
+  const accessTypes = accessTypeSchemaWaivers();
   return {
     mode: current(),
     isProduct: product,
@@ -5071,7 +5120,10 @@ function report() {
                   ? { waived: smime }
                   : row.id === 'strict-transport-security' &&
                       preload.length
-                    ? { waived: preload } : {};
+                    ? { waived: preload }
+                    : row.id === 'access-type-schemas' &&
+                        accessTypes.length
+                      ? { waived: accessTypes } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row, extra);
