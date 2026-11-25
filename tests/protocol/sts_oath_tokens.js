@@ -377,6 +377,7 @@ program
 // ---------------------------------------------------------------------------
 
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 
 const H_REALM = ("hr" + RUN).toLowerCase().replace(/[^a-z0-9]/g, "")
   .slice(0, 31);
@@ -489,10 +490,19 @@ async function hotpResyncTest() {
     "the seed file was not imported");
   await mustDo("POST", hotpRealm("/admin-api/users/create"), {
     username: H_PERSON, invent: false, credential: "password",
-    password: H_PASSWORD,
+    password: ownPassword.temporaryFor(H_PASSWORD),
     attributes: { cn: "HOTP " + H_PERSON, sn: H_PERSON, givenName: "HOTP",
                   mail: H_PERSON + "@" + H_REALM + ".example.net" } },
     "the person was not created");
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose H_PASSWORD at the sign-in screen first
+  // (`own_password.js`; in development it is simply set), before the token
+  // that would make the screen ask for a code is assigned.
+  await ownPassword.ownPassword(base + "/realm/" + H_REALM, H_PERSON,
+    H_PASSWORD, function (who, value) {
+      return send("POST", hotpRealm("/admin-api/users/set-password"),
+                  { json: { user: who, password: value } });
+    });
   await mustDo("POST", hotpRealm(OPERATION + "/assign-oath"),
     { key: imported.json.imported[0].key, username: H_PERSON },
     "the token was not assigned");

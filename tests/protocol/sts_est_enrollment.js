@@ -39,6 +39,7 @@ const path = require("path");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const est = require("./est_client.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -157,11 +158,21 @@ async function post(url, body) {
 
 // A person who authenticates during this job, so the job chooses the password:
 // one the service generates must be changed at first use in product (#1446).
+// So must one an administrator types (#2160): the person is made with a
+// temporary one and chooses `password` (`own_password.js`), since EST's
+// Basic authentication refuses a temporary password.
 async function createWithPassword(url, body, what) {
   log.debug("Entering createWithPassword().");
   const password = "Est-" + nodeCrypto.randomBytes(18).toString("base64url");
   const made = await ok(url, Object.assign({}, body,
-    { credential: "password", password: password }), what);
+    { credential: "password",
+      password: ownPassword.temporaryFor(password) }), what);
+  const apiBase = url.replace(/\/users\/create$/, "");
+  await ownPassword.ownPassword(apiBase.replace(/\/admin-api$/, ""),
+    body.username, password, function (who, value) {
+      return post(apiBase + "/users/set-password",
+                  { user: who, password: value });
+    });
   log.debug("Leaving createWithPassword().");
   return Object.assign({}, made, { password: password });
 }

@@ -101,6 +101,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const bulk = require("./bulk_load.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -439,6 +440,8 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
   // PASSWORD (2026-09-21): product mode verifies it, and a name nobody created
   // was refused 401 (STS-AUTHN-0052) — the SCIM job's createTheCaller()
   // arrangement. Made after everything timed, outside this run's names.
+  // Temporary, then the reader's own (#2160, `own_password.js`): SCIM Basic
+  // refuses a temporary password.
   const scimUser = "bulk-load-" + STAMP.run;
   const scimPassword = "bulk-load-api-Passw0rd!-" + STAMP.run;
   const made = await http.postJson(http.api("/users/create"), {
@@ -446,12 +449,17 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
     attributes: { cn: "Bulk Load API Reader", givenName: "Bulk",
                   sn: "API Reader", displayName: "Bulk Load API Reader",
                   mail: scimUser + "@bulk-load.test" },
-    credential: "password", password: scimPassword
+    credential: "password", password: ownPassword.temporaryFor(scimPassword)
   });
   assert.ok(made.status === 200 && made.body && made.body.ok,
     "POST /admin-api/users/create should create the SCIM reader " +
     scimUser + " with a password; it answered " + made.status + " " +
     JSON.stringify(made.body).slice(0, 300));
+  await ownPassword.ownPassword(base, scimUser, scimPassword,
+    function (who, value) {
+      return http.postJson(http.api("/users/set-password"),
+                           { user: who, password: value });
+    });
   const auth = "Basic " + Buffer.from(scimUser + ":" + scimPassword)
                                 .toString("base64");
   function scimGet(path) {

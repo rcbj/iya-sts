@@ -56,6 +56,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -270,6 +271,24 @@ function personSpec(realm, username, password) {
                          mail: username + "@" + realm.domain } };
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses
+// `password` at the sign-in screen (`own_password.js`; in development it
+// is simply set).
+async function createPerson(realm, username, password) {
+  log.debug("Entering createPerson(). " + username + " in " + realm.domain);
+  await ok(apiOf(realm) + "/users/create",
+           personSpec(realm, username, ownPassword.temporaryFor(password)),
+           "created " + username + " in " + realm.domain);
+  await ownPassword.ownPassword(realm.base, username, password,
+    function (who, value) {
+      return send(apiOf(realm) + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
+  log.debug("Leaving createPerson().");
+}
+
 // The code flow, the way a browser walks it, then the token request with
 // the client's secret. Answers the token response.
 async function signIn(realm, username, password) {
@@ -364,9 +383,7 @@ async function test() {
 
   log.info("=== 2. a person in each ===");
   for (const realm of REALMS) {
-    await ok(apiOf(realm) + "/users/create",
-             personSpec(realm, realm.user, realm.password),
-             "created " + realm.user + " in " + realm.domain);
+    await createPerson(realm, realm.user, realm.password);
     realm.person = await personAt(realm, realm.user);
   }
   check("each person's entry is under its own realm's dc= RDNs, with a " +
@@ -514,9 +531,7 @@ async function test() {
 
   log.info("=== 5. one name, three trees ===");
   for (const realm of REALMS) {
-    await ok(apiOf(realm) + "/users/create",
-             personSpec(realm, SHARED, realm.sharedPassword),
-             "created " + SHARED + " in " + realm.domain);
+    await createPerson(realm, SHARED, realm.sharedPassword);
     realm.shared = await personAt(realm, SHARED);
   }
   check(SHARED + " is three entries whose DNs differ only in the realm's " +

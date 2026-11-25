@@ -49,6 +49,7 @@ const fs = require("fs");
 const lab = require("./client_lab.js");
 const names = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -283,12 +284,20 @@ async function setUp() {
     "created the realm " + REALM);
   const rb = base + "/realm/" + REALM;
   const dns = {};
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, and the portal sign-in and the LDAP bind both need PASSWORD, so
+  // each is made with a temporary one and chooses PASSWORD at the sign-in
+  // screen (`own_password.js`; in development it is simply set).
   for (const who of [PERSON, ADMIN]) {
     dns[who] = String((await ok(rb + "/admin-api/users/create", {
       username: who, invent: false, credential: "password",
-      password: PASSWORD,
+      password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "YubiKey " + who, sn: who, givenName: "YubiKey",
                     mail: who + "@" + DOMAIN } }, "created " + who)).dn);
+    await ownPassword.ownPassword(rb, who, PASSWORD, function (one, value) {
+      return postJson(rb + "/admin-api/users/set-password",
+                      { user: one, password: value });
+    });
   }
   await ok(rb + "/admin-api/rbac/grant", { username: ADMIN, role: "read" },
            "granted " + ADMIN + " Admin Read on the realm's roster");

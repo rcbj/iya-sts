@@ -83,6 +83,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -505,11 +506,17 @@ async function setUp() {
     attributes: { cn: "Initiation " + PERSON, givenName: "Initiation",
                   sn: PERSON, displayName: "Initiation " + PERSON,
                   mail: PERSON + "@" + REALM + ".example.net" },
-    credential: "password", password: PASSWORD });
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD) });
   must(person.status === 200 && person.body && person.body.ok &&
        !person.body.credentialError,
        "creating " + PERSON + " with a password answered " + person.status +
        " " + person.text.slice(0, 300));
+  // Temporary, then the person's own (#2160, `own_password.js`).
+  await ownPassword.ownPassword(realmBase(), PERSON, PASSWORD,
+    function (who, value) {
+      return api(REALM, "POST", "/users/set-password",
+                 { user: who, password: value });
+    });
   // Said, not asserted: the job is the same in either mode.
   const mode = await facts.setting(realmBase() + "/admin-api", "global.mode");
   log.info("The realm " + REALM + " runs in " + String(mode) + " mode.");

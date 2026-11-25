@@ -29,6 +29,7 @@ const ldap = require("ldapjs");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const PORTAL_SIGNIN = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -126,14 +127,25 @@ async function makeRealm(key) {
            dc: "dc=" + id + ",dc=example,dc=net" };
 }
 
-async function makePerson(realm, username) {
+// `signsIn`: the person will sign in with PASSWORD, which has to be their
+// OWN (#2160): a typed one is temporary in product, so they choose it at
+// the sign-in screen (`own_password.js`; in development it is simply set).
+// Every realm here is fresh, so each person is made once.
+async function makePerson(realm, username, signsIn) {
   log.debug("Entering makePerson(). " + username);
   const made = await hop("POST", realm.api + "/users/create", {
     username: username, invent: false, credential: "password",
-    password: PASSWORD,
+    password: signsIn ? ownPassword.temporaryFor(PASSWORD) : PASSWORD,
     attributes: { cn: "O " + username, givenName: "O", sn: username,
                   mail: username + "@outside.test" } });
   assert.ok(made.status === 200 && made.json.ok, made.text.slice(0, 300));
+  if (signsIn) {
+    await ownPassword.ownPassword(realm.base, username, PASSWORD,
+      function (who, value) {
+        return hop("POST", realm.api + "/users/set-password",
+                   { user: who, password: value });
+      });
+  }
   log.debug("Leaving makePerson().");
   return "uid=" + username + ",ou=users," + realm.dc;
 }
@@ -181,7 +193,7 @@ function ldapReplace(dn, attributes) {
 async function aDelegate() {
   log.info("=== 1. a person names a delegate: no bad input at all ===");
   const realm = await makeRealm("dlg");
-  await makePerson(realm, "ovalice");
+  await makePerson(realm, "ovalice", true);
   const bob = await makePerson(realm, "ovbob");
   const portal = await PORTAL_SIGNIN.signInToThePortal(realm.base, "ovalice",
     null, { password: PASSWORD });
@@ -275,7 +287,7 @@ async function anUnverifiedToken() {
 async function aDeviceKey() {
   log.info("=== 5. a device key's JWK, written by the person proving it ===");
   const realm = await makeRealm("dev");
-  await makePerson(realm, "ovalice");
+  await makePerson(realm, "ovalice", true);
   const portal = await PORTAL_SIGNIN.signInToThePortal(realm.base, "ovalice",
     null, { password: PASSWORD });
   const issued = await portal.api("POST", "/account-api/devices/challenge",

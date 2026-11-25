@@ -59,6 +59,7 @@ const nodeCrypto = require("crypto");
 const fs = require("fs");
 const names = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -475,11 +476,15 @@ async function waitFor(what, fn) {
   return last;
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, and both the portal sign-in and the LDAP bind need PASSWORD, so
+// the person is made with a temporary one and chooses PASSWORD at the
+// sign-in screen (`own_password.js`; in development it is simply set).
 function userBody(username) {
   log.debug("Entering userBody().");
   log.debug("Leaving userBody().");
   return { username: username, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Ssh Lab " + username, sn: username,
                   givenName: "Ssh", mail: username + "@" + DOMAIN } };
 }
@@ -515,6 +520,10 @@ async function setUp() {
   for (const who of [OWNER, ADMIN]) {
     made[who] = String((await ok(rb + "/admin-api/users/create",
       userBody(who), "created " + who)).dn);
+    await ownPassword.ownPassword(rb, who, PASSWORD, function (one, value) {
+      return postJson(rb + "/admin-api/users/set-password",
+                      { user: one, password: value });
+    });
   }
   await ok(rb + "/admin-api/rbac/grant", { username: ADMIN, role: "write" },
            "granted " + ADMIN + " Admin Write on the realm's roster");
