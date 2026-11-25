@@ -527,6 +527,10 @@
     "en": "b1ae9012425d7c77",
     "text": "页面页脚样式表"
   },
+  "endpoints.route./web/browser-check.js.name": {
+    "en": "c00f945d4a14cdbe",
+    "text": "每个外壳首先运行的浏览器检查"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "域登录外观的样式表"

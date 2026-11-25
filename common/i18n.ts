@@ -111,6 +111,12 @@ import WebLocale = require('./web_locale');
  */
 const FOOTER_NAMESPACE = 'footer';
 
+/**
+ * What a browser lacks (#2220), which `catalogData()` gives every
+ * application with its own, as it gives the footer's.
+ */
+const BROWSER_NAMESPACE = 'browser';
+
 const { log } = helpers;
 
 /**
@@ -394,9 +400,12 @@ class I18n {
     const catalogs: Record<string, Record<string, string>> = {};
     // THE PAGE FOOTER'S WORDS go with every application's (rcbj,
     // 2026-11-14): the console and the portal draw the footer their shell
-    // drew, from the catalogs this answers (`common/web_footer.ts`).
+    // drew, from the catalogs this answers (`common/web_footer.ts`). And
+    // WHAT A BROWSER LACKS (#2220): the console's and the portal's
+    // translator says a missing passkey or a failed copy from these.
     const spaces = Object.keys(this.messages).filter(function (ns) {
-      return ns.indexOf(prefix) === 0 || ns === FOOTER_NAMESPACE;
+      return ns.indexOf(prefix) === 0 || ns === FOOTER_NAMESPACE ||
+        ns === BROWSER_NAMESPACE;
     });
     negotiated.chain.forEach((tag) => {
       const flat: Record<string, string> = {};

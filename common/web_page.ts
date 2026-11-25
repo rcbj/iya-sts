@@ -70,6 +70,24 @@ class WebPage {
   // custom listener.
   protected elsewhere: Json;
 
+  // THE BROWSER CHECK SAID THIS BROWSER FALLS SHORT (#2220): every shell
+  // runs `/web/browser-check.js` first (`common/web_browser_check.ts`),
+  // which shows the shell's notice and marks `<html>` where `fetch`,
+  // `TextEncoder`, `URL` or ECMAScript 2022 is missing. Each surface's entry
+  // asks this before it starts, so no runtime draws over the notice.
+  /**
+   * Whether the browser check marked this document as one this browser
+   * cannot run.
+   *
+   * @param doc - the document
+   * @returns true where `<html data-sts-unsupported="1">`
+   */
+  static browserFellShort(doc: Json): boolean {
+    const root = doc && doc.documentElement;
+    return !!root && typeof root.getAttribute === 'function' &&
+      root.getAttribute('data-sts-unsupported') === '1';
+  }
+
   /**
    * Makes the page's runtime base.
    *

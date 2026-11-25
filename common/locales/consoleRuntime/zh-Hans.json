@@ -5,6 +5,7 @@
   "reauth.here": "在此页面上登录",
   "reauth.hereInstead": "改为在此页面上登录",
   "reauth.noPopup": "此浏览器无法从另一个窗口传回登录结果，请在此页面上登录。",
+  "reauth.popupBlocked": "登录窗口被阻止。请允许此网站弹出窗口，或在此页面登录。",
   "reauth.finish": "请在打开的窗口中完成登录。",
   "otherPerson.waiting": "登录的是另一个人，因此此页面上等待发送的内容没有发送。",
   "otherPerson.typed": "登录的是另一个人，因此之前在此页面上输入的内容没有恢复。",

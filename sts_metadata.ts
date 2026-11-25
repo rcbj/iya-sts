@@ -5313,6 +5313,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'links, the social icons, the copyright and the version ' +
           '(common/web_footer.ts). Answered on every listener; an address ' +
           'carrying this build\'s ?v= is cached for good.' },
+  { path: '/web/browser-check.js', group: 'Service',
+    name: 'The browser check every shell runs first', specs: [],
+    what: 'NON-SPEC (#2220). A script in ECMAScript 5, run before a static ' +
+          'surface\'s bundle, that asks whether the browser has fetch, ' +
+          'TextEncoder, URL and ECMAScript 2022 and, where it does not, ' +
+          'shows the notice the shell drew hidden in the reader\'s language ' +
+          '(common/web_browser_check.ts). Answered on every listener, ' +
+          'no-cache.' },
   { path: '/web/theme.css', group: 'Service',
     name: 'A realm\'s sign-in appearance stylesheet', specs: [],
     what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +

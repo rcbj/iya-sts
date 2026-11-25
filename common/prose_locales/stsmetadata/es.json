@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Las reglas del pie de página que dibuja el shell de cada superficie estática — los enlaces de documentación, contacto y acerca de, los iconos de redes sociales, el copyright y la versión (common/web_footer.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Un script en ECMAScript 5, ejecutado antes del bundle de una superficie estática, que comprueba si el navegador tiene fetch, TextEncoder, URL y ECMAScript 2022 y, si no los tiene, muestra el aviso que el shell dibujó oculto en el idioma del lector (common/web_browser_check.ts). Se responde en cada listener, no-cache."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Los colores de inicio de sesión del dominio como las propiedades personalizadas CSS que lee /web/card.css (common/branding.ts): los cuatro colores branding.* y los tonos derivados de ellos, construidos solo a partir de valores validados. Un shell la enlaza después de la tarjeta solo donde la apariencia del dominio difiere de la del servicio; una dirección que lleva su resumen como ?v= se guarda en caché para siempre."

@@ -527,6 +527,10 @@
     "en": "b1ae9012425d7c77",
     "text": "La feuille de style du pied de page"
   },
+  "endpoints.route./web/browser-check.js.name": {
+    "en": "c00f945d4a14cdbe",
+    "text": "La vérification du navigateur que chaque shell exécute en premier"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "La feuille de style de l’apparence de connexion d’un domaine"
