@@ -119,6 +119,18 @@
     "en": "01bf0ea288cde1c4",
     "text": "La regla protocol-not-declared de la política de emisión rechaza una emisión mediante una familia de protocolos para la que la aplicación no está declarada (STS-XACML-0084): un ID Token a una aplicación declarada solo para OAuth 2.0, una aserción SAML a una declarada para OpenID Connect. Una aplicación no declarada para nada no se rechaza."
   },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "El JSON Schema de un tipo de acceso se limita a un subconjunto, y cada uno de sus patrones a un límite"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "Una definición escrita mediante la consola o la API de administración limita su esquema a las palabras clave que puede usar un esquema de límites, y cada patrón al límite de una expresión regular; cualquier otra cosa se rechaza (STS-REG-0374). Una guardada antes de esa regla se sigue usando tal como está guardada, y esta fila informa ASVS 5.0.0 1.3.12 como no cumplido para ella."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "Lo mismo."
+  },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
     "text": "Un derecho de acceso GNAP solo se concede si es de un tipo que declara el catálogo de tipos de acceso"

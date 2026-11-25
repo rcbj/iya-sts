@@ -19,8 +19,8 @@ use num_bigint::BigInt;
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
 use super::{
-    xml_schema_regex, Arg, Body, FunctionDef, FunctionLibrary, LazyCall, Param,
-    ParamKind, Signature,
+    bounded_match, xml_schema_regex, Arg, Body, FunctionDef, FunctionLibrary,
+    LazyCall, Param, ParamKind, Signature,
 };
 use crate::datatypes::{
     civil_from_days, days_from_civil, x500_equal, DataType, DataTypes,
@@ -994,9 +994,12 @@ fn register_regex(library: &mut FunctionLibrary) {
             None,
             Param::primitive(types::BOOLEAN),
             move |a| {
-                let expression = xml_schema_regex(text(&a[0])?)?;
+                let pattern = text(&a[0])?;
                 let subject =
                     DataTypes::standard().write(subject_type, a[1].value()?)?;
+                // #2220: the service engine's evaluation bound, for parity.
+                bounded_match(pattern, &subject)?;
+                let expression = xml_schema_regex(pattern)?;
                 Ok(Bag::boolean(expression.is_match(&subject)))
             },
         ));

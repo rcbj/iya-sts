@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6151** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6157** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 29
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 114
+* [Service core (`STS-CORE`)](#sts-core) — 116
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 117
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 263
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 180
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 181
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 39
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 260
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -103,7 +103,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 191
+* [Registries (`STS-REG`)](#sts-reg) — 192
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 61
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 21
@@ -286,6 +286,8 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0180` | A store could not forget what it held for a trust realm this process never defined and the store no longer lists (#1938); it is asked again at the next realm read. | — |
 | `STS-CORE-0181` | security.hstsPreload is on while security.hstsIncludeSubDomains is off, so Strict-Transport-Security is sent without preload: the HSTS preload list accepts a host only when its header covers every subdomain (#2165). Logged when this starts; /admin/mode shows it on the strict-transport-security row. Turn on security.hstsIncludeSubDomains, or turn off security.hstsPreload. | none — a warning; the header is still sent, without preload |
 | `STS-CORE-0182` | A file was not scanned because malwareScan.concurrency scans were running and malwareScan.queueLimit more were waiting: it is refused as a file the scanner could not answer for is. The warning is logged when the queue first fills (#2220). | HTTP 503 |
+| `STS-CORE-0183` | A setting that holds a list of regular expressions (spiffe.httpChallengeAllowedDnsPatterns, spiffe.dockerSigstoreAllowedIdentities) was refused at a save: an entry is longer than 256 characters, uses a backreference, applies a quantifier to a group that is itself quantified or an alternation (the shape that makes a match take exponential time), or does not compile (#2220). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0184` | A list of regular expressions in the environment or an appconfig file holds an entry the console would refuse (STS-CORE-0183). The service starts and uses it as configured; /admin/config and the management API refuse it on the next save (#2220). | none — a warning logged at startup; nothing is refused |
 
 ## STS-WORKER
 
@@ -3705,6 +3707,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0224` | A handler for a person's credential attribute was refused by the entry observer: the attribute is not one of the five it observes, or the handler offers no changed(); that attribute's index is not kept in step with the entries (#2050, #2051). | none — logged |
 | `STS-LDAP-0225` | The handler of a person's credential attribute threw on a write of their entry; the write stands, and the index of that attribute may be behind the entry until its job catches it up (#2050, #2051). | none — logged |
 | `STS-LDAP-0226` | An LDAP search was refused before it read any entry: one of its substring assertions held more components (initial, any, final) than the limit of 32 (#2137). | LDAP adminLimitExceeded (11) |
+| `STS-LDAP-0227` | An LDAP connection was closed before its next message was read: the length the message's BER header declared was over ldap.maxMessageBytes (or, before a bind, ldap.maxMessageBytesBeforeBind), or it used the indefinite length LDAP does not allow. None of the message was buffered (#2220). Logged at most once a minute, with a count of the rest. | RFC 4511 section 5.1 — the connection is closed with no result |
 
 ## STS-ATTR
 
@@ -5596,6 +5599,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0335` | set-pep-application named a person who is not a service account, or a service account that does not hold REMOTE_PEPS: only a remote PEP's identity is bound to an application (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0336` | set-pep-application (or issue-pep-credential with an application) named no application, or one this realm's registry does not hold, so nothing was bound (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0337` | An embedded PEP's binding could not be written or removed: the directory is not available or refused the write (#2025). Nothing changed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0338` | A policy document was refused at write: a regexp-match function's literal pattern is longer than 1024 characters, uses a backreference, or applies a quantifier to a group that is itself quantified or an alternation, the shape that makes a match take exponential time (#2220). A policy stored before the rule still loads; the console lists the pattern among its problems. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-XACML-0339` | A regexp-match was Indeterminate at evaluation: its pattern uses a backreference or a nested quantifier (one stored before STS-XACML-0338, written by ldapmodify, or fetched from an attribute), or the value was longer than 4096 characters (#2220). Logged once per pattern; the remote PEP decides alike. | XACML 3.0 section B.8 processing-error (Indeterminate) |
 
 ## STS-XPEP
 
@@ -6857,6 +6862,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0371` | An application's WS-Trust decryption private key could not be sealed under the key-encryption key where keys persist, so the key pair was not written: a private key is never stored in the clear there (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0372` | The directory refused the write of an application's WS-Trust decryption key pair (the certificate, its chain, the sealed private key and its source, written together). Nothing changed (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0373` | More than one application holds the same WS-Trust decryption certificate, so a request whose EncryptedKey names it is opened by none of them: the key would otherwise decide whose request it was. Logged at the request; remove the certificate from all but one (#1668). | none (logged; the request is then refused STS-WSTRUST-0075) |
+| `STS-REG-0374` | An oauthAuthorizationDetailsType definition was refused at write: its schema uses a JSON Schema keyword outside the subset a limits schema may use, or a pattern in its schema or its limits is longer than 1024 characters, uses a backreference, applies a quantifier to a group that is itself quantified or an alternation, or does not compile (#2220). A definition the application already holds is not refused, and is still used; /admin/mode reports it on the access-type-schemas row. | console: the refusal banner; /admin-api: HTTP 400 { ok: false, errors } |
 
 ## STS-DBG
 

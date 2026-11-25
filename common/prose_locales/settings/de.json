@@ -8239,6 +8239,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "Die serverseitige Zeitbegrenzung einer Suche in Sekunden; sie ist es, die LDAP_TIME_LIMIT_EXCEEDED erzeugt; ein kürzeres eigenes timeLimit des Clients hat Vorrang. Die zuvor gesendeten Einträge sind die Antwort, als unvollständig gekennzeichnet."
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Größte Nachricht eines gebundenen Clients (Bytes)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Die größte LDAP-Nachricht, die ein gebundener Client senden darf, in Bytes, gezählt nach der Länge, die ihr BER-Header angibt: Eine Verbindung, deren nächste Nachricht mehr angibt, wird geschlossen, bevor etwas davon gelesen wird (STS-LDAP-0227). Suchergebnisse sendet der Server; sie zählen nicht. Standardmäßig 5 MiB, die Grenze, die jeder HTTP-Body hier hat."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Größte Nachricht vor einem Bind (Bytes)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Die größte LDAP-Nachricht, die ein Client senden darf, bevor er gebunden hat, in Bytes: ein Bind, StartTLS oder eine Suche nach dem Root-DSE. Darüber wird die Verbindung geschlossen, bevor etwas von der Nachricht gelesen wird (STS-LDAP-0227). Standardmäßig 128 KiB, doppelt so viel wie das größte Kerberos-Token, das ein SASL-Bind tragen kann. Wirksam nie mehr als ldap.maxMessageBytes."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "Unverschlüsselter LDAP-Listener"

@@ -8239,6 +8239,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "搜尋的伺服器端時間限制，以秒為單位，這就是產生 LDAP_TIME_LIMIT_EXCEEDED 的原因；用戶端自己的 timeLimit 較短時以其為準。在此之前已送出的項目即為答覆，並標示為不完整。"
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "已繫結用戶端的最大訊息（位元組）"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "已繫結的用戶端可傳送的最大 LDAP 訊息，以位元組計，依其 BER 標頭宣告的長度計算：下一則訊息宣告超過此值的連線，會在讀取其任何內容之前被關閉（STS-LDAP-0227）。搜尋結果由伺服器傳送，不計入。預設 5 MiB，即此處每個 HTTP 請求主體的上限。"
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "繫結前的最大訊息（位元組）"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "用戶端在繫結之前可傳送的最大 LDAP 訊息，以位元組計：一次繫結、StartTLS 或根 DSE 搜尋。超過此值時，會在讀取訊息任何內容之前關閉連線（STS-LDAP-0227）。預設 128 KiB，是 SASL 繫結可攜帶的最大 Kerberos 權杖的兩倍。實際生效時從不超過 ldap.maxMessageBytes。"
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "一般 LDAP 接聽程式"
