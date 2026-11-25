@@ -17,12 +17,12 @@
 //   A. A save (`checkOverride()`) refuses a nested quantifier, a
 //      backreference, an entry over 256 characters and one that does not
 //      compile, naming the entry, and `checkOverrideCode()` / `parseAs()`
-//      answer STS-CORE-0182. Ordinary patterns, exact pairs and anchored
+//      answer STS-CORE-0183. Ordinary patterns, exact pairs and anchored
 //      pairs are accepted.
 //   B. A STORED override read back (`checkStoredOverride()`) is not held to
 //      it, so a value written before #2220 survives a restart.
 //   C. At startup, a value from the environment that a save would refuse
-//      is WARNED about (STS-CORE-0183) and the process starts, in a child.
+//      is WARNED about (STS-CORE-0184) and the process starts, in a child.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -52,13 +52,13 @@ function saves(t) {
     .forEach(function (row, i) {
       const problem = config.checkOverride(row[0], row[1]);
       t.check(!!problem && row[2].test(problem) &&
-              config.checkOverrideCode(row[0], row[1]) === 'STS-CORE-0182',
+              config.checkOverrideCode(row[0], row[1]) === 'STS-CORE-0183',
               'A' + i + ': ' + row[0] + ' = "' + row[1].slice(0, 40) +
-              '" is refused STS-CORE-0182', problem);
+              '" is refused STS-CORE-0183', problem);
     });
   const parsed = config.parseAs(DNS, '(a+)+');
-  t.check(!parsed.ok && errorCodes.codeOf(parsed) === 'STS-CORE-0182',
-          'A: parseAs() marks the refusal STS-CORE-0182',
+  t.check(!parsed.ok && errorCodes.codeOf(parsed) === 'STS-CORE-0183',
+          'A: parseAs() marks the refusal STS-CORE-0183',
           JSON.stringify(parsed));
   [[DNS, '^[a-z0-9-]+\\.example\\.com$,^agent[0-9]+\\.internal$'],
    [IDS, 'https://token.actions.githubusercontent.com=' +
@@ -98,9 +98,9 @@ function startup(t) {
     cwd: path.join(__dirname, '..'), env: env, encoding: 'utf8',
     timeout: 60000 });
   const out = String(child.stdout || '') + String(child.stderr || '');
-  t.check(child.status === 0 && /STS-CORE-0183/.test(out) &&
+  t.check(child.status === 0 && /STS-CORE-0184/.test(out) &&
           /VALUE=\["\^\(a\+\)\+\\\\\.example\$"\]/.test(out),
-          'C: the environment\'s value is warned about (STS-CORE-0183), ' +
+          'C: the environment\'s value is warned about (STS-CORE-0184), ' +
           'the process starts, and the value is used as configured',
           'exit ' + child.status + ': ' + out.slice(-1500));
   log.debug("Leaving startup().");
@@ -118,7 +118,7 @@ module.exports = {
   name: 'spiffe_pattern_settings',
   describe: 'SPIFFE: the http_challenge DNS patterns and the sigstore ' +
             'identities refuse a nested quantifier, a backreference, an ' +
-            'overlong or uncompilable pattern at a save (STS-CORE-0182), ' +
+            'overlong or uncompilable pattern at a save (STS-CORE-0183), ' +
             'keep a stored one, and warn at startup (#2220)',
   run: run
 };

@@ -791,7 +791,7 @@ const TYPES = {
     // `issuer=subject` whose halves are one when they hold a regex
     // character — and each is held to `csvPatternProblem()`. Only a
     // caller's write: a value from the environment or an appconfig file is
-    // WARNED about at startup (`opts.startup`, STS-CORE-0183), and a stored
+    // WARNED about at startup (`opts.startup`, STS-CORE-0184), and a stored
     // override read back is not checked (`opts.stored`), so a deployment
     // that started on one before #2220 still starts with it.
     check: function (raw, setting, opts) {
@@ -24267,7 +24267,7 @@ function checkOverrideCode(key, raw, forRealm) {
   }
   if (setting.csvPatterns && csvPatternProblem(raw, setting)) {
     log.debug("Leaving checkOverrideCode(). An unsafe pattern.");
-    return 'STS-CORE-0182';
+    return 'STS-CORE-0183';
   }
   if (TYPES[setting.type].check(raw, setting)) {
     log.debug("Leaving checkOverrideCode().");
@@ -25297,7 +25297,7 @@ function refuseMalformedSettings() {
       }
       if (!problem && setting.csvPatterns &&
           csvPatternProblem(layer.raw, setting)) {
-        log.warn(errorCodes.tag('STS-CORE-0183') + 'config: ' +
+        log.warn(errorCodes.tag('STS-CORE-0184') + 'config: ' +
                  layer.where + ': "' + setting.key + '" ' +
                  csvPatternProblem(layer.raw, setting) + '. It is used as ' +
                  'configured; /admin/config and the management API refuse ' +
@@ -25452,7 +25452,7 @@ function parseAs(key, raw) {
     return errorCodes.mark({ ok: false, problem: '"' + key + '" ' + problem },
                            setting.csvPatterns &&
                            csvPatternProblem(raw, setting)
-                             ? 'STS-CORE-0182' : 'STS-CORE-0006');
+                             ? 'STS-CORE-0183' : 'STS-CORE-0006');
   }
   const parsed = TYPES[setting.type].parse(raw, setting);
   log.debug("Leaving parseAs(). Parsed.");

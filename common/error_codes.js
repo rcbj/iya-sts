@@ -1394,7 +1394,7 @@ const CODES = [
       'Turn on security.hstsIncludeSubDomains, or turn off ' +
       'security.hstsPreload.',
     spec: 'none — a warning; the header is still sent, without preload' },
-  { code: 'STS-CORE-0182',
+  { code: 'STS-CORE-0183',
     summary: 'A setting that holds a list of regular expressions ' +
       '(spiffe.httpChallengeAllowedDnsPatterns, ' +
       'spiffe.dockerSigstoreAllowedIdentities) was refused at a save: an ' +
@@ -1403,10 +1403,10 @@ const CODES = [
       '(the shape that makes a match take exponential time), or does not ' +
       'compile (#2220).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
-  { code: 'STS-CORE-0183',
+  { code: 'STS-CORE-0184',
     summary: 'A list of regular expressions in the environment or an ' +
       'appconfig file holds an entry the console would refuse ' +
-      '(STS-CORE-0182). The service starts and uses it as configured; ' +
+      '(STS-CORE-0183). The service starts and uses it as configured; ' +
       '/admin/config and the management API refuse it on the next save ' +
       '(#2220).',
     spec: 'none — a warning logged at startup; nothing is refused' },

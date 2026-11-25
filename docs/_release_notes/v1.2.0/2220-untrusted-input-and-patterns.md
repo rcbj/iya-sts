@@ -21,8 +21,8 @@ applies to:
   (`STS-XACML-0339`). The remote PEP's engine decides the same way.
 * `spiffe.httpChallengeAllowedDnsPatterns` and
   `spiffe.dockerSigstoreAllowedIdentities`, refused at a save
-  (`STS-CORE-0182`) and warned about at startup when set in the environment or
-  an appconfig file (`STS-CORE-0183`).
+  (`STS-CORE-0183`) and warned about at startup when set in the environment or
+  an appconfig file (`STS-CORE-0184`).
 * An RFC 9396 access type's definition: its `schema` is held to the keyword
   subset a `limits` schema uses, and every `pattern` to the same bound, when it
   is written (`STS-REG-0374`).
