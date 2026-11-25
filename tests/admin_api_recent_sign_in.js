@@ -19,20 +19,28 @@
 // person holding Admin Write and the console's DPoP-bound token minted for
 // them, with `account.recentAuthMinutes` at 15:
 //
-//   A. THE TABLE: every POST row tagged Admin roles, Roles, Trust realms, PKI
-//      or Configuration, and every action of the keys, encryption, TLS
-//      truststore and secret destinations routes, is in a family unless it
-//      writes nothing; the krbtgt rotations and a person's keytab reset are,
-//      and the Kerberos principals' other actions are not; an operation of
-//      no family (a session's end) is in none.
+//   A. THE TABLE: every POST row of a family's tag — #2161's Admin roles,
+//      Roles, Trust realms, PKI and Configuration, and since #2247 XACML,
+//      Applications, Federation and the rest of `RECENT_SIGN_IN_TAGS` — and
+//      every action of a family's route is in a family unless it writes
+//      nothing, and each tag and route names an operation that exists;
+//      the acts declared by action (the krbtgt rotations and a keytab
+//      reset, and #2247's on `/users`, `/tokens`, `/logout` and `/mail`)
+//      are, and their neighbours are not; the application form's
+//      generate-secret helper is not; an operation of no family (a
+//      session's end) is in none.
 //   B. ONE OPERATION OF EACH FAMILY, signed in an hour ago, is answered 401
 //      `insufficient_user_authentication` with `max_age=900` (RFC 9470),
 //      and nothing changed: a role grant, a realm's creation, a certificate
 //      revocation, a key-encryption-key family act, a setting, and
-//      `global.mode`.
+//      `global.mode`; and (#2247) an application's and a federation
+//      relationship's creation, an access policy's change, a group's
+//      creation and a revoked token's restoration.
 //   C. THE SAME OPERATIONS, signed in a minute ago, reach their handler:
-//      the grant, the realm and the setting are made, and the revocation of
-//      a serial nobody issued is the handler's own refusal, not the 401.
+//      the grant, the realm, the setting, the application, the
+//      relationship and the group are made, and the acts on something
+//      nobody made (a serial, a policy, a token) are the handler's own
+//      refusals, not the 401.
 //   D. A PROGRAM is never asked: with a client-credentials caller the check
 //      answers "not stale", whatever the setting.
 // ===========================================================================
@@ -125,11 +133,43 @@ function childMain() {
     config.setOverride('oauth2.consentRequired', false);
 
     // --- A. the table ----------------------------------------------------
+    // #2161's five tags and four routes, and #2247's (ASVS 5.0.0 7.5.3,
+    // the Level 3 re-sweep): the policies, the federation relationships,
+    // the applications and every other family that decides who can sign
+    // in, what they are issued or where it goes.
     const FAMILY_TAGS = ['Admin roles', 'Roles', 'Trust realms', 'PKI',
-                         'Configuration'];
+      'Configuration', 'XACML', 'Applications', 'Federation', 'SAML 2.0',
+      'SAML 1.1', 'Authorization servers', 'OpenID Federation', 'SPIFFE',
+      'Policies', 'Delegation', 'Ownership', 'Groups', 'Devices',
+      'Token lifetimes', 'SAML assertions', 'Custom claims',
+      'UserInfo claims', 'Custom SAML attributes', 'Credential claims',
+      'SCIM', 'Risk', 'UMA', 'ACME', 'EST', 'SCEP'];
     const FAMILY_ROUTES = ['/admin-api/keys/:action',
       '/admin-api/encryption/:action', '/admin-api/tls/trust/:action',
-      '/admin-api/secret-destinations/:action'];
+      '/admin-api/secret-destinations/:action',
+      '/admin-api/attribute-sources/:action',
+      '/admin-api/hardware-tokens/:action', '/admin-api/openpgp/:action',
+      '/admin-api/kerberos/trusts/:action',
+      '/admin-api/kerberos/claims/:action',
+      '/admin-api/claim-providers/:action', '/admin-api/ssf/:action',
+      '/admin-api/listeners/:action', '/admin-api/audit-export/:action'];
+    // Every tag and route above must name something that is there, or a
+    // rename would leave its family empty and this table green.
+    const tagsSeen = {};
+    const routesSeen = {};
+    adminApi.ROUTES.forEach(function (entry) {
+      if (entry.method === 'POST') {
+        tagsSeen[String(entry.tag)] = true;
+        routesSeen[String(entry.route || entry.path || '')] = true;
+      }
+    });
+    const absent = FAMILY_TAGS.filter(function (tag) {
+      return !tagsSeen[tag];
+    }).concat(FAMILY_ROUTES.filter(function (route) {
+      return !routesSeen[route];
+    }));
+    note(absent.length === 0, 'A0. every family tag and route names a POST ' +
+         'operation that exists', 'absent: ' + absent.join(', '));
     const missed = [];
     const wrong = [];
     let covered = 0;
@@ -158,6 +198,54 @@ function childMain() {
          'A1. every act of the families\' tags and routes is in a family, ' +
          'and none that writes nothing (' + covered + ' acts)',
          'missed: ' + missed.join(', ') + ' wrong: ' + wrong.join(', '));
+    // The families declared by ACTION (#2247): each named act is asked, and
+    // a neighbour on the same route that only takes away or edits a
+    // profile is not.
+    const byAction = [
+      ['/admin-api/users/:action', 'issue-activation', true],
+      ['/admin-api/users/:action', 'stop-requiring-mfa', true],
+      ['/admin-api/users/:action', 'add-certificate', true],
+      ['/admin-api/users/:action', 'set-service-account-destination', true],
+      ['/admin-api/users/:action', 'set-may-act', true],
+      ['/admin-api/users/:action', 'answer-ciba-request', true],
+      ['/admin-api/users/:action', 'update-fields', false],
+      ['/admin-api/users/:action', 'require-mfa', false],
+      ['/admin-api/tokens/:action', 'restore', true],
+      ['/admin-api/tokens/:action', 'restore-set', true],
+      ['/admin-api/tokens/:action', 'revoke', false],
+      ['/admin-api/logout/:action', 'restore-token', true],
+      ['/admin-api/logout/:action', 'global', false],
+      ['/admin-api/mail/:action', 'save-template', true],
+      ['/admin-api/mail/:action', 'test', false]
+    ];
+    const actionWrong = byAction.filter(function (row) {
+      const entry = adminApi.ROUTES.filter(function (one) {
+        return one.method === 'POST' && one.route === row[0];
+      })[0];
+      const declared = !!entry && (entry.actions || []).some(function (one) {
+        return one.action === row[1];
+      });
+      return !declared ||
+        !!AdminApi.recentSignInFamilyOf(entry, row[1]) !== row[2];
+    }).map(function (row) {
+      return row[0] + ' ' + row[1] + '=' + row[2];
+    });
+    note(actionWrong.length === 0, 'A1b. the acts named by action are asked ' +
+         'and their neighbours are not', actionWrong.join(', '));
+    // A form helper writes nothing and is not asked, even in a family that
+    // is taken whole: the new application form's generate-secret.
+    const helperRoute = adminApi.ROUTES.filter(function (one) {
+      return one.route === '/admin-api/console/applications/:action';
+    })[0];
+    note(!!helperRoute && AdminApi.recentSignInFamilyOf(helperRoute,
+                                                        'generate-secret') ===
+         null && AdminApi.recentSignInFamilyOf(
+           adminApi.ROUTES.filter(function (one) {
+             return one.method === 'POST' &&
+               one.route === '/admin-api/applications/:action';
+           })[0], 'rotate-secret') === 'Applications',
+         'A1c. generate-secret (a form helper) is not asked; an ' +
+         'application\'s rotate-secret is');
     const principals = adminApi.ROUTES.filter(function (entry) {
       return entry.route === '/admin-api/kerberos/principals/:action';
     })[0];
@@ -232,6 +320,25 @@ function childMain() {
       });
     };
     const readBefore = holdsRead();
+    const APP = 'urn:ars:' + stamp;
+    const FED = 'ars-fed-' + stamp;
+    const GROUP = 'ars-group-' + stamp;
+    // Whether a read names what a create made: asked with the fresh
+    // token, which reads need no recent sign-in for.
+    // Read off the answer's `matched`, never its text: a read ECHOES the
+    // `q` it was asked, so the name is in the text whether or not the thing
+    // exists.
+    const present = async function (urlPath, what) {
+      const r = await call(port, 'GET', urlPath, fresh);
+      if (r.status !== 200 || !r.json) {
+        return false;
+      }
+      if (/^\/admin-api\/(applications|groups|federation)\?/
+          .test(urlPath)) {
+        return Number(r.json.matched) > 0;
+      }
+      return r.text.indexOf(what) >= 0;
+    };
     const FAMILIES = [
       { name: 'a role grant', path: '/admin-api/rbac/grant',
         body: { username: GRANTEE, role: 'read' },
@@ -259,6 +366,38 @@ function childMain() {
         changed: function () {
           return String(config.value(SETTING) || '') !== before;
         } },
+      // #2247's three named families, and two of the others.
+      { name: 'an application\'s creation',
+        path: '/admin-api/applications/create',
+        body: { identifier: APP, name: 'Recent sign-in ' + stamp },
+        changed: function () {
+          return present('/admin-api/applications?q=' +
+                         encodeURIComponent(APP), APP);
+        } },
+      { name: 'a federation relationship\'s creation',
+        path: '/admin-api/federation/create',
+        body: { id: FED, role: 'service-provider', protocol: 'saml2',
+                name: 'Recent sign-in ' + stamp,
+                peer: 'https://idp.' + FED + '.example/saml' },
+        changed: function () {
+          return present('/admin-api/federation?q=' + FED, FED);
+        } },
+      { name: 'an access policy\'s change', path: '/admin-api/xacml/disable',
+        body: { name: 'ars-none-' + stamp },
+        changed: function () {
+          return false;
+        }, reachedIsEnough: true },
+      { name: 'a group\'s creation', path: '/admin-api/groups/create',
+        body: { group: GROUP },
+        changed: function () {
+          return present('/admin-api/groups?q=' + encodeURIComponent(GROUP),
+                         GROUP);
+        } },
+      { name: 'a revoked token restored', path: '/admin-api/tokens/restore',
+        body: { target: 'ars-none-' + stamp },
+        changed: function () {
+          return false;
+        }, reachedIsEnough: true },
       { name: 'the mode', path: '/admin-api/config/set',
         body: { key: 'global.mode', value: modeBefore === 'product'
           ? 'development' : 'product' },
@@ -273,7 +412,7 @@ function childMain() {
       const challenge = String(r.headers['www-authenticate'] || '');
       note(r.status === 401 &&
            /error="insufficient_user_authentication"/.test(challenge) &&
-           /max_age=900/.test(challenge) && !one.changed(),
+           /max_age=900/.test(challenge) && !(await one.changed()),
            'B. ' + one.name + ' on a sign-in an hour old is asked to sign ' +
            'in again (401, RFC 9470), and nothing changed',
            r.status + ' ' + challenge + ' ' + r.text.slice(0, 200));
@@ -291,7 +430,7 @@ function childMain() {
       // are the handler's own refusals: what matters is that it ran.
       const expected = one.reachedIsEnough
         ? reached && r.status < 500
-        : reached && r.status === 200 && one.changed();
+        : reached && r.status === 200 && (await one.changed());
       note(expected, 'C. ' + one.name + ' on a sign-in a minute old reaches ' +
            'its handler', r.status + ' ' + r.text.slice(0, 300));
     }
@@ -363,8 +502,11 @@ async function run(t) {
 module.exports = {
   name: 'admin_api_recent_sign_in',
   describe: 'role grants, trust realms, the PKI, the keys and the ' +
-            'key-encryption key, secret destinations and the settings need ' +
-            'a sign-in within account.recentAuthMinutes on /admin-api, as ' +
-            'the credential acts do (#2161, ASVS 5.0.0 7.5.3)',
+            'key-encryption key, secret destinations, the settings, and ' +
+            'since #2247 the access policies, applications, federation ' +
+            'relationships and every other family that decides who signs ' +
+            'in, what they get or where it goes, need a sign-in within ' +
+            'account.recentAuthMinutes on /admin-api, as the credential ' +
+            'acts do (#2161, #2247, ASVS 5.0.0 7.5.3)',
   run: run
 };
