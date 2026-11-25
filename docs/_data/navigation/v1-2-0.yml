@@ -46,6 +46,7 @@
     - { title: Dangerous functionality, url: /dangerous-functionality.html }
     - { title: Authentication pathways, url: /authentication-pathways.html }
     - { title: Availability and resource limits, url: /availability.html }
+    - { title: Dependencies, limits and timeouts, url: /dependencies.html }
     - { title: Conformance suites, url: /conformance.html }
     - { title: Departures from the specifications, url: /spec-departures.html }
     - { title: Accepted tokens, url: /accepted-tokens.html }

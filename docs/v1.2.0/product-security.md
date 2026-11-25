@@ -117,6 +117,13 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   never reaches a loopback, private, link-local or reserved address. Set
   `security.outboundAllowedHosts` to limit it to named hosts as well. See
   [Communications](communications.md#outbound-locations-a-caller-can-name).
+* **Dependencies.** Every outbound call has a timeout, and a request a person
+  or client is waiting on does not retry. Delivery that must happen is queued
+  and retried in the background. [Dependencies, limits and
+  timeouts](dependencies.md) lists, for the database, the secret store, the
+  HSM, the mail relay and every partner, the connection limit, the timeouts,
+  the retries and what happens when it is down. The rotation of every key and
+  secret is in [Key management](key-management.md#rotation-schedule).
 * **Requests per address.** One address may make 6000 requests a minute to one
   process, `security.requestsPerAddressPerMinute`. More are answered `429`. See
   [Availability](availability.md).
