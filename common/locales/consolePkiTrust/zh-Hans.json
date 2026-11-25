@@ -108,5 +108,19 @@
   "systemHint": "主体、颁发者或指纹",
   "systemShown": "{n} 个证书中有 {shown} 个匹配。",
   "thIssuer": "颁发者",
-  "emptySystem": "没有匹配的证书。"
+  "emptySystem": "没有匹配的证书。",
+  "whereRegistered": "在各方注册的地方更改：客户端、联合关系或声明提供方。",
+  "keySetRegistered": "各方自己注册的密钥",
+  "keySetFor": "{party} 的密钥集",
+  "keySetUri": "从 {uri} 获取",
+  "keySetKeys": "{n} 个粘贴的密钥",
+  "setKeysHeading": "替换密钥",
+  "setKeysButton": "设置密钥",
+  "kindKeySet": "密钥集",
+  "createKind": "内容",
+  "createKindX509": "证书",
+  "createKindJwks": "绑定到某一方的密钥集",
+  "createParty": "参与方（仅密钥集）：client:、federation: 或 claims-provider:…",
+  "createJwks": "公钥，作为 JSON Web Key Set",
+  "createJwksUri": "或 jwks_uri"
 }

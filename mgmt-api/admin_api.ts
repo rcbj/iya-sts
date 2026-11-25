@@ -9030,7 +9030,8 @@ class AdminApi {
           { action: 'add', operationId: 'addTruststoreCertificates' },
           { action: 'remove', operationId: 'removeTruststoreCertificate' },
           { action: 'assign', operationId: 'assignTruststores' },
-          { action: 'unassign', operationId: 'unassignTruststores' }
+          { action: 'unassign', operationId: 'unassignTruststores' },
+          { action: 'set-keys', operationId: 'setTruststoreKeys' }
         ] }),
 
       ApiRows.actions({ method: 'POST',

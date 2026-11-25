@@ -108,5 +108,19 @@
   "systemHint": "Subjekt, Aussteller oder Fingerabdruck",
   "systemShown": "{shown} von {n} Zertifikaten passen.",
   "thIssuer": "Aussteller",
-  "emptySystem": "Kein Zertifikat passt."
+  "emptySystem": "Kein Zertifikat passt.",
+  "whereRegistered": "Wird dort geändert, wo jede Partei registriert ist: ein Client, eine Föderationsbeziehung oder ein Claims-Provider.",
+  "keySetRegistered": "Die eigenen registrierten Schlüssel jeder Partei",
+  "keySetFor": "Ein Schlüsselsatz für {party}",
+  "keySetUri": "abgerufen von {uri}",
+  "keySetKeys": "{n} eingefügte(r) Schlüssel",
+  "setKeysHeading": "Schlüssel ersetzen",
+  "setKeysButton": "Schlüssel setzen",
+  "kindKeySet": "ein Schlüsselsatz",
+  "createKind": "Enthält",
+  "createKindX509": "Zertifikate",
+  "createKindJwks": "ein an eine Partei gebundener Schlüsselsatz",
+  "createParty": "Partei (nur Schlüsselsatz): client:, federation: oder claims-provider:…",
+  "createJwks": "Öffentliche Schlüssel als JSON Web Key Set",
+  "createJwksUri": "Oder eine jwks_uri"
 }

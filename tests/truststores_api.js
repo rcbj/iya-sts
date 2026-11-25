@@ -17,7 +17,7 @@
 // `tests/truststores.js` holds the engine (`common/truststores.ts`); this
 // holds the two doors onto it and the page that draws them.
 //
-//   A. THE TABLE: the GET and the seven actions, each an operation of the
+//   A. THE TABLE: the GET and the eight actions, each an operation of the
 //      document, and the console's forms resolving by tab — the Truststores
 //      tab's `add` to `/admin-api/truststores/add`, the page's own `add`
 //      still to `/admin-api/pki/trust/add`.
@@ -32,7 +32,7 @@
 //   E. REALM CONFINEMENT: another realm does not see, and cannot delete, a
 //      realm's truststore; a service-wide truststore is seen read-only.
 //   F. THE SYSTEM TRUSTSTORE in the view: node's store, no PEM, sorted.
-//   G. AN UNKNOWN ACTION names the seven (STS-ADMIN-0956).
+//   G. AN UNKNOWN ACTION names the eight (STS-ADMIN-0956).
 //   H. THE PAGE: the three tabs, the forms naming their tabs, the filter,
 //      and nothing writable for a reader without Admin Write.
 // ===========================================================================
@@ -194,7 +194,7 @@ function translator() {
 
 module.exports = {
   name: 'truststores_api',
-  describe: 'named truststores: GET /admin-api/truststores, its seven ' +
+  describe: 'named truststores: GET /admin-api/truststores, its eight ' +
             'actions, their refusals, audit and realm confinement, and the ' +
             'three tabs of /admin/pki/trust',
   run: async function (t) {
@@ -226,8 +226,8 @@ module.exports = {
               'A1. the GET is getTruststores and mirrors the page');
       t.equal(((actRow && actRow.actions) || []).map(function (one) {
         return one.action;
-      }).join(','), 'show,create,delete,add,remove,assign,unassign',
-              'A2. the seven actions');
+      }).join(','), 'show,create,delete,add,remove,assign,unassign,set-keys',
+              'A2. the eight actions');
       const paths = require('../mgmt-api/admin_api_spec').AdminApiSpec
         .merged().paths;
       t.check(!!(paths[BASE] && paths[BASE].get) &&
@@ -534,9 +534,9 @@ module.exports = {
       t.log.info('G. unknown action');
       const odd = await call(routes, realmA, 'POST', 'frobnicate', {});
       t.check(odd.status === 400 && odd.code === 'STS-ADMIN-0956' &&
-              /The seven are: show, create, delete, add, remove, assign, unassign\./
+              /The eight are: show, create, delete, add, remove, assign, unassign, set-keys\./
                 .test(String((odd.body.errors || [])[0])),
-              'G1. an unknown action names the seven (STS-ADMIN-0956)',
+              'G1. an unknown action names the eight (STS-ADMIN-0956)',
               JSON.stringify(odd.body));
 
       // H. THE PAGE.

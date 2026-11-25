@@ -34031,6 +34031,10 @@ op `setParanoidPkiRow`(@js(#{`examples`:#[#{`setting`:"pki.paranoidFidoMds",`val
   @js(#{`description`:"Who created a named truststore, by name."}) `addedBy`?: string;
   @js(#{`description`:"A SPIFFE bundle truststore's trust domain."}) `trustDomain`?: string;
   @js(#{`description`:"A SPIFFE bundle truststore's JWT-SVID keys, counted."}) `jwtKeys`?: integer;
+  @js(#{`description`:"What it holds where that is not certificates: `jwks`, a key set (#2149)."}) `storeKind`?: string;
+  @js(#{`description`:"A key-set truststore's party, the one whose JSON Web Tokens its keys may verify: `client:<client_id>`, `federation:<relationship id>` or `claims-provider:<provider id>`."}) `party`?: string;
+  @js(#{`description`:"A key-set truststore's pasted keys, counted; 0 for one that is fetched."}) `keys`?: integer;
+  @js(#{`description`:"A key-set truststore's jwks_uri, where its keys are fetched rather than pasted."}) `jwksUri`?: string;
   @js(#{`description`:"The use cases that trust it in this realm, assigned or by default."}) `usedBy`: (string)[];
   @js(#{`description`:"A named truststore's certificates, without PEM; absent for any other kind (`showTruststore` answers any truststore whole)."}) `certificates`?: (TruststoreAdminCertificate)[]
 }
@@ -34200,7 +34204,11 @@ op `showTruststore`(`requestBody/content/application~1json/schema`: {
   })
 op `createTruststore`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The truststore's name.",`maxLength`:200}) `name`: string;
-    @js(#{`description`:"What it is for, for a reader."}) `description`?: string
+    @js(#{`description`:"What it is for, for a reader."}) `description`?: string;
+    @js(#{`description`:"`x509` (the default: certificates) or `jwks`: a key set bound to one party (#2149)."}) `kind`?: string;
+    @js(#{`description`:"A key set's party: `client:<client_id>`, `federation:<relationship id>` or `claims-provider:<provider id>`. Fixed once created."}) `party`?: string;
+    @js(#{`description`:"A key set's public keys, as a JSON Web Key Set (JSON text or the object); not with `jwksUri`."}) `jwks`?: Record<unknown> | string;
+    @js(#{`description`:"A key set's jwks_uri, fetched under the outbound policy; not with `jwks`."}) `jwksUri`?: string
   },
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;
@@ -34390,6 +34398,43 @@ op `unassignTruststores`(`requestBody/content/application~1json/schema`: {
     `message`: string;
     `useCase`: string;
     `names`: (string)[]
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/truststores/set-keys",
+  "post",
+  #{
+    `operationId`:"setTruststoreKeys",
+    `summary`:"Replace a key-set truststore's keys (#2149)",
+    `description`:"Gives a key-set truststore of this realm new keys: a pasted JSON Web Key Set of public keys or a jwks_uri, never both. Its party does not change.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The key set was given new keys.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setTruststoreKeys`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The key-set truststore's name.",`maxLength`:200}) `name`: string;
+    @js(#{`description`:"The public keys, as a JSON Web Key Set (JSON text or the object); not with `jwksUri`."}) `jwks`?: Record<unknown> | string;
+    @js(#{`description`:"A jwks_uri, fetched under the outbound policy; not with `jwks`."}) `jwksUri`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `name`: string
   },
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;

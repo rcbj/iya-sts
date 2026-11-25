@@ -44,6 +44,31 @@ A named truststore holds at most 32 anchors (self-signed CAs) and 64
 intermediates, and a realm holds at most 64 named truststores. A leaf
 certificate is never admitted; pin a leaf on the entry that uses it.
 
+## Key sets
+
+A **key-set truststore** holds the public keys that may verify a JSON Web
+Token or signature from **one party**: a client (`client:<client_id>`), a
+federation relationship (`federation:<relationship id>`, which also covers
+an SSF transmitter partner) or a claims provider
+(`claims-provider:<provider id>`). The party is fixed when the key set is
+created. A JSON Web Key does not say who owns it, so a key set is never a
+pool: when a token arrives, only a key set bound to the party that sent it
+is consulted, whatever else the use case names.
+
+A key set holds either pasted keys, a JSON Web Key Set of **public** keys
+only (at most 32), or a `jwks_uri`, which is fetched under the same outbound
+policy and cache as a client's registered `jwks_uri`. A private or symmetric
+key is refused (`STS-PKI-0308`).
+
+Four use cases verify with key sets: `client-jws`, `federation-jwt`,
+`ssf-set` and `claims-provider-jwt`. Each defaults to the built-in view
+**`registered-keys`**: each party's own registered keys, read exactly as
+before. Assign a use case `registered-keys` and a key set to add keys for
+one party, for example to pin a partner's current keys while its
+`jwks_uri` is unreliable. Leave `registered-keys` out and every party of
+that use case is verified only against key sets bound to it. A key set and
+a certificate truststore are never interchangeable (`STS-PKI-0309`).
+
 ## Scope: service-wide and per realm
 
 Truststores you create in the **default realm** are service-wide. A

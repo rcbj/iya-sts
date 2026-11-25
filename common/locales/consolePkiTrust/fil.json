@@ -108,5 +108,19 @@
   "systemHint": "Subject, issuer o fingerprint",
   "systemShown": "{shown} sa {n} sertipiko ang tugma.",
   "thIssuer": "Issuer",
-  "emptySystem": "Walang sertipikong tugma."
+  "emptySystem": "Walang sertipikong tugma.",
+  "whereRegistered": "Binabago kung saan nakarehistro ang bawat partido: isang client, isang federation relationship o isang claims provider.",
+  "keySetRegistered": "Ang sariling nakarehistrong mga key ng bawat partido",
+  "keySetFor": "Isang key set para sa {party}",
+  "keySetUri": "kinuha mula sa {uri}",
+  "keySetKeys": "{n} na idinikit na key",
+  "setKeysHeading": "Palitan ang mga key",
+  "setKeysButton": "Itakda ang mga key",
+  "kindKeySet": "isang key set",
+  "createKind": "Naglalaman",
+  "createKindX509": "mga sertipiko",
+  "createKindJwks": "isang key set na nakatali sa isang partido",
+  "createParty": "Partido (key set lamang): client:, federation: o claims-provider:…",
+  "createJwks": "Mga pampublikong key, bilang JSON Web Key Set",
+  "createJwksUri": "O isang jwks_uri"
 }
