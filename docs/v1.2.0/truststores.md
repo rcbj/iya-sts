@@ -5,8 +5,9 @@ nav_order: 7
 
 # Truststores
 
-A **truststore** is a named set of certificate authorities, or of the
-public keys that may verify one party's signatures (a **key set**). Every
+A **truststore** is a named set of certificate authorities, of the public
+keys that may verify one party's signatures (a **key set**), of SSH
+certificate authority keys, or of Sigstore trust material. Every
 place this service checks a signature, a certificate chain or the
 certificate of a server it connects to belongs to a **use case**. Each use case trusts the
 truststores it is **assigned**, in order, or its default list until it is
@@ -46,6 +47,8 @@ migration step.
 | View | `registered-keys` | Each party's own registered keys (see [Key sets](#key-sets)) | where each party is registered |
 | Named | any name you choose | Certificate authorities you add | on the **Truststores** tab |
 | Named key set | any name you choose | Public keys bound to one party, pasted or fetched from a `jwks_uri` | on the **Truststores** tab |
+| Named SSH CA | any name you choose | SSH certificate authority public keys (see [SSH certificate authorities](#ssh-certificate-authorities)) | on the **Truststores** tab |
+| Named document | any name you choose | cosign public keys, a Sigstore trusted root or a TUF root (see [Sigstore trust material](#sigstore-trust-material)) | on the **Truststores** tab |
 
 A named truststore holds at most 32 anchors (self-signed CAs) and 64
 intermediates, and a realm holds at most 64 named truststores. A leaf
@@ -235,7 +238,8 @@ On `/admin/pki/trust`:
   (`STS-PKI-0307`). To create a key set, choose **a key set bound to one
   party** as what it holds, name the party, and paste its public keys or
   give a `jwks_uri`; **Replace the keys** on its row changes them later. Its
-  party never changes.
+  party never changes. SSH CA keys (`sshKeys`) and the three Sigstore
+  documents (`document`) are created and replaced the same way.
 * **Use cases** lists every use case, what it trusts now and its default.
   Assign a use case a list, or clear its assignment to return it to its
   default. A service-wide inbound use case is assigned from the default
@@ -272,7 +276,8 @@ curl -X POST https://sts.example/admin-api/truststores/assign \
 ```
 
 The other actions are `show`, `remove`, `delete`, `unassign` and
-`set-keys`, which replaces a key set's keys; the
+`set-keys`, which replaces a key set's keys, an SSH CA truststore's keys or
+a document; the
 [Management API reference](openapi/admin-api-pki.md) has each one.
 
 Truststores are kept in the directory under `ou=truststores` in each realm
