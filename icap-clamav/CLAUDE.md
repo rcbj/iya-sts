@@ -18,3 +18,10 @@ own start script waits for `/tmp/clamd.sock`.
 All of this was found only by sending EICAR through a real stack. A stand-in ICAP
 service in `tests/malware_scan.js` cannot show it, which is why
 `MalwareScan.test()` requires EICAR to be flagged.
+
+**c-icap, `libicapapi5` and `libc-icap-mod-virus-scan` are pinned** (#2220) to
+Debian bookworm's versions, as build arguments in the `Dockerfile`. When a
+bookworm security update replaces one, the build fails at `apt-get install`
+naming it: move the pin then (the Dockerfile says how). The daily image scan
+(`.github/workflows/dependency-windows.yml`) builds and scans this image and
+the ClamAV image at the tag `docker-compose.yml` names.

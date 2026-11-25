@@ -76,6 +76,7 @@ const log = bunyan.createLogger({ name: 'companion',
   level: process.env.STS_LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
+
 const STS = 'https://sts.example:8081';
 const PUBLIC = 'http://companion.test:9700';
 
@@ -654,7 +655,31 @@ async function run(t) {
   }
   await kerberosDemonstration(t);
   await pepApplication(t);
-  await pepApplicationIdentity(t);
+  // THE COMPANION'S xml-crypto IS FOUND IN tests/node_modules HERE (#2220).
+  // The companion's own image installs companion/package-lock.json, which
+  // pins xml-crypto; in this process its modules load from companion/,
+  // which has no node_modules, so they resolve upward to the service's
+  // tree — and the service no longer carries xml-crypto, a test dependency
+  // since #2220. NODE_PATH is consulted only after every node_modules
+  // directory above a module, so adding tests/node_modules to it for the
+  // ACS half shadows nothing; it is put back afterwards, so no later file
+  // of the run resolves differently. `_initPaths()` is how node rereads it.
+  const Module = require('module');
+  const nodePath = process.env.NODE_PATH;
+  process.env.NODE_PATH = [nodePath, path.join(__dirname, 'node_modules')]
+    .filter(Boolean)
+    .join(path.delimiter);
+  Module._initPaths();
+  try {
+    await pepApplicationIdentity(t);
+  } finally {
+    if (nodePath === undefined) {
+      delete process.env.NODE_PATH;
+    } else {
+      process.env.NODE_PATH = nodePath;
+    }
+    Module._initPaths();
+  }
   log.debug("Leaving run().");
 }
 
