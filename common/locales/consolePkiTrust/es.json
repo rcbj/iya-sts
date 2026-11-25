@@ -122,5 +122,9 @@
   "createKindJwks": "un conjunto de claves vinculado a una sola parte",
   "createParty": "Parte (solo conjunto de claves): client:, federation:, claims-provider: o oidfed-anchor:…",
   "createJwks": "Claves públicas, como JSON Web Key Set",
-  "createJwksUri": "O una jwks_uri"
+  "createJwksUri": "O una jwks_uri",
+  "createKindSsh": "Claves de autoridades de certificación SSH",
+  "createSshKeys": "Claves públicas de CA SSH, en formato authorized_keys, una por línea",
+  "sshKeys": "{n} clave(s) de CA SSH",
+  "kindSshCa": "Claves de CA SSH"
 }

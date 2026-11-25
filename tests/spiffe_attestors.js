@@ -363,6 +363,27 @@ async function childMain(packageRoot) {
   out.sshForged = await attest('sshpop', sshPayload(hostCert(2,
     ['node1.example.org'], now - 60, now + 3600, otherCa.privateKey)),
     sshAnswer());
+  // THE CA KEYS FROM AN SSH CA TRUSTSTORE (#2151): with the setting empty,
+  // the sshpop agent is refused; with the same key in a truststore assigned
+  // to spiffe-sshpop, it attests; unassigned, the setting governs again.
+  const truststores = require(p('common/truststores'));
+  const caLine = 'ecdsa-sha2-nistp256 ' + caBlob.toString('base64') +
+    ' test-ca';
+  const sshStore = 'sshpop-cas-' + process.pid;
+  config.setOverride('spiffe.sshpopCertAuthorities', '');
+  out.sshNoCa = await attest('sshpop', sshPayload(goodHost), sshAnswer());
+  out.sshStoreMade = truststores.create(undefined, { name: sshStore,
+    kind: 'ssh', sshKeys: '# the test CA\n' + caLine }).ok;
+  out.sshStoreBad = truststores.create(undefined, { name: sshStore + '-x',
+    kind: 'ssh', sshKeys: 'not a key' }).code;
+  out.sshAssigned = truststores.assign(undefined, 'spiffe-sshpop',
+                                       [sshStore]).ok;
+  out.sshFromStore = await attest('sshpop', sshPayload(goodHost),
+                                  sshAnswer());
+  out.sshStoreCleared = truststores.assign(undefined, 'spiffe-sshpop',
+                                           []).ok &&
+    truststores.remove(undefined, sshStore).ok;
+  config.setOverride('spiffe.sshpopCertAuthorities', caLine);
   config.setOverride('spiffe.sshpopCanonicalDomain', 'example.org');
   config.setOverride('spiffe.sshpopAgentPathTemplate',
                      '/{{ .PluginName }}/{{ .Hostname }}');
@@ -663,6 +684,14 @@ function run(t) {
   t.check(refused(out.sshForged, INTERNAL),
           'a certificate from an authority not configured is refused',
           show(out.sshForged));
+  t.check(!out.sshNoCa.ok && out.sshStoreMade &&
+          out.sshStoreBad === 'STS-PKI-0308' && out.sshAssigned &&
+          out.sshFromStore.ok && out.sshStoreCleared,
+          'with the setting empty the agent is refused, and with the CA ' +
+          'key in an SSH CA truststore assigned to spiffe-sshpop it attests ' +
+          '(#2151)', show({ noCa: out.sshNoCa, made: out.sshStoreMade,
+            bad: out.sshStoreBad, assigned: out.sshAssigned,
+            fromStore: out.sshFromStore, cleared: out.sshStoreCleared }));
   t.check(out.sshHostname.ok &&
           out.sshHostname.path === '/spire/agent/sshpop/node1',
           'canonical_domain strips the domain for the Hostname',
