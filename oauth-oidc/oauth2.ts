@@ -9690,6 +9690,20 @@ class OAuth2Server {
       ? self.adminApiBindingRefusal(query.client_id, audiencePlan.audiences,
                                     req, base, false)
       : null;
+    // #2183: and no token in the browser at all where the realm issues only
+    // sender-constrained ones.
+    const unboundBrowser = types.indexOf('token') >= 0 ?
+      senderConstraints.browserAccessTokenRefusal() : null;
+    if (unboundBrowser) {
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A token " +
+                "in the browser could not be sender-constrained.");
+      errorCodes.mark(res, unboundBrowser.errorCode);
+      return self.redirectBack(res, base, redirectUri, query.state,
+        { error: unboundBrowser.error,
+          error_description: unboundBrowser.description },
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
+    }
     if (browserToken) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). An " +
                 "/admin-api token for a certificate client, in the browser.");
@@ -16608,6 +16622,17 @@ class OAuth2Server {
                   "sent no DPoP proof.");
         throw new SenderConstraintRefused(log, consoleProblem);
       }
+      // #2183: an access token nothing binds is not minted, where the realm
+      // says so. Every grant mints through this closure.
+      const unbound = senderConstraints.accessTokenIssuanceRefusal({
+        grant: grant,
+        dpopJkt: dpopJkt,
+        certificateBound: !!mtls.presentedThumbprint(req)
+      });
+      if (unbound) {
+        log.debug("Leaving issue(). The access token would be unbound.");
+        throw new SenderConstraintRefused(log, unbound);
+      }
       if (opts.withRefresh !== false) {
         const constraint = senderConstraints.refreshIssuanceRefusal({
           grant: grant,
@@ -22480,7 +22505,8 @@ class OAuth2Server {
       client_id: clientId,
       client_id_issued_at: issuedAt,
       client_secret: secret,
-      // `oauth2.clientSecretLifetimeDays`; 0 = never, the default.
+      // `oauth2.clientSecretLifetimeDays`: 365 days by default since
+      // ASVS 5.0.0 13.3.4 (#2178); 0 = never.
       client_secret_expires_at: self.registeredSecretExpiry(issuedAt),
       registration_access_token: token,
       registration_client_uri: base + '/oauth2/register/' + clientId

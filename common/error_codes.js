@@ -12369,6 +12369,18 @@ const CODES = [
       'DPoP proof: every token issued to that client is DPoP-bound (RFC ' +
       '9449) to the PEP\'s assertion key (#1827\'s follow-up).',
     spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-1013',
+    summary: 'The token endpoint refused to issue an access token that ' +
+      'nothing would bind: oauth2.accessTokenRequireSenderConstraint is on ' +
+      'and the request carried neither a DPoP proof nor a client ' +
+      'certificate (#2183, ASVS 5.0.0 10.3.5, 10.4.14).',
+    spec: 'RFC 9449 section 7.1: HTTP 400 invalid_dpop_proof' },
+  { code: 'STS-OAUTH-1014',
+    summary: 'The authorization endpoint refused a response_type that would ' +
+      'mint an access token in the browser, which could never be bound, ' +
+      'while oauth2.accessTokenRequireSenderConstraint is on (#2183).',
+    spec: 'RFC 6749 section 4.1.2.1: the redirect carries ' +
+      'unsupported_response_type' },
   { code: 'STS-OAUTH-1015',
     summary: 'The authorization endpoint refused a request that carried ' +
       'RFC 9396 authorization_details and was not pushed, while ' +

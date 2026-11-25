@@ -2499,7 +2499,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.registeredClientIdPrefix` | `STS_OAUTH2_REGISTERED_CLIENT_ID_PREFIX` | `sts-client-` | yes | What a dynamically registered `client_id` starts with. |
 | `oauth2.registeredClientIdBytes` | `STS_OAUTH2_REGISTERED_CLIENT_ID_BYTES` | `8` | yes | How many random bytes follow that prefix. |
 | `oauth2.registeredSecretBytes` | `STS_OAUTH2_REGISTERED_SECRET_BYTES` | `48` | yes | How many random bytes make a registered client's secret and registration access token. 48 by default so a `client_secret_jwt` secret is long enough for HS512 (RFC 7518 section 3.2, enforced in product). **Below 24, even HS256 is refused in product.** |
-| `oauth2.clientSecretLifetimeDays` | `STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS` | `0` | yes | The lifetime, in days (0 to 730), of every new client secret, and the `client_secret_expires_at` published for a registered client; 0 is never. |
+| `oauth2.clientSecretLifetimeDays` | `STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS` | `365` | yes | The lifetime, in days (0 to 730), of every new client secret, and the `client_secret_expires_at` published for a registered client; 0 is never. |
 | `oauth2.clientSecretOverlapS` | `STS_OAUTH2_CLIENT_SECRET_OVERLAP_S` | `604800` | yes | How long a rotated-out client secret keeps working beside the new one; 0 ends it at once. |
 | `oauth2.clientSecretExpiryWarningDays` | `STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS` | `14` | yes | How many days before a client secret expires the daily job warns and the console marks it. |
 

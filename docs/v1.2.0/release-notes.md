@@ -16,6 +16,38 @@ authorization request never travels in the browser's address (ASVS 5.0.0
 `oauth2.requirePushedAuthorizationRequests` still makes every request
 pushed (10.4.13). New refusal: `STS-OAUTH-1015`.
 
+### New: an option to issue only sender-constrained access tokens
+
+`oauth2.accessTokenRequireSenderConstraint`, **off by default**. On, the token
+endpoint issues an access token only to a request that binds it, by a DPoP
+proof or the connection's client certificate (ASVS 5.0.0 10.3.5 and
+10.4.14), and the authorization endpoint refuses a `token` response type. It
+is for a realm whose every client can bind its tokens; most cannot. New
+refusals: `STS-OAUTH-1013`, `1014`.
+
+### New: cross-origin isolation headers on every response
+
+Every response now carries `Cross-Origin-Resource-Policy` (`same-site`;
+profile photos and the sign-in logo stay `cross-origin`), and every HTML page
+carries `Cross-Origin-Opener-Policy: same-origin` (ASVS 5.0.0 3.4.8 and
+3.5.8). The pages a relying party may open in a popup (the authorization
+endpoint and the sign-in, consent, SAML, WS-Federation, GNAP, federation and
+sign-out pages) carry no COOP, as before, so popup sign-ins keep working. See
+[The other response headers](oauth-security.md#the-other-response-headers).
+
+### Behaviour change: client secrets expire after a year by default
+
+`oauth2.clientSecretLifetimeDays` now defaults to **365** (it was 0, never),
+for ASVS 5.0.0 13.3.4. Every client secret minted or given from now on,
+including a dynamically registered client's, carries an expiry one year out,
+and RFC 7591's `client_secret_expires_at` says so. **A secret that already
+exists keeps the expiry it has**: the lifetime is stamped on each secret when
+it is made and never recalculated. In product mode an expired secret is
+refused at the token endpoint, so rotate secrets before they expire (an
+application's **Client secrets** list shows each one's expiry). Set the
+setting to `0` to keep secrets that never expire. The secrets this service
+uses for its own clients are unaffected: they hold none.
+
 ### Behaviour change: more administrator acts need a recent sign-in
 
 Until now, only changing a person's credentials through the console or

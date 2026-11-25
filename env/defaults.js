@@ -167,6 +167,7 @@ var config = {
     httpSignatureResponseAlg: "ES256",             // Signed response algorithm
     accessTokenRequireDpop: false,                 // Require DPoP for every access token
     accessTokenRequireMtls: false,                 // Require mutual TLS for every access token
+    accessTokenRequireSenderConstraint: false,     // Issue only sender-constrained access tokens
     openRegistration: false,                       // Open dynamic client registration (product mode)
     softwareStatementRequireTrustedIssuer: true,   // Refuse a software statement from an undeclared issuer
     softwareStatementOpensRegistration: true,      // A trusted software statement opens a closed registration endpoint
@@ -175,7 +176,7 @@ var config = {
     clientSecretOverlapS: 604800,                  // Keep a rotated client secret working for (seconds)
     clientSecretsMax: 5,                           // Client secrets an application may hold
     clientSecretExpiryWarningDays: 14,             // Warn about an expiring client secret this many days ahead
-    clientSecretLifetimeDays: 0,                   // Client secret lifetime (days)
+    clientSecretLifetimeDays: 365,                 // Client secret lifetime (days)
     registeredClientIdPrefix: "sts-client-",       // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                    // Dynamically registered client_id random bytes
     registeredSecretBytes: 48,                     // Dynamically registered secret random bytes

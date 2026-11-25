@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Le volet RFC 8705 de la ligne ci-dessus, sur les mêmes surfaces : un jeton d’accès présenté doit porter `cnf[\"x5t#S256\"]` et la connexion doit porter ce certificat. **Il exige que le port principal soit lié en HTTPS** (global.https), et l’écouteur du débogueur a commencé à DEMANDER un certificat client le 2026-09-15 pour qu’un jeton lié puisse seulement y être présenté — il est demandé, jamais exigé. Un jeton que ce service n’a pas émis est soumis à la même règle : la liaison qu’il porte est vérifiée même si le jeton lui-même ne peut pas l’être."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Émettre uniquement des jetons d’accès contraints à l’expéditeur"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "DÉSACTIVÉ PAR DÉFAUT, et à laisser désactivé sauf si chaque client du domaine peut lier ses jetons (ASVS 5.0.0 10.3.5 et 10.4.14, #2183). Activé, le point de terminaison de jeton n’émet un jeton d’accès qu’à une requête qui le lie : une preuve DPoP (RFC 9449) ou le certificat client de la connexion (RFC 8705), l’un ou l’autre, pour chaque type d’autorisation. Le point de terminaison d’autorisation refuse un response_type qui émettrait un jeton dans le navigateur (`token` implicite et hybride), qui ne pourrait jamais être lié. Un client qui n’envoie ni l’un ni l’autre est refusé avec invalid_dpop_proof nommant ce réglage. Les deux lignes ci-dessus refusent un jeton non lié aux ressources ; celle-ci refuse de l’émettre."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Enregistrement dynamique de clients ouvert (mode produit)"
@@ -3128,8 +3136,8 @@
     "text": "Durée de vie des secrets clients (jours)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "La durée de vie, en jours, de chaque secret client que ce service crée ou reçoit, et donc le `client_secret_expires_at` que publie RFC 7591 section 3.2.1 pour un client enregistré via POST /oauth2/register — la valeur par défaut pour chaque secret créé ou reçu (une régénération, une rotation, un secret ajouté, une valeur saisie dans la console), sauf si le formulaire d’ajout en indique une autre, ou le formulaire de création pour le premier secret d’une application. ZÉRO, la valeur par défaut, est le « never » de cette section. Elle est apposée sur chaque secret à sa création et n’est pas modifiée par un changement ultérieur."
+    "en": "0282a861551627b6",
+    "text": "La durée de vie, en jours, de chaque secret client que ce service crée ou reçoit, et donc le `client_secret_expires_at` que publie RFC 7591 section 3.2.1 pour un client enregistré via POST /oauth2/register — la valeur par défaut pour chaque secret créé ou reçu (une régénération, une rotation, un secret ajouté, une valeur saisie dans la console), sauf si le formulaire d’ajout en indique une autre, ou le formulaire de création pour le premier secret d’une application. La valeur par défaut est de 365 jours (ASVS 5.0.0 13.3.4) ; ZÉRO est le « never » de cette section. Elle est apposée sur chaque secret à sa création et n’est pas modifiée par un changement ultérieur."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

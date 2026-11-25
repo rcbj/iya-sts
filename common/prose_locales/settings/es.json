@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "La mitad RFC 8705 de la fila anterior, en las mismas superficies: un token de acceso presentado debe llevar `cnf[\"x5t#S256\"]` y la conexión debe llevar ese certificado. **Necesita que el puerto principal esté enlazado como HTTPS** (global.https), y la escucha del depurador empezó a PEDIR un certificado de cliente el 2026-09-15 para que allí pueda presentarse siquiera un token vinculado — se pide, nunca se exige. A un token que este servicio no emitió se le aplica la misma regla: la vinculación que lleva se comprueba aunque el propio token no pueda verificarse."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Emitir solo tokens de acceso restringidos al remitente"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA, y pensado para quedarse así salvo que todos los clientes del dominio puedan vincular sus tokens (ASVS 5.0.0 10.3.5 y 10.4.14, #2183). Activado, el endpoint de token emite un token de acceso solo a una solicitud que lo vincule: una prueba DPoP (RFC 9449) o el certificado de cliente de la conexión (RFC 8705), cualquiera de los dos, para cada tipo de concesión. El endpoint de autorización rechaza un response_type que emitiría un token en el navegador (`token` implícito e híbrido), que nunca podría vincularse. Un cliente que no envía ninguno se rechaza con invalid_dpop_proof nombrando este ajuste. Las dos filas anteriores rechazan un token sin vincular en los recursos; esta se niega a emitirlo."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Registro dinámico de clientes abierto (modo producto)"
@@ -3128,8 +3136,8 @@
     "text": "Vigencia del secreto de cliente (días)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. CERO, el valor predeterminado, es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
+    "en": "0282a861551627b6",
+    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. El valor predeterminado es 365 días (ASVS 5.0.0 13.3.4); CERO es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Ang kalahating RFC 8705 ng row sa itaas, sa parehong mga surface: ang ipinakitang access token ay dapat may dalang `cnf[\"x5t#S256\"]` at dapat may dalang certificate na iyon ang connection. **Kailangan nitong naka-bind bilang HTTPS ang main port** (global.https), at nagsimulang HUMINGI ng client certificate ang listener ng debugger noong 2026-09-15 para maipakita man lang doon ang naka-bind na token — hinihingi ito, hindi kailanman sapilitan. Ang token na hindi in-issue ng serbisyong ito ay sinusukat sa parehong patakaran: sinusuri ang binding na dala nito kahit hindi mave-verify ang token mismo."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Mag-issue lamang ng sender-constrained na access token"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "NAKA-OFF BILANG DEFAULT, at dapat manatiling naka-off maliban kung kayang i-bind ng bawat client ng realm ang mga token nito (ASVS 5.0.0 10.3.5 at 10.4.14, #2183). Kapag naka-on, ang token endpoint ay mag-iissue lamang ng access token sa request na nagbi-bind dito: isang DPoP proof (RFC 9449) o ang client certificate ng koneksyon (RFC 8705), alinman, para sa bawat grant. Tinatanggihan ng authorization endpoint ang response_type na mag-iissue ng token sa browser (implicit at hybrid `token`), na hindi kailanman maibi-bind. Ang client na walang ipinapadala sa dalawa ay tinatanggihan ng invalid_dpop_proof na pinangangalanan ang setting na ito. Tinatanggihan ng dalawang row sa itaas ang hindi naka-bind na token sa mga resource; ang isang ito ay tumatangging i-issue ito."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Bukas na dynamic client registration (product mode)"
@@ -3128,8 +3136,8 @@
     "text": "Lifetime ng client secret (araw)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form, o ang create form para sa unang secret ng isang application. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
+    "en": "0282a861551627b6",
+    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form, o ang create form para sa unang secret ng isang application. Ang default ay 365 araw (ASVS 5.0.0 13.3.4); ang ZERO ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
