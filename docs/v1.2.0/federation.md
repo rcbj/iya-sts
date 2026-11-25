@@ -124,7 +124,9 @@ What is checked on the way in, in every mode:
 * an ID Token or JWT access token against the relationship's keys
   (`fedJwks`, or `fedJwksUri`), with `alg: none` refused by name and the
   algorithm family taken from the key, so HS256 cannot be verified with a
-  public key;
+  public key. A [key-set truststore](truststores.md#key-sets) bound to the
+  relationship and assigned to `federation-jwt` (or, for its Security Event
+  Tokens, `ssf-set`) adds keys, or replaces the relationship's own;
 * the **issuer** against `fedPeer`, which is required — a relationship with no
   peer is missing a field and not usable, and a WS-Federation assertion
   carrying no issuer is refused;
