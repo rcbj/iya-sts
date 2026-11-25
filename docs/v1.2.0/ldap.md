@@ -442,6 +442,7 @@ provisioning client must.
 | `groups.claimName` | `STS_GROUPS_CLAIM_NAME` | `groups` | yes | The claim or SAML attribute name the groups are carried under. |
 | `groups.claimValue` | `STS_GROUPS_CLAIM_VALUE` | `cn` | yes | Whether each group is named by its common name or its whole DN. |
 | `groups.claimFromMemberOf` | `STS_GROUPS_CLAIM_FROM_MEMBEROF` | `true` | yes | Whether a group named in the person's own `memberOf` counts when the group does not list them back. |
+| `groups.claimMaxBytes` | `STS_GROUPS_CLAIM_MAX_BYTES` | `4096` | yes | The largest groups claim an access token or ID Token carries. Past it the token points at `/oauth2/groups` for the whole list instead (OpenID Connect Core section 5.6.2). `0` turns the cap off. |
 | `credentials.factorScanLimit` | `STS_CREDENTIALS_FACTOR_SCAN_LIMIT` | `5000` | yes | How many entries the second-factor columns on `/admin/users` and `GET /admin-api/mfa` read before they stop. |
 | `logout.ldapDisconnect` | `LOGOUT_LDAP_DISCONNECT` | `true` | yes | Whether a sign-out closes the directory connections bound as that person. |
 | `global.domain` | `STS_DOMAIN` | `example.com` | restart | The default realm's DNS domain, whose RFC 2247 mapping is its directory base. |

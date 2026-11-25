@@ -323,6 +323,8 @@ class ProtocolEndpoints {
         '/.well-known/openid-configuration',
         '/.well-known/oauth-authorization-server', '/oauth2/authorize',
         '/oauth2/par', '/oauth2/token', '/oauth2/userinfo', '/oauth2/jwks',
+        // #2247: the groups claim's distributed source.
+        '/oauth2/groups',
         '/oauth2/introspect',
         '/oauth2/revoke', '/oauth2/register', '/oauth2/register/:client_id',
         '/oauth2/logout', '/oauth2/consent', '/oauth2/rfc9700',

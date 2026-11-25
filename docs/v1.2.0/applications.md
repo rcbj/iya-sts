@@ -1389,6 +1389,16 @@ not using them. A value can be added only while the realm allows these types
 (`STS-REG-0364`); a value can always be removed. The application's owner may
 set it too. See [the implicit grant](oauth-security.md#the-implicit-grant-section-212).
 
+**The response modes an application may use** are `oauthResponseMode`: a
+checkbox each for `query`, `fragment`, `form_post` and JARM's `jwt`,
+`query.jwt`, `fragment.jwt` and `form_post.jwt`, empty by default. Empty
+restricts nothing beyond what the server advertises. With a list, the
+authorization endpoint answers any other mode `unauthorized_client`
+(`STS-OAUTH-1016`). A request that names no mode is judged by its response
+type's default, `query` for `code` and `fragment` otherwise. An administrator
+sets it; a dynamic registration does not, since RFC 7591 has no member for it.
+See [in-browser communication](oauth-security.md#in-browser-communication-section-417).
+
 In the `oauthGrantType` checkboxes, a grant named by a URN is labelled by its
 last two sections (`grant-type:token-exchange`). Its tooltip gives the full
 name and what the grant is.

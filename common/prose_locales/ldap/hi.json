@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "वे response_type मान जो यह क्लाइंट माँग सकता है — RFC 7591 अनुभाग 2 के response_types, पंजीकरण से या व्यवस्थापक द्वारा लिखे, प्रत्येक मान एक प्रतिक्रिया प्रकार (\"code\", \"code id_token\")। प्राधिकरण एंडपॉइंट किसी अन्य को अस्वीकार करता है (unauthorized_client), प्रत्येक मोड में; खाली सूची कुछ प्रतिबंधित नहीं करती। क्लाइंट ने वास्तव में क्या माँगा है वह oauthResponseTypeObserved है।"
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "वे response_mode मान जिन्हें यह client माँग सकता है — query, fragment, form_post और JARM के jwt, query.jwt, fragment.jwt और form_post.jwt — किसी administrator द्वारा लिखे गए। authorization endpoint किसी अन्य को अस्वीकार करता है (unauthorized_client), और जो अनुरोध किसी का नाम नहीं लेता उसे उसके response type के डिफ़ॉल्ट mode पर परखा जाता है (code के लिए query, बाकी के लिए fragment), हर mode में; खाली सूची सर्वर के response_modes_supported से आगे कुछ सीमित नहीं करती। कोई RFC 7591 member इसे नहीं रखता, इसलिए registration इसे नहीं लिखता।"
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "वे प्रतिक्रिया प्रकार जो प्राधिकरण एंडपॉइंट से एक्सेस टोकन जारी करते हैं — token, code token, id_token token, code id_token token — जिनका यह क्लाइंट उपयोग कर सकता है जहाँ RFC 9700 मोड लागू है (product मोड हमेशा लागू है)। सम्मान तभी जब क्षेत्र RFC 9700 अनुभाग 2.1.2 से छूट देता है (oauth2.allowImplicitTokenResponses, OAuth 2.1 या FAPI के अंतर्गत कभी नहीं); तब यहाँ सूचीबद्ध न प्रकार अस्वीकार होता है (unauthorized_client)। डिफ़ॉल्ट रूप से खाली, और खाली का अर्थ कोई नहीं। व्यवस्थापक या अनुप्रयोग के स्वामी द्वारा तब लिखा जाता है जब क्षेत्र इन प्रकारों की अनुमति देता है, या oauth2.dynamicRegistrationTokenResponseTypes के भीतर गतिशील पंजीकरण द्वारा। RFC 9700 अनुभाग 2.1.2 कहता है कि क्लाइंट SHOULD NOT इनका उपयोग करें।"

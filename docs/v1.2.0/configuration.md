@@ -2712,6 +2712,7 @@ above.
 | `groups.claimName` | `STS_GROUPS_CLAIM_NAME` | `groups` | yes | What the claim is called: the JWT member name, the SAML 2.0 Attribute Name and the SAML 1.1 AttributeName. `groups` is the conventional spelling and what most relying parties look for, but `roles` and a URI are both common and both worth being able to produce. |
 | `groups.claimValue` | `STS_GROUPS_CLAIM_VALUE` | `cn` | yes | Whether each value is the group's common name (`developers`) or its whole DN (`cn=developers,ou=groups,dc=example,dc=com`). |
 | `groups.claimFromMemberOf` | `STS_GROUPS_CLAIM_FROM_MEMBEROF` | `true` | yes | Whether a group named by the PERSON'S own `memberOf` counts as membership when the group entry does not list them back. |
+| `groups.claimMaxBytes` | `STS_GROUPS_CLAIM_MAX_BYTES` | `4096` | yes | The most the groups claim may take in an access token or ID Token, as the JSON of its values. Past it the claim becomes an OpenID Connect Core section 5.6.2 distributed claim pointing at `/oauth2/groups`; it is never cut short. UserInfo and SAML assertions always carry the whole list. `0` turns the cap off. |
 
 ### Audit log
 

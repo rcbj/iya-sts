@@ -571,6 +571,7 @@
   "endpoints.route./:as/oauth2/fapi.name": "FAPI profile report (a named authorization server)",
   "endpoints.route./oauth2/oauth21.name": "OAuth 2.1 mode report (not a spec endpoint)",
   "endpoints.route./oauth2/userinfo.name": "UserInfo endpoint",
+  "endpoints.route./oauth2/groups.name": "Groups claim source",
   "endpoints.route./oauth2/introspect.name": "Introspection endpoint",
   "endpoints.route./status-lists/access-tokens.name": "Access-token status list",
   "endpoints.route./status-lists.name": "Access-token Status List Aggregation",

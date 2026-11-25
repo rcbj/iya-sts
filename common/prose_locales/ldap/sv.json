@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "De response_type-värden som den här klienten får be om — RFC 7591 avsnitt 2:s response_types, från en registrering eller skrivna av en administratör, varje värde en svarstyp (\"code\", \"code id_token\"). Auktoriseringsslutpunkten avvisar varje annan (unauthorized_client), i varje läge; en tom lista begränsar ingenting. Vad klienten faktiskt har bett om är oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "De response_mode-värden som denna klient får begära — query, fragment, form_post och JARM:s jwt, query.jwt, fragment.jwt och form_post.jwt — skrivna av en administratör. Auktoriseringsslutpunkten avvisar alla andra (unauthorized_client), och en begäran som inte nämner något hålls till sin svarstyps standardläge (query för code, fragment för resten), i varje läge; en tom lista begränsar inget utöver serverns response_modes_supported. Ingen RFC 7591-medlem bär det, så en registrering skriver det inte."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "De svarstyper som utfärdar en åtkomsttoken från auktoriseringsslutpunkten — token, code token, id_token token, code id_token token — som denna klient får använda där RFC 9700-läget gäller (produktläge gör det alltid). Respekteras bara medan sfären undantar RFC 9700 avsnitt 2.1.2 (oauth2.allowImplicitTokenResponses, aldrig under OAuth 2.1 eller FAPI); då nekas en typ som inte listas här (unauthorized_client). TOM som standard, och tom betyder ingen. Skrivs av en administratör eller applikationens ägare medan sfären tillåter dessa typer, eller av en dynamisk registrering inom oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 avsnitt 2.1.2 säger att klienter INTE BÖR använda dem."

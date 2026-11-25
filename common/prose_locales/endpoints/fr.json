@@ -2287,6 +2287,10 @@
     "en": "aebc2aa96e6b1b70",
     "text": "Point de terminaison UserInfo"
   },
+  "endpoints.route./oauth2/groups.name": {
+    "en": "fc727eb9da0b20fe",
+    "text": "Source de la revendication de groupes"
+  },
   "endpoints.route./oauth2/introspect.name": {
     "en": "328dfd36fb81f446",
     "text": "Point de terminaison d’introspection"

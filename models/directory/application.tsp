@@ -492,6 +492,20 @@ model Application {
     what: "The response_type values this client may ask for — RFC 7591 section 2's response_types, from a registration or written by an administrator, each value one response type (\"code\", \"code id_token\"). The authorization endpoint refuses any other (unauthorized_client), in every mode; an empty list restricts nothing. What the client has actually asked for is oauthResponseTypeObserved."
   })
   oauthResponseType?: string[];
+  // THE RESPONSE MODES A CLIENT MAY ASK FOR (#2247, ASVS 5.0.0 10.4.12).
+  // RFC 7591 defines no member for them and the OAuth Dynamic Client
+  // Registration Metadata registry holds none (`response_modes_supported`
+  // is the server's, RFC 8414), so this is this service's own attribute,
+  // written by an administrator and never by a registration. EMPTY RESTRICTS
+  // NOTHING, oauthResponseType's rule, so every client is answered as it was
+  // until somebody lists its modes; the server's list still applies first.
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "OAuth 2.0 / OIDC",
+    what: "The response_mode values this client may ask for — query, fragment, form_post and JARM's jwt, query.jwt, fragment.jwt and form_post.jwt — written by an administrator. The authorization endpoint refuses any other (unauthorized_client), and a request that names none is held to its response type's default mode (query for code, fragment for the rest), in every mode; an empty list restricts nothing beyond the server's response_modes_supported. No RFC 7591 member carries it, so a registration does not write it."
+  })
+  oauthResponseMode?: string[];
   // ---------------------------------------------------------------------
   // THE TOKEN RESPONSE TYPES, ENABLED PER APPLICATION (#1296, rcbj's
   // decision, 2026-11-03: "a realm allowing the token response types must

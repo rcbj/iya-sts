@@ -754,6 +754,18 @@ const CODES = [
       '(federation.outboundConnectTimeoutMs): the request was ended, and ' +
       'the caller\'s own timeout path ran (#2220).',
     spec: 'the caller\'s own refusal for a timeout' },
+  { code: 'STS-HTTP-0035',
+    summary: 'An outbound request was not sent: its request-target (path ' +
+      'and query) is over 8 KiB, the bound RFC 9110 section 4.1 asks a ' +
+      'server to accept. It was destroyed before it was sent, and the ' +
+      'caller\'s own failure path ran (#2247, ASVS 5.0.0 4.2.5).',
+    spec: 'the caller\'s own refusal for a failed request' },
+  { code: 'STS-HTTP-0036',
+    summary: 'An outbound request was not sent: its header fields come to ' +
+      'more than 16 KiB, Node.js\'s own default bound on a request\'s ' +
+      'headers. It was destroyed before it was sent, and the caller\'s own ' +
+      'failure path ran (#2247, ASVS 5.0.0 4.2.5).',
+    spec: 'the caller\'s own refusal for a failed request' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -12553,6 +12565,40 @@ const CODES = [
       '10.4.15).',
     spec: 'RFC 9126 section 4: HTTP 400 invalid_request, answered on this ' +
       'server' },
+  { code: 'STS-OAUTH-1016',
+    summary: 'The authorization endpoint refused a request whose ' +
+      'response_mode (the one asked for, or the response type\'s default ' +
+      'when none was) is not in the client\'s oauthResponseMode list ' +
+      '(#2247, ASVS 5.0.0 10.4.12). A client with no list is held to the ' +
+      'server\'s response_modes_supported alone, as before.',
+    spec: 'RFC 6749 section 4.1.2.1: the redirect carries ' +
+      'unauthorized_client' },
+  { code: 'STS-OAUTH-1017',
+    summary: 'The groups endpoint (/oauth2/groups, the distributed source ' +
+      'of a groups claim past groups.claimMaxBytes) was presented an ' +
+      'access token this service cannot verify (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1018',
+    summary: 'The groups endpoint was presented a token that is not a live ' +
+      'access token: another kind of token, or one revoked (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1019',
+    summary: 'The groups endpoint was presented an access token with no ' +
+      'person behind it (a client_credentials token), which has no groups ' +
+      '(#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1020',
+    summary: 'The groups endpoint could not sign the JWT it answers with, ' +
+      'under the algorithm the client registered for its ID Tokens or the ' +
+      'realm\'s default (#2247).',
+    spec: 'HTTP 500 server_error' },
+  { code: 'STS-OAUTH-1021',
+    summary: 'The groups endpoint was presented an access token that carries ' +
+      'no overage reference to it (_claim_names mapping a claim to ' +
+      'sts-groups, whose _claim_sources endpoint is this realm\'s ' +
+      '/oauth2/groups): only a token issued with a groups claim over ' +
+      'groups.claimMaxBytes may redeem one (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

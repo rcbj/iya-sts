@@ -3587,6 +3587,14 @@
     "en": "20eeca53c18916c1",
     "text": "antwortet 401 mit einer WWW-Authenticate-Challenge, wenn es allein aufgerufen wird — es ist eine geschützte Ressource und braucht das Access-Token aus einem OIDC-Flow"
   },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "DIE VERTEILTE QUELLE EINES GRUPPEN-CLAIMS ÜBER SEINER GRENZE (#2247). Ein Access Token oder ID Token, dessen Gruppen-Claim groups.claimMaxBytes überschreiten würde, trägt stattdessen die _claim_names und _claim_sources aus Abschnitt 5.6.2 von OpenID Connect Core, die hierher verweisen, und dieser Endpunkt liefert die Liste für das Subjekt des vorgelegten Access Tokens als signiertes application/jwt (iss, sub, aud, iat, exp und der Claim), wie der Abschnitt es von einer verteilten Quelle verlangt. Das Token wird so geprüft wie UserInfo eines prüft — Signatur, Aussteller, Sender-Bindung, typ, Widerruf — außer seiner Audience und dem openid-Scope, denn das Token eines Resource Servers ist dasjenige, dessen Claim hierher verwies. Nur ein Token, das die Referenz selbst trägt, kann sie einlösen, und es erhält, was es unterhalb der Grenze getragen hätte, über die Gruppeneinstellungen und den Freigabefilter seines eigenen Clients, und nichts weiter. Ein client_credentials-Token hat keine Person und wird abgelehnt."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "antwortet 401 mit einer WWW-Authenticate-Challenge, wenn es ohne alles aufgerufen wird — es braucht ein Access Token, das dieser Dienst ausgestellt hat"
+  },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
     "text": "Ehrliches active/inactive mit den Claims des vorgelegten Tokens — darunter acr und auth_time (RFC 9470 Abschnitt 6.2) — als JSON nach RFC 7662 oder, wenn der Header Accept application/token-introspection+jwt nennt, als JWT nach RFC 9701, signiert (und wahlweise verschlüsselt) für den Ressourcenserver, der angefragt hat, mit den Algorithmen, die er registriert hat. Eine JWT-Anfrage muss sich in jedem Modus als Client authentifizieren und wird andernfalls mit 400 invalid_client abgelehnt; eine JSON-Anfrage muss sich im Produktmodus authentifizieren (401) und muss das in der Entwicklung nicht."

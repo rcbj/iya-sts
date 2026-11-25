@@ -4688,6 +4688,25 @@ function resolvedGroupClaims(id, context) {
   }
 }
 
+// The groups claim's cap (#2247), wrapped for the same reason: a resolver
+// that throws leaves the token as the layers built it.
+function groupOverage(id, context, out, fromGroups) {
+  log.debug("Entering groupOverage().");
+  if (!groupResolver || typeof groupResolver.overage !== 'function') {
+    log.debug("Leaving groupOverage().");
+    return;
+  }
+  try {
+    groupResolver.overage(id, context, out, fromGroups);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-REG-0043') +
+              'the group-claim resolver threw while applying ' +
+              'groups.claimMaxBytes and was ignored; the token carries the ' +
+              'claim as the layers built it: ' + e.message);
+  }
+  log.debug("Leaving groupOverage().");
+}
+
 // The roles claim, wrapped for the reason every other directory read during an
 // issuance is wrapped: a register this service consults must never be able to
 // fail the issuance it was consulted during. `roles.js` already swallows its
@@ -5594,7 +5613,8 @@ function jwtClaims(id, context) {
   // longer and a client already parsing it must not have its meaning changed by
   // a feature arriving underneath it.
   const out = resolvedRoleClaims(context);
-  Object.assign(out, resolvedGroupClaims(id, context));
+  const fromGroups = resolvedGroupClaims(id, context);
+  Object.assign(out, fromGroups);
   Object.assign(out, resolvedJwtClaims(id, context));
   // The configured rows over the three layers above, so a name somebody
   // typed still wins (configuredClaimObject(), #1250's extraction).
@@ -5620,6 +5640,11 @@ function jwtClaims(id, context) {
   // where the difference is the whole point.
   // ---------------------------------------------------------------------
   applyClaimRelease(out, context, 'custom claim(s)');
+  // AND THE GROUPS CLAIM'S CAP (#2247), after every layer and the release
+  // filter: only the value the groups layer produced, and only while it is
+  // still the one in `out`, is replaced by a distributed claim past
+  // `groups.claimMaxBytes`. `group_claims.ts` argues it.
+  groupOverage(id, context, out, fromGroups);
   const names = Object.keys(out);
   if (names.length) {
     log.debug("jwtClaims(): adding " + names.length + " custom claim(s) to a " +

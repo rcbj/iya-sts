@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6168** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6176** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -49,7 +49,7 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 29
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 31
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 116
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 462
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 763
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 769
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
@@ -145,6 +145,8 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0032` | Outbound HTTP requests are waiting for a connection: the shared agent's cap per destination (federation.outboundMaxSockets) or in all (federation.outboundMaxTotalSockets) is reached. They wait within their overall deadline. Logged when requests first queue, and again only after the queue has drained (#2220). | none — the requests wait; nothing is refused for the cap |
 | `STS-HTTP-0033` | An outbound request did not finish within its overall deadline (federation.outboundDeadlineMs, or its own timeout where longer): it was ended, and the caller's own timeout path ran (#2220). | the caller's own refusal for a timeout |
 | `STS-HTTP-0034` | An outbound connection was not made within the connect timeout (federation.outboundConnectTimeoutMs): the request was ended, and the caller's own timeout path ran (#2220). | the caller's own refusal for a timeout |
+| `STS-HTTP-0035` | An outbound request was not sent: its request-target (path and query) is over 8 KiB, the bound RFC 9110 section 4.1 asks a server to accept. It was destroyed before it was sent, and the caller's own failure path ran (#2247, ASVS 5.0.0 4.2.5). | the caller's own refusal for a failed request |
+| `STS-HTTP-0036` | An outbound request was not sent: its header fields come to more than 16 KiB, Node.js's own default bound on a request's headers. It was destroyed before it was sent, and the caller's own failure path ran (#2247, ASVS 5.0.0 4.2.5). | the caller's own refusal for a failed request |
 
 ## STS-PROXY
 
@@ -2670,6 +2672,12 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1013` | The token endpoint refused to issue an access token that nothing would bind: oauth2.accessTokenRequireSenderConstraint is on and the request carried neither a DPoP proof nor a client certificate (#2183, ASVS 5.0.0 10.3.5, 10.4.14). | RFC 9449 section 7.1: HTTP 400 invalid_dpop_proof |
 | `STS-OAUTH-1014` | The authorization endpoint refused a response_type that would mint an access token in the browser, which could never be bound, while oauth2.accessTokenRequireSenderConstraint is on (#2183). | RFC 6749 section 4.1.2.1: the redirect carries unsupported_response_type |
 | `STS-OAUTH-1015` | The authorization endpoint refused a request that carried RFC 9396 authorization_details and was not pushed, while oauth2.authorizationDetailsRequirePar is on (#2185, ASVS 5.0.0 10.4.15). | RFC 9126 section 4: HTTP 400 invalid_request, answered on this server |
+| `STS-OAUTH-1016` | The authorization endpoint refused a request whose response_mode (the one asked for, or the response type's default when none was) is not in the client's oauthResponseMode list (#2247, ASVS 5.0.0 10.4.12). A client with no list is held to the server's response_modes_supported alone, as before. | RFC 6749 section 4.1.2.1: the redirect carries unauthorized_client |
+| `STS-OAUTH-1017` | The groups endpoint (/oauth2/groups, the distributed source of a groups claim past groups.claimMaxBytes) was presented an access token this service cannot verify (#2247). | RFC 6750 section 3.1: HTTP 401 invalid_token |
+| `STS-OAUTH-1018` | The groups endpoint was presented a token that is not a live access token: another kind of token, or one revoked (#2247). | RFC 6750 section 3.1: HTTP 401 invalid_token |
+| `STS-OAUTH-1019` | The groups endpoint was presented an access token with no person behind it (a client_credentials token), which has no groups (#2247). | RFC 6750 section 3.1: HTTP 401 invalid_token |
+| `STS-OAUTH-1020` | The groups endpoint could not sign the JWT it answers with, under the algorithm the client registered for its ID Tokens or the realm's default (#2247). | HTTP 500 server_error |
+| `STS-OAUTH-1021` | The groups endpoint was presented an access token that carries no overage reference to it (_claim_names mapping a claim to sts-groups, whose _claim_sources endpoint is this realm's /oauth2/groups): only a token issued with a groups claim over groups.claimMaxBytes may redeem one (#2247). | RFC 6750 section 3.1: HTTP 401 invalid_token |
 
 ## STS-SAML
 

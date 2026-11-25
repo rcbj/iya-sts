@@ -19483,6 +19483,30 @@ const SETTINGS = [
                  '— a memberOf naming nothing does not invent a group to put ' +
                  'in a token.' },
 
+  // THE CAP (#2247, ASVS 5.0.0 4.2.5): the groups claim's share of an access
+  // token or ID Token, past which it is an OpenID Connect Core section 5.6.2
+  // distributed claim pointing at /oauth2/groups — never a shorter list.
+  // `group_claims.ts` argues the default and why UserInfo and the SAML
+  // assertions are not capped. 0 is a legal value (no cap) and is read as
+  // one, not through `|| n`.
+  { key: 'groups.claimMaxBytes', group: 'Group claim',
+    label: 'Largest groups claim in a token (bytes)',
+    env: 'STS_GROUPS_CLAIM_MAX_BYTES', type: 'int', dflt: 4096, min: 0,
+    max: 1048576, runtime: true,
+    description: 'The most the groups claim may take in an access token or ' +
+                 'an ID Token, as the JSON of its values, before base64url. ' +
+                 'Past it the claim is not cut: it becomes an OpenID ' +
+                 'Connect Core section 5.6.2 distributed claim — ' +
+                 '`_claim_names` names it and `_claim_sources` points at ' +
+                 'this realm\'s /oauth2/groups, which answers the whole ' +
+                 'list as a signed JWT for the access token presented. ' +
+                 'An access token travels in a header, and a token over ' +
+                 '8 KiB is refused by most servers (16 KiB by Node.js) ' +
+                 'with a 431 nothing points back from. The default, 4096, ' +
+                 'is about 150 group names or 60 DNs, so the tokens people ' +
+                 'get today are unchanged. UserInfo and the SAML assertions ' +
+                 'always carry the whole list. 0 turns the cap off.' },
+
   // --- Roles ---------------------------------------------------------------
   //
   // A role is the one thing here a user, a group AND an application can all be

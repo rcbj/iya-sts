@@ -305,6 +305,8 @@ const ROWS: Row[] = [
     why: 'a CIBA request names its person, whose home runs it' },
   { prefix: '/oauth2/userinfo', strategy: 'bearer',
     why: 'answered by the cell that minted the access token' },
+  { prefix: '/oauth2/groups', strategy: 'bearer',
+    why: 'the groups of the person the access token names (#2247)' },
   { prefix: '/oauth2/grants', strategy: 'bearer',
     why: 'the grant is held by the cell that minted the access token' },
   // --- SAML, WS-Federation, WS-Trust ---
