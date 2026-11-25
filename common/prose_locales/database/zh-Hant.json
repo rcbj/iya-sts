@@ -63,6 +63,14 @@
     "en": "ce51e3182e53d854",
     "text": "「不連線」——persistence.databaseTlsCaFile 指名了 {{file}}，但該檔案無法讀取或不含任何憑證，因此本服務不會以它啟動。"
   },
+  "persistence.status.clientCertificate": {
+    "en": "803d02a07753ab1b",
+    "text": "本服務使用 {{file}}（persistence.databaseTlsClientCertFile）中的用戶端憑證向資料庫驗證，每隔 persistence.databasePasswordRefreshS 重新讀取一次。"
+  },
+  "persistence.status.clientCertificateUnusable": {
+    "en": "79cae22fc2547022",
+    "text": "未連線 — {{file}}（persistence.databaseTlsClientCertFile）中的用戶端憑證無法讀取，或其金鑰並非其本身的，因此本服務不會以此啟動。"
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "「不連線」——sslmode={{sslmode}} 要求明文連線，而本服務絕不開啟這種連線，因此不會以此連線字串啟動。"

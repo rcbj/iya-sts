@@ -655,8 +655,33 @@ class StorePool {
    */
   setConnectionString(connectionString) {
     log.debug("Entering StorePool.setConnectionString().");
-    const next = Object.assign({}, this.settings,
-                               { connectionString: String(connectionString) });
+    this.useSettings(Object.assign({}, this.settings,
+                                   { connectionString:
+                                       String(connectionString) }));
+    log.debug("Leaving StorePool.setConnectionString().");
+  }
+
+  // A RENEWED CLIENT CERTIFICATE FOR NEW CONNECTIONS (#2254): the TLS
+  // options replaced the way a connection string is, for the same reason
+  // and with the same effect — Knex dials every connection made from now
+  // on, pooled or dedicated, with the settings it holds then, and a
+  // connection already open keeps its session.
+  /**
+   * Dials every connection made from now on with other TLS options — the
+   * same database, a renewed client certificate.
+   *
+   * @param ssl - the `ssl` option, already decided by `dialOptions()`
+   */
+  setSsl(ssl) {
+    log.debug("Entering StorePool.setSsl().");
+    this.useSettings(Object.assign({}, this.settings, { ssl: ssl }));
+    log.debug("Leaving StorePool.setSsl().");
+  }
+
+  // The one place the dialect's settings are rebuilt and handed to Knex:
+  // `setConnectionString()` and `setSsl()` change one member each.
+  useSettings(next) {
+    log.debug("Entering StorePool.useSettings().");
     this.settings = next;
     const built = this.engine === 'mariadb'
       ? mariadbConnection(Object.assign({}, next,
@@ -665,7 +690,7 @@ class StorePool {
       : Object.assign({}, next, { connectionTimeoutMillis: this.connectMs });
     delete built.engine;
     this.knex.client.connectionSettings = built;
-    log.debug("Leaving StorePool.setConnectionString().");
+    log.debug("Leaving StorePool.useSettings().");
   }
 
   /**
@@ -1001,6 +1026,11 @@ function postableSsl(ssl) {
   if (ssl.ca) {
     posted.ca = ssl.ca;
   }
+  // The client certificate and key (#2254) cross as the anchors do: text.
+  if (ssl.cert && ssl.key) {
+    posted.cert = ssl.cert;
+    posted.key = ssl.key;
+  }
   if (ssl.stsOutboundVariant) {
     posted.stsOutboundVariant = ssl.stsOutboundVariant;
   }
@@ -1032,6 +1062,10 @@ function restoredSsl(posted) {
   }
   if (posted.ca) {
     restored.ca = posted.ca;
+  }
+  if (posted.cert && posted.key) {
+    restored.cert = posted.cert;
+    restored.key = posted.key;
   }
   if (posted.stsOutboundVariant) {
     restored.stsOutboundVariant = posted.stsOutboundVariant;

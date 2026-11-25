@@ -88,4 +88,77 @@ if [ -n "${PUBLIC_DIR}" ]; then
     "${PUBLIC_DIR}/${CN}.crt."
 fi
 
+# ---------------------------------------------------------------------------
+# A CLIENT CERTIFICATE FOR THE SERVICE ROLE, WHEN THE STACK ASKS FOR ONE
+# (#2254). Off unless POSTGRES_CLIENT_CERT is `cert` (the certificate alone
+# authenticates the service role) or `verify-full` (the certificate AND the
+# password). Then a client CA is made once in TLS_DIR — the database trusts
+# it as `ssl_ca_file`, which require-tls.sh names when the cluster is
+# created — and a certificate for the service role (CN = STS_DB_APP_USER,
+# which is what pg_hba's `cert` method matches) is issued from it. The pair
+# is copied to POSTGRES_TLS_CLIENT_DIR, a volume only the `sts` container
+# mounts, owned by POSTGRES_TLS_CLIENT_UID (the service's user, 10001) so the
+# key can be mode 0600; the service names the two files in
+# persistence.databaseTlsClientCertFile and persistence.databaseTlsClientKeyFile.
+# The CA's key never leaves TLS_DIR. Generated, never committed, like the
+# server's pair; delete client.crt to have the next start issue a new one,
+# which is how a renewal is exercised (the service reads the files again
+# every persistence.databasePasswordRefreshS).
+# ---------------------------------------------------------------------------
+CLIENT_MODE="${POSTGRES_CLIENT_CERT:-off}"
+case "${CLIENT_MODE}" in
+  off|'') ;;
+  cert|verify-full)
+    CA_CRT="${TLS_DIR}/client-ca.crt"
+    CA_KEY="${TLS_DIR}/client-ca.key"
+    CL_CRT="${TLS_DIR}/client.crt"
+    CL_KEY="${TLS_DIR}/client.key"
+    APP_ROLE="${STS_DB_APP_USER:-sts_app}"
+    if [ ! -s "${CA_CRT}" ] || [ ! -s "${CA_KEY}" ]; then
+      echo "postgres-tls: generating the client CA in ${TLS_DIR}."
+      openssl req -new -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
+        -subj "/CN=iya-sts database client CA/O=iya-sts" \
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -keyout "${CA_KEY}" -out "${CA_CRT}" 2>/dev/null
+      rm -f "${CL_CRT}" "${CL_KEY}"
+    fi
+    if [ ! -s "${CL_CRT}" ] || [ ! -s "${CL_KEY}" ]; then
+      echo "postgres-tls: issuing a client certificate for ${APP_ROLE}."
+      EXT="$(mktemp)"
+      printf '%s\n' "basicConstraints=critical,CA:FALSE" \
+        "keyUsage=critical,digitalSignature" \
+        "extendedKeyUsage=clientAuth" > "${EXT}"
+      openssl req -new -nodes -newkey rsa:2048 -sha256 \
+        -subj "/CN=${APP_ROLE}/O=iya-sts" \
+        -keyout "${CL_KEY}" -out "${TLS_DIR}/client.csr" 2>/dev/null
+      openssl x509 -req -in "${TLS_DIR}/client.csr" -CA "${CA_CRT}" \
+        -CAkey "${CA_KEY}" -CAcreateserial -days 90 -sha256 \
+        -extfile "${EXT}" -out "${CL_CRT}" 2>/dev/null
+      rm -f "${EXT}" "${TLS_DIR}/client.csr"
+    fi
+    chmod 600 "${CA_KEY}" "${CL_KEY}"
+    chmod 644 "${CA_CRT}" "${CL_CRT}"
+    chown postgres:postgres "${CA_KEY}" "${CA_CRT}" "${CL_KEY}" \
+      "${CL_CRT}" 2>/dev/null || true
+    CLIENT_DIR="${POSTGRES_TLS_CLIENT_DIR:-}"
+    if [ -n "${CLIENT_DIR}" ]; then
+      CLIENT_UID="${POSTGRES_TLS_CLIENT_UID:-10001}"
+      mkdir -p "${CLIENT_DIR}"
+      for f in crt key; do
+        install -m 600 -o "${CLIENT_UID}" -g "${CLIENT_UID}" \
+          "${TLS_DIR}/client.${f}" "${CLIENT_DIR}/.client.${f}.tmp"
+        mv -f "${CLIENT_DIR}/.client.${f}.tmp" "${CLIENT_DIR}/client.${f}"
+      done
+      echo "postgres-tls: the client pair is shared as" \
+        "${CLIENT_DIR}/client.crt and client.key."
+    fi
+    ;;
+  *)
+    echo "postgres-tls: POSTGRES_CLIENT_CERT=${CLIENT_MODE} is not off," \
+      "cert or verify-full." >&2
+    exit 1
+    ;;
+esac
+
 echo "postgres-tls: ready."

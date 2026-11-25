@@ -2349,12 +2349,14 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
  * @param [ca] - PEM text of the certificates trusted for this connection in
  * place of node's default store, or '' for that store
  * @param [engine] - 'postgres' (the default) or 'mariadb' (#677)
+ * @param [client] - `{ cert, key }`, the PEM client certificate (chain) and
+ * its private key this connection presents (#2254), or null for none
  * @returns `{ connectionString, ssl, refused, verifyChain, verifyHostname }`;
  * `refused` is '' or why the string is not dialled (it would be in the
  * clear, or cannot be told); `verifyChain` and `verifyHostname` say what is
  * checked of the server's certificate
  */
-function dialOptions(url, verifyTls, ca, engine) {
+function dialOptions(url, verifyTls, ca, engine, client) {
   const raw = String(url || '');
   const mariadb = engine === 'mariadb';
   // A MariaDB string spells "no TLS" as `ssl=false` or `ssl-mode=DISABLED`
@@ -2407,7 +2409,8 @@ function dialOptions(url, verifyTls, ca, engine) {
   const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
   /**
    * @type {{ rejectUnauthorized: boolean, ca?: string,
-   *          checkServerIdentity?: Function, checkHost?: string }}
+   *          checkServerIdentity?: Function, checkHost?: string,
+   *          cert?: string, key?: string }}
    */
   // `stsOutboundVariant`: the store's row of the outbound gate (#1360,
   // `common/certificate_trust.ts`); node ignores a member it does not know.
@@ -2417,6 +2420,18 @@ function dialOptions(url, verifyTls, ca, engine) {
     // The database's own trust anchors, in place of the default store for
     // this connection only (the header).
     ssl.ca = String(ca);
+  }
+  if (client && client.cert && client.key) {
+    // THE CLIENT CERTIFICATE THIS CONNECTION PRESENTS (#2254): node's own
+    // `cert` and `key`, which `pg` and `mysql2` both hand to `tls.connect`
+    // as they are. Text, so it crosses to the directory bridge's thread as
+    // the trust anchors do. With it the database may authenticate the
+    // connection by its certificate alone (pg_hba's `cert`, MariaDB's
+    // `REQUIRE X509`), or by the certificate AND the password in the string
+    // (`clientcert=verify-full`); which is the database's choice, and the
+    // string is dialled as written either way.
+    ssl.cert = String(client.cert);
+    ssl.key = String(client.key);
   }
   if (verifyChain && !verifyHostname) {
     // libpq's verify-ca: the chain, and no host name. Node checks the host
@@ -3461,7 +3476,13 @@ function create(options) {
   // `dialOptions()`, above create(), is the one reading of it (#98): this
   // driver's pools and an out-of-process tool dial the same way.
   const tlsCa = String(options.tlsCa || '');
-  const dial = dialOptions(url, options.verifyTls, tlsCa, engine);
+  // The client certificate and key (#2254), PEM, or null: `let`, because a
+  // renewed pair replaces it (`useClientCertificate()`).
+  let tlsClient = options.tlsClient && options.tlsClient.cert &&
+    options.tlsClient.key
+    ? { cert: String(options.tlsClient.cert),
+        key: String(options.tlsClient.key) } : null;
+  const dial = dialOptions(url, options.verifyTls, tlsCa, engine, tlsClient);
   if (dial.refused) {
     throw new Error(errorCodes.tag('STS-STORE-0078') +
                     'persistence: the database connection string is not ' +
@@ -3515,6 +3536,13 @@ function create(options) {
   // `let` since #2220: a password read again replaces it
   // (`useConnectionString()`).
   let dialled = dial.connectionString;
+  // `let` since #2254: a client certificate read again replaces it
+  // (`useClientCertificate()`).
+  let dialSsl = dial.ssl;
+  if (tlsClient) {
+    log.info('persistence: the database connection presents a client ' +
+             'certificate (persistence.databaseTlsClientCertFile).');
+  }
   // The connect timeout, the wait for a free connection and the idle close
   // (#2220): the caller's, or the numbers this driver always had.
   const connectMs = Number(options.connectTimeoutMs) > 0
@@ -3537,7 +3565,7 @@ function create(options) {
     return {
       engine: engine,
       connectionString: dialled,
-      ssl: dial.ssl,
+      ssl: dialSsl,
       connectionTimeoutMillis: connectMs
     };
   }
@@ -3662,7 +3690,7 @@ function create(options) {
     if (!readUrl || readUrl === url) {
       return pool;
     }
-    const readDial = dialOptions(readUrl, verify, tlsCa, engine);
+    const readDial = dialOptions(readUrl, verify, tlsCa, engine, tlsClient);
     if (readDial.refused) {
       throw new Error(errorCodes.tag('STS-STORE-0078') +
                       'persistence: the read database connection string is ' +
@@ -11340,7 +11368,8 @@ function create(options) {
     // ---------------------------------------------------------------------
     useConnectionString: function (nextUrl) {
       log.debug("Entering useConnectionString().");
-      const nextDial = dialOptions(nextUrl, verify, tlsCa, engine);
+      const nextDial = dialOptions(nextUrl, verify, tlsCa, engine,
+                                   tlsClient);
       if (nextDial.refused) {
         log.debug("Leaving useConnectionString(). Refused.");
         return { ok: false, refused: nextDial.refused };
@@ -11350,6 +11379,57 @@ function create(options) {
       tallyPool.setConnectionString(dialled);
       log.debug("Leaving useConnectionString().");
       return { ok: true };
+    },
+
+    // ---------------------------------------------------------------------
+    // A CLIENT CERTIFICATE READ AGAIN (#2254): a renewed certificate and
+    // key for the connections made from now on, the way a password read
+    // again is (#2220, above). The TLS options are decided again by
+    // `dialOptions()` with the new pair, and every pool takes them —
+    // the writer's two and the read pool, which is the same database's
+    // replica and presents the same identity. Knex dials every new
+    // connection, pooled or dedicated (LISTEN, liveness, an online index
+    // build), from the settings it holds then
+    // (`StorePool.setSsl()`), and an open connection keeps the session its
+    // handshake made: the database does not end a session when a
+    // certificate it accepted is replaced. The directory bridge's thread
+    // is handed the options when it starts (`bridgeConnection()`), so it
+    // keeps the pair it was given until it is started again.
+    // ---------------------------------------------------------------------
+    useClientCertificate: function (next) {
+      log.debug("Entering useClientCertificate().");
+      if (!next || !next.cert || !next.key) {
+        log.debug("Leaving useClientCertificate(). No pair.");
+        return { ok: false, refused: 'no certificate and key were given' };
+      }
+      tlsClient = { cert: String(next.cert), key: String(next.key) };
+      const nextDial = dialOptions(dialled, verify, tlsCa, engine,
+                                   tlsClient);
+      if (nextDial.refused) {
+        log.debug("Leaving useClientCertificate(). Refused.");
+        return { ok: false, refused: nextDial.refused };
+      }
+      dialSsl = nextDial.ssl;
+      pool.setSsl(dialSsl);
+      tallyPool.setSsl(dialSsl);
+      if (readOptions && readPool !== pool) {
+        const readDial = dialOptions(readUrl, verify, tlsCa, engine,
+                                     tlsClient);
+        if (!readDial.refused) {
+          readOptions.ssl = readDial.ssl;
+          readPool.setSsl(readDial.ssl);
+        }
+      }
+      log.debug("Leaving useClientCertificate().");
+      return { ok: true };
+    },
+
+    // Whether this driver's connections present a client certificate
+    // (#2254), for the status report.
+    presentsClientCertificate: function () {
+      log.debug("Entering presentsClientCertificate().");
+      log.debug("Leaving presentsClientCertificate().");
+      return !!tlsClient;
     },
 
     // A pooled connection to the writer that could not be made (#2220):

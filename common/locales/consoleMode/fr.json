@@ -41,5 +41,11 @@
   "dualThInForce": "En vigueur",
   "dualYes": "oui",
   "dualNo": "non",
-  "dualLink": "Approbations en attente ({n, plural, =1 {un acte en attente} other {# actes en attente}})"
+  "dualLink": "Approbations en attente ({n, plural, =1 {un acte en attente} other {# actes en attente}})",
+  "dbHeading": "Identifiant de la base de données",
+  "dbLead": "Comment ce service s’authentifie auprès de sa base de données (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). C’est un paramètre des deux modes, pas une différence entre eux ; il figure ici parce que cette page indique comment la connexion s’authentifie.",
+  "dbCertificateAndPassword": "Un certificat client et un mot de passe.",
+  "dbCertificate": "Un certificat client, sans mot de passe.",
+  "dbPassword": "Un mot de passe ; aucun certificat client n’est présenté.",
+  "dbNeither": "Ni certificat client ni mot de passe : la base de données accepte la connexion sans l’un ni l’autre."
 }

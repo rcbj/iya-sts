@@ -41,5 +41,11 @@
   "dualThInForce": "سارية",
   "dualYes": "نعم",
   "dualNo": "لا",
-  "dualLink": "الموافقات المعلّقة ({n, plural, =1 {إجراء واحد بالانتظار} other {# إجراءات بالانتظار}})"
+  "dualLink": "الموافقات المعلّقة ({n, plural, =1 {إجراء واحد بالانتظار} other {# إجراءات بالانتظار}})",
+  "dbHeading": "بيانات اعتماد قاعدة البيانات",
+  "dbLead": "كيف تُثبت هذه الخدمة هويتها لقاعدة بياناتها (<code>persistence.databaseTlsClientCertFile</code>، <code>persistence.databasePasswordProvider</code>). إنه إعداد في كلا الوضعين، وليس فرقًا بينهما؛ وهو هنا لأن هذه الصفحة تجيب عن كيفية مصادقة الاتصال.",
+  "dbCertificateAndPassword": "شهادة عميل وكلمة مرور.",
+  "dbCertificate": "شهادة عميل، بلا كلمة مرور.",
+  "dbPassword": "كلمة مرور؛ لا تُقدَّم شهادة عميل.",
+  "dbNeither": "لا شهادة عميل ولا كلمة مرور: تقبل قاعدة البيانات الاتصال من دون أيٍّ منهما."
 }

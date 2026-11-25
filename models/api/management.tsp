@@ -11709,7 +11709,12 @@ op `getMode`(`responses/200/content/application~1json/schema`: {
       `why`?: string
     })[];
     `notYet`?: (WithIdWhat)[];
-    @js(#{`description`:"Two-person approval for high-risk administrator acts (#2166), and whether it is in force in this realm."}) `dualControl`?: `DualControlState`
+    @js(#{`description`:"Two-person approval for high-risk administrator acts (#2166), and whether it is in force in this realm."}) `dualControl`?: `DualControlState`;
+    @js(#{`description`:"How this service authenticates to its database (#2254): whether the store is a database at all, whether the connection presents a client certificate (persistence.databaseTlsClientCertFile), and whether it carries a password."}) `databaseCredential`?: {
+      `database`?: boolean;
+      `certificate`?: boolean;
+      `password`?: boolean
+    }
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
@@ -15227,6 +15232,8 @@ op `collectGarbage`(@js(#{`examples`:#[#{`target`:"all"}]}) `requestBody/content
       `encrypted`:#{`type`:"boolean"},
       `verifyCertificate`:#{`type`:"boolean"},
       `caFile`:#{`type`:#["string","null"]},
+      `clientCertificate`:#{`type`:"boolean"},
+      `clientCertificateFile`:#{`type`:#["string","null"]},
       `tls`:#{`type`:"string"},
       `note`:#{`type`:"string"}
     },

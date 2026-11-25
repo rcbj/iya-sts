@@ -2375,6 +2375,23 @@ const CODES = [
       'database refused a login, #2220); new connections go on using the ' +
       'password already held.',
     spec: 'Log line and audit row' },
+  { code: 'STS-STORE-0180',
+    summary: 'persistence.databaseTlsClientCertFile or ' +
+      'persistence.databaseTlsClientKeyFile is set and the client ' +
+      'certificate cannot be presented: only one of the two is set, a file ' +
+      'cannot be read (or is outside security.fileRoots in product), it ' +
+      'holds no certificate, the key is encrypted or does not parse, or it ' +
+      'is not the certificate\'s key (#2254). Fatal at ' +
+      'persistence.start(); the out-of-process tools that dial the ' +
+      'database refuse the same way.',
+    spec: 'none — fatal at start' },
+  { code: 'STS-STORE-0181',
+    summary: 'The database client certificate could not be read again ' +
+      '(persistence.database-password-refresh, or after the database ' +
+      'refused a login, #2254): a file is unreadable or the pair no longer ' +
+      'holds together. New connections go on presenting the pair already ' +
+      'held.',
+    spec: 'Log line and audit row' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +

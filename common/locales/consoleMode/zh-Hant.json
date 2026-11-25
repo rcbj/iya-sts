@@ -41,5 +41,11 @@
   "dualThInForce": "生效",
   "dualYes": "是",
   "dualNo": "否",
-  "dualLink": "待審批（{n, plural, =1 {一項操作等待中} other {# 項操作等待中}}）"
+  "dualLink": "待審批（{n, plural, =1 {一項操作等待中} other {# 項操作等待中}}）",
+  "dbHeading": "資料庫憑證",
+  "dbLead": "本服務如何向其資料庫證明自身身分（<code>persistence.databaseTlsClientCertFile</code>、<code>persistence.databasePasswordProvider</code>）。這是兩種模式共有的設定，而非模式之間的差異；列於此處，是因為連線如何驗證是本頁回答的問題。",
+  "dbCertificateAndPassword": "用戶端憑證和密碼。",
+  "dbCertificate": "用戶端憑證，無密碼。",
+  "dbPassword": "密碼；不出示用戶端憑證。",
+  "dbNeither": "既無用戶端憑證也無密碼：資料庫在兩者皆無的情況下接受連線。"
 }

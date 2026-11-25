@@ -11863,6 +11863,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "Der Verbindungspool wird geöffnet, bevor der Listener bindet"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "Datei des Datenbank-Client-Zertifikats"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "Ein PEM-Zertifikat, das dieser Dienst der Datenbank beim Öffnen einer Verbindung vorlegt (zuerst das Endzertifikat, danach alle Zwischenzertifikate, die die Datenbank nicht hält). Zusammen mit `persistence.databaseTlsClientKeyFile` setzen. Die Datenbank kann die Verbindung dann allein anhand des Zertifikats authentifizieren (PostgreSQLs Methode `cert`, MariaDBs `REQUIRE X509`), und es wird kein Passwort benötigt, oder anhand von Zertifikat und Passwort gemeinsam (`clientcert=verify-full`). Leer, der Standard, legt keines vor. Beide Dateien werden alle `persistence.databasePasswordRefreshS` neu gelesen, sodass ein erneuertes Zertifikat ohne Neustart für neue Verbindungen verwendet wird. Im Produktmodus muss die Datei in einem Verzeichnis liegen, das `security.fileRoots` aufführt. Eine Datei, die nicht gelesen werden kann, oder ein Schlüssel, der nicht zu diesem Zertifikat gehört, verhindert den Start des Dienstes."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "Der Verbindungspool wird geöffnet, bevor der Listener bindet"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "Datei des Datenbank-Client-Schlüssels"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "Der unverschlüsselte private PEM-Schlüssel zu `persistence.databaseTlsClientCertFile`, nur für diesen Dienst lesbar. Er wird aus dem Pfad gelesen und nie protokolliert oder angezeigt. Beide oder keines setzen."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "Der Verbindungspool wird geöffnet, bevor der Listener bindet"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "Datenbank der globalen Stufe (Writer)"

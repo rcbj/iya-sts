@@ -11863,6 +11863,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "連線集區在監聽器繫結之前開啟"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "資料庫用戶端憑證檔案"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "本服務在開啟連線時向資料庫出示的 PEM 憑證（先是葉憑證，再來是資料庫沒有的任何中繼憑證）。與 `persistence.databaseTlsClientKeyFile` 一起設定。資料庫隨後可僅憑憑證驗證該連線（PostgreSQL 的 `cert` 方法、MariaDB 的 `REQUIRE X509`），無需密碼；亦可憑憑證與密碼共同驗證（`clientcert=verify-full`）。留空（預設）時不出示憑證。兩個檔案每隔 `persistence.databasePasswordRefreshS` 重新讀取一次，因此續期後的憑證無需重新啟動即可用於新連線。在產品模式下，該檔案必須位於 `security.fileRoots` 列出的目錄中。無法讀取的檔案，或不屬於此憑證的金鑰，會使服務無法啟動。"
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "連線集區在監聽器繫結之前開啟"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "資料庫用戶端金鑰檔案"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "`persistence.databaseTlsClientCertFile` 的未加密 PEM 私密金鑰，僅本服務可讀取。它從該路徑讀取，絕不記錄或顯示。兩者都設定或都不設定。"
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "連線集區在監聽器繫結之前開啟"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "全域層資料庫（寫入端）"

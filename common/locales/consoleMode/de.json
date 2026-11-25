@@ -41,5 +41,11 @@
   "dualThInForce": "In Kraft",
   "dualYes": "ja",
   "dualNo": "nein",
-  "dualLink": "Ausstehende Freigaben ({n, plural, =1 {eine Aktion wartet} other {# Aktionen warten}})"
+  "dualLink": "Ausstehende Freigaben ({n, plural, =1 {eine Aktion wartet} other {# Aktionen warten}})",
+  "dbHeading": "Datenbank-Anmeldedaten",
+  "dbLead": "Wie sich dieser Dienst gegenüber seiner Datenbank ausweist (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). Es ist eine Einstellung beider Modi, kein Unterschied zwischen ihnen; sie steht hier, weil diese Seite beantwortet, wie sich die Verbindung authentifiziert.",
+  "dbCertificateAndPassword": "Ein Client-Zertifikat und ein Passwort.",
+  "dbCertificate": "Ein Client-Zertifikat, ohne Passwort.",
+  "dbPassword": "Ein Passwort; es wird kein Client-Zertifikat vorgelegt.",
+  "dbNeither": "Weder ein Client-Zertifikat noch ein Passwort: Die Datenbank nimmt die Verbindung ohne beides an."
 }

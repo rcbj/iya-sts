@@ -41,5 +41,11 @@
   "dualThInForce": "May bisa",
   "dualYes": "oo",
   "dualNo": "hindi",
-  "dualLink": "Mga nakabinbing pag-apruba ({n, plural, =1 {isang aksyong naghihintay} other {# aksyong naghihintay}})"
+  "dualLink": "Mga nakabinbing pag-apruba ({n, plural, =1 {isang aksyong naghihintay} other {# aksyong naghihintay}})",
+  "dbHeading": "Kredensyal sa database",
+  "dbLead": "Kung paano pinapatunayan ng serbisyong ito ang sarili nito sa database nito (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). Setting ito ng alinmang mode, hindi pagkakaiba ng mga mode; narito ito dahil sinasagot ng pahinang ito kung paano nag-a-authenticate ang koneksyon.",
+  "dbCertificateAndPassword": "Isang client certificate at isang password.",
+  "dbCertificate": "Isang client certificate, walang password.",
+  "dbPassword": "Isang password; walang client certificate na iniharap.",
+  "dbNeither": "Walang client certificate at walang password: tinatanggap ng database ang koneksyon nang wala ang alinman."
 }

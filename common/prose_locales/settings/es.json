@@ -11863,6 +11863,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "el pool de conexiones se abre antes de que se vincule la escucha"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "Archivo del certificado de cliente de la base de datos"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "Un certificado PEM que este servicio presenta a la base de datos al abrir una conexión (primero el certificado final y después los certificados intermedios que la base de datos no tenga). Configúrelo junto con `persistence.databaseTlsClientKeyFile`. La base de datos puede entonces autenticar la conexión solo con el certificado (el método `cert` de PostgreSQL, `REQUIRE X509` de MariaDB), y no hace falta contraseña, o con el certificado y la contraseña juntos (`clientcert=verify-full`). Vacío, el valor predeterminado, no presenta ninguno. Ambos archivos se vuelven a leer cada `persistence.databasePasswordRefreshS`, de modo que un certificado renovado se usa en las conexiones nuevas sin reiniciar. En producto el archivo debe estar en un directorio que `security.fileRoots` incluya. Un archivo que no se puede leer, o una clave que no es la de este certificado, impide que el servicio arranque."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "el pool de conexiones se abre antes de que se vincule la escucha"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "Archivo de la clave de cliente de la base de datos"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "La clave privada PEM sin cifrar de `persistence.databaseTlsClientCertFile`, legible solo por este servicio. Se lee de la ruta y nunca se registra ni se muestra. Configure ambos o ninguno."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "el pool de conexiones se abre antes de que se vincule la escucha"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "Base de datos del nivel global (escritura)"

@@ -21768,6 +21768,49 @@ const SETTINGS = [
                  'the certificate its postgres container generates, shared ' +
                  'read-only without the key.' },
 
+  // ---------------------------------------------------------------------
+  // THE CLIENT CERTIFICATE THIS SERVICE PRESENTS TO ITS DATABASE (#2254,
+  // ASVS 5.0.0 12.3.5). Files, as the CA beside them is and as the client
+  // identity for the secret store is (`keys.vaultClientCert`): a client
+  // certificate is issued and renewed into files by an agent, cert-manager
+  // or a CSI driver, and the database credential refresh
+  // (`persistence.databasePasswordRefreshS`) reads them again, so a renewed
+  // one is presented without a restart. `persistence/persistence.js`,
+  // *THE CLIENT CERTIFICATE THE DATABASE CONNECTION PRESENTS*, argues the
+  // shape. Both empty, the default, is the password-only connection.
+  // ---------------------------------------------------------------------
+  { key: 'persistence.databaseTlsClientCertFile', group: 'Persistence',
+    label: 'Database client certificate file',
+    env: 'STS_DATABASE_TLS_CLIENT_CERT_FILE', type: 'string', dflt: '',
+    runtime: false,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: 'A PEM certificate this service presents to the database ' +
+                 'when it opens a connection (the leaf first, then any ' +
+                 'intermediate certificates the database does not hold). ' +
+                 'Set it together with ' +
+                 '`persistence.databaseTlsClientKeyFile`. The database may ' +
+                 'then authenticate the connection by the certificate ' +
+                 'alone (PostgreSQL\'s `cert` method, MariaDB\'s `REQUIRE ' +
+                 'X509`), and no password is needed, or by the certificate ' +
+                 'and the password together (`clientcert=verify-full`). ' +
+                 'Empty, the default, presents none. Both files are read ' +
+                 'again every `persistence.databasePasswordRefreshS`, so a ' +
+                 'renewed certificate is used for new connections without ' +
+                 'a restart. In product the file must be in a directory ' +
+                 '`security.fileRoots` lists. A file that cannot be read, ' +
+                 'or a key that is not this certificate\'s, stops the ' +
+                 'service at start.' },
+
+  { key: 'persistence.databaseTlsClientKeyFile', group: 'Persistence',
+    label: 'Database client key file',
+    env: 'STS_DATABASE_TLS_CLIENT_KEY_FILE', type: 'string', dflt: '',
+    runtime: false,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: 'The unencrypted PEM private key of ' +
+                 '`persistence.databaseTlsClientCertFile`, readable by this ' +
+                 'service only. It is read from the path and never logged ' +
+                 'or shown. Set both or neither.' },
+
   // -------------------------------------------------------------------------
   // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the
   // store is TWO databases: `persistence.databaseUrl` is this cell's own

@@ -41,5 +41,11 @@
   "dualThInForce": "In force",
   "dualYes": "yes",
   "dualNo": "no",
-  "dualLink": "Pending approvals ({n, plural, =1 {one act waiting} other {# acts waiting}})"
+  "dualLink": "Pending approvals ({n, plural, =1 {one act waiting} other {# acts waiting}})",
+  "dbHeading": "Database credential",
+  "dbLead": "How this service proves itself to its database (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). It is a setting of either mode, not a mode difference; it is here because how the connection authenticates is a question this page answers.",
+  "dbCertificateAndPassword": "A client certificate and a password.",
+  "dbCertificate": "A client certificate, with no password.",
+  "dbPassword": "A password; no client certificate is presented.",
+  "dbNeither": "Neither a client certificate nor a password: the database accepts the connection without either."
 }

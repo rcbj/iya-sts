@@ -41,5 +41,11 @@
   "dualThInForce": "En vigor",
   "dualYes": "sí",
   "dualNo": "no",
-  "dualLink": "Aprobaciones pendientes ({n, plural, =1 {un acto en espera} other {# actos en espera}})"
+  "dualLink": "Aprobaciones pendientes ({n, plural, =1 {un acto en espera} other {# actos en espera}})",
+  "dbHeading": "Credencial de la base de datos",
+  "dbLead": "Cómo se identifica este servicio ante su base de datos (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). Es un ajuste de ambos modos, no una diferencia entre ellos; está aquí porque esta página responde cómo se autentica la conexión.",
+  "dbCertificateAndPassword": "Un certificado de cliente y una contraseña.",
+  "dbCertificate": "Un certificado de cliente, sin contraseña.",
+  "dbPassword": "Una contraseña; no se presenta ningún certificado de cliente.",
+  "dbNeither": "Ni un certificado de cliente ni una contraseña: la base de datos acepta la conexión sin ninguno de los dos."
 }

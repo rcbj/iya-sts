@@ -9111,6 +9111,87 @@ function decryptionKeyPairProblem(certificatePem, privateKeyPem) {
 }
 
 // ---------------------------------------------------------------------------
+// A TLS CLIENT CERTIFICATE AND ITS KEY, CHECKED AS ONE PAIR (#2254, ASVS
+// 5.0.0 12.3.5). The database connection may present a client certificate
+// (`persistence.databaseTlsClientCertFile` and `…KeyFile`), and a pair that
+// does not hold together is refused at start rather than at a handshake,
+// where the database would answer "certificate authentication failed" and
+// point at itself. What is checked is what node needs to present the pair:
+// one or more PEM certificates (the leaf first, then any intermediates the
+// database does not hold), an unencrypted PEM private key, and that key
+// being the leaf's private half. No algorithm or key size is refused here:
+// the database's TLS library decides what it accepts, and this service drops
+// no algorithm it can present. Never throws.
+// ---------------------------------------------------------------------------
+/**
+ * Checks that a PEM certificate chain and a PEM private key are a pair a TLS
+ * client can present.
+ *
+ * @param certificatePem - the leaf first, then any intermediates
+ * @param privateKeyPem - the leaf's private key, unencrypted
+ * @returns `{ ok: true, keyType, notAfter, subject, certificatePem }`, or
+ *   `{ ok: false, problem, why }` where `problem` is `certificate`, `key` or
+ *   `mismatch`
+ */
+function tlsClientKeyPairProblem(certificatePem, privateKeyPem) {
+  log.debug("Entering tlsClientKeyPairProblem().");
+  const refuse = function (problem, why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    log.debug("Leaving tlsClientKeyPairProblem(). " + problem);
+    return { ok: false, problem: problem, why: why };
+  };
+  const blocks = String(certificatePem || '').match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  if (!blocks.length) {
+    return refuse('certificate', 'it holds no PEM CERTIFICATE block');
+  }
+  const parsed = [];
+  for (let i = 0; i < blocks.length; i++) {
+    try {
+      parsed.push(parseCertificate(blocks[i]));
+    } catch (e) {
+      log.debug("Caught in tlsClientKeyPairProblem(): " +
+                ((e && e.message) || e));
+      return refuse('certificate', 'certificate ' + (i + 1) + ' of ' +
+        blocks.length + ' does not parse as X.509');
+    }
+  }
+  const keyText = String(privateKeyPem || '');
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(keyText) ||
+      /Proc-Type:\s*4,ENCRYPTED/.test(keyText)) {
+    return refuse('key', 'the private key is encrypted; give it as an ' +
+      'unencrypted PEM private key, readable only by this service');
+  }
+  let key;
+  try {
+    key = privateKeyFrom(keyText);
+  } catch (e) {
+    log.debug("Caught in tlsClientKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('key', 'it does not parse as a PEM private key');
+  }
+  let matches = false;
+  try {
+    matches = parsed[0].checkPrivateKey(key);
+  } catch (e) {
+    log.debug("Caught in tlsClientKeyPairProblem(): " +
+              ((e && e.message) || e));
+    matches = false;
+  }
+  if (!matches) {
+    return refuse('mismatch', 'the private key is not the private half of ' +
+      'the first certificate in the file');
+  }
+  const notAfter = Date.parse(parsed[0].validTo);
+  log.debug("Leaving tlsClientKeyPairProblem().");
+  return { ok: true, keyType: String(key.asymmetricKeyType || ''),
+           notAfter: Number.isFinite(notAfter) ? notAfter : 0,
+           subject: String(parsed[0].subject || ''),
+           certificatePem: blocks.join('\n') + '\n' };
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE'S KEY, NOT THE CERTIFICATE: SHA-256 over the DER of its
 // SubjectPublicKeyInfo, base64url (#164, 2026-09-26).
 //
@@ -23156,6 +23237,7 @@ module.exports = {
   wssCertificateHandles: wssCertificateHandles,
   wssIssuerSerialHandle: wssIssuerSerialHandle,
   decryptionKeyPairProblem: decryptionKeyPairProblem,
+  tlsClientKeyPairProblem: tlsClientKeyPairProblem,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
   publicKeySpkiThumbprint: publicKeySpkiThumbprint,
   constantTimeEquals: constantTimeEquals,

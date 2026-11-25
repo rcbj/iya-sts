@@ -63,6 +63,14 @@
     "en": "ce51e3182e53d854",
     "text": "INTE UPPRINGD — persistence.databaseTlsCaFile anger {{file}}, som inte kan läsas eller inte innehåller något certifikat, så den här tjänsten startar inte med den."
   },
+  "persistence.status.clientCertificate": {
+    "en": "803d02a07753ab1b",
+    "text": "Den här tjänsten autentiserar sig mot databasen med klientcertifikatet i {{file}} (persistence.databaseTlsClientCertFile), som läses om var persistence.databasePasswordRefreshS."
+  },
+  "persistence.status.clientCertificateUnusable": {
+    "en": "79cae22fc2547022",
+    "text": "INTE ANSLUTEN — klientcertifikatet i {{file}} (persistence.databaseTlsClientCertFile) kan inte läsas, eller så är nyckeln inte dess egen, så den här tjänsten startar inte med det."
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "INTE UPPRINGD — sslmode={{sslmode}} begär en anslutning i klartext, vilket den här tjänsten aldrig öppnar, så den startar inte med den här anslutningssträngen."

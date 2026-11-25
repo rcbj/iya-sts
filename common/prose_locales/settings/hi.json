@@ -11863,6 +11863,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "कनेक्शन पूल श्रोता के बाइंड होने से पहले खोला जाता है"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "डेटाबेस क्लाइंट प्रमाणपत्र फ़ाइल"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "एक PEM प्रमाणपत्र जिसे यह सेवा कनेक्शन खोलते समय डेटाबेस के सामने प्रस्तुत करती है (पहले लीफ़, फिर वे मध्यवर्ती प्रमाणपत्र जो डेटाबेस के पास नहीं हैं)। इसे `persistence.databaseTlsClientKeyFile` के साथ सेट करें। तब डेटाबेस कनेक्शन को केवल प्रमाणपत्र से प्रमाणित कर सकता है (PostgreSQL की `cert` विधि, MariaDB का `REQUIRE X509`), और पासवर्ड की ज़रूरत नहीं होती, या प्रमाणपत्र और पासवर्ड दोनों से (`clientcert=verify-full`)। खाली, डिफ़ॉल्ट, कुछ भी प्रस्तुत नहीं करता। दोनों फ़ाइलें हर `persistence.databasePasswordRefreshS` पर फिर से पढ़ी जाती हैं, इसलिए नवीनीकृत प्रमाणपत्र बिना रीस्टार्ट के नए कनेक्शनों में उपयोग होता है। प्रोडक्ट में फ़ाइल ऐसी निर्देशिका में होनी चाहिए जिसे `security.fileRoots` सूचीबद्ध करता है। जो फ़ाइल पढ़ी न जा सके, या जो कुंजी इस प्रमाणपत्र की न हो, वह सेवा को शुरू होने से रोकती है।"
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "कनेक्शन पूल श्रोता के बाइंड होने से पहले खोला जाता है"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "डेटाबेस क्लाइंट कुंजी फ़ाइल"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "`persistence.databaseTlsClientCertFile` की अनएन्क्रिप्टेड PEM निजी कुंजी, जिसे केवल यह सेवा पढ़ सकती है। इसे पथ से पढ़ा जाता है और कभी लॉग या दिखाया नहीं जाता। दोनों सेट करें या कोई नहीं।"
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "कनेक्शन पूल श्रोता के बाइंड होने से पहले खोला जाता है"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "वैश्विक स्तर डेटाबेस (लेखक)"

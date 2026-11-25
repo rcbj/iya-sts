@@ -11863,6 +11863,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "anslutningspoolen öppnas innan lyssnaren binder"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "Fil för databasens klientcertifikat"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "Ett PEM-certifikat som den här tjänsten visar upp för databasen när den öppnar en anslutning (slutcertifikatet först, sedan de mellanliggande certifikat som databasen inte har). Ange det tillsammans med `persistence.databaseTlsClientKeyFile`. Databasen kan då autentisera anslutningen med enbart certifikatet (PostgreSQL:s metod `cert`, MariaDB:s `REQUIRE X509`), och inget lösenord behövs, eller med certifikatet och lösenordet tillsammans (`clientcert=verify-full`). Tomt, standardvärdet, visar inget. Båda filerna läses om var `persistence.databasePasswordRefreshS`, så att ett förnyat certifikat används för nya anslutningar utan omstart. I produktläge måste filen ligga i en katalog som `security.fileRoots` listar. En fil som inte kan läsas, eller en nyckel som inte hör till det här certifikatet, hindrar tjänsten från att starta."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "anslutningspoolen öppnas innan lyssnaren binder"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "Fil för databasens klientnyckel"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "Den okrypterade privata PEM-nyckeln till `persistence.databaseTlsClientCertFile`, läsbar endast för den här tjänsten. Den läses från sökvägen och loggas eller visas aldrig. Ange båda eller ingen."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "anslutningspoolen öppnas innan lyssnaren binder"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "Databas för den globala nivån (skrivare)"
