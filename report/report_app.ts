@@ -315,6 +315,9 @@ class ReportApp {
     log.debug("Entering shellDocument().");
     const refused = registered && registered.ok === false;
     const there = elsewhere || {};
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from the `browser`
+    // catalog; the English is the words it always had.
+    const t = ShellDocument.translator();
     const html = ShellDocument.document({
       title: 'Reports — IYA STS',
       attributes: [
@@ -331,7 +334,9 @@ class ReportApp {
         ? '<p class="err">' + Html.esc(registered.why ||
           'Reports cannot sign in at this address.') + '</p>'
         : null,
-      noscript: '<p class="err">This page needs its script.</p>',
+      noscript: '<p class="err">' + ShellDocument.said(t,
+        'browser.noscript.report', 'This page needs its script.') + '</p>',
+      translator: t,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     log.debug("Leaving shellDocument().");

@@ -200,6 +200,8 @@ const readPolicy = require('./directory_read_policy');
 // 2026-10-14): `(uid=ALICE)` finds `uid=alice`, as RFC 4519's caseIgnoreMatch
 // says. A static utility class that requires nothing, asked once per entry.
 const ldapMatching = require('./ldap_matching');
+// The largest message a client may send, read from its header (#2220).
+const LdapMessageGuard = require('./ldap_message_guard');
 // WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26): the rule
 // table and the edit, a LIBRARY that cannot require this file (it is loaded
 // by the console long before this one) and so is handed the two functions it
@@ -18544,12 +18546,15 @@ function rekeyLdaps(why) {
   try {
     const current = tlsServer.serverCertificate();
     Object.assign(serverCertificate, current);
+    // EVERY listener certificate, as the main port presents them (#2220):
+    // `clientTruststoreOptions()` answers parallel `key` and `cert` arrays,
+    // one bundle per `tls.certificateAlgorithms` entry, and OpenSSL picks
+    // the one the client's signature algorithms allow.
+    const context = tlsServer.clientTruststoreOptions(ldapsPolicy());
     secureServer.server.setSecureContext(Object.assign({
-      // The leaf, its chain and the Root (#1064), as every listener presents
-      // them — tls_server.js's presentedBundlePem().
-      cert: tlsServer.presentedBundlePem(current),
-      key: current.privateKeyPem,
-      ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
+      cert: context.cert,
+      key: context.key,
+      ca: context.ca
     }, tlsProtocolOptions()));
   } catch (e) {
     // The listener still has the context it had, so this is a certificate
@@ -18606,10 +18611,24 @@ if (serverCertificate && serverCertificate.certPem &&
     ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
   }, tlsProtocolOptions(),
   tlsServer.clientAuthOptions(ldapsPolicy().clientAuth)));
+  // ---------------------------------------------------------------------
+  // EVERY CERTIFICATE ON 636, NOT THE FIRST (#2220). The constructor above
+  // takes ONE certificate, because the ldapjs fork refuses anything but a
+  // string or a Buffer for `certificate` (lib/server.js) and this repository
+  // changes the fork only in the fork. So the context is replaced at once
+  // with the main port's: `clientTruststoreOptions()` answers PARALLEL
+  // `key` and `cert` arrays, one per `tls.certificateAlgorithms` entry, and
+  // OpenSSL serves the one that matches the signature algorithms the client
+  // offered — RSA to an ordinary client, ML-DSA to a post-quantum one, on
+  // the same port. Until #2220 the callback below answered the first
+  // certificate alone, so `applyAnchors()` put RSA back on every truststore
+  // change. It answers both arrays now; with one certificate configured
+  // that is the same single bundle it always was.
+  // ---------------------------------------------------------------------
   tlsServer.trustClientCertificatesOn(secureServer.server,
     'LDAPS (' + LDAPS_PORT + ')', function () {
-      return { key: serverCertificate.privateKeyPem,
-               cert: tlsServer.presentedBundlePem(serverCertificate) };
+      const context = tlsServer.clientTruststoreOptions(ldapsPolicy());
+      return { key: context.key, cert: context.cert };
     }, { kind: 'ldaps' });
   // Under paranoid PKI mode LDAPS holds a client certificate as the main port
   // does, with revocation, and the stream waits for the verdict (#1360).
@@ -18618,6 +18637,10 @@ if (serverCertificate && serverCertificate.certPem &&
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.
   sessionTickets.track(secureServer.server, 'LDAPS (' + LDAPS_PORT + ')');
+  // The key exchange each handshake negotiated, counted per group (#2220,
+  // tls/key_exchange.ts), as on the main port.
+  require('../tls/key_exchange').install(secureServer.server, 'ldaps',
+                                         'LDAPS (' + LDAPS_PORT + ')');
 } else {
   tlsListenError = 'there was no server certificate at startup';
   log.warn(errorCodes.tag('STS-LDAP-0029') +
@@ -19292,9 +19315,81 @@ servers.forEach(function (one) {
   ['connection', 'secureConnection'].forEach(function (event) {
     one.server.on(event, function (socket) {
       holdSocket(socket);
+      // THE MESSAGE SIZE GUARD (#2220), on the socket ldapjs reads: the
+      // plain one, or the TLS one once its handshake is done (the raw socket
+      // under a TLS server carries no parser, and is skipped). ldapjs's
+      // connection handler ran first — it was registered when the server
+      // was built — so its `data` listener is the one put behind the guard.
+      if (socket.parser) {
+        guardMessages(socket);
+      }
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// THE LARGEST MESSAGE A CLIENT MAY SEND (#2220): `ldap_message_guard.ts`
+// argues it. The limits are read at each message's header, from the
+// default realm — the listeners are the process's, and a socket has no realm
+// until a bind names one — so a change applies to the next message.
+// ---------------------------------------------------------------------------
+// When a refusal was last logged, and how many have gone unlogged since, so
+// a flood of oversized messages is one line a minute rather than one each.
+let messageRefusalLoggedAt = 0;
+let messageRefusalsUnlogged = 0;
+
+/**
+ * Puts the message size guard between a connection and ldapjs's parser.
+ *
+ * @param socket - the connection, after ldapjs's connection handler ran
+ */
+function guardMessages(socket) {
+  log.debug("Entering guardMessages().");
+  // No Entering/Leaving pair in `limits` or `isBound`: the guard asks them
+  // at every message's header, and a pair per message would drown the log
+  // (the hot-path exception). `refused` runs once per closed connection.
+  LdapMessageGuard.install(socket, {
+    log: log,
+    limits: function () {
+      return {
+        bound: Number(config.value('ldap.maxMessageBytes')),
+        unbound: Number(config.value('ldap.maxMessageBytesBeforeBind'))
+      };
+    },
+    isBound: function (one) {
+      const dn = one.ldap && one.ldap.bindDN ? String(one.ldap.bindDN) : '';
+      return !!dn && dn.toLowerCase() !== 'cn=anonymous';
+    },
+    refused: function (one, refusal) {
+      log.debug("Entering refused().");
+      const now = Date.now();
+      if (now - messageRefusalLoggedAt < 60000) {
+        messageRefusalsUnlogged += 1;
+        log.debug("Leaving refused(). Counted, not logged.");
+        return;
+      }
+      const peer = (one.ldap && one.ldap.id) ||
+        ((one.remoteAddress || '?') + ':' + (one.remotePort || '?'));
+      log.warn(errorCodes.tag('STS-LDAP-0227') + 'ldap: closed the ' +
+               'connection from ' + peer + ': ' +
+               (refusal.reason === 'indefinite'
+                 ? 'a message used BER\'s indefinite length, which LDAP ' +
+                   'does not allow'
+                 : 'a message declared ' + refusal.declared + ' bytes, ' +
+                   'over the ' + refusal.limit + ' allowed ' +
+                   (refusal.bound ? '(ldap.maxMessageBytes)'
+                     : 'before a bind (ldap.maxMessageBytesBeforeBind)')) +
+               '. None of it was read.' +
+               (messageRefusalsUnlogged
+                 ? ' ' + messageRefusalsUnlogged + ' more connection(s) ' +
+                   'were closed for this in the last minute.' : ''));
+      messageRefusalLoggedAt = now;
+      messageRefusalsUnlogged = 0;
+      log.debug("Leaving refused().");
+    }
+  });
+  log.debug("Leaving guardMessages().");
+}
 
 // A socket this process now holds, until it closes. A function of its own so
 // that `tests/cluster_signout_signals.js` can hand it a socket without a

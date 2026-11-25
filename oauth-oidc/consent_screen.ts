@@ -928,6 +928,11 @@ class ConsentScreen {
     const authnAt = listenerMap.isTrivial() ||
       listenerMap.admits(listenerMap.listenerOf(req), 'authn')
       ? '' : baseUrlOf(req, 'authn');
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const t = ShellDocument.translator({
+      application: String(record.clientId || ''),
+      username: String(record.username || ''),
+      uiLocales: String(record.uiLocales || '') });
     const html = ShellDocument.document({
       title: 'Allow access? — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
@@ -942,10 +947,14 @@ class ConsentScreen {
       script: CONSENT_SCRIPT_PATH,
       open: '<div class="card consent">',
       close: '</div>',
-      noscript: '<h1>Allow access?</h1><div class="err">This consent page ' +
+      noscript: '<h1>' + ShellDocument.said(t,
+        'browser.noscript.consent.title', 'Allow access?') +
+        '</h1><div class="err">' + ShellDocument.said(t,
+        'browser.noscript.consent', 'This consent page ' +
         'is a script that runs in your browser, and with scripts blocked ' +
         'there is nothing it can show. Allow scripts for this page to ' +
-        'answer it.</div>',
+        'answer it.') + '</div>',
+      translator: t,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     // THE CLIENT'S LOGO (#1300): the browser loads it from the client's own

@@ -1198,6 +1198,9 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // A connection that fails at the TLS layer keeps its alert, as on the
   // main port (2026-11-13).
   require('./tls/alert_close').install(server, label);
+  // The key exchange each handshake negotiated, counted (#2220).
+  require('./tls/key_exchange').install(server, 'custom:' + listenerId,
+                                        label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1313,6 +1316,11 @@ if (useHttps) {
   // record-layer probe, one in seventy under load. Held for two seconds,
   // bounded — tls/alert_close.ts.
   require('./tls/alert_close').install(mainServer,
+    'the main port (' + PORT + ')');
+  // WHICH KEY EXCHANGE EACH HANDSHAKE NEGOTIATED (#2220): counted per group,
+  // so /admin/crypto-metadata can say how many clients came post-quantum —
+  // tls/key_exchange.ts.
+  require('./tls/key_exchange').install(mainServer, 'main',
     'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it

@@ -1249,6 +1249,26 @@ node name gets a key of its own (and is announced as a restart, from the
 service's last announcement); a changed `tls.selfSignedKeyBits` makes a new
 key; a start with no store makes a key per start.
 
+## THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS RUNS (#2220, 2026-11-25)
+
+`pki.start()` and the console's Renew re-issued the listener certificate over
+the same key once less than a third of its validity was left, and nothing
+else did, so a node that ran past that point without a restart presented a
+certificate nobody renewed. **`tls.server-certificate-renew` is a PER-PROCESS
+job** (`tls_server.js`, *THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS
+RUNS*), for this file's rule that a socket is one process's: every node's
+front process holds a leaf over its own listener key, so a cluster job would
+renew one node. It is registered in every process and off in a request
+worker. Its run goes through `request_pool.js`'s `reconcileTheListener({ renew:
+true })`, the one listener pass at a time, so a renewal never races a
+hierarchy reconcile on the socket, and the renewed bundle reaches the workers
+by the IPC path a rebuilt hierarchy already takes. The renewal is
+`pki.certifyRegistered({ repairBranch: false, renewWithinMs })` — the call a
+start makes, with `tls.serverCertificateRenewLeadDays` as a lead on top of the
+third (`pki.heldCertificateCurrent()`'s `renewWithinMs`) — and never builds a
+branch. `tls.serverCertificateRenewal` off is the way back.
+`tests/key_renewal.js` B holds it.
+
 ## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
 
 The SAML identity provider's metadata publishes the certificate its back
@@ -2349,3 +2369,25 @@ is asked for the kind the certificate is. `cardAuthRefusalOf()` is unchanged;
 the rule it asks now reads the policy's `smartCardCardAuth` row.
   `tests/certificate_binding.js` holds both in process over stubs; no protocol
   job binds a second listener for it yet.
+
+## LDAPS PRESENTS EVERY CERTIFICATE, AND EVERY LISTENER COUNTS ITS KEY EXCHANGE (#2220, 2026-11-25)
+
+* **636 serves what the main port serves.** The ldapjs fork's constructor
+  refuses anything but a string or a Buffer for `certificate`, so LDAPS is
+  built with the first certificate and its context replaced at once with
+  `clientTruststoreOptions()`'s parallel `key`/`cert` arrays — through
+  `trustClientCertificatesOn()`'s callback (which until #2220 answered the
+  first certificate alone, so `applyAnchors()` put RSA back on every
+  truststore change) and `rekeyLdaps()`. No change to the fork.
+* **`tls/key_exchange.ts` counts the group each handshake negotiated**,
+  per listener (`main`, `ldaps`, `debugger`, `custom:<id>`), installed beside
+  `alert_close.ts` on each. The server side has no `getEphemeralKeyInfo()`
+  (null on a server socket), so the group is read from `getSession()`:
+  OpenSSL's SSL_SESSION DER carries `kex_group` under [19], the IANA code
+  point the ServerHello named. An encoding that is OpenSSL's, read
+  defensively: anything else is `unknown`, never a failure. The counts are
+  the front process's, so `GET /admin-api/tls/key-exchange` is in
+  `request_pool.js`'s NEVER_DISPATCHED, and under `/admin/tls` for
+  `admin_scope.ts` (a realm's token is refused it). `/admin/crypto-metadata`
+  composes it; `connectionView()` adds `connection.keyExchange`.
+  `tests/tls_pq_listeners.js` holds both halves.

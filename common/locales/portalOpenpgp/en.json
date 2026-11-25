@@ -53,5 +53,19 @@
   "done.mail.openpgp": "Your mail is now encrypted with your OpenPGP key.",
   "done.mail.smime": "Your mail is now encrypted with your S/MIME certificate.",
   "done.smimeSet": "Your S/MIME certificate is set.",
-  "done.smimeRemoved": "Your S/MIME certificate is removed."
+  "done.smimeRemoved": "Your S/MIME certificate is removed.",
+  "kem.heading": "An ML-KEM certificate from this service",
+  "kem.intro": "This service can issue you a post-quantum S/MIME certificate for {mail}. An ML-KEM key cannot sign a request, so you prove it is yours another way: this service encrypts a secret to it, and you send the secret back.",
+  "kem.step1": "Make an ML-KEM key with OpenSSL 3.5 or later, keep the private key, and paste the public key below.",
+  "kem.key": "Your ML-KEM public key (-----BEGIN PUBLIC KEY-----)",
+  "kem.ask": "Send the key",
+  "kem.step2": "Decapsulate this {algorithm} ciphertext with your private key before {at}, and paste the secret it prints below.",
+  "kem.secret": "The secret (64 hex characters)",
+  "kem.issue": "Issue the certificate",
+  "kem.again": "Start again with another key",
+  "kem.issuedHeading": "Your new S/MIME certificate",
+  "kem.issuedSub": "An {algorithm} certificate, serial {serial}, is now your S/MIME certificate. Save it and import it with your private key into your mail program.",
+  "kem.save": "Save the certificate",
+  "done.kemChallenge": "Your {algorithm} key was accepted. Decapsulate the challenge below and send the secret back.",
+  "done.kemIssued": "Your {algorithm} S/MIME certificate {serial} is issued and set."
 }

@@ -60,6 +60,7 @@ import WebAccounts = require('./web_accounts');
 import WebI18n = require('./web_i18n');
 import WebMessages = require('./web_messages');
 import WebSafeDom = require('./web_safe_dom');
+import WebDocLinks = require('./web_doc_links');
 
 type Json = any;
 
@@ -467,13 +468,7 @@ class SpaClient extends WebPage {
    * @returns `{ t, title, text }`
    */
   async noWebCryptoWords(namespace: string): Promise<Json> {
-    let t: Json = null;
-    try {
-      t = await new WebI18n(this.env, this, [namespace]).load();
-    } catch (e) {
-      // No catalog to be had: the English below is drawn instead.
-      t = WebMessages.WebTranslator.fromData(null);
-    }
+    const t = await this.problemTranslator(namespace);
     const said = function (key: string, english: string): string {
       const full = namespace + '.' + key;
       return t.has(full) ? t.text(full) : english;
@@ -485,6 +480,122 @@ class SpaClient extends WebPage {
         'securely: WebCrypto is unavailable, usually because the page was ' +
         'not opened over HTTPS or the browser is too old.')
     };
+  }
+
+  /**
+   * The translator a page drawn before sign-in says a problem with: the
+   * namespace's catalogs (and, with every `WebI18n`, the `browser` one), or
+   * none where no catalog can be had, so the English is drawn.
+   *
+   * @param namespace - the surface's catalog namespace
+   * @returns the translator
+   */
+  async problemTranslator(namespace: string): Promise<Json> {
+    let t: Json = null;
+    try {
+      t = await new WebI18n(this.env, this, [namespace]).load();
+    } catch (e) {
+      // No catalog to be had: the English is drawn instead.
+      t = WebMessages.WebTranslator.fromData(null);
+    }
+    return t;
+  }
+
+  // ---------------------------------------------------------------------------
+  // SESSION STORAGE IS ASKED FOR TOO, BESIDE WEBCRYPTO (#2220, ASVS 5.0.0
+  // 3.1.1). A sign-in keeps its PKCE verifier, its `state` and where it
+  // began in `sessionStorage` until the browser comes back from
+  // `/oauth2/authorize`. A browser that blocks it — private browsing, site
+  // data refused — threw at `setItem()` (or, in some, at the bare
+  // `window.sessionStorage`), and the sign-in never finished, with nothing
+  // said. Each entry hands its runtime `storageOf()`, which never throws, and
+  // each runtime asks `sessionStorageMissing()` before anything, beside
+  // `webCryptoMissing()`, and draws `noStorageWords()` in its place.
+  // ---------------------------------------------------------------------------
+  /**
+   * The key a write is tried under, and removed at once.
+   */
+  static readonly STORAGE_PROBE = 'sts-storage-probe';
+
+  /**
+   * The window's `sessionStorage`, or null where reading it throws (a
+   * browser that blocks site data refuses the property itself).
+   *
+   * @param w - the window
+   * @returns the storage, or null
+   */
+  static storageOf(w: Json): Json {
+    try {
+      return (w && w.sessionStorage) || null;
+    } catch (e) {
+      // Refused: the runtime says so at start (`sessionStorageMissing()`).
+      return null;
+    }
+  }
+
+  /**
+   * Whether this browser lacks the `sessionStorage` a sign-in needs: there
+   * is none, or a write to it throws.
+   *
+   * @param env - the browser's objects; `env.sessionStorage` is asked
+   * @returns true when a sign-in could not keep its record
+   */
+  static sessionStorageMissing(env: Json): boolean {
+    const store = env ? env.sessionStorage : null;
+    if (!store || typeof store.setItem !== 'function' ||
+        typeof store.getItem !== 'function' ||
+        typeof store.removeItem !== 'function') {
+      return true;
+    }
+    try {
+      store.setItem(SpaClient.STORAGE_PROBE, '1');
+      const read = store.getItem(SpaClient.STORAGE_PROBE);
+      store.removeItem(SpaClient.STORAGE_PROBE);
+      return read !== '1';
+    } catch (e) {
+      // A quota of nothing, or storage refused: the same for a sign-in.
+      return true;
+    }
+  }
+
+  /**
+   * The words a page without session storage draws, in the page's
+   * language: `browser.noStorage.title` and `browser.noStorage.text`, and
+   * the translator they came from.
+   *
+   * @param namespace - the surface's catalog namespace
+   * @returns `{ t, title, text }`
+   */
+  async noStorageWords(namespace: string): Promise<Json> {
+    const t = await this.problemTranslator(namespace);
+    return {
+      t: t,
+      title: t.has('browser.noStorage.title')
+        ? t.text('browser.noStorage.title')
+        : 'This browser cannot sign you in here',
+      text: t.has('browser.noStorage.text')
+        ? t.text('browser.noStorage.text')
+        : 'This browser does not let this page use session storage, which ' +
+          'signing in needs. Private browsing and some privacy settings ' +
+          'block it: allow site data for this site, then reload the page.'
+    };
+  }
+
+  /**
+   * The link to what this service needs from a browser (#2220), as a
+   * paragraph, in the page's language: what each "this browser cannot"
+   * page carries.
+   *
+   * @param t - the page's translator, or null
+   * @returns the markup
+   */
+  static browserSupportHtml(t: Json): string {
+    const label = t && t.has && t.has('browser.requirements')
+      ? t.html('browser.requirements')
+      : 'What this service needs from a browser';
+    return '<p class="sts-browser-support"><a href="' +
+      WebDocLinks.esc(WebDocLinks.browserSupport()) +
+      '" rel="noopener noreferrer">' + label + '</a></p>';
   }
 
 

@@ -597,6 +597,48 @@ function deserialiseKemEncKeys(blob) {
 }
 
 // ---------------------------------------------------------------------------
+// A RETIRED REQUEST-DECRYPTION KEY (#2220): a request object encryption
+// pair, the OpenID4VCI request-encryption key or one KEM key, replaced by
+// `helpers.rotateEncryptionKeys()` and kept ONLY to decrypt what a client
+// encrypted to it before it read the new one, until `retiredUntil`. Each kind
+// in the shape its own member is written in above, so one reader opens both.
+// ---------------------------------------------------------------------------
+function serialiseRetiredEncKeys(one) {
+  log.debug("Entering serialiseRetiredEncKeys(). " + (one && one.kind));
+  let keys = null;
+  if (one && one.kind === 'ro') {
+    keys = serialiseRequestObjectKeys(one.keys);
+  } else if (one && one.kind === 'vci' && one.keys &&
+             one.keys.privateKey && one.keys.publicJwk) {
+    keys = { privateKeyPem: one.keys.privateKey.export({ type: 'pkcs8',
+                                                         format: 'pem' }),
+             publicJwk: one.keys.publicJwk };
+  } else if (one && one.kind === 'kem') {
+    keys = serialiseKemEncKeys([one.keys])[0] || null;
+  }
+  log.debug("Leaving serialiseRetiredEncKeys(). " + (keys ? 'Kept.'
+                                                          : 'None.'));
+  return keys ? { kind: one.kind, kid: one.kid, retiredAt: one.retiredAt,
+                  retiredUntil: one.retiredUntil, keys: keys } : null;
+}
+
+function deserialiseRetiredEncKeys(row) {
+  log.debug("Entering deserialiseRetiredEncKeys(). " + (row && row.kind));
+  let keys = null;
+  if (row && row.kind === 'ro') {
+    keys = deserialiseRequestObjectKeys(row.keys);
+  } else if (row && row.kind === 'vci' && row.keys &&
+             row.keys.privateKeyPem) {
+    keys = { privateKey: crypto.privateKeyFrom(row.keys.privateKeyPem),
+             publicJwk: row.keys.publicJwk };
+  } else if (row && row.kind === 'kem') {
+    keys = (deserialiseKemEncKeys([row.keys]) || [])[0] || null;
+  }
+  log.debug("Leaving deserialiseRetiredEncKeys().");
+  return keys;
+}
+
+// ---------------------------------------------------------------------------
 // THE BROWSER DEVICE KEYS (2026-09-26, #265): the realm's key pair that signs
 // a remembered browser's device token and the key pair it is encrypted to —
 // used for nothing else, so a token can never be minted with a key that signs
@@ -855,6 +897,49 @@ const STANDBY_META = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                       'reason', 'publicJwk', 'certPem', 'certB64',
                       'publicKeyB64', 'group', 'memberKind', 'pairedSlot'];
 
+// ---------------------------------------------------------------------------
+// A POST-QUANTUM PRIVATE KEY AS IT TRAVELS (#2220): base64 of its raw bytes,
+// as ever — or, for an ML-DSA or SLH-DSA key the realm made IN THE HSM
+// (`helpers.js`'s `pqPairFor()`), its reference, `pkcs11-key:v1:…`, as is.
+// The two cannot be confused: the reference has a colon, and base64 none.
+// A blob written before #2220 holds base64 only and reads as it did.
+// ---------------------------------------------------------------------------
+/**
+ * Encodes a post-quantum private key for storage.
+ *
+ * @param key - the raw bytes, or an HSM key's reference
+ * @returns the stored text
+ */
+function pqPrivateOut(key) {
+  log.debug("Entering pqPrivateOut().");
+  if (typeof key === 'string' && crypto.isHsmKey(key)) {
+    log.debug("Leaving pqPrivateOut(). An HSM reference.");
+    return key;
+  }
+  log.debug("Leaving pqPrivateOut().");
+  return Buffer.from(key).toString('base64');
+}
+
+/**
+ * Decodes a stored post-quantum private key.
+ *
+ * @param stored - what `pqPrivateOut()` wrote, or bytes already
+ * @returns the raw bytes, or the HSM key's reference
+ */
+function pqPrivateIn(stored) {
+  log.debug("Entering pqPrivateIn().");
+  if (Buffer.isBuffer(stored)) {
+    log.debug("Leaving pqPrivateIn(). Bytes.");
+    return stored;
+  }
+  if (typeof stored === 'string' && crypto.isHsmKey(stored)) {
+    log.debug("Leaving pqPrivateIn(). An HSM reference.");
+    return stored;
+  }
+  log.debug("Leaving pqPrivateIn().");
+  return Buffer.from(String(stored), 'base64');
+}
+
 // Does a standby row's private half travel as raw bytes (base64) — a
 // post-quantum or BBS key, or a signer-group member that is one (#68)?
 function standbyIsRaw(row) {
@@ -881,7 +966,7 @@ function serialiseGenerations(held) {
         }
       });
       if (standbyIsRaw(one)) {
-        row.privateKey = Buffer.from(one.privateKey).toString('base64');
+        row.privateKey = pqPrivateOut(one.privateKey);
       } else if (one.kind === 'rsa') {
         row.privateKeyPem = one.privateKeyPem;
       } else {
@@ -900,6 +985,14 @@ function serialiseGenerations(held) {
                keys: serialiseRefreshTokenKeys(one.keys) };
     })
   };
+  // THE RETIRED REQUEST-DECRYPTION KEYS (#2220), the retired refresh-token
+  // sets' arrangement. Omitted when empty, so a blob written before the
+  // field existed still compares equal to one that has never rotated them.
+  const retiredEnc = (held.retiredEnc || []).map(serialiseRetiredEncKeys)
+    .filter(Boolean);
+  if (retiredEnc.length) {
+    out.retiredEnc = retiredEnc;
+  }
   // THE BIRTH CERTIFICATES THIS GENERATION DESCENDS FROM (2026-11-01).
   // Omitted when empty, so a blob written before the field existed still
   // compares equal to one that has never rotated. A later generation names
@@ -924,8 +1017,7 @@ function deserialiseStandbyEntry(row) {
     }
   });
   if (standbyIsRaw(row)) {
-    one.privateKey = Buffer.isBuffer(row.privateKey) ? row.privateKey
-      : Buffer.from(String(row.privateKey), 'base64');
+    one.privateKey = pqPrivateIn(row.privateKey);
   } else {
     one.privateKey = crypto.privateKeyFrom(row.privateKeyPem);
     if (row.kind === 'rsa') {
@@ -957,6 +1049,13 @@ function deserialiseGenerations(blob) {
       return { kid: row.kid, retiredAt: row.retiredAt,
                retiredUntil: row.retiredUntil,
                keys: deserialiseRefreshTokenKeys(row.keys) };
+    }).filter(function (one) {
+      return !!one.keys;
+    }),
+    retiredEnc: (blob.retiredEnc || []).map(function (row) {
+      return { kind: row.kind, kid: row.kid, retiredAt: row.retiredAt,
+               retiredUntil: row.retiredUntil,
+               keys: deserialiseRetiredEncKeys(row) };
     }).filter(function (one) {
       return !!one.keys;
     })
@@ -1093,7 +1192,8 @@ function serialise(keys) {
     pqKeys: (keys.pqKeys || []).map(function (one) {
       return {
         alg: one.alg,
-        privateKey: Buffer.from(one.privateKey).toString('base64'),
+        // An HSM key's reference as is (#2220, pqPrivateOut()).
+        privateKey: pqPrivateOut(one.privateKey),
         publicJwk: one.publicJwk
       };
     }),
@@ -1187,7 +1287,7 @@ function deserialise(blob) {
       ? blob.pqKeys.map(function (one) {
           return {
             alg: one.alg,
-            privateKey: Buffer.from(one.privateKey, 'base64'),
+            privateKey: pqPrivateIn(one.privateKey),
             publicJwk: one.publicJwk
           };
         })
@@ -2551,9 +2651,7 @@ function privateMaterialFor(realmId) {
       ? blob.pqKeys.map(function (one) {
           return {
             alg: one.alg,
-            privateKey: Buffer.isBuffer(one.privateKey)
-              ? one.privateKey
-              : Buffer.from(String(one.privateKey), 'base64'),
+            privateKey: pqPrivateIn(one.privateKey),
             publicJwk: one.publicJwk
           };
         })
@@ -2609,6 +2707,12 @@ function privateMaterialFor(realmId) {
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
       parsed.standby.set(row.kid, deserialiseStandbyEntry(row));
+    });
+  // And the retired request-decryption keys (#2220), by kid.
+  parsed.retiredEnc = new Map();
+  ((blob.generations && blob.generations.retiredEnc) || []).forEach(
+    function (row) {
+      parsed.retiredEnc.set(row.kid, deserialiseRetiredEncKeys(row));
     });
   parsed.retiredRefresh = new Map();
   ((blob.generations && blob.generations.retiredRefresh) || []).forEach(
@@ -7008,6 +7112,9 @@ module.exports = {
   // without driving the key channel to get one. Pure; it writes nothing.
   serialise: serialise,
   deserialise: deserialise,
+  // How a post-quantum private key travels, raw or an HSM reference (#2220).
+  pqPrivateOut: pqPrivateOut,
+  pqPrivateIn: pqPrivateIn,
   rotate: rotate,
   // The certificate authority material. See the block above attachPki() for
   // why it is in this file and why it has a channel of its own.

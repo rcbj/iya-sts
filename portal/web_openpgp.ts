@@ -187,7 +187,72 @@ class OpenPgpPages {
       OpenPgpPages.form('smime', '<label for="openpgp-smime-cert">' +
         t.html('portalOpenpgp.smime.paste') + '</label><textarea ' +
         'id="openpgp-smime-cert" name="certificate" rows="6" cols="66">' +
-        '</textarea>', t.html('portalOpenpgp.smime.set')) + '</div>';
+        '</textarea>', t.html('portalOpenpgp.smime.set')) +
+      OpenPgpPages.kemSection(v, t) + '</div>';
+  }
+
+  /**
+   * AN ML-KEM S/MIME CERTIFICATE THIS REALM ISSUES (#2220): send the
+   * ML-KEM public key, decapsulate the ciphertext the answer carries with
+   * its private key, send the secret back — a KEM key cannot sign a
+   * request, so that is the proof it is yours. The commands are
+   * OpenSSL 3.5's, as parameters of the catalog's sentences.
+   *
+   * @param v - the view
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static kemSection(v: Json, t: Json): string {
+    const c = v.smimeKemChallenge;
+    const head = '<h3>' + t.html('portalOpenpgp.kem.heading') + '</h3>' +
+      '<p class="sub">' + t.html('portalOpenpgp.kem.intro',
+                                 { mail: v.mail || '—' }) + '</p>';
+    const ask = function (label: string): string {
+      return '<p>' + t.html('portalOpenpgp.kem.step1') + '</p>' +
+        '<pre>openssl genpkey -algorithm ML-KEM-768 -out mlkem.key\n' +
+        'openssl pkey -in mlkem.key -pubout</pre>' +
+        OpenPgpPages.form('smime-kem-challenge',
+          '<label for="openpgp-kem-key">' + t.html('portalOpenpgp.kem.key') +
+          '</label><textarea id="openpgp-kem-key" name="publicKey" ' +
+          'rows="6" cols="66"></textarea>', t.html(label));
+    };
+    if (!c) {
+      return head + ask('portalOpenpgp.kem.ask');
+    }
+    return head + '<p>' + t.html('portalOpenpgp.kem.step2',
+      { algorithm: c.algorithm, at: t.date(c.expiresAt) }) + '</p>' +
+      '<pre id="openpgp-kem-ciphertext">' + kit.esc(c.cipherText) +
+      '</pre><pre>base64 -d &gt; challenge.bin\n' +
+      'openssl pkeyutl -decap -inkey mlkem.key -in challenge.bin ' +
+      '-secret secret.bin\nxxd -p -c 64 secret.bin</pre>' +
+      OpenPgpPages.form('smime-kem-issue',
+        '<label for="openpgp-kem-secret">' +
+        t.html('portalOpenpgp.kem.secret') + '</label><input ' +
+        'id="openpgp-kem-secret" name="secret" autocomplete="off" ' +
+        'size="66">', t.html('portalOpenpgp.kem.issue')) +
+      ask('portalOpenpgp.kem.again');
+  }
+
+  /**
+   * The ML-KEM certificate just issued, shown once (#2220): the PEM, and
+   * a link that saves it beside the private key.
+   *
+   * @param issued - `view.smimeKemIssued`
+   * @param t - the translator
+   * @returns the card's HTML
+   */
+  static kemIssuedCard(issued: Json, t: Json): string {
+    const pem = [].concat(issued.chain || [issued.certificate]).join('');
+    return '<div class="card"><h2>' +
+      t.html('portalOpenpgp.kem.issuedHeading') + '</h2><p>' +
+      t.html('portalOpenpgp.kem.issuedSub', { algorithm: issued.algorithm,
+                                              serial: issued.serial }) +
+      '</p><p><a class="btn" download="smime-mlkem.pem" ' +
+      'href="data:application/x-pem-file;charset=utf-8,' +
+      kit.esc(encodeURIComponent(pem)) + '">' +
+      t.html('portalOpenpgp.kem.save') + '</a></p>' +
+      '<textarea readonly rows="8" cols="66" id="openpgp-kem-issued">' +
+      kit.esc(pem) + '</textarea></div>';
   }
 
   /**
@@ -200,7 +265,9 @@ class OpenPgpPages {
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
     const v = view || {};
-    return OpenPgpPages.keyCard(v, t) + OpenPgpPages.registerCard(v, t) +
+    return (v.smimeKemIssued
+      ? OpenPgpPages.kemIssuedCard(v.smimeKemIssued, t) : '') +
+      OpenPgpPages.keyCard(v, t) + OpenPgpPages.registerCard(v, t) +
       OpenPgpPages.wkdCard(v, t) + OpenPgpPages.mailCard(v, t);
   }
 

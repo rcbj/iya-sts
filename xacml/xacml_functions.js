@@ -70,6 +70,9 @@ const { log } = require('../common/helpers');
 const ownMembers = require('../common/own_members');
 const model = require('./xacml_model');
 const datatypes = require('./xacml_datatypes');
+const errorCodes = require('../common/error_codes');
+// The bound on a regular expression somebody else wrote (#2220).
+const PatternSafety = require('../common/pattern_safety');
 
 const TYPE = model.TYPE;
 /**
@@ -1066,17 +1069,123 @@ function xmlSchemaRegExp(pattern) {
   return new RegExp('^(?:' + translated + ')$');
 }
 
+// ---------------------------------------------------------------------------
+// THE BOUND ON A POLICY'S PATTERN (#2220, ASVS 5.0.0 1.3.12).
+//
+// JavaScript's engine backtracks, so a pattern with a quantified group that
+// is itself quantified — `(a+)+`, `(a|aa)*` — takes exponential time on a
+// value built to defeat it, and the value is a REQUEST's attribute. Two
+// places hold the line, as `common/pattern_safety.js` argues:
+//
+//   * AT THE SAVE (`patternCheck` below, read by `xacml_validate.js`'s
+//     `patternProblemsIn()` and refused by `xacml_store.ts`'s `write()`,
+//     STS-XACML-0338): a literal pattern longer than REGEX_PATTERN_MAX, with
+//     a backreference, or of that shape. NOT in `staticCheck`, which also
+//     runs when a stored policy is READ: a policy stored before #2220 must
+//     still load.
+//   * AT THE EVALUATION, as a backstop for a pattern no save checked — one
+//     stored before #2220, one written by `ldapmodify`, or one fetched from
+//     an attribute rather than written into the policy: the shape and a
+//     backreference are a processing error (Indeterminate, which every
+//     combining algorithm here fails closed on), and so is a value longer
+//     than REGEX_INPUT_MAX, which bounds the polynomial shapes the scan
+//     does not catch (`.*.*.*x`). STS-XACML-0339, logged once per pattern.
+//
+// The remote PEP's engine (`rust/crates/sts-xacml`, `xsd_regex.rs`) holds
+// the same two evaluation rules, so a policy stored before #2220 decides
+// alike in both — though the Rust `regex` crate is linear-time and would
+// need neither.
+// ---------------------------------------------------------------------------
+const REGEX_PATTERN_MAX = 1024;
+const REGEX_INPUT_MAX = 4096;
+
+// The patterns already logged at the evaluation, so one stored policy says
+// so once rather than at every request. Bounded: past it nothing more is
+// logged, and the refusal stands whatever was logged.
+const warnedPatterns = new Set();
+const WARNED_PATTERNS_MAX = 256;
+
+// No Entering/Leaving pair: it runs at every regexp-match evaluation, and
+// a pair per call would drown the log (the hot-path exception).
+function warnPatternOnce(pattern, why) {
+  if (warnedPatterns.has(pattern) ||
+      warnedPatterns.size >= WARNED_PATTERNS_MAX) {
+    return;
+  }
+  warnedPatterns.add(pattern);
+  log.warn(errorCodes.tag('STS-XACML-0339') + 'xacml: a regexp-match ' +
+           'was refused at evaluation (Indeterminate): ' + why + '. Fix ' +
+           'the policy; a save of it today would be refused ' +
+           '(STS-XACML-0338).');
+}
+
+/**
+ * Checks the pattern and the value of one regexp-match evaluation, and
+ * throws the processing error that makes it Indeterminate.
+ *
+ * @param pattern - the pattern's source text
+ * @param subject - the value to be matched
+ * @throws a processing error for an unsafe pattern or a value longer than
+ *   REGEX_INPUT_MAX characters
+ */
+function boundedMatch(pattern, subject) {
+  log.debug("Entering boundedMatch().");
+  // No length bound here: a long pattern stored before #2220 still
+  // evaluates; only the save refuses one.
+  const unsafe = PatternSafety.problem(pattern, Number.MAX_SAFE_INTEGER);
+  if (unsafe) {
+    warnPatternOnce(pattern, 'the pattern "' + pattern.slice(0, 80) +
+                    '" ' + unsafe);
+    log.debug("Leaving boundedMatch(). An unsafe pattern.");
+    throw model.processingError(
+      'The regular expression "' + pattern.slice(0, 200) + '" is not ' +
+      'evaluated: ' + unsafe + '.');
+  }
+  if (subject.length > REGEX_INPUT_MAX) {
+    warnPatternOnce(pattern, 'a value of ' + subject.length +
+                    ' characters was offered to "' + pattern.slice(0, 80) +
+                    '", and at most ' + REGEX_INPUT_MAX + ' are matched');
+    log.debug("Leaving boundedMatch(). The value is too long.");
+    throw model.processingError(
+      'A value of ' + subject.length + ' characters is not matched against ' +
+      'a regular expression; at most ' + REGEX_INPUT_MAX + ' are.');
+  }
+  log.debug("Leaving boundedMatch().");
+}
+
 function regexpMatch(name, subjectType, subjectText) {
   log.debug("Entering regexpMatch().");
   define((subjectType === TYPE.STRING ? F1 : F2) + name, {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
     args: [{ kind: 'primitive', type: TYPE.STRING },
            { kind: 'primitive', type: subjectType }],
+    // THE SAVE'S CHECK (#2220): a literal pattern only — one fetched from an
+    // attribute is known only at the evaluation, where boundedMatch() holds
+    // it. Read by `xacml_validate.js`'s `patternProblemsIn()`, never by
+    // `validate()`, so a stored policy still loads.
+    patternCheck: function (args, report) {
+      log.debug("Entering patternCheck().");
+      const literal = args && args[0];
+      if (!literal || literal.kind !== 'value') {
+        log.debug("Leaving patternCheck(). Not a literal.");
+        return;
+      }
+      const pattern = String(literal.lexical == null ? '' : literal.lexical);
+      const unsafe = PatternSafety.problem(pattern, REGEX_PATTERN_MAX);
+      if (unsafe) {
+        report(name + "'s pattern \"" + pattern.slice(0, 80) + '" is ' +
+               'refused: ' + unsafe + '.');
+      }
+      log.debug("Leaving patternCheck().");
+    },
     apply: function (values) {
       log.debug("Entering apply().");
-      const expression = xmlSchemaRegExp(String(values[0]));
+      const pattern = String(values[0]);
+      const subject = String(subjectText(values[1]));
+      boundedMatch(pattern, subject);
+      const expression = xmlSchemaRegExp(pattern);
       log.debug("Leaving apply().");
-      return boolBag(expression.test(subjectText(values[1])));
+      return boolBag(expression.test(subject));
     }
   });
   log.debug("Leaving regexpMatch().");
@@ -1490,6 +1599,8 @@ module.exports = {
   names: names,
   invoke: invoke,
   xmlSchemaRegExp: xmlSchemaRegExp,
+  REGEX_PATTERN_MAX: REGEX_PATTERN_MAX,
+  REGEX_INPUT_MAX: REGEX_INPUT_MAX,
   civilFromDays: civilFromDays,
   addMonths: addMonths
 };

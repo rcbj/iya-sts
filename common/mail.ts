@@ -1793,6 +1793,23 @@ class Mail {
       log.debug("Leaving Mail.queueOne(). A duplicate.");
       return { duplicate: this.view(duplicate) };
     }
+    // THE OUTBOX'S CAP HOLDS FOR PENDING MESSAGES TOO (#2220). The sweep
+    // keeps a realm's outbox to `mail.maxRows` by removing the oldest
+    // FINISHED rows, and never a pending one, so a relay that accepted
+    // nothing let pending rows grow past the cap without bound. A message
+    // that would take the realm's PENDING rows to the cap is now refused
+    // here (STS-MAIL-0244), before anything is written, so the caller is
+    // told — the same way as a recipient over their ceiling — and nothing
+    // already queued is dropped. Counted only when the outbox holds the cap
+    // in rows at all, so the ordinary send costs one size comparison.
+    const full = this.pendingAtCap(realmId);
+    if (full) {
+      log.debug("Leaving Mail.queueOne(). The outbox is full.");
+      return { refused: this.refuse(req, username, 'STS-MAIL-0244',
+        'the outbox already holds ' + full + ' unsent message(s) in this ' +
+        'realm, its cap (mail.maxRows); a message is refused until some ' +
+        'are sent or dead-lettered') };
+    }
     const counts = this.recentCounts(realmId, username, spec.category);
     const perAll = Number(this.setting('mail.ratePerRecipient'));
     const perCat = Number(this.setting('mail.ratePerCategory'));
@@ -1984,6 +2001,29 @@ class Mail {
     return written;
   }
 
+  // How many messages are pending in a realm when that is at least
+  // `mail.maxRows`, and 0 otherwise. The rows are counted only when the
+  // realm's outbox holds that many rows in all, so this is one comparison
+  // until the outbox is full.
+  private pendingAtCap(realmId: string): number {
+    const { log } = this.deps;
+    log.debug("Entering Mail.pendingAtCap().");
+    const cap = Math.max(1, Number(this.setting('mail.maxRows')));
+    const store = outbox.realmMap(realmId);
+    if (store.size < cap) {
+      log.debug("Leaving Mail.pendingAtCap(). Room.");
+      return 0;
+    }
+    let pending = 0;
+    store.forEach(function (row: Json) {
+      if (row && row.state === 'pending') {
+        pending++;
+      }
+    });
+    log.debug("Leaving Mail.pendingAtCap(). " + pending + " pending.");
+    return pending >= cap ? pending : 0;
+  }
+
   /**
    * Returns how long an attempt's claim lasts: `mail.leaseMs`, at least the
    * send timeout plus two seconds.
@@ -2146,6 +2186,15 @@ class Mail {
    * @param rows - the queued rows
    * @returns a promise for a test to wait on
    */
+  // THE FIRST ATTEMPT IS BOUNDED BY `mail.concurrency` TOO (#2220). Until
+  // #2220 every message queued was attempted at once, so a send to a group
+  // of a thousand opened a thousand SMTP connections while the sweep held
+  // itself to four. The attempts made here now share the sweep's count of
+  // attempts in flight in this process (`inFlightHere`): as many start as
+  // there are free places, one after another as each finishes, and a
+  // message that finds none stays pending, due, for the next `mail.deliver`
+  // run (every `mail.deliverS`). Nothing is dropped and nothing waits in
+  // memory beyond the rows already written.
   dispatch(rows: Json[] | null | undefined): Promise<void> {
     const { log, realms } = this.deps;
     const self = this;
@@ -2154,13 +2203,32 @@ class Mail {
       return row && row.state === 'pending';
     });
     const realmId = realms.currentId();
-    log.debug("Leaving Mail.dispatch(). " + pending.length + " to send.");
-    return Promise.all(pending.map(function (row) {
+    const limit = Math.max(1, Number(this.setting('mail.concurrency')));
+    const next = function (): Promise<void> {
+      log.debug("Entering next().");
+      if (!pending.length || inFlightHere >= limit) {
+        log.debug("Leaving next(). " + pending.length + " left for the " +
+                  "mail.deliver job.");
+        return Promise.resolve();
+      }
+      const row = pending.shift();
+      inFlightHere++;
+      log.debug("Leaving next().");
       return self.attempt(row.realm || realmId, row.id).catch(function (e) {
         log.debug("Caught in Mail.dispatch(): " + ((e && e.message) || e));
         return 'error';
+      }).then(function () {
+        inFlightHere--;
+        return next();
       });
-    })).then(function () {
+    };
+    const count = pending.length;
+    const lanes: Promise<void>[] = [];
+    for (let i = 0; i < Math.min(limit, count); i++) {
+      lanes.push(next());
+    }
+    log.debug("Leaving Mail.dispatch(). " + count + " to send.");
+    return Promise.all(lanes).then(function () {
       return undefined;
     });
   }

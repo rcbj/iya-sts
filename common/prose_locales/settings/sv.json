@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Hur länge tjänsten väntas på. En stor fil får en sekund mer per mebibyte."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Samtidiga skanningar"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Hur många filer en process skickar till skannern samtidigt, var och en över en egen anslutning. Övriga väntar på sin tur."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Väntande skanningar"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Hur många filer som får vänta på en skanning utöver dem som pågår. En fil därutöver avvisas med 503 (STS-CORE-0182), som när skannern inte svarar."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "CA-fil för en icaps-tjänst"
@@ -1815,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Vilken nyckel som signerar den här sfärens dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter och deras Token Status List Tokens. `dedicated` — standardvärdet — är en egen nyckel per algoritmfamilj, som inte används till något annat, under ett certifikat vars subjectAltName anger varje utfärdaridentifierare som sfären svarar på som en URI (inget DNS-namn), med den utökade nyckelanvändningen id-kp-documentSigning (RFC 9336) och inget som en TLS-stack skulle godta, så att en plånbok kan jämföra autentiseringsuppgiftens iss med dess x5c (HAIP 1.0 avsnitt 6.1.1). Certifikatet utfärdas på nytt när utfärdaridentifierarna ändras (global.publicBaseUrl, tls.hostnames, en lyssnare). `realm-key` signerar dem med sfärens allmänna JOSE-nyckel, som 1.0.0 gjorde, vars certifikat inte anger någon utfärdare. Autentiseringsuppgifter som redan utfärdats förblir verifierbara i båda fallen. ldp_vc och mso_mdoc påverkas inte."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Rotera nyckeln för signering av intyg var (dagar)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Hur länge en dedikerad intygssignerares nyckel (keys.credentialSigner dedicated) signerar innan jobbet keys.credential-signer-rotate skapar nästa nyckel i dess familj, som signerar från och med då. Nyckeln den ersätter signerar inget mer och ligger kvar i intygsutfärdarens JWKS och DID-dokument, så varje intyg den signerat fortsätter att verifieras. Räknas från när jobbet först såg nyckeln. 0 stänger av schemat. Endast produktläge."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Postkvantsäkra / hybrida dekrypteringsnycklar"
@@ -1822,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "De ML-KEM- och HPKE-JWE-algoritmer som den här sfären har en dekrypteringsnyckel för — ett nyckelpar per algoritm, publicerat i sfärens JWKS (`use: enc`, med `alg`) och annonserat i `request_object_encryption_alg_values_supported` och `assertion_encryption_alg_values_supported`, så att en klient kan kryptera ett request-objekt eller ett RFC 7523 / 7522-intyg till den här sfären med postkvantsäker eller PQ/T-hybrid nyckeletablering. HPKE-10-KE är X-Wing (ML-KEM-768 + X25519). Att kryptera TILL en klient som registrerat en av dessa algoritmer kräver inget här. **Tomt som standard, och ett val för administratören:** varenda en av dessa algoritmer kommer från ett Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), och en AKP-nyckel i en JWKS är en nyckeltyp som många klienters JOSE-bibliotek ännu inte kan tolka — vissa vägrar hela nyckeluppsättningen. Namnge en algoritm här bara där klienterna som läser sfärens JWKS är kända för att klara det. Att ta bort en slutar publicera och godta den; att namnge den igen återför samma nyckel."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Ersätt nycklarna för dekryptering av begäranden var (dagar)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Hur länge krypteringsnycklarna för begäranobjekt, OpenID4VCI-nyckeln för kryptering av begäranden och KEM-dekrypteringsnycklarna behålls innan jobbet keys.encryption-key-rotate ersätter dem. Den nya nyckeln publiceras genast (/oauth2/jwks, intygsutfärdarens metadata) och den den ersätter dekrypterar fortfarande i keys.encryptionKeyOverlapDays. Räknas från när jobbet först såg nyckeln. 0 stänger av schemat. Endast produktläge."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "En ersatt nyckel för dekryptering av begäranden dekrypterar fortfarande i (dagar)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Hur länge en nyckel för dekryptering av begäranden som keys.encryption-key-rotate ersatt fortsätter att öppna det en klient krypterat till den innan den läste den nya nyckeln. Den publiceras ingenstans under tiden, och signing.retire tar bort den när tiden har gått."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -2123,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Hur länge en enskild avsökning bakom /admin/secrets får vänta på att ett hemlighetslager svarar. Var och en av dem är en LÄSNING av metadata — en stat av nyckelfilen, en sys-slutpunkt, en KV-versionshistorik, en DescribeSecret — och ingen av dem hämtar någonsin ett hemligt värde. Gränsen finns så att öppnandet av en konsolsida aldrig kan hänga på någon annans lager; en avsökning som tar slut visas som en rad som säger det, precis som en som vägrades."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Tidsgräns för anrop till hemlighetslagret (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Hur länge ett försök till ett anrop till OpenBao eller Vault, AWS KMS eller Secrets Manager, Google Cloud KMS eller Secret Manager, eller Azure Key Vault får vänta; ges till varje SDK som dess egen tidsgränsinställning."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Försök per anrop till hemlighetslagret"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Hur många gånger totalt ett anrop till ett hemlighetslager eller en nyckeltjänst görs: molnens SDK:ers egen gräns för omförsök, och för OpenBao eller Vault görs ett anrop som inte fick något svar, ett 5xx eller ett 429 om efter en kort paus (STS-KEYS-0214 när varje försök misslyckades). Ett 4xx upprepas aldrig."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS-region"
@@ -2180,6 +2236,30 @@
     "text": "Hur många sessioner varje process och varje förfrågningsarbetare högst håller öppna mot ett token, där var och en kör en HSM-operation åt gången. En YubiHSM 2 har 16 sessioner totalt, delade av varje process på varje nod: håll produkten av detta värde, processerna och noderna under det."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Tidsgräns för HSM-operation (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Hur länge en HSM-operation, och väntan på en session att köra den i, får ta innan den avvisas (STS-KEYS-0216). En session vars operation överskred den kasseras när modulen svarar. 0 för ingen gräns."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Väntande HSM-operationer per token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Hur många HSM-operationer som får vänta på en session i ett token i en process eller arbetare. En därutöver avvisas genast (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "tokenet öppnas en gång, vid start"
   },
@@ -3540,16 +3620,16 @@
     "text": "Accepterade algoritmer"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "De OpenPGP-algoritmer en nyckel får använda, i preferensordning. Först RFC 9980-kompositer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, och rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). SLH-DSA är inte implementerat. Standardvärdet namnger vart och ett av dessa."
+    "en": "f51a30de72243d25",
+    "text": "De OpenPGP-algoritmer en nyckel får använda, i prioritetsordning. Först RFC 9980:s postkvantalgoritmer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, liksom SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f och SLH-DSA-SHAKE-256s på en v6-nyckel; ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, samt rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). Standardvärdet nämner alla dessa."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Registrera endast postkvantnycklar"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "På innebär att en nyregistrerad nyckel måste använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519 eller ML-DSA-87+Ed448 för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot post. Kan inte vara på samtidigt som openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Av som standard."
+    "en": "b0c222dfa3cda337",
+    "text": "På måste en nyregistrerad nyckel använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 eller någon av de tre SLH-DSA-algoritmerna för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot e-post. Kan inte vara på medan openpgp.pqcAlongsideClassical är det (STS-OPENPGP-0027). Av som standard."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",
@@ -4254,6 +4334,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Hur länge varje utfärdande CA gäller när bygget inte anger någon livslängd. Noll är profilen `issuing-ca`:s fem år. Begränsas till dess mellanliggande CA:s utgångstid."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "Förnya CA-certifikat innan de går ut"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Om det dagliga jobbet pki.ca-renew förnyar roten, varje mellanliggande CA och varje utfärdande CA inom dess framförhållning (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) med SAMMA nyckel och subjekt, så att varje certifikat den signerat fortsätter att verifieras och en fästning på dess nyckel håller. En förnyad rot publiceras bredvid den den ersatte, på /pki/ca/service/root-previous.cer, tills den går ut. En importerad CA förnyas aldrig. Av: inget förnyar en CA och den går ut som före 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Förnya roten så här länge innan den går ut (dagar)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Hur långt innan rot-CA:n går ut pki.ca-renew förnyar den, högst halva dess livslängd. Lång som standard (tre år), eftersom en förnyad rot är ett nytt förtroendeankarcertifikat som varje förlitande part bör få innan det gamla går ut."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Förnya en mellanliggande eller utfärdande CA så här länge innan den går ut (dagar)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Hur långt innan en mellanliggande eller utfärdande CA går ut pki.ca-renew förnyar den, högst halva dess livslängd. En CA kan inte överleva sin överordnade, så en vars överordnade går ut först väntar på dennas förnyelse."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -5715,6 +5819,38 @@
     "en": "6a4ac147d740738b",
     "text": "Hur länge man väntar på att en partner ska svara innan man ger upp. Den spelar större roll än en tidsgräns brukar eftersom webbläsaren VÄNTAR på den — en federerad inloggning är en person som tittar på en tom flik medan den här tjänsten löser in en kod — så den är kort nog för att en död partner ska ge en felsida i stället för att hänga, och felet anger tidsgränsen. Den var 5000 fram till 2026-08-30, och det som ändrades är att partnern här OFTAST ÄR DEN HÄR PROCESSEN: en förtroendesfär är en logisk kopia av den här tjänsten, och det första någon begär av en helt ny sfär är dess JWKS — vilket är det som skapar sfärens elva postkvantnycklar, varav en är en SLH-DSA-SHAKE-128s-nyckelgenerering på ungefär fem sekunder. 5000 var en budget som bara fungerade eftersom den här tjänsten FÖRR BLOCKERADE medan den svarade: med händelseloopen stoppad kunde timern som upprätthöll budgeten inte utlösas förrän svaret redan var klart. Nycklarna genereras nu på libuvs trådpool (common/pq_native.js) och förvärms när en sfär skapas, så den vanliga hämtningen tar millisekunder — detta är budgeten för den som kommer medan en sfär fortfarande håller på att födas."
   },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Utgående anslutningar per mål"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Hur många anslutningar en process håller öppna samtidigt mot ett mål (en partner, en mottagare, en klients URL), för varje utgående HTTP-anrop. En förfrågan därutöver väntar på en anslutning, inom sin totala tidsfrist, och en varning loggas när förfrågningar först börjar vänta (STS-HTTP-0032). Anslutningar hålls vid liv och återanvänds."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Utgående anslutningar totalt"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Hur många utgående HTTP-anslutningar en process håller öppna totalt. En förfrågan därutöver väntar på en anslutning, inom sin totala tidsfrist (STS-HTTP-0032). Aldrig mindre än federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Total tidsfrist för utgående anrop (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Det längsta ett utgående HTTP-anrop får ta totalt: väntan på en anslutning, uppkopplingen, handskakningen och hela svaret. De andra tidsgränserna gäller inaktivitet, så en motpart som svarar långsamt skulle annars hålla ett anrop öppet. Ett anrop vars egen tidsgräns är längre får den i stället. Vid tidsfristen avslutas anropet som en tidsgränsöverskridning (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Tidsgräns för utgående uppkoppling (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Hur länge en ny utgående anslutning får ta att koppla upp, med sin TLS-handskakning. En anslutning som återanvänds från poolen tidmäts inte. Vid gränsen avslutas anropet som en tidsgränsöverskridning (STS-HTTP-0034)."
+  },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
     "text": "Tillåt http:// till en partner (endast utveckling)"
@@ -6638,6 +6774,22 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "I ett aktivt-aktivt kluster förseglar varje nods LDAPS-lyssnare och huvudport (om inte tls.mainPortSharedTickets är avstängt) sessionsbiljetter under en gemensam nyckel, så att en biljett som en nod utfärdat kan återupptas på en annan (debuggerns lyssnare behåller en nyckel per nod). Detta är hur ofta, i sekunder, jobbet tls.ticket-key-rotate ersätter den; nyckeln som ersätts tas bort, så en återupptagen sessions hemligheter kan återvinnas från en uppfångad biljett endast medan dess nyckel lever, och en klient vars biljett är äldre gör en fullständig handskakning. Nyckeln sparas i lagret, förseglad under nyckelkrypteringsnyckeln. 0 stänger av delningen, och utanför aktivt-aktivt läge delas ingenting: en enda svarande nod återupptar med OpenSSL:s egna nycklar per lyssnare, som aldrig lämnar processen."
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Förnya lyssnarcertifikatet utan omstart"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Om det timvisa jobbet tls.server-certificate-renew förnyar certifikatet som huvudporten, LDAPS och felsökaren presenterar, med samma nyckel, när mindre än en tredjedel av giltighetstiden återstår (eller det ligger inom tls.serverCertificateRenewLeadDays), och lägger det på varje socket utan omstart. Varje nod förnyar sitt eget. Av: det förnyas bara vid en start och med konsolens Förnya. Ett certifikat du anger i tls.certificateFile förnyar du själv."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Förnya lyssnarcertifikatet så här länge innan det går ut (dagar, 0 = vid en tredjedel av giltighetstiden)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Förnya lyssnarcertifikatet så många dagar innan det går ut, när det är tidigare än den punkt där en tredjedel av giltighetstiden återstår. 0, standard, behåller tredjedelen."
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7999,6 +8151,14 @@
     "en": "0ef945c098a1eeac",
     "text": "Hur länge en förtroendesfärs krbtgt-nyckel — nyckeln som varje Ticket-Granting Ticket förseglas under — förblir aktuell innan jobbet krb5.krbtgt-rotate ersätter den med en ny slumpmässig nyckel vid nästa kvno. Nyckeln den ersätter behålls (krb5.retainedKeyVersions, under krb5.retainedKeyTtlS) så att en TGT som utfärdats ett ögonblick före rotationen fortfarande fungerar tills den går ut, och jobbet roterar aldrig medan det fönstret är öppet. 180 dagar är den vanliga rekommendationen för Active Directory. 0 stänger av schemalagd rotation; en manuell rotation (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) fungerar fortfarande. Endast produktläge. Med krb5.retainedKeyVersions på 0 förblir jobbet också av, eftersom en rotation som inte behöll något skulle logga ut varje Kerberos-användare i sfären utan förvarning."
   },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Rotera den här tjänstens egen mottagarnyckel var (dagar)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Hur gammal en tjänstprincipalnyckel får bli innan jobbet krb5.service-key-rotate ersätter den med en ny slumpnyckel på nästa kvno, och behåller den den ersätter (krb5.retainedKeyVersions, i krb5.retainedKeyTtlS) så att redan utfärdade biljetter fortsätter att fungera, och aldrig medan det fönstret är öppet. Bara nyckeln som den här tjänsten skapade för sin egen mottagare roteras: en nyckel vars keytab lämnats ut till en annan tjänst rapporteras som förfallen på /admin/scheduler, och att rotera den, vilket lämnar ut den nya keytab-filen, förblir operatörens handling. Räknas från nyckelns senaste rotation eller dess skapande. 0 stänger av schemat. Endast produktläge."
+  },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
     "text": "PKINIT (förautentisering med certifikat)"
@@ -8154,6 +8314,22 @@
   "ldap.timeLimit|description": {
     "en": "b74ec7b68f9251f2",
     "text": "Tidsgränsen på serversidan för en sökning, i sekunder, vilket är det som ger LDAP_TIME_LIMIT_EXCEEDED; en klients egen kortare timeLimit vinner. Posterna som skickats före den är svaret, markerat som ofullständigt."
+  },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Största meddelande från en bunden klient (byte)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Det största LDAP-meddelande en klient som har bundit får skicka, i byte, räknat från längden som dess BER-huvud anger: en anslutning vars nästa meddelande anger mer stängs innan något av det läses (STS-LDAP-0227). Sökresultat skickas av servern och räknas inte. 5 MiB som standard, gränsen som varje HTTP-kropp har här."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Största meddelande före en bindning (byte)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Det största LDAP-meddelande en klient får skicka innan den har bundit, i byte: en bindning, StartTLS eller en sökning efter rot-DSE. Över det stängs anslutningen innan något av meddelandet läses (STS-LDAP-0227). 128 KiB som standard, dubbelt så stort som den största Kerberos-token en SASL-bindning kan bära. Aldrig mer än ldap.maxMessageBytes i praktiken."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
@@ -11467,6 +11643,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Hur länge en enskild sats bakom /admin/database får köras, som PostgreSQL:s egen statement_timeout på den enda anslutning som sidan lånar. Var och en av dem är en läsning av en katalogvy; gränsen finns så att öppnandet av en konsolsida aldrig kan låsa fast en anslutning ur en pool som den här tjänsten besvarar protokolltrafik från. Den sätts på servern snarare än som en timer här, eftersom en timer skulle överge promise-objektet och lämna både satsen och anslutningen precis där de var."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Databasanslutningar per process"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Hur många anslutningar till databasen varje process håller i sin pool. 0, standardvärdet, är dubbla antalet förfrågningsarbetare på noden och aldrig färre än fyra. En anropare därutöver väntar på en ledig anslutning i upp till persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Väntan på en databasanslutning (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Hur länge en anropare väntar på en ledig anslutning i poolen innan den misslyckas. En skrivning som misslyckas så besvaras med 503 (STS-STORE-0066) och dess tömning görs om."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Tidsgräns för databasuppkoppling (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Hur länge det får ta att upprätta en ny databasanslutning."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Hur länge en ledig databasanslutning behålls (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Hur länge en oanvänd anslutning stannar i poolen innan den stängs."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Tidsgräns för databassatser (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Det längsta en vanlig databassats får köra innan servern avbryter den (PostgreSQL:s statement_timeout, MariaDB:s max_statement_time), loggat som STS-STORE-0178. 0 för ingen. Att öppna lagret, dess migreringar, återställningen vid start och indexbyggen online omfattas inte; efterfyllnader körs i små omgångar."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "den sätts på poolen när lagret är öppnat och läst"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Datakatalog"
@@ -11911,6 +12147,14 @@
     "en": "839a4a009d203829",
     "text": "Hur lång tid en begäran som vidarebefordrats till en annan cell, eller ett anrop på kanalen mellan celler, får ta innan den besvaras som att den andra cellen är onåbar (och hanteras som `cells.homeUnreachable` anger)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Största svar mellan celler (byte)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Det mesta ett synkront anrop till en annan cell får svara. Därutöver stängs anslutningen och anropet misslyckas (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Leveransförsök mellan celler"
@@ -12142,6 +12386,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Hur många personer varje attributkälla läser per körning av den schemalagda uppdateringen (attribute-sources.refresh, varje minut), och fortsätter efter den senaste nästa gång. Ett större värde gör ett varv klart snabbare och håller en nod längre per körning."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Anslutningar per källa"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Hur många anslutningar varje process håller mot en attributkälla. En uppslagning därutöver väntar på en anslutning inom källans egen tidsgräns. En ändring gäller från varje källas nästa uppslagning."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12476,8 +12728,8 @@
     "text": "Pågående sändningar"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Hur många meddelanden en process skickar samtidigt från en genomsökning."
+    "en": "d6de0478b866cf8b",
+    "text": "Hur många meddelanden en process skickar samtidigt, från en genomsökning och vid första försöket efter att ett meddelande köats. Ett meddelande som inte hittar någon ledig plats väntar på nästa genomsökning."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12492,8 +12744,8 @@
     "text": "Rader i utkorgen per sfär"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Taket för utkorgen, per sfär: den äldsta AVSLUTADE raden tas bort först, och en väntande aldrig."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Taket för utkorgen, per sfär: den äldsta AVSLUTADE raden tas bort först, och en väntande aldrig. Ett meddelande som skulle ta de VÄNTANDE raderna över taket avvisas (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

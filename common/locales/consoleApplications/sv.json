@@ -518,6 +518,7 @@
   "a3.factIntrospection": "Introspektionsanspråk",
   "a3.factLimits": "Gränsschema",
   "a3.limitsRefused": "inget: gränser nekas",
+  "a3.writeWouldRefuse": "SPARAD FÖRE EN STRÄNGARE REGEL: den används fortfarande som den är skriven, och att spara den i dag skulle avvisas",
   "a3.factInteraction": "Interaktion (fas 6)",
   "a3.consentForcedBy": "; samtycke framtvingas av ",
   "a3.factAcr": "Autentiseringsnivå (fas 6)",

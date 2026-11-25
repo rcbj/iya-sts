@@ -178,6 +178,9 @@ class FederationPages {
     const own = asked.own && asked.own.value ? asked.own : null;
     const state = JSON.stringify(Object.assign({ view: view },
       own ? { preferredLanguage: own } : {}));
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const said = ShellDocument.translator({
+      application: asked.application || '', username: asked.person || '' });
     const html = ShellDocument.document({
       title: 'Federation — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
@@ -189,9 +192,13 @@ class FederationPages {
       script: SCRIPT_PATH,
       open: '<div class="card wide">',
       close: '</div>',
-      noscript: '<h1>Federation</h1><div class="err">This page is a ' +
+      noscript: '<h1>' + ShellDocument.said(said,
+        'browser.noscript.federation.title', 'Federation') +
+        '</h1><div class="err">' + ShellDocument.said(said,
+        'browser.noscript.federation', 'This page is a ' +
         'script that runs in your browser, and with scripts blocked there ' +
-        'is nothing it can show. Allow scripts for this page.</div>',
+        'is nothing it can show. Allow scripts for this page.') + '</div>',
+      translator: said,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     // error-code: none — the shell's own send; a refusal's code is marked by its caller first.

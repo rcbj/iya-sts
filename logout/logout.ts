@@ -4881,6 +4881,8 @@ class Logout {
   private shell(req?, res?, person?) {
     const { log, app } = this.deps;
     log.debug("Entering Logout.shell().");
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const said = ShellDocument.translator({ username: String(person || '') });
     const html = ShellDocument.document({
       title: 'Sign out',
       attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
@@ -4896,10 +4898,14 @@ class Logout {
       script: SIGNOUT_SCRIPT_PATH,
       open: '',
       close: '',
-      noscript: '<h1>Sign out</h1><div class="err">This sign-out page is ' +
+      noscript: '<h1>' + ShellDocument.said(said,
+        'browser.noscript.signout.title', 'Sign out') +
+        '</h1><div class="err">' + ShellDocument.said(said,
+        'browser.noscript.signout', 'This sign-out page is ' +
         'a script that runs in your browser, and with scripts blocked ' +
         'there is nothing it can show. Allow scripts for this page to see ' +
-        'what you are still signed into and to sign out.</div>',
+        'what you are still signed into and to sign out.') + '</div>',
+      translator: said,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     ShellDocument.serve(app, req, res, html,

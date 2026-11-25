@@ -7070,6 +7070,10 @@ function authorizationDetailsTypeOf(value) {
     .trim();
   const out = { type: '', description: '', locations: [], schema: null,
                 validate: null, problem: '',
+                // WHAT A WRITE WOULD REFUSE TODAY (#2220): '' or the
+                // sentence. Never a refusal here — see
+                // `accessTypeWriteProblem()`.
+                schemaProblem: '',
                 // THE CATALOGUE (#432 phase 4): null or [] where the
                 // definition says nothing — see the block's header.
                 actions: null, datatypes: null, privileges: null,
@@ -7200,8 +7204,116 @@ function authorizationDetailsTypeOf(value) {
     out.notForPolicy = mapping.notForPolicy;
   }
   out.source = definition;
+  out.schemaProblem = accessTypeWriteProblem(definition);
   log.debug("Leaving authorizationDetailsTypeOf(). " + out.type + ".");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A WRITE HOLDS A DEFINITION TO, AND A READ DOES NOT (#2220, ASVS 5.0.0
+// 1.3.12).
+//
+// A definition's `schema` is compiled by Ajv and run against every
+// authorization_details a client sends, and JSON Schema's `pattern` is a
+// JavaScript regular expression: one of the exponential shape is a request
+// that holds the event loop. So a WRITE holds the main `schema` to the
+// keyword subset its `limits` schema already uses (LIMITS_SCHEMA_KEYWORDS —
+// no `$ref`, no combinators, no conditionals, nothing whose meaning a
+// person cannot read off the page) and every `pattern` in either schema to
+// `common/pattern_safety.js`'s bound: at most ACCESS_TYPE_PATTERN_MAX
+// characters, no backreference, no quantified group that is itself
+// quantified or an alternation, compiling with the `u` flag Ajv uses.
+//
+// **A DEFINITION STORED BEFORE #2220 KEEPS WORKING** (backwards
+// compatibility): `authorizationDetailsTypeOf()` answers it as usable, with
+// the sentence in `schemaProblem`, so requests are validated against it as
+// they were. Only `authorizationDetailsAttributeProblem()` refuses —
+// STS-REG-0374, at a create, an add, or a set of a value the entry does not
+// already hold — and the console's Access types tab and /admin/mode's
+// `access-type-schemas` row show every stored one that fails.
+// ---------------------------------------------------------------------------
+const ACCESS_TYPE_PATTERN_MAX = 1024;
+
+// Every `pattern` keyword of a schema in the subset, each held to the bound.
+// As a sentence naming the path, or ''.
+function schemaPatternProblem(node, path, depth) {
+  log.debug("Entering schemaPatternProblem(). " + path);
+  if (!node || typeof node !== 'object' || Array.isArray(node) ||
+      depth > 8) {
+    log.debug("Leaving schemaPatternProblem(). Not a schema.");
+    return '';
+  }
+  if (node.pattern !== undefined) {
+    const pattern = String(node.pattern);
+    const PatternSafety = require('./pattern_safety');
+    let problem = PatternSafety.problem(pattern, ACCESS_TYPE_PATTERN_MAX);
+    if (!problem) {
+      try {
+        new RegExp(pattern, 'u');
+      } catch (e) {
+        log.debug("Caught in schemaPatternProblem(): " +
+                  ((e && e.message) || e));
+        problem = 'it does not compile: ' + e.message;
+      }
+    }
+    if (problem) {
+      log.debug("Leaving schemaPatternProblem(). Refused.");
+      return path + '.pattern "' + pattern.slice(0, 80) + '" is refused: ' +
+        problem;
+    }
+  }
+  const inner = [];
+  if (node.properties && typeof node.properties === 'object') {
+    Object.keys(node.properties).forEach(function (name) {
+      inner.push([node.properties[name], path + '.properties.' + name]);
+    });
+  }
+  if (node.items !== undefined) {
+    inner.push([node.items, path + '.items']);
+  }
+  for (let i = 0; i < inner.length; i++) {
+    const found = schemaPatternProblem(inner[i][0], inner[i][1], depth + 1);
+    if (found) {
+      log.debug("Leaving schemaPatternProblem(). Below.");
+      return found;
+    }
+  }
+  log.debug("Leaving schemaPatternProblem().");
+  return '';
+}
+
+/**
+ * Says what a write would refuse today of a definition that reads (#2220):
+ * a main `schema` outside the keyword subset of a `limits` schema, or a
+ * `pattern` in either that `common/pattern_safety.js` refuses.
+ *
+ * @param definition - the definition object, already read as usable
+ * @returns the sentence, or '' when a write accepts it
+ */
+function accessTypeWriteProblem(definition) {
+  log.debug("Entering accessTypeWriteProblem().");
+  if (definition.schema !== undefined) {
+    const shape = limitsSchemaProblem(definition.schema, 'schema', 0,
+                                      'a type\'s schema');
+    if (shape) {
+      log.debug("Leaving accessTypeWriteProblem(). The schema's keywords.");
+      return shape;
+    }
+    const pattern = schemaPatternProblem(definition.schema, 'schema', 0);
+    if (pattern) {
+      log.debug("Leaving accessTypeWriteProblem(). A schema pattern.");
+      return pattern;
+    }
+  }
+  if (definition.limits !== undefined) {
+    const pattern = schemaPatternProblem(definition.limits, 'limits', 0);
+    if (pattern) {
+      log.debug("Leaving accessTypeWriteProblem(). A limits pattern.");
+      return pattern;
+    }
+  }
+  log.debug("Leaving accessTypeWriteProblem().");
+  return '';
 }
 
 // A list member of a definition: an array of distinct non-empty printable
@@ -7237,8 +7349,11 @@ function accessTypeListProblem(name, value) {
 // A `limits` schema held to the SUBSET (LIMITS_SCHEMA_KEYWORDS), walked
 // node by node: `properties` and `items` are schemas again, every other
 // keyword is a value. As a sentence naming the path, or ''.
-function limitsSchemaProblem(node, path, depth) {
+function limitsSchemaProblem(node, path, depth, noun) {
   log.debug("Entering limitsSchemaProblem(). " + path);
+  // Which schema the sentence names (#2220): a `limits` schema, or the
+  // definition's own, which a write holds to the same subset.
+  const kind = noun || 'a limits schema';
   if (depth > 8) {
     log.debug("Leaving limitsSchemaProblem(). Too deep.");
     return path + ' nests more than eight schemas deep';
@@ -7252,8 +7367,8 @@ function limitsSchemaProblem(node, path, depth) {
     const key = keys[i];
     if (LIMITS_SCHEMA_KEYWORDS.indexOf(key) < 0) {
       log.debug("Leaving limitsSchemaProblem(). " + key + ".");
-      return path + ' uses "' + key.slice(0, 60) + '", and a limits schema ' +
-        'may use only ' + LIMITS_SCHEMA_KEYWORDS.join(', ');
+      return path + ' uses "' + key.slice(0, 60) + '", and ' + kind +
+        ' may use only ' + LIMITS_SCHEMA_KEYWORDS.join(', ');
     }
   }
   if (node.type !== undefined) {
@@ -7276,7 +7391,7 @@ function limitsSchemaProblem(node, path, depth) {
     for (let j = 0; j < names.length; j++) {
       const inner = limitsSchemaProblem(node.properties[names[j]],
                                         path + '.properties.' + names[j],
-                                        depth + 1);
+                                        depth + 1, kind);
       if (inner) {
         log.debug("Leaving limitsSchemaProblem(). A property.");
         return inner;
@@ -7284,7 +7399,8 @@ function limitsSchemaProblem(node, path, depth) {
     }
   }
   if (node.items !== undefined) {
-    const items = limitsSchemaProblem(node.items, path + '.items', depth + 1);
+    const items = limitsSchemaProblem(node.items, path + '.items', depth + 1,
+                                      kind);
     if (items) {
       log.debug("Leaving limitsSchemaProblem(). items.");
       return items;
@@ -7499,9 +7615,11 @@ function authorizationDetailsMetadataProblem(values) {
  *
  * @param attribute - the attribute's name
  * @param value - the value written
+ * @param held - optional; the values the entry already holds, which are
+ *   not held to what only a write checks (#2220)
  * @returns the error code and message, or null
  */
-function authorizationDetailsAttributeProblem(attribute, value) {
+function authorizationDetailsAttributeProblem(attribute, value, held) {
   log.debug("Entering authorizationDetailsAttributeProblem(). attribute=" +
             attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -7518,11 +7636,26 @@ function authorizationDetailsAttributeProblem(attribute, value) {
   }
   if (attribute === 'oauthAuthorizationDetailsType') {
     const definition = authorizationDetailsTypeOf(text);
+    if (definition.problem) {
+      log.debug("Leaving authorizationDetailsAttributeProblem(). Not a " +
+                "definition.");
+      return { code: 'STS-REG-0112',
+               message: attribute + ': ' + definition.problem + '.' };
+    }
+    // #2220: what a write holds a definition to and a read does not. A
+    // value the entry already holds is not refused, so a definition stored
+    // before the rule survives a save that sends it back unchanged.
+    const already = (held || []).some(function (one) {
+      return String(one == null ? '' : one).trim() === text;
+    });
+    if (definition.schemaProblem && !already) {
+      log.debug("Leaving authorizationDetailsAttributeProblem(). Outside " +
+                "what a write accepts.");
+      return { code: 'STS-REG-0374',
+               message: attribute + ': ' + definition.schemaProblem + '.' };
+    }
     log.debug("Leaving authorizationDetailsAttributeProblem(). A definition.");
-    return definition.problem
-      ? { code: 'STS-REG-0112',
-          message: attribute + ': ' + definition.problem + '.' }
-      : null;
+    return null;
   }
   log.debug("Leaving authorizationDetailsAttributeProblem(). Not asked.");
   return null;
@@ -11869,7 +12002,8 @@ function updateApplication(identifier, change) {
   }
   // RFC 9396's two, on an ADD or a SET that carries a value.
   if ((mode === 'set' || mode === 'add') && value) {
-    const problem = authorizationDetailsAttributeProblem(attribute, value);
+    const problem = authorizationDetailsAttributeProblem(
+      attribute, value, valuesOf(loaded.record.fields[attribute]));
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable authorization " +
                 "details value.");
@@ -19401,6 +19535,7 @@ module.exports = {
   authorizationDetailsTypeNameProblem: authorizationDetailsTypeNameProblem,
   authorizationDetailsMetadataProblem: authorizationDetailsMetadataProblem,
   authorizationDetailsAttributeProblem: authorizationDetailsAttributeProblem,
+  accessTypeWriteProblem: accessTypeWriteProblem,
   stepUpAttributeProblem: stepUpAttributeProblem,
   stepUpRequirementOf: stepUpRequirementOf,
   audienceNamesEntry: audienceNamesEntry,

@@ -160,6 +160,8 @@ class DescriptionPages {
     log.debug("Entering DescriptionPages.send(). " +
               String(spec.view && spec.view.kind));
     const authnAt = DescriptionPages.authnElsewhere(req);
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const said = ShellDocument.translator();
     const html = ShellDocument.document({
       title: spec.title,
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
@@ -172,10 +174,12 @@ class DescriptionPages {
       open: '<div class="card wide describe">',
       close: '</div>',
       noscript: '<h1>' + helpers.xmlEscape(spec.title) + '</h1><div ' +
-        'class="err">This page is a script that runs in your browser, and ' +
-        'with scripts blocked there is nothing it can show. Allow scripts ' +
-        'for this page, or add <code>?format=json</code> for the same ' +
-        'description as data.</div>',
+        'class="err">' + ShellDocument.said(said,
+        'browser.noscript.description', 'This page is a script that runs ' +
+        'in your browser, and with scripts blocked there is nothing it can ' +
+        'show. Allow scripts for this page, or add <code>?format=json' +
+        '</code> for the same description as data.') + '</div>',
+      translator: said,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     // error-code: none — a description page's 200; nothing was refused.

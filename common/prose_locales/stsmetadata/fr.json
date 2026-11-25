@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Les règles du pied de page que dessine le shell de chaque surface statique — les liens vers la documentation, le contact et la présentation, les icônes des réseaux sociaux, le copyright et la version (common/web_footer.ts). Servie sur chaque écouteur ; une adresse qui porte le ?v= de cette compilation est mise en cache pour toujours."
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Un script en ECMAScript 5, exécuté avant le bundle d'une surface statique, qui vérifie que le navigateur dispose de fetch, TextEncoder, URL et ECMAScript 2022 et, sinon, affiche l'avis que le shell a dessiné masqué dans la langue du lecteur (common/web_browser_check.ts). Répondu sur chaque listener, no-cache."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Les couleurs de connexion du domaine sous forme des propriétés personnalisées CSS que lit /web/card.css (common/branding.ts) : les quatre couleurs branding.* et les tons qui en dérivent, construits uniquement à partir de valeurs validées. Un shell la lie après la carte seulement là où l’apparence du domaine diffère de celle du service ; une adresse portant son condensé en ?v= est mise en cache définitivement."
@@ -2566,6 +2570,10 @@
   "stsmetadata.endpoints./admin-api/tls.what": {
     "en": "019419feb342ad45",
     "text": "GET /admin/tls en JSON : les paramètres tls.*, tous pris en compte au seul redémarrage, car le certificat est émis et les sockets liés avant que quoi que ce soit n’écoute. Le fait que le port PRINCIPAL soit en HTTPS relève de global.https, sur /admin-api/config avec les paramètres propres au processus. Lecture seule."
+  },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Le groupe d'échange de clés négocié par chaque négociation TLS terminée sur les listeners de ce nœud depuis le démarrage de son processus frontal, compté par listener et par groupe, et combien étaient post-quantiques (un groupe ML-KEM). Affiché sur /admin/crypto-metadata. Ne change rien."
   },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",

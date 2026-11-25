@@ -3699,6 +3699,37 @@ class Krb5PersonKeys {
               ' service principal(s).');
     return rows;
   }
+  /**
+   * The stored service principals as the scheduled service-key rotation
+   * reads them (#2220): `listServices()`'s rows, each with `ownAcceptor`,
+   * whether its key is one this service made for its own acceptor and handed
+   * to nobody. Not an answer of any API: the console's rows stay as they
+   * are.
+   *
+   * @returns the rows
+   */
+  servicesForRotation(): Json[] {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.servicesForRotation().');
+    if (!this.directory) {
+      log.debug('Leaving Krb5PersonKeys.servicesForRotation(). No ' +
+                'directory.');
+      return [];
+    }
+    const own: Record<string, boolean> = {};
+    this.directory.serviceKeyInfos().forEach(function (one) {
+      const info = self.parseInfo(one.info) || {};
+      own[String(one.identifier)] = info.generated === ACCEPTOR_GENERATED;
+    });
+    const rows = this.listServices().map(function (row) {
+      return Object.assign({}, row, { ownAcceptor: !!own[row.principal] });
+    });
+    log.debug('Leaving Krb5PersonKeys.servicesForRotation(). ' +
+              rows.length + '.');
+    return rows;
+  }
+
 
   // Replace the value of a withheld attribute for display. `ldap_server.js`
   // calls it with the LOWER-CASED names the store uses.
@@ -3860,6 +3891,11 @@ export = {
   listPeopleKeys: slot.forward('listPeopleKeys'),
   describePeople: slot.forward('describePeople'),
   listServices: slot.forward('listServices'),
+  /**
+   * Forwards to `Krb5PersonKeys.servicesForRotation()` on the installed
+   * instance.
+   */
+  servicesForRotation: slot.forward('servicesForRotation'),
   withheldValues: slot.forward('withheldValues'),
   // THE KRBTGT KEY (#169).
   krbtgtIdentifier: slot.forward('krbtgtIdentifier'),

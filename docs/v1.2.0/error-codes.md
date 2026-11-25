@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6136** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6163** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -49,16 +49,16 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 26
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 29
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 113
+* [Service core (`STS-CORE`)](#sts-core) — 116
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 117
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 118
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 36
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 89
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 90
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 202
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 296
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 206
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 299
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -70,18 +70,18 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 262
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 180
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 263
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 181
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 77
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 78
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 45
+* [Mail (`STS-MAIL`)](#sts-mail) — 46
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
 * [Device register (`STS-DEVICE`)](#sts-device) — 54
@@ -90,9 +90,9 @@ is an ordinary outcome.
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 35
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
-* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 39
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 260
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -103,7 +103,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 192
+* [Registries (`STS-REG`)](#sts-reg) — 193
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 61
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 21
@@ -142,6 +142,9 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0029` | A CSP violation report was refused because its address sent more than 60 in a minute to this process. | HTTP 429 with Retry-After, and no body |
 | `STS-HTTP-0030` | A request to POST /web/csp-report carried no report: a type other than application/csp-report, application/reports+json or application/json, a Content-Encoding, a body that is not JSON, or JSON holding no csp-report object and no csp-violation entry. | HTTP 415 or 400, with no body |
 | `STS-HTTP-0031` | A CSP violation report could not be forwarded to cspReports.forwardUrl: the collector refused it, did not answer, or the outbound rules refused the URL. Logged when forwarding starts failing, not per report; the report is still recorded here. | none — the report was answered 204 and counted |
+| `STS-HTTP-0032` | Outbound HTTP requests are waiting for a connection: the shared agent's cap per destination (federation.outboundMaxSockets) or in all (federation.outboundMaxTotalSockets) is reached. They wait within their overall deadline. Logged when requests first queue, and again only after the queue has drained (#2220). | none — the requests wait; nothing is refused for the cap |
+| `STS-HTTP-0033` | An outbound request did not finish within its overall deadline (federation.outboundDeadlineMs, or its own timeout where longer): it was ended, and the caller's own timeout path ran (#2220). | the caller's own refusal for a timeout |
+| `STS-HTTP-0034` | An outbound connection was not made within the connect timeout (federation.outboundConnectTimeoutMs): the request was ended, and the caller's own timeout path ran (#2220). | the caller's own refusal for a timeout |
 
 ## STS-PROXY
 
@@ -282,6 +285,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
 | `STS-CORE-0180` | A store could not forget what it held for a trust realm this process never defined and the store no longer lists (#1938); it is asked again at the next realm read. | — |
 | `STS-CORE-0181` | security.hstsPreload is on while security.hstsIncludeSubDomains is off, so Strict-Transport-Security is sent without preload: the HSTS preload list accepts a host only when its header covers every subdomain (#2165). Logged when this starts; /admin/mode shows it on the strict-transport-security row. Turn on security.hstsIncludeSubDomains, or turn off security.hstsPreload. | none — a warning; the header is still sent, without preload |
+| `STS-CORE-0182` | A file was not scanned because malwareScan.concurrency scans were running and malwareScan.queueLimit more were waiting: it is refused as a file the scanner could not answer for is. The warning is logged when the queue first fills (#2220). | HTTP 503 |
+| `STS-CORE-0183` | A setting that holds a list of regular expressions (spiffe.httpChallengeAllowedDnsPatterns, spiffe.dockerSigstoreAllowedIdentities) was refused at a save: an entry is longer than 256 characters, uses a backreference, applies a quantifier to a group that is itself quantified or an alternation (the shape that makes a match take exponential time), or does not compile (#2220). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0184` | A list of regular expressions in the environment or an appconfig file holds an entry the console would refuse (STS-CORE-0183). The service starts and uses it as configured; /admin/config and the management API refuse it on the next save (#2220). | none — a warning logged at startup; nothing is refused |
 
 ## STS-WORKER
 
@@ -474,6 +480,7 @@ Raised from: persistence/.
 | `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
 | `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it only once the flush is stuck (STS-STORE-0177). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
 | `STS-STORE-0177` | A request worker's own flush has been out four times workers.readBarrierTimeoutMs (2 minutes by default), so the worker asks the front process to replace it (STS-WORKER-0055). Its drain waits for that flush to settle until ten times the bound after it began, so a flush that is only slow keeps its writes. | Log line |
+| `STS-STORE-0178` | A database statement was cancelled by the server at its statement timeout (persistence.statementTimeoutMs, unless it set its own). The caller's own failure path decides what follows: a refused request, or a retried flush (#2220). | — |
 | `STS-STORE-0179` | The database password could not be read again from its secret store (persistence.database-password-refresh, or after the database refused a login, #2220); new connections go on using the password already held. | Log line and audit row |
 
 ## STS-CLUSTER
@@ -617,6 +624,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
 | `STS-CELL-0210` | A cell conversion found a sealed directory entry it could not open, so it could not decide the entry's tier; nothing was converted (#391). | cell_convert — refused |
 | `STS-CELL-0211` | A provider's server-to-server notification could not reach every cell (#727): it is answered 503 and its once-ever claim is released, so the provider's retry is accepted and fanned out again. | HTTP 503 with Retry-After |
+| `STS-CELL-0212` | A synchronous call to another cell answered more than cells.maxAnswerBytes: the connection was closed and the call failed without reading the answer (#2220). | — |
 | `STS-CELL-0213` | keys.previousCellKekProvider is set and its location is empty, or no cell key is configured for it to be the previous one of (#2220); the service does not start. | Log line (fatal at start) |
 
 ## STS-SCHED
@@ -862,6 +870,10 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0211` | The thread that makes a PKCS#11 token's non-cryptographic calls off the event loop (opening and logging in a session, finding a key, reading its attributes, beginning an operation, the key wrap's session object, initialising the module again) failed or exited. The calls waiting on it are refused and the next one starts a new thread (#1955). | — |
 | `STS-KEYS-0212` | A blocking PKCS#11 call was refused because the module is being initialised again after the device was lost, or must be and asynchronous calls of this thread still hold sessions on it: the module is initialised again off the event loop once they drain, and the next call is made on it (#1955). | — |
 | `STS-KEYS-0213` | A thread held the process-wide lock on re-initialising a PKCS#11 module for longer than the bound (a worker stopped while it held it, or the module hung in C_Finalize or C_Initialize): the thread waiting for it takes it over and initialises the module again itself (#1955). | — |
+| `STS-KEYS-0214` | A call to the OpenBao or Vault secret store still failed after keys.storeAttempts attempts (no answer, a timeout, a 5xx or a 429 each time); the failure is the caller's (#2220). | — |
+| `STS-KEYS-0215` | An HSM operation was refused because keys.pkcs11QueueLimit operations were already waiting for a session of the token in this thread (#2220). | — |
+| `STS-KEYS-0216` | An HSM operation, or the wait for a session to run it on, took longer than keys.pkcs11TimeoutMs: it is refused, and a session whose operation outlived its caller is discarded when the module answers (#2220). | — |
+| `STS-KEYS-0217` | The keys.encryption-key-rotate job could not replace a realm's request-decryption keys (#2220): the key set could not be replaced (a newer generation was already held, or the store refused the write). The keys go on as they are and the next run tries again. | an error log line and a failure audit row; the scheduler run fails with this code |
 
 ## STS-PKI
 
@@ -1167,6 +1179,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0307` | A named truststore a use case of the realm still trusts was asked to be deleted (#2118); the assignment is changed first. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0308` | A key-set truststore was refused its party or its keys (#2149): the party is not client:, federation:, claims-provider: or oidfed-anchor:<id>; the key set is not JSON, holds no key, more than 32, a key without kty, or a private or symmetric key; neither or both of pasted keys and a jwks_uri were given; or a Trust Anchor's key set was given a jwks_uri (#2150); or an SSH CA truststore was given no key, more than 32, or a line that is not an SSH public key (#2151); or a cosign, sigstore-root or tuf-root truststore was given no document, one over 256 KiB, or one that is not PEM public keys, a trusted root or a TUF root (#2152). Also recorded where a stored key set or a setting's file no longer reads. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0309` | A key set and a certificate truststore were confused (#2149): a key-set use case was assigned a certificate truststore, another use case a key set, a certificate was added to a key set, or keys were set on a certificate truststore; or SSH CA keys and certificates were confused the same way (#2151). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0310` | A CA certificate inside its renewal lead could not be renewed over the same key by the pki.ca-renew job (#2220): the encoder refused, or its parent could not sign. The CA goes on as it is and expires on its old date. | an error log line and a failure audit row; the scheduler run fails with this code |
+| `STS-PKI-0311` | A CA certificate renewal was refused because the renewed certificate's subject was not the subject it renews (#2220): a renewal must keep the name every child names as its issuer. | an error log line and a failure audit row; nothing is stored |
+| `STS-PKI-0312` | A dedicated credential signer's key family could not be moved on to its next generation by the scheduled rotation (#2220). The current key goes on signing. | an error log line and a failure audit row; the scheduler run fails with this code |
 
 ## STS-ENROLL
 
@@ -3506,6 +3521,7 @@ Raised from: kerberos/.
 | `STS-KRB-0260` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 over an algorithm this KDC does not accept: one MS-PKCA does not list, or SHA-1 in product mode without crypto.allowLegacyHashes (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
 | `STS-KRB-0261` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 that is not the digest of the KDC-REQ-BODY under the algorithm it names (#2125). | MS-PKCA section 2.2.3: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0262` | A PKINIT PKAuthenticator carried no MS-PKCA paChecksum2, which krb5.pkinitRequirePaChecksum2 requires (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
+| `STS-KRB-0263` | The krb5.service-key-rotate job could not rotate a service principal key that was due (#2220): it could not be sealed or written. The key goes on as it is. | an error log line; the scheduler run fails with this code |
 
 ## STS-LDAP
 
@@ -3695,6 +3711,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0224` | A handler for a person's credential attribute was refused by the entry observer: the attribute is not one of the five it observes, or the handler offers no changed(); that attribute's index is not kept in step with the entries (#2050, #2051). | none — logged |
 | `STS-LDAP-0225` | The handler of a person's credential attribute threw on a write of their entry; the write stands, and the index of that attribute may be behind the entry until its job catches it up (#2050, #2051). | none — logged |
 | `STS-LDAP-0226` | An LDAP search was refused before it read any entry: one of its substring assertions held more components (initial, any, final) than the limit of 32 (#2137). | LDAP adminLimitExceeded (11) |
+| `STS-LDAP-0227` | An LDAP connection was closed before its next message was read: the length the message's BER header declared was over ldap.maxMessageBytes (or, before a bind, ldap.maxMessageBytesBeforeBind), or it used the indefinite length LDAP does not allow. None of the message was buffered (#2220). Logged at most once a minute, with a count of the rest. | RFC 4511 section 5.1 — the connection is closed with no result |
 
 ## STS-ATTR
 
@@ -4132,6 +4149,7 @@ Raised from: tls/.
 | `STS-TLS-0075` | A certificate sign-in handoff arrived without the sign-on session cookie of the browser that started it, so the certificate was not bound to that sign-in: the listener does not share the main port's host name and is not under authn.cookieDomain, or another browser opened the link (#2012). | HTTP 403 |
 | `STS-TLS-0076` | Only one of tls.trustedProxyCertificates and tls.trustedProxyAddresses is set, so no forwarded client certificate is read: a TLS-terminating proxy is trusted by both its certificate and its address (#2012). | none (logged) |
 | `STS-TLS-0077` | A write of tls.trustedProxyCertificates was refused: an entry is neither the SHA-256 of a certificate (64 hex digits, colons and a sha256: prefix allowed) nor spki: followed by the SHA-256 of a SubjectPublicKeyInfo in the same form (#2012). | — |
+| `STS-TLS-0078` | The listener certificate was due for renewal (less than a third of its validity left, or inside tls.serverCertificateRenewLeadDays) and the tls.server-certificate-renew job could not re-issue it (#2220). The socket goes on presenting the certificate it has. | a warning or error log line and a failure audit row |
 
 ## STS-VC
 
@@ -4583,6 +4601,7 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0241` | A message was not queued because the encryption the person chose cannot be honoured now (no usable OpenPGP encryption key, no S/MIME certificate that can receive); it is not sent in the clear against their choice (#1955). | log only (the use refuses as for any unsent message) |
 | `STS-MAIL-0242` | An encrypted message cannot be carried by the realm's transport: Azure Communication Services takes structured content and cannot send a MIME entity this service composed (#1955). | log only |
 | `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
+| `STS-MAIL-0244` | A message was not queued because the realm's outbox already holds mail.maxRows unsent messages; nothing already queued is dropped to make room (#2220). | none — the sender is told the message was refused |
 | `STS-MAIL-0245` | A DKIM selector switch is held back (#2220): mail.dkimNextSelector's key cannot sign, or mail.dkimSwitchAt has passed and DNS does not answer the next selector with its key. Messages are signed with the current selector until it does. | RFC 6376 section 3.6.1 (log only) |
 
 ## STS-I18N
@@ -5260,6 +5279,11 @@ Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/accou
 | `STS-OPENPGP-0032` | The job post-login.mail-classical-retire could not remove a classical OpenPGP key whose kept time had passed (#2009, D3). It is already left out of the Web Key Directory and every page, and the next run tries again. | none (a log line and the run's result) |
 | `STS-OPENPGP-0033` | An OpenPGP key registered where a post-quantum one is asked for (the post-login mail-encryption activity, #2009) has an encryption key that is not one of RFC 9980's ML-KEM composites. Refused before its proof is checked; nothing is spent or written. | none (HTTP 400 from /authn-api) |
 | `STS-OPENPGP-0034` | A userSMIMECertificate value written onto a person's entry holds no certificate this service can read, so it was taken off again and audited with the writer: an S/MIME certificate on the entry is the master mail is encrypted to (#2050). | none — audited |
+| `STS-OPENPGP-0035` | An ML-KEM S/MIME certificate was asked for (#2220) with a public key that is not an RFC 9935 ML-KEM key: not a PEM SubjectPublicKeyInfo, another algorithm, parameters present, or a public key of the wrong length. Nothing was encapsulated. | none (HTTP 400 from /account-api) |
+| `STS-OPENPGP-0036` | An ML-KEM S/MIME certificate was asked for (#2220) where this runtime cannot encapsulate to ML-KEM (`crypto.smimeKemAvailable()`), so no proof of possession could be asked for and nothing was issued. | none (HTTP 400 from /account-api) |
+| `STS-OPENPGP-0037` | An ML-KEM S/MIME certificate was asked to be issued (#2220) with no outstanding proof-of-possession challenge for the person, or one that lapsed (`openpgp.challengeLifetimeS`), or one already answered. Ask for a new challenge. | none (HTTP 400 from /account-api) |
+| `STS-OPENPGP-0038` | The secret sent back for an ML-KEM S/MIME proof of possession (#2220) is not the one this service encapsulated to the key — it was not recovered with the private key (`openssl pkeyutl -decap`), or is not 32 octets of hex or base64. The challenge is spent; nothing was issued. Audited. | none (HTTP 400 from /account-api) — audited |
+| `STS-OPENPGP-0039` | The realm's EST Issuing CA did not issue the ML-KEM S/MIME certificate a person proved possession of (#2220): the email profile is not in est.allowedProfiles, the entry holds pki.enrollmentMaxCertificatesPerEntry certificates, or the authority refused. The refusal's own sentence says which. | none (HTTP 400 from /account-api) |
 
 ## STS-SVCACCT
 
@@ -5580,6 +5604,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0335` | set-pep-application named a person who is not a service account, or a service account that does not hold REMOTE_PEPS: only a remote PEP's identity is bound to an application (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0336` | set-pep-application (or issue-pep-credential with an application) named no application, or one this realm's registry does not hold, so nothing was bound (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0337` | An embedded PEP's binding could not be written or removed: the directory is not available or refused the write (#2025). Nothing changed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0338` | A policy document was refused at write: a regexp-match function's literal pattern is longer than 1024 characters, uses a backreference, or applies a quantifier to a group that is itself quantified or an alternation, the shape that makes a match take exponential time (#2220). A policy stored before the rule still loads; the console lists the pattern among its problems. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-XACML-0339` | A regexp-match was Indeterminate at evaluation: its pattern uses a backreference or a nested quantifier (one stored before STS-XACML-0338, written by ldapmodify, or fetched from an attribute), or the value was longer than 4096 characters (#2220). Logged once per pattern; the remote PEP decides alike. | XACML 3.0 section B.8 processing-error (Indeterminate) |
 
 ## STS-XPEP
 
@@ -6841,6 +6867,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0371` | An application's WS-Trust decryption private key could not be sealed under the key-encryption key where keys persist, so the key pair was not written: a private key is never stored in the clear there (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0372` | The directory refused the write of an application's WS-Trust decryption key pair (the certificate, its chain, the sealed private key and its source, written together). Nothing changed (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0373` | More than one application holds the same WS-Trust decryption certificate, so a request whose EncryptedKey names it is opened by none of them: the key would otherwise decide whose request it was. Logged at the request; remove the certificate from all but one (#1668). | none (logged; the request is then refused STS-WSTRUST-0075) |
+| `STS-REG-0374` | An oauthAuthorizationDetailsType definition was refused at write: its schema uses a JSON Schema keyword outside the subset a limits schema may use, or a pattern in its schema or its limits is longer than 1024 characters, uses a backreference, applies a quantifier to a group that is itself quantified or an alternation, or does not compile (#2220). A definition the application already holds is not refused, and is still used; /admin/mode reports it on the access-type-schemas row. | console: the refusal banner; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-REG-0375` | An application listed in oauth2.clientSecretAutoRotate was not rotated by the daily job (#2220): its new secret could not be pushed to its secret destination, or the rotation was refused. Nothing changed; the old secret still authenticates and the job tries again the next day. | Log line and audit row |
 
 ## STS-DBG

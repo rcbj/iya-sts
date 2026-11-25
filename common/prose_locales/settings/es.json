@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Cuánto esperar al servicio. Un archivo grande dispone de un segundo más por mebibyte."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Análisis simultáneos"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Cuántos archivos envía un proceso al escáner a la vez, cada uno por su propia conexión. Los demás esperan su turno."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Análisis en espera"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Cuántos archivos pueden esperar un análisis además de los que están en curso. Un archivo que lo supere se rechaza con 503 (STS-CORE-0182), como cuando el escáner no responde."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "Archivo CA para un servicio icaps"
@@ -1815,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Qué clave firma las credenciales dc+sd-jwt y jwt_vc_json de este dominio y sus Token Status List Tokens. `dedicated` — el valor predeterminado — es una clave propia, por familia de algoritmos, que no se usa para nada más, bajo un certificado cuyo subjectAltName nombra como URI cada identificador de emisor al que responde el dominio (sin nombre DNS), con el uso extendido de clave id-kp-documentSigning (RFC 9336) y nada que una pila TLS aceptaría, para que una billetera pueda comparar el iss de la credencial con su x5c (HAIP 1.0, sección 6.1.1). El certificado se vuelve a emitir cuando cambian los identificadores de emisor (global.publicBaseUrl, tls.hostnames, un listener). `realm-key` las firma con la clave JOSE general del dominio, como hacía la 1.0.0, cuyo certificado no nombra a ningún emisor. Las credenciales ya emitidas siguen siendo verificables en ambos casos. ldp_vc y mso_mdoc no se ven afectados."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Rotar la clave de firma de credenciales cada (días)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Cuánto tiempo firma la clave de un firmante de credenciales dedicado (keys.credentialSigner dedicated) antes de que la tarea keys.credential-signer-rotate cree la siguiente clave de su familia, que firma a partir de entonces. La clave que reemplaza ya no firma nada y sigue en el JWKS y el documento DID del emisor de credenciales, de modo que cada credencial que firmó sigue verificándose. Se cuenta desde que la tarea vio la clave por primera vez. 0 desactiva la programación. Solo en modo producto."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Claves de descifrado poscuánticas / híbridas"
@@ -1822,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "Los algoritmos JWE ML-KEM y HPKE para los que este dominio tiene una clave de descifrado — un par de claves por algoritmo, publicado en el JWKS del dominio (`use: enc`, con `alg`) y anunciado en `request_object_encryption_alg_values_supported` y `assertion_encryption_alg_values_supported`, para que un cliente pueda cifrar un objeto de solicitud o una aserción RFC 7523 / 7522 para este dominio con establecimiento de clave poscuántico o híbrido PQ/T. HPKE-10-KE es X-Wing (ML-KEM-768 + X25519). Cifrar PARA un cliente que registró uno de estos algoritmos no necesita nada aquí. **Vacío de forma predeterminada, y decisión de un administrador:** todos estos algoritmos proceden de un Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), y una clave AKP en un JWKS es un tipo de clave que las bibliotecas JOSE de muchos clientes aún no analizan — algunas rechazan el conjunto de claves entero. Nombre un algoritmo aquí solo cuando se sepa que los clientes que leen el JWKS de este dominio lo soportan. Quitar uno deja de publicarlo y aceptarlo; volver a nombrarlo recupera la misma clave."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Reemplazar las claves de descifrado de solicitudes cada (días)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Cuánto tiempo se conservan las claves de cifrado de los objetos de solicitud, la clave de cifrado de solicitudes de OpenID4VCI y las claves de descifrado KEM antes de que la tarea keys.encryption-key-rotate las reemplace. La clave nueva se publica de inmediato (/oauth2/jwks, los metadatos del emisor de credenciales) y la que reemplaza sigue descifrando durante keys.encryptionKeyOverlapDays. Se cuenta desde que la tarea vio la clave por primera vez. 0 desactiva la programación. Solo en modo producto."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "Una clave de descifrado de solicitudes reemplazada sigue descifrando durante (días)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Cuánto tiempo una clave de descifrado de solicitudes que reemplazó keys.encryption-key-rotate sigue abriendo lo que un cliente cifró para ella antes de leer la clave nueva. Mientras tanto no se publica en ninguna parte, y signing.retire la elimina cuando ha pasado este plazo."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -2123,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Cuánto puede esperar cualquier sonda detrás de /admin/secrets a que responda un almacén de secretos. Cada una de ellas es una LECTURA de metadatos — un stat del archivo de clave, un endpoint sys, un historial de versiones KV, un DescribeSecret — y ninguna obtiene nunca el valor de un secreto. El límite existe para que abrir una página de la consola nunca pueda quedarse colgado en el almacén de otro; una sonda que agota el tiempo se muestra como una fila que lo indica, exactamente igual que una que se rechazó."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Tiempo de espera de llamadas al almacén de secretos (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Cuánto puede esperar un intento de una llamada a OpenBao o Vault, AWS KMS o Secrets Manager, Google Cloud KMS o Secret Manager, o Azure Key Vault; se entrega a cada SDK como su propia opción de tiempo de espera."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Intentos por llamada al almacén de secretos"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Cuántas veces se intenta en total una llamada a un almacén de secretos o servicio de claves: el propio límite de reintentos de los SDK de la nube, y para OpenBao o Vault una llamada que no obtuvo respuesta, un 5xx o un 429 se repite tras una breve pausa (STS-KEYS-0214 cuando fallaron todos los intentos). Un 4xx nunca se repite."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "Región de AWS"
@@ -2180,6 +2236,30 @@
     "text": "Cuántas sesiones mantiene abiertas en un token, como máximo, cada proceso y cada worker de solicitudes, cada una ejecutando una operación del HSM a la vez. Un YubiHSM 2 tiene 16 sesiones en total, compartidas por todos los procesos de todos los nodos: mantenga el producto de este valor, los procesos y los nodos por debajo de esa cifra."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "el token se abre una vez, al arrancar"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Tiempo de espera de operaciones del HSM (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Cuánto pueden durar una operación del HSM y la espera de una sesión en la que ejecutarla antes de que se rechace (STS-KEYS-0216). Una sesión cuya operación lo superó se descarta cuando el módulo responde. 0 para sin límite."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "el token se abre una vez, al arrancar"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Operaciones del HSM en espera por token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Cuántas operaciones del HSM pueden esperar una sesión de un token en un proceso o worker. Una que lo supere se rechaza de inmediato (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "el token se abre una vez, al arrancar"
   },
@@ -3540,16 +3620,16 @@
     "text": "Algoritmos aceptados"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Los algoritmos OpenPGP que una clave puede usar, por orden de preferencia. Primero los compuestos RFC 9980: ML-DSA-65+Ed25519 y ML-DSA-87+Ed448 firman, ML-KEM-768+X25519 y ML-KEM-1024+X448 cifran. Después los nombres clásicos: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa en nistP256, nistP384 y nistP521, rsaSign y rsaEncryptSign, x25519, x448, ecdh en curve25519Legacy y las mismas curvas NIST, y rsaEncrypt. Un nombre ausente de esta lista se rechaza en el registro y en la verificación (STS-OPENPGP-0004). SLH-DSA no está implementado. El valor predeterminado nombra cada uno de ellos."
+    "en": "f51a30de72243d25",
+    "text": "Los algoritmos OpenPGP que puede usar una clave, en orden de preferencia. Primero los algoritmos poscuánticos de RFC 9980: ML-DSA-65+Ed25519 y ML-DSA-87+Ed448 firman, igual que SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f y SLH-DSA-SHAKE-256s en una clave v6; ML-KEM-768+X25519 y ML-KEM-1024+X448 cifran. Después los nombres clásicos: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sobre nistP256, nistP384 y nistP521, rsaSign y rsaEncryptSign, x25519, x448, ecdh sobre curve25519Legacy y las mismas curvas NIST, y rsaEncrypt. Un nombre ausente de esta lista se rechaza en el registro y en la verificación (STS-OPENPGP-0004). El valor predeterminado los nombra todos."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Registrar solo claves poscuánticas"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Activado, una clave recién registrada debe usar un algoritmo poscuántico que nombre openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para la clave de firma, y ML-KEM-768+X25519 o ML-KEM-1024+X448 cuando tenga una clave de cifrado. Solo restringe el registro: una clave clásica ya registrada sigue verificándose y sigue recibiendo correo. No puede estar activado mientras lo esté openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Desactivado de manera predeterminada."
+    "en": "b0c222dfa3cda337",
+    "text": "Activado, una clave recién registrada debe usar un algoritmo poscuántico que nombre openpgp.algorithms: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 o uno de los tres algoritmos SLH-DSA para la clave de firma, y ML-KEM-768+X25519 o ML-KEM-1024+X448 cuando tiene una clave de cifrado. Solo restringe el registro: una clave clásica ya registrada sigue verificándose y sigue recibiendo correo. No puede estar activado mientras lo esté openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Desactivado por defecto."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",
@@ -4254,6 +4334,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Cuánto tiempo es válida cada CA emisora cuando la construcción no indica vigencia. Cero son los cinco años del perfil `issuing-ca`. Se recorta a la caducidad de su intermedia."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "Renovar los certificados de CA antes de que caduquen"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Si la tarea diaria pki.ca-renew renueva la raíz, cada CA intermedia y cada CA emisora dentro de su plazo de antelación (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) con la MISMA clave y el mismo sujeto, de modo que cada certificado que firmó sigue verificándose y un anclaje a su clave se mantiene. Una raíz renovada se publica junto a la que reemplaza, en /pki/ca/service/root-previous.cer, hasta que esta caduca. Una CA importada nunca se renueva. Desactivado, nada renueva una CA y caduca como antes de la 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Renovar la raíz con esta antelación a su caducidad (días)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Con cuánta antelación a la caducidad de la CA raíz la renueva pki.ca-renew, como máximo la mitad de su vida útil. Larga por defecto (tres años), porque una raíz renovada es un nuevo certificado de ancla de confianza que cada parte que confía debe recibir antes de que caduque el anterior."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Renovar una CA intermedia o emisora con esta antelación a su caducidad (días)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Con cuánta antelación a la caducidad de una CA intermedia o emisora la renueva pki.ca-renew, como máximo la mitad de su vida útil. Una CA no puede sobrevivir a su CA padre, así que una cuya CA padre caduca antes espera la renovación de esta."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -5715,6 +5819,38 @@
     "en": "6a4ac147d740738b",
     "text": "Cuánto esperar a que responda un socio antes de abandonar. Importa más de lo que suele importar un tiempo de espera porque el navegador está ESPERANDO — un inicio de sesión federado es una persona mirando una pestaña en blanco mientras este servicio canjea un código — así que es lo bastante corto para que un socio caído produzca una página de error y no un bloqueo, y el error nombra el tiempo de espera. Era 5000 hasta el 2026-08-30, y lo que cambió es que el socio aquí es NORMALMENTE ESTE PROCESO: un dominio de confianza es una copia lógica de este servicio, y lo primero que alguien pide a un dominio recién creado es su JWKS — que es lo que hace nacer las once claves poscuánticas de ese dominio, una de las cuales es una generación de clave SLH-DSA-SHAKE-128s de unos cinco segundos. 5000 era un presupuesto que solo funcionaba porque este servicio ANTES SE BLOQUEABA mientras respondía: con el bucle de eventos detenido, el temporizador que aplicaba ese presupuesto no podía dispararse hasta que la respuesta ya estaba hecha. Ahora las claves se generan en el pool de hilos de libuv (common/pq_native.js) y se precalientan al crear un dominio, así que la obtención normal tarda milisegundos — este es el presupuesto para la que llega mientras un dominio aún está naciendo."
   },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Conexiones salientes por destino"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Cuántas conexiones mantiene abiertas un proceso a la vez hacia un destino (un socio, un receptor, la URL de un cliente), para cada llamada HTTP saliente. Una solicitud que lo supere espera una conexión, dentro de su plazo total, y se registra una advertencia cuando las solicitudes empiezan a esperar (STS-HTTP-0032). Las conexiones se mantienen vivas y se reutilizan."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Conexiones salientes en total"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Cuántas conexiones HTTP salientes mantiene abiertas un proceso en total. Una solicitud que lo supere espera una conexión, dentro de su plazo total (STS-HTTP-0032). Nunca menos que federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Plazo total de las llamadas salientes (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Lo máximo que puede durar en total una llamada HTTP saliente: la espera de una conexión, la conexión, el handshake y la respuesta completa. Los demás tiempos de espera son de inactividad, de modo que un par que responde lentamente mantendría la llamada abierta. Una llamada cuyo propio tiempo de espera es mayor obtiene ese en su lugar. Al vencer el plazo la llamada termina como tiempo de espera agotado (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Tiempo de espera de conexión saliente (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Cuánto puede tardar en conectarse una nueva conexión saliente, con su handshake TLS. Una conexión reutilizada del pool no se cronometra. Al alcanzar el límite la llamada termina como tiempo de espera agotado (STS-HTTP-0034)."
+  },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
     "text": "Permitir http:// hacia un socio (solo desarrollo)"
@@ -6638,6 +6774,22 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "En un clúster activo-activo, la escucha LDAPS y el puerto principal de cada nodo (salvo que tls.mainPortSharedTickets esté desactivado) sellan los tickets de sesión con una única clave compartida, para que un ticket emitido por un nodo se reanude en otro (la escucha del depurador conserva una clave por nodo). Esta es la frecuencia, en segundos, con la que el trabajo tls.ticket-key-rotate la reemplaza; la clave reemplazada se elimina, así que los secretos de una sesión reanudada solo pueden recuperarse de un ticket capturado mientras vive su clave, y un cliente cuyo ticket sea más antiguo hace un handshake completo. La clave se guarda en el almacén, sellada con la clave de cifrado de claves. 0 desactiva el uso compartido, y fuera del modo activo-activo no se comparte nada: un único nodo que responde reanuda con las claves propias por escucha de OpenSSL, que nunca salen del proceso."
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Renovar el certificado del escuchador sin reiniciar"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Si la tarea horaria tls.server-certificate-renew renueva el certificado que presentan el puerto principal, LDAPS y el depurador, con la misma clave, en cuanto queda menos de un tercio de su validez (o entra en tls.serverCertificateRenewLeadDays), y lo pone en cada socket sin reiniciar. Cada nodo renueva el suyo. Desactivado, solo se renueva al arrancar y con Renovar en la consola. Un certificado que usted proporciona en tls.certificateFile lo renueva usted."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Renovar el certificado del escuchador con esta antelación a su caducidad (días, 0 = a un tercio de su validez)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Renovar el certificado del escuchador estos días antes de que caduque, cuando eso es antes del momento en que queda un tercio de su validez. 0, el valor predeterminado, mantiene el tercio."
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7999,6 +8151,14 @@
     "en": "0ef945c098a1eeac",
     "text": "Cuánto tiempo sigue siendo actual la clave krbtgt de un dominio de confianza — la clave con la que se sella todo Ticket-Granting Ticket — antes de que el trabajo krb5.krbtgt-rotate la reemplace por una nueva clave aleatoria con el siguiente kvno. La clave reemplazada se conserva (krb5.retainedKeyVersions, durante krb5.retainedKeyTtlS) para que un TGT emitido un instante antes de la rotación siga funcionando hasta que caduque, y el trabajo nunca rota mientras esa ventana está abierta. 180 días es la recomendación habitual de Active Directory. 0 desactiva la rotación programada; una rotación manual (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) sigue funcionando. Solo en modo producto. Con krb5.retainedKeyVersions en 0 el trabajo también queda desactivado, porque una rotación que no conservara nada cerraría sin aviso la sesión de todos los usuarios de Kerberos del dominio."
   },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Rotar la clave del aceptador propio de este servicio cada (días)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Qué antigüedad puede alcanzar una clave de principal de servicio antes de que la tarea krb5.service-key-rotate la reemplace por una nueva clave aleatoria con el siguiente kvno, conservando la que reemplaza (krb5.retainedKeyVersions, durante krb5.retainedKeyTtlS) para que los tickets ya emitidos sigan funcionando, y nunca mientras esa ventana esté abierta. Solo se rota la clave que este servicio creó para su propio aceptador: una clave cuyo keytab se entregó a otro servicio se informa como pendiente en /admin/scheduler, y rotarla, lo que entrega el keytab nuevo, sigue siendo un acto del operador. Se cuenta desde la última rotación de la clave o su creación. 0 desactiva la programación. Solo en modo producto."
+  },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
     "text": "PKINIT (preautenticación con certificado)"
@@ -8154,6 +8314,22 @@
   "ldap.timeLimit|description": {
     "en": "b74ec7b68f9251f2",
     "text": "El límite de tiempo del lado del servidor para una búsqueda, en segundos, que es lo que produce LDAP_TIME_LIMIT_EXCEEDED; gana el timeLimit propio de un cliente cuando es más corto. Las entradas enviadas antes de alcanzarlo son la respuesta, marcada como incompleta."
+  },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Mensaje más grande de un cliente enlazado (bytes)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "El mensaje LDAP más grande que puede enviar un cliente que se ha enlazado, en bytes, contado a partir de la longitud que declara su encabezado BER: una conexión cuyo siguiente mensaje declara más se cierra antes de leer nada de él (STS-LDAP-0227). Los resultados de búsqueda los envía el servidor y no cuentan. 5 MiB de forma predeterminada, el límite que tiene aquí todo cuerpo HTTP."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Mensaje más grande antes de un enlace (bytes)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "El mensaje LDAP más grande que puede enviar un cliente antes de enlazarse, en bytes: un enlace, StartTLS o una búsqueda del DSE raíz. Por encima, la conexión se cierra antes de leer nada del mensaje (STS-LDAP-0227). 128 KiB de forma predeterminada, el doble del token Kerberos más grande que puede llevar un enlace SASL. Nunca más que ldap.maxMessageBytes en la práctica."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
@@ -11467,6 +11643,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Cuánto puede ejecutarse cualquier sentencia detrás de /admin/database, como el propio statement_timeout de PostgreSQL en la única conexión que toma prestada esa página. Cada una de ellas es una lectura de una vista del catálogo; el límite existe para que abrir una página de la consola nunca pueda inmovilizar una conexión de un pool con el que este servicio responde al tráfico de protocolo. Se fija en el servidor y no como un temporizador aquí, porque un temporizador abandonaría la promesa y dejaría tanto la sentencia como la conexión exactamente donde estaban."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Conexiones a la base de datos por proceso"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Cuántas conexiones a la base de datos mantiene cada proceso en su pool. 0, el valor predeterminado, es el doble de los workers de solicitudes del nodo y nunca menos de cuatro. Quien llame más allá de ese número espera una conexión libre hasta persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Espera de una conexión a la base de datos (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Cuánto espera quien llama una conexión libre en el pool antes de fallar. Una escritura que falla así se responde con 503 (STS-STORE-0066) y su vaciado se vuelve a intentar."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Tiempo de espera de conexión a la base de datos (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Cuánto puede tardar en establecerse una nueva conexión a la base de datos."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Conservación de una conexión inactiva a la base de datos (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Cuánto permanece una conexión inactiva en el pool antes de cerrarse."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Tiempo límite de sentencias de la base de datos (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Lo máximo que puede ejecutarse una sentencia ordinaria de la base de datos antes de que el servidor la cancele (statement_timeout de PostgreSQL, max_statement_time de MariaDB), registrado como STS-STORE-0178. 0 para ninguno. La apertura del almacén, sus migraciones, la restauración al arrancar y las construcciones de índices en línea no están sujetas a él; los rellenos se ejecutan en lotes pequeños."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "se fija en el pool una vez que el almacén está abierto y leído"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Directorio de datos"
@@ -11911,6 +12147,14 @@
     "en": "839a4a009d203829",
     "text": "Cuánto puede tardar una solicitud retransmitida a otra celda, o una llamada en el canal entre celdas, antes de responderse como si la otra celda fuera inaccesible (y tratarse como indique `cells.homeUnreachable`)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Respuesta entre celdas más grande (bytes)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Lo máximo que puede responder una llamada síncrona a otra celda. Si lo supera, la conexión se cierra y la llamada falla (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Intentos de entrega entre celdas"
@@ -12142,6 +12386,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Cuántas personas lee cada fuente de atributos en cada ejecución de la actualización programada (attribute-sources.refresh, cada minuto), continuando la siguiente vez donde quedó la última. Un valor mayor termina antes una pasada y ocupa un nodo durante más tiempo en cada ejecución."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Conexiones por fuente"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Cuántas conexiones mantiene cada proceso con una fuente de atributos. Una consulta que lo supere espera una conexión dentro del propio tiempo de espera de la fuente. Un cambio surte efecto en la siguiente consulta de cada fuente."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12476,8 +12728,8 @@
     "text": "Envíos en curso"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Cuántos mensajes envía a la vez un proceso desde un barrido."
+    "en": "d6de0478b866cf8b",
+    "text": "Cuántos mensajes envía a la vez un proceso, desde un barrido y en el primer intento tras ponerse un mensaje en cola. Un mensaje que no encuentra hueco libre espera al siguiente barrido."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12492,8 +12744,8 @@
     "text": "Filas de la bandeja de salida por dominio"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "El límite de la bandeja de salida, por dominio: primero se descarta la fila TERMINADA más antigua, y nunca una pendiente."
+    "en": "3b7f698ec30a6ed1",
+    "text": "El límite de la bandeja de salida, por dominio: primero se descarta la fila TERMINADA más antigua, y nunca una pendiente. Se rechaza un mensaje que haría superar ese límite a las filas PENDIENTES (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

@@ -129,8 +129,11 @@ This section covers the rotation of every key and secret listed above (ASVS
 anything the old key already signed, sealed or authenticated, and the settings.
 An automatic rotation is a scheduler job, and **Monitoring → Scheduler**
 (`/admin/scheduler`) shows each job's last and next run. Signing keys,
-OpenID Federation keys and the `krbtgt` key rotate on a schedule in product
-mode only. In development mode those keys are made anew at every start.
+OpenID Federation keys, the `krbtgt` key, this service's own Kerberos
+acceptor key, the credential signers and the request decryption keys rotate
+on a schedule in product mode only. In development mode those keys are made
+anew at every start. The CA certificates and the listener certificate are
+renewed in both modes.
 
 **Signing and encryption keys of a realm**
 
@@ -138,9 +141,9 @@ mode only. In development mode those keys are made anew at every start.
 |---|---|---|---|
 | **Realm signing keys** (every `jose` unit, `xml:RS256`, the post-quantum units, signer groups) | **Automatic:** the hourly `signing.rotate` job publishes a next key. It promotes that key once the current key is `signing.rotationIntervalDays` old (90; 0 turns the schedule off). **Manual:** Rotate on `/admin/keys`, or `POST /admin-api/keys/rotate` (the `signing.rotate-now` job) | The retired key stays published and still verifies until a grace period ends. The grace period is the longer of `signing.retiredKeyGraceDays` and the longest lifetime of anything the key could have signed, plus clock skew. The hourly `signing.retire` job then drops the key, and its certificate is listed as `superseded`. A Shared Signals `signing-key-rotated` event is sent | `signing.rotationIntervalDays`, `signing.retiredKeyGraceDays` |
 | **Credential and BBS units** (`bbs:BBS`, credential-only units) | As for realm signing keys, every `signing.credentialRotationIntervalDays` (365) | The retired key verifies for the longest credential lifetime plus one hour | `signing.credentialRotationIntervalDays` |
-| **Dedicated OpenID4VCI credential signer** (`keys.credentialSigner` `dedicated`) | **No schedule.** A new key is made only when its certificate is revoked for a reason that distrusts the key, or is put on hold. Its certificate is renewed over the same key when less than a third of its validity is left (`common/credential_signer.js`). With `realm-key`, the realm signing key's schedule applies | Credentials already issued keep verifying against the old key's certificate | `keys.credentialSigner` |
+| **Dedicated OpenID4VCI credential signer** (`keys.credentialSigner` `dedicated`) | **Automatic:** the hourly `keys.credential-signer-rotate` job makes the next key of each key family once the current key is `keys.credentialSignerRotationIntervalDays` (365) old, counted from when the job first saw it, so an upgrade rotates nothing at once. A new key is also made when its certificate is revoked for a reason that distrusts the key, or is put on hold. Its certificate is renewed over the same key when less than a third of its validity is left. With `realm-key`, the realm signing key's schedule applies | The key it replaces signs nothing more and **stays published** in the credential issuer's JWKS and DID document, with its certificate, so every credential it signed keeps verifying | `keys.credentialSigner`, `keys.credentialSignerRotationIntervalDays` |
 | **Refresh-token encryption keys** | Rotated with every `signing.rotate` | The retired set still opens refresh tokens for the longest refresh-token lifetime | As for realm signing keys |
-| **Request object encryption keys, KEM decryption keys, the OpenID4VCI request encryption key** | **Never rotated.** A rotation of the signing keys carries them over unchanged (`common/helpers.js`) | — | — |
+| **Request object encryption keys, KEM decryption keys, the OpenID4VCI request encryption key** | **Automatic:** the hourly `keys.encryption-key-rotate` job replaces them once they are `keys.encryptionKeyRotationIntervalDays` (180) old, counted from when the job first saw them. A rotation of the signing keys still carries them over unchanged | The new key is published (`/oauth2/jwks`, the credential issuer metadata) at once. The key it replaces is published nowhere but still decrypts what a client encrypted to it for `keys.encryptionKeyOverlapDays` (30). The `signing.retire` job then drops it | `keys.encryptionKeyRotationIntervalDays`, `keys.encryptionKeyOverlapDays` |
 | **Every signing key at once, on compromise** | **Manual:** `POST /admin-api/keys/emergency` with `{"confirm":"compromised"}` | There is no grace period. The old certificates are revoked for `keyCompromise`, the refresh-token keys are replaced, and every session of the realm ends | — |
 | **OpenID Federation entity keys** | **Automatic:** the hourly `oidfed.key-rotate` job, once the current key is `oidfed.keyRotationDays` old (180). **Manual:** `/admin/oidfed` or `POST /admin-api/oidfed/rotate-key`. An emergency rotation revokes the current and next keys | The old private key is dropped at once. Its public key stays published for `oidfed.keyOverlapDays` (14) and is listed in the historical keys | `oidfed.keyRotationDays`, `oidfed.keyOverlapDays` |
 | **Shared Signals transmitter** | SETs are signed with the realm signing keys and rotate with them | As for realm signing keys | `ssf.signingAlgorithm` |
@@ -150,9 +153,9 @@ mode only. In development mode those keys are made anew at every start.
 
 | Key | Schedule | What happens to what was already issued | Settings |
 |---|---|---|---|
-| **Root CA** | **Manual only:** Replace the Root on `/admin/pki`. No job renews it. Its lifetime is `pki.rootLifetimeYears` (0 means the profile's 20 years) | Everything that trusts the old Root must be given the new one | `pki.rootLifetimeYears` |
-| **Intermediate and Issuing CAs** | **Manual only:** Renew certificates, Reissue this CA, or Rebuild this branch on `/admin/pki`. No job renews them. Lifetimes are `pki.intermediateLifetimeYears` (0 means 10 years) and `pki.issuingLifetimeYears` (0 means 5 years) | **Renew** keeps the keys and issues new certificates, so nothing stops verifying. **Reissue** lists the old CA as `superseded` on its parent's CRL and re-certifies its leaves. **Rebuild** puts the old Intermediate on the Root's CRL. A revoked or expired leaf is never re-certified. See [PKI](pki.md) | `pki.intermediateLifetimeYears`, `pki.issuingLifetimeYears`, `pki.leafLifetimeDays` |
-| **Listener certificate** (main port, LDAPS, the debugger) | **At start, and on the console's Renew.** The certificate is re-issued over the same key when less than a third of its validity is left, the chain has changed, it was revoked, or `tls.hostnames` or `tls.ips` has changed. **No job renews it while the process runs** (`common/pki.js`, `certifyRegistered()`). You renew a certificate you supply in `tls.certificateFile` yourself | The key does not change | `tls.hostnames`, `tls.ips`, `tls.certificateFile` |
+| **Root CA** | **Automatic renewal:** the daily `pki.ca-renew` job renews the Root's certificate over the **same key and subject** `pki.rootRenewalLeadDays` (1095) before it expires. **Manual re-key:** Replace the Root on `/admin/pki`, which needs a second administrator when `admin.dualControl` is on. Its lifetime is `pki.rootLifetimeYears` (0 means the profile's 20 years) | A renewal is published, never swapped in silently: the renewed Root is at `/pki/ca/service/root.cer`, and the one it replaced stays at `/pki/ca/service/root-previous.cer` until it expires. Every chain validates against either, so give relying parties the renewed one before the old one expires. A **re-key** is a new trust anchor: everything that trusts the old Root must be given the new one | `pki.caRenewal`, `pki.rootRenewalLeadDays`, `pki.rootLifetimeYears` |
+| **Intermediate and Issuing CAs** | **Automatic renewal:** the daily `pki.ca-renew` job renews each one over the same key and subject `pki.caRenewalLeadDays` (365) before it expires, after the Root and top down. A CA whose parent expires first waits for the parent's renewal. An imported CA is not renewed. **Manual:** Renew certificates, Reissue this CA, or Rebuild this branch on `/admin/pki`. Lifetimes are `pki.intermediateLifetimeYears` (0 means 10 years) and `pki.issuingLifetimeYears` (0 means 5 years) | A scheduled renewal keeps the key and the name, so everything the CA signed keeps verifying, a pin on its key holds, and the serial it replaced stays known to its parent's OCSP responder until it expires. **Renew certificates** keeps the keys and issues new leaf certificates. **Reissue** lists the old CA as `superseded` on its parent's CRL and re-certifies its leaves. **Rebuild** puts the old Intermediate on the Root's CRL. A revoked or expired leaf is never re-certified. See [PKI](pki.md) | `pki.caRenewal`, `pki.caRenewalLeadDays`, `pki.intermediateLifetimeYears`, `pki.issuingLifetimeYears`, `pki.leafLifetimeDays` |
+| **Listener certificate** (main port, LDAPS, the debugger) | **Automatic:** the hourly `tls.server-certificate-renew` job, in every node's front process, re-issues the certificate over the same key once less than a third of its validity is left, or inside `tls.serverCertificateRenewLeadDays`, and puts it on every socket **without a restart**. It is also re-issued at start, and on the console's Renew, when the chain has changed, it was revoked, or `tls.hostnames` or `tls.ips` has changed. You renew a certificate you supply in `tls.certificateFile` yourself | The key does not change. Each node renews its own and hands it to its request workers | `tls.serverCertificateRenewal`, `tls.serverCertificateRenewLeadDays`, `tls.hostnames`, `tls.ips`, `tls.certificateFile` |
 | **Custom listener certificates** | **Automatic:** once two thirds of a certificate's life has passed, the hourly `tls.listener-renew` job re-issues it without closing the listener. This applies only to certificates the service issued | — | See [Listeners](listeners.md) |
 | **LDAPS session-ticket key** (active-active clusters) | **Automatic:** the `tls.ticket-key-rotate` job, every `tls.sessionTicketRotationS` (3600) | The old key is deleted | `tls.sessionTicketRotationS` |
 | **Federation relationship encryption keys** | **Manual:** the console, or `POST /admin-api/federation/rotate-key` | The old key decrypts for `federation.encryptionKeyGraceS` (86400 s). The `federation.encryption-key-retire` job then removes it | `federation.encryptionKeyGraceS` |
@@ -174,7 +177,7 @@ mode only. In development mode those keys are made anew at every start.
 | Key | Schedule | What happens to what was already issued | Settings |
 |---|---|---|---|
 | **`krbtgt`** | **Automatic:** the hourly `krb5.krbtgt-rotate` job, once the key is `krb5.krbtgtRotationIntervalDays` old (180; 0 turns it off). It does not rotate while the previous version is still kept, or when `krb5.retainedKeyVersions` is 0. **Manual:** `/admin/kerberos/principals`, or `POST /admin-api/kerberos/principals/rotate-krbtgt` | The previous key version is kept for `krb5.retainedKeyTtlS`, so tickets already issued keep working. Its default of 0 means the longest ticket or renewal lifetime plus clock skew. `rotate-krbtgt-invalidate` keeps nothing, and every ticket-granting ticket is refused. See [Kerberos](kerberos.md) | `krb5.krbtgtRotationIntervalDays`, `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS` |
-| **Service principal keys** | **Manual only:** Rotate on `/admin/kerberos/principals`, or `POST /admin-api/kerberos/principals/rotate-service`. The new keytab is given out once | Previous key versions are kept as for `krbtgt`, and the new keytab carries them | `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS` |
+| **Service principal keys** | **Automatic for this service's own acceptor key:** the hourly `krb5.service-key-rotate` job replaces it at the next kvno once it is `krb5.serviceKeyRotationIntervalDays` (180) old, and never while the version the last rotation kept is still in its window. **A key whose keytab was handed to another service is reported as due** on `/admin/scheduler` and not rotated, because that service needs the new keytab. Rotate it on `/admin/kerberos/principals`, or `POST /admin-api/kerberos/principals/rotate-service`. The new keytab is given out once | Previous key versions are kept as for `krbtgt`, so tickets already issued keep working, and the new keytab carries them | `krb5.serviceKeyRotationIntervalDays`, `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS` |
 | **A person's Kerberos keys** | Change with the person's password | — | — |
 
 **Credentials that authenticate a party**
@@ -186,7 +189,7 @@ mode only. In development mode those keys are made anew at every start.
 | **Service account passwords** | **Automatic when the service-account policy turns it on** (`rotationEnabled`, off by default): the hourly `service-accounts.rotate` job, every `rotationIntervalDays` (30). **Manual:** Rotate now, or `POST /admin-api/users/rotate-password`. The new password is pushed to the secret destination before it is committed | The previous password still works for `rotationOverlapMinutes` (60). The `service-accounts.previous-cleanup` job then removes it. See [Service accounts](service-accounts.md#rotation) | The service-account policy |
 | **Database password** | **Rotating it is the secret store's or your job**, not this service's: OpenBao's database secrets engine (a static role) changes the password at the database and in the store together, or you change both. **This service picks it up without a restart:** each process reads it again every `persistence.databasePasswordRefreshS` (3600; the `persistence.database-password-refresh` job), and at once when the database refuses a login, and new connections use the new password | Open connections keep working. Keep the old password valid at the database for at least one refresh interval, so every node has read the new one | `persistence.databasePasswordProvider`, `persistence.databasePasswordRefreshS` |
 | **TOTP secrets** | **Not this service's to rotate.** A TOTP secret is shared with the person's authenticator app, so a new one means the person enrolling again (removing the authenticator on the portal and adding it back). This service cannot change it alone without locking the person out | — | — |
-| **GNAP macaroon root keys and `jwt-encrypted` key** | Derived from the realm's refresh-token secret, which changes with every `signing.rotate` | See the known gaps below | — |
+| **GNAP macaroon root keys and `jwt-encrypted` key** | Derived from the realm's refresh-token secret, which changes with every `signing.rotate`; new tokens use the current secret (#2212) | Tokens issued before a rotation still verify under each replaced secret the rotation keeps, which is kept for at least the longest GNAP access-token lifetime (an emergency rotation keeps none). A resource server's stored `gnapMacaroonKey` is rewritten at the first macaroon minted for it after a rotation | `signing.retiredKeyGraceDays`, `gnap.accessTokenLifetimeS` |
 | **Application and person assertion key pairs** | **Manual:** replace the key pair. See [PKI](pki.md#replacing-a-key-pair) | — | — |
 | **DPoP and DBSC keys** | Held by the client or the browser, not by this service. The DPoP nonce is a stored list of issued nonces, not a key. The DBSC server secret is a shared cluster secret (see above) | — | — |
 | **OpenPGP and S/MIME keys** | This service holds none of its own. It encrypts to each person's registered key or certificate. When a person keeps a classical OpenPGP key beside a post-quantum one, the hourly `post-login.mail-classical-retire` job removes the classical key once its keep period ends | — | — |
@@ -195,28 +198,10 @@ mode only. In development mode those keys are made anew at every start.
 
 ### Known gaps
 
-The keys and secrets below are never rotated, or are rotated only by hand.
-Each gap is a follow-up.
-
-1. **The listener certificate** is renewed only at start or from the console.
-   A node that runs past two thirds of the certificate's validity without a
-   restart does not renew it (`common/pki.js`, `certifyRegistered()`).
-2. **The Root, Intermediate and Issuing CAs** have no renewal job.
-3. **Request object encryption keys, KEM decryption keys and the OpenID4VCI
-   request encryption key** are carried over every rotation and never replaced
-   (`common/helpers.js`).
-4. **Kerberos service principal keys** have no schedule. Only the `krbtgt` key
-   rotates on its own.
-5. **The dedicated credential signer's key** has no schedule. It is replaced
-   only when its certificate is revoked (`common/credential_signer.js`).
-6. **GNAP macaroon and `jwt-encrypted` keys** are derived only from the
-   realm's current refresh-token secret (`gnap/gnap_tokens.ts`,
-   `realmDerived()`). That secret changes with every `signing.rotate`, and the
-   copy written to a resource server's entry is written only once
-   (`gnap/gnap_rs.ts`, `ensureMacaroonKey`). So a rotation appears to stop
-   outstanding GNAP macaroons and `jwt-encrypted` tokens from verifying, and to
-   leave the resource server's stored root key stale. This was found by reading
-   the code and has not been tested.
+None. Every key and secret above has a rotation: a scheduler job, a re-read
+from your secret store, or a step that is yours and is described in its row.
+Two are never rotated by design, and their rows say why: the stored digest key
+and the shared cluster secrets that are identifiers.
 
 ## Your own responsibilities
 

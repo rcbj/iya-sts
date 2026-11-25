@@ -183,6 +183,14 @@
     "en": "bbcb6fbdb123f2c7",
     "text": "Skriver om maskinvarutokenregistret och OATH- och YubiKey OTP-inventarierna från token på personernas poster, som är huvudkällan: körs för hand efter en återställning eller när ett index motsäger en post."
   },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "Rotation av intygssignerare"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "Låter varje dedikerad intygssignerares nyckelfamilj gå över till en ny nyckel när dess nyckel är keys.credentialSignerRotationIntervalDays gammal. Nyckeln den ersätter signerar inget mer och förblir publicerad, så varje intyg den signerat fortsätter att verifieras."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Antal värden per datakrypteringsnyckel"
@@ -215,6 +223,14 @@
     "en": "a4d23163545ebff6",
     "text": "Roterar varje lagrad datakrypteringsnyckel nu — eller en sfärs, eller en klass; nycklarna de ersätter fortsätter att öppna det de förseglade tills det har förseglats om."
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "Rotation av nycklar för dekryptering av begäranden"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "Ersätter krypteringsnycklarna för begäranobjekt, OpenID4VCI-nyckeln för kryptering av begäranden och KEM-dekrypteringsnycklarna när de är keys.encryptionKeyRotationIntervalDays gamla. Den nya nyckeln publiceras genast; den den ersätter dekrypterar fortfarande i keys.encryptionKeyOverlapDays."
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "Rotation av nyckelkrypteringsnyckeln, manuellt"
@@ -238,6 +254,14 @@
   "sched.jobs.krb5.krbtgt-rotate-now.describe": {
     "en": "6fffa44535aa160d",
     "text": "Roterar sfärens krbtgt-nyckel nu. Med invalidate behålls ingen tidigare version: varje TGT som utfärdats före den avvisas och en Shared Signals-händelse meddelar det."
+  },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "Rotation av Kerberos-tjänstnycklar"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "Ersätter nyckeln som den här tjänsten skapade för sin egen mottagare med en ny slumpnyckel på nästa kvno när den är krb5.serviceKeyRotationIntervalDays gammal, behåller den den ersätter så länge en biljett under den kan leva, och aldrig medan det fönstret är öppet. En nyckel vars keytab har lämnats ut rapporteras som förfallen i stället för att roteras: dess tjänst behöver den nya keytab-filen installerad."
   },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
@@ -422,6 +446,14 @@
   "sched.jobs.persistence.tombstone-purge-global.describe": {
     "en": "98370fb755b4ba95",
     "text": "I en tjänst som driftsätts som celler tar den bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från den globala nivåns databas, i samma omgångar; dess körning tas i anspråk i den globala nivån, så att en enda cell kör varje tidsfack. Avstängd i en tjänst med en enda databas, där den andra rensningen täcker den."
+  },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "Förnyelse av CA-certifikat"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "Förnyar roten, sedan varje mellanliggande CA, sedan varje utfärdande CA inom dess framförhållning (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) med samma nyckel och subjekt, så allt den signerat verifieras fortfarande. En förnyad rot publiceras bredvid den den ersätter tills den går ut. En importerad CA förnyas av operatören."
   },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
@@ -718,6 +750,14 @@
   "sched.jobs.ssh-user-ca.krl.describe": {
     "en": "c84b42d3aab3bdde",
     "text": "Uppdaterar varje sfärs KRL för OpenSSH-användar-CA:n efter återkallelser av utfärdade certifikat och tar bort utgångna återkallelser."
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "Förnyelse av lyssnarcertifikatet"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "Förnyar certifikatet som den här processens huvudport, LDAPS och felsökare presenterar, med samma nyckel, när mindre än en tredjedel av giltighetstiden återstår eller det ligger inom tls.serverCertificateRenewLeadDays, och lägger det på varje socket utan omstart. Körs i varje nods frontprocess, som lämnar det förnyade certifikatet till sina begäranarbetare."
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

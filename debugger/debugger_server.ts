@@ -117,6 +117,7 @@ import Http2Express = require('../common/http2_express');
 import ConnectRefusal = require('../common/connect_refusal');
 import ParserRefusal = require('../common/parser_refusal');
 import AlertClose = require('../tls/alert_close');
+import KeyExchange = require('../tls/key_exchange');
 import audit = require('../common/audit');
 import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
@@ -939,6 +940,9 @@ class DebuggerServer {
       // does, with revocation, and `app`'s first middleware waits (#1360).
       tlsServer.holdConnectionsOn(server, 'the protocol debugger (' + port +
                                           ')');
+      // The key exchange each handshake negotiated, counted (#2220).
+      KeyExchange.install(server, 'debugger',
+                          'the protocol debugger (' + port + ')');
       // THE API CHILD IS REPLACED WHEN THE LISTENER CERTIFICATE IS, not on the
       // next /api call that happens to look (CI run #510): a Root rebuilt at
       // 02:19 was noticed at 02:35, by the call that was then kept waiting

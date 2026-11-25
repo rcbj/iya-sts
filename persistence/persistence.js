@@ -698,6 +698,12 @@ let dirFailedAt = 0;
 // periodic work: it exists only while a write is failing, which is the
 // "retry delay inside one operation" the scheduler directive leaves out
 // (root CLAUDE.md, *Anything periodic is a scheduler job*).
+//
+// ASKED AGAIN IN #2220 (the ASVS 5.0.0 L3 dependency review), and it stays a
+// timer: what it writes is THIS process's dirty state, which a cluster job
+// on another node cannot reach, and a per-process job would be periodic work
+// that runs when nothing has failed. It is recorded as a retry delay in
+// tests/no_periodic_timers.js.
 // ---------------------------------------------------------------------------
 const RETRY_FIRST_MS = 1000;
 const RETRY_MAX_MS = 30000;
@@ -3047,6 +3053,41 @@ function workerCount() {
   return n;
 }
 
+// THE POOL'S WAITS (#2220): the connect timeout, the wait for a free
+// connection, and how long an idle one is kept — settings since #2220, with
+// the 5 s, 5 s and 30 s the driver always had as their defaults. Read once,
+// when the store is opened.
+function poolWaits() {
+  log.debug("Entering poolWaits().");
+  log.debug("Leaving poolWaits().");
+  return {
+    connectTimeoutMs: Number(config.value('persistence.connectTimeoutMs')),
+    poolWaitMs: Number(config.value('persistence.poolWaitMs')),
+    idleTimeoutMs: Number(config.value('persistence.idleTimeoutMs'))
+  };
+}
+
+// THE STATEMENT BOUND (#2220), set once every restore is done — `coordinate()`
+// is the last step of the start, after the directory, the realms, the
+// settings and the minted rows were read — so that the start's own heavy
+// reads, and the schema's migrations before them, are never under it
+// (`knex_store.js`, `boundStatements()`, lists what else is outside it).
+// `persistence.statementTimeoutMs`, 0 for none.
+function boundStatements() {
+  log.debug("Entering boundStatements().");
+  if (!driver || typeof driver.boundStatements !== 'function') {
+    log.debug("Leaving boundStatements(). Not a database store.");
+    return;
+  }
+  const ms = Math.max(0, Number(config.value(
+    'persistence.statementTimeoutMs')) || 0);
+  driver.boundStatements(ms);
+  log.info('persistence: ordinary statements run under a ' +
+           (ms ? ms + ' ms' : 'no') + ' statement timeout ' +
+           '(persistence.statementTimeoutMs).');
+  log.debug("Leaving boundStatements().");
+}
+
 /**
  * Opens the configured store and restores the directory, realms and
  * overrides from it.
@@ -3740,7 +3781,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           engine: chosen,
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
           tlsCa: tlsCa,
-          poolMax: require('./persistence_postgres').poolMax(workerCount()),
+          poolMax: require('./persistence_postgres').poolMax(workerCount(),
+            config.value('persistence.poolSize')),
+          // The pool's waits (#2220), read here for `verifyTls`'s reason.
+          ...poolWaits(),
           // Which coordination statements it sends (#677): read here, for
           // the reason `verifyTls` is.
           sqlDialect: String(config.value('persistence.sqlDialect') ||
@@ -3776,7 +3820,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
         tlsCa: tlsCa,
-        poolMax: require('./persistence_postgres').poolMax(workerCount()),
+        poolMax: require('./persistence_postgres').poolMax(workerCount(),
+          config.value('persistence.poolSize')),
+        ...poolWaits(),
         sqlDialect: String(config.value('persistence.sqlDialect') ||
                            'native'),
         // The status row's database, so the fence lock lives here (#884).
@@ -5731,6 +5777,7 @@ function coordinate() {
     log.debug('Leaving coordinate(). Nothing is being persisted.');
     return Promise.resolve({ coordinating: false });
   }
+  boundStatements();
   log.debug("Leaving coordinate().");
   const appliers = {
     // WITH `ownFlushWait` BESIDE IT (#1934), the `prepare` arrangement: the

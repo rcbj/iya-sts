@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Die Regeln der Fußzeile, die die Shell jeder statischen Oberfläche darstellt — die Links zu Dokumentation, Kontakt und Über, die Social-Icons, das Urheberrecht und die Version (common/web_footer.ts). Auf jedem Listener beantwortet; eine Adresse, die das ?v= dieses Builds trägt, wird dauerhaft zwischengespeichert."
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Ein Skript in ECMAScript 5, das vor dem Bundle einer statischen Oberfläche läuft, fragt, ob der Browser fetch, TextEncoder, URL und ECMAScript 2022 hat, und zeigt, wo nicht, den Hinweis, den die Shell verborgen in der Sprache des Lesers gezeichnet hat (common/web_browser_check.ts). Auf jedem Listener beantwortet, no-cache."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Die Farben der Anmeldung des Vertrauensbereichs als die CSS-Custom-Properties, die /web/card.css liest (common/branding.ts): die vier Farben branding.* und die daraus abgeleiteten Töne, nur aus geprüften Werten gebaut. Eine Shell bindet es nur dort nach der Karte ein, wo das Erscheinungsbild des Vertrauensbereichs von dem des Dienstes abweicht; eine Adresse, die seinen Digest als ?v= trägt, wird dauerhaft zwischengespeichert."
@@ -2566,6 +2570,10 @@
   "stsmetadata.endpoints./admin-api/tls.what": {
     "en": "019419feb342ad45",
     "text": "GET /admin/tls über JSON: die Einstellungen tls.*, sämtlich nur beim Neustart, weil das Zertifikat geprägt und die Sockets gebunden werden, bevor irgendetwas lauscht. Ob der HAUPT-Port HTTPS ist, entscheidet global.https, auf /admin-api/config bei den eigenen Einstellungen des Prozesses. Nur lesend."
+  },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Die Schlüsselaustauschgruppe, die jeder abgeschlossene TLS-Handshake auf den Listenern dieses Knotens seit dem Start seines Front-Prozesses ausgehandelt hat, gezählt pro Listener und Gruppe, und wie viele davon Post-Quanten waren (eine ML-KEM-Gruppe). Angezeigt auf /admin/crypto-metadata. Ändert nichts."
   },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",

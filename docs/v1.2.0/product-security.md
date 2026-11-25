@@ -408,8 +408,9 @@ default. When it is on, product mode reaches the scanner over TLS only. See
 
 [`SECURITY.md`](https://github.com/rcbj/iya-sts/blob/main/SECURITY.md) sets how
 quickly a vulnerable dependency is fixed and how to report a vulnerability. Images
-install exactly what the lockfiles name, with `npm ci`, and a daily check covers
-the published image as well as the lockfiles. That includes the optional SDKs
+install exactly what the lockfiles name, with `npm ci` and no package's install
+script run, and a daily check covers the published image as well as the
+lockfiles, and the remote PEP, ICAP adapter and ClamAV images beside it. That includes the optional SDKs
 under `/opt/sts-sdk`, the Vault client every image carries and whatever
 `STS_CLOUD_SDKS` adds: each is pinned in the repository's `sdk/` directory and
 installed from `sdk/package-lock.json` with install scripts off (only `pkcs11js`,
@@ -427,7 +428,9 @@ controls.
 The image holds a CycloneDX inventory of its npm dependencies at
 `/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at
 `/usr/src/sts/sbom-sdks.cdx.json`, and a list of its operating-system packages
-at `/usr/src/sts/os-packages.txt`. It holds no source control metadata.
+at `/usr/src/sts/os-packages.txt`. It holds no source control metadata. The
+remote PEP's image holds a CycloneDX inventory of its Rust crates, the OpenSSL
+built into it included, at `/usr/src/pep/sbom.cdx.json`.
 
 ## Database
 

@@ -183,6 +183,14 @@
     "en": "bbcb6fbdb123f2c7",
     "text": "根据人员条目上的令牌（它们是主数据）重写硬件令牌登记簿以及 OATH 和 YubiKey OTP 清单：在恢复之后或某个索引与条目不一致时手动运行。"
   },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "凭证签名者轮换"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "当每个专用凭证签名者的密钥使用达到 keys.credentialSignerRotationIntervalDays 时，将其密钥族切换到新密钥。被替换的密钥不再签署任何内容并保持发布，因此它签署的每个凭证仍可验证。"
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "数据加密密钥的值计数"
@@ -215,6 +223,14 @@
     "en": "a4d23163545ebff6",
     "text": "立即轮换所有已存储的数据加密密钥——或某个领域的、某个类别的；被替换的密钥在其封存的内容被重新封存之前，仍可继续打开这些内容。"
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "请求解密密钥轮换"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "当请求对象加密密钥、OpenID4VCI 请求加密密钥和 KEM 解密密钥使用达到 keys.encryptionKeyRotationIntervalDays 时将其替换。新密钥立即发布；被替换的密钥在 keys.encryptionKeyOverlapDays 内仍可解密。"
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "手动轮换密钥加密密钥"
@@ -238,6 +254,14 @@
   "sched.jobs.krb5.krbtgt-rotate-now.describe": {
     "en": "6fffa44535aa160d",
     "text": "立即轮换本领域的 krbtgt 密钥。使用 invalidate 时不保留旧版本：此前签发的每个 TGT 都会被拒绝，并由一个 Shared Signals 事件说明这一点。"
+  },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "Kerberos 服务密钥轮换"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "当本服务为其自身接受方生成的密钥使用达到 krb5.serviceKeyRotationIntervalDays 时，以下一个 kvno 的新随机密钥替换它，并在其下签发的票据最长存活期间保留被替换的密钥，且该窗口打开期间绝不轮换。已交出 keytab 的密钥会被报告为到期而不是被轮换：其服务需要安装新的 keytab。"
   },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
@@ -422,6 +446,14 @@
   "sched.jobs.persistence.tombstone-purge-global.describe": {
     "en": "98370fb755b4ba95",
     "text": "在以单元方式部署的服务中，以相同的批次从全局层的数据库中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑；其运行在全局层中认领，因此每个时段只有一个单元运行。在只有一个数据库的服务中关闭，由另一项清理涵盖。"
+  },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "CA 证书续期"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "依次续期根 CA、每个中间 CA 和每个签发 CA（在其提前期 pki.rootRenewalLeadDays、pki.caRenewalLeadDays 内），使用相同的密钥和主体，因此它签署的一切仍可验证。续期后的根证书与被替换的根证书并列发布，直到后者到期。导入的 CA 由其运营者续期。"
   },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
@@ -718,6 +750,14 @@
   "sched.jobs.ssh-user-ca.krl.describe": {
     "en": "c84b42d3aab3bdde",
     "text": "在已签发证书被吊销后刷新每个领域的 OpenSSH 用户 CA KRL，并移除已过期的吊销。"
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "监听器证书续期"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "当本进程主端口、LDAPS 和调试器所出示证书的剩余有效期不足三分之一或进入 tls.serverCertificateRenewLeadDays 时，使用相同密钥续期，并在不重启的情况下放到每个套接字上。在每个节点的前端进程中运行，由其将续期后的证书交给请求工作线程。"
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

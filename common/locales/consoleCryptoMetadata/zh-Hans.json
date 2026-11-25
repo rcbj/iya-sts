@@ -251,5 +251,13 @@
   "thAlgName": "算法",
   "thAlgSigns": "签名",
   "thAlgAccepts": "接受",
-  "thAlgWhyNot": "原因"
+  "thAlgWhyNot": "原因",
+  "tlsKxHeading": "TLS 密钥交换（协商结果）",
+  "tlsKxNote": "自本节点前端进程启动以来，其监听器上每次完成的 TLS 握手协商出的结果，读取自服务器持有的会话。后量子指 ML-KEM 组，单独使用或用于混合方案。计数属于本节点，重启后不保留。",
+  "tlsKxSummary": "自 {since} 以来，{total} 个连接中有 {pq} 个是后量子的。",
+  "tlsKxListener": "监听器",
+  "tlsKxGroup": "组",
+  "tlsKxConnections": "连接数",
+  "tlsKxLast": "最后出现",
+  "tlsKxNone": "本节点尚未统计到任何 TLS 连接。"
 }

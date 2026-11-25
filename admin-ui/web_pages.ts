@@ -605,7 +605,10 @@ const PAGES: WebPage[] = [
   // still that view (`composeKeep`).
   { path: '/admin/crypto-metadata', title: 'Cryptography',
     operation: '/admin-api/crypto',
-    compose: { certificateDetails: '/admin-api/certificates' },
+    // The key exchange clients negotiated (#2220), drawn on the
+    // Post-quantum tab; refused to a realm's token, and then not drawn.
+    compose: { certificateDetails: '/admin-api/certificates',
+               tlsKeyExchange: '/admin-api/tls/key-exchange' },
     composeWhen: { certificateDetails: ['certificate'] },
     composeKeep: ['certificateDetails'],
     render: CryptoMetadataPage.render },

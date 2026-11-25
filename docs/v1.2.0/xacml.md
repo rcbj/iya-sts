@@ -74,6 +74,18 @@ trust realm has its own repository, and `ldapsearch` or
 `/admin/ldap/policies` can inspect them. Each entry holds the document exactly
 as it was written, and every write is statically validated first.
 
+**A regular expression is bounded** (1.2.0, #2220). The six
+`*-regexp-match` functions run on JavaScript's backtracking engine, so a
+save refuses a policy whose literal pattern is longer than 1024 characters,
+uses a backreference, or applies a quantifier to a group that is itself
+quantified or an alternation, such as `(a+)+` or `(a|aa)*`
+(`STS-XACML-0338`); write the repetition once, as `a+`. A policy stored
+before 1.2.0 still loads, and the Policies page lists such a pattern among
+its problems. At evaluation the same shapes, and a value longer than 4096
+characters, make the match **Indeterminate** (`STS-XACML-0339`), whether the
+pattern was written in the policy or taken from an attribute. A remote PEP
+decides the same way.
+
 A policy can be enabled, disabled without being deleted, deleted, or made the
 **root**, which is the policy the PDP starts from. The default realm is seeded
 with one role-based policy, `seeded-rbac`. It grants on the `employeeType`

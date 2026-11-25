@@ -50,6 +50,7 @@
 import fs = require('fs');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
+import config = require('../common/config');
 import OutboundTls = require('../common/outbound_tls');
 import secrets = require('../common/secrets');
 import truststores = require('../common/truststores');
@@ -169,7 +170,21 @@ class AttributeSourceDrivers {
       source.database, source.user, source.passwordProvider,
       source.passwordRef, source.passwordField, source.caFile,
       source.caCertificates, source.trustPublicRoots,
-      source.serverName, source.timeoutMs]);
+      source.serverName, source.timeoutMs,
+      AttributeSourceDrivers.poolSize()]);
+  }
+
+  // HOW MANY CONNECTIONS A SOURCE'S POOL HOLDS in this process (#2220):
+  // `attributeSources.poolSize`, 4 by default, which was the fixed number.
+  // A lookup past it waits for a connection within the source's own
+  // timeout, and is refused at it (STS-ATTR-0003) as before. A change
+  // rebuilds each pool at its next lookup (the fingerprint above).
+  static poolSize(): number {
+    helpers.log.debug("Entering AttributeSourceDrivers.poolSize().");
+    const n = Math.max(1, Math.min(64, Number(config.value(
+      'attributeSources.poolSize')) || 4));
+    helpers.log.debug("Leaving AttributeSourceDrivers.poolSize().");
+    return n;
   }
 
   // The coded error a failure becomes. `retry` is whether the pool should be
@@ -265,7 +280,8 @@ class AttributeSourceDrivers {
     }
     const timeout = Number(source.timeoutMs) || 2000;
     const db = knex({ client: dialect.client, connection: connection,
-                      pool: { min: 0, max: 4 },
+                      pool: { min: 0,
+                              max: AttributeSourceDrivers.poolSize() },
                       acquireConnectionTimeout: timeout });
     this.pools.set(key, { fingerprint: print, db: db });
     log.debug("Leaving AttributeSourceDrivers.pool(). Built.");

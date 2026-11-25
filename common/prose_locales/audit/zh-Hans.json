@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "某人的 S/MIME 证书已设置或删除"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "已签发 ML-KEM S/MIME 持有证明挑战"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "未签发 ML-KEM S/MIME 证书"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "一个经典 OpenPGP 密钥被保留在取代它的后量子密钥旁边"

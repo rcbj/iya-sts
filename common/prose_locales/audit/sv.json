@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "En persons S/MIME-certifikat angavs eller togs bort"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "En ML-KEM-S/MIME-utmaning för bevis på innehav utfärdades"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "Ett ML-KEM-S/MIME-certifikat utfärdades inte"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "En klassisk OpenPGP-nyckel behölls bredvid postkvantnyckeln som ersatte den"

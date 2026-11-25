@@ -990,6 +990,98 @@ function verificationRows(keys) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A KEY FAMILY'S NEXT GENERATION, ON A SCHEDULE (#2220, ASVS 5.0.0 L3;
+// key-management.md's Known gaps).
+//
+// A credential signer's key was replaced only when a revocation distrusted
+// it (above). `common/key_renewal.ts`'s `keys.credential-signer-rotate` job
+// now also makes each family's next generation once its current key is
+// `keys.credentialSignerRotationIntervalDays` old, through the same door a
+// distrust takes — `memberForAsync()` in the slot `<family>~<n+1>`, under the
+// same cluster claim — so "which key signs" stays a reading: the highest
+// generation. **THE ONE IT REPLACES IS RETIRED, NOT DROPPED**: it signs
+// nothing, and stays in `trustedMembersOf()`, so the realm's credential JWKS
+// and DID document keep publishing it, its certificate is still served, and
+// the Verifier still accepts what it signed — for as long as any credential
+// it signed can be presented, which this service does not bound (a
+// credential may be valid for years), so a retired generation is never
+// removed. A rotation is not a revocation: nothing is distrusted.
+// ---------------------------------------------------------------------------
+/**
+ * The key families of a realm's credential signers that sign (not the mdoc
+ * authorities), each with the member that signs for it now.
+ *
+ * @param keys - the realm's key set
+ * @returns `{ familySlot, current }` rows
+ */
+function credentialFamilies(keys) {
+  log.debug("Entering credentialFamilies().");
+  const seen = [];
+  membersOf(keys).forEach(function (one) {
+    const family = familySlotOf(one.slot);
+    if (one.group !== 'mdoc' && seen.indexOf(family) < 0) {
+      seen.push(family);
+    }
+  });
+  const out = seen.map(function (family) {
+    return { familySlot: family, current: currentIn(keys, family) };
+  }).filter(function (one) {
+    return !!(one.current && one.current.publicJwk);
+  });
+  log.debug("Leaving credentialFamilies(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Makes a key family's next generation, which signs from then on, and
+ * certifies it; the generation it replaces is retired and stays published.
+ *
+ * @param keys - the realm's key set
+ * @param familySlot - the family's slot (`RSA`, `ES256`, `EdDSA:Ed25519`…)
+ * @param curveSpecs - `helpers.js`'s CURVE_KEY_SPECS
+ * @returns a promise of `{ from, to, slot }`
+ */
+async function rotateFamilyAsync(keys, familySlot, curveSpecs) {
+  log.debug("Entering rotateFamilyAsync(). " + familySlot);
+  const current = currentIn(keys, familySlot);
+  if (!current) {
+    log.debug("Leaving rotateFamilyAsync(). No such family.");
+    throw errorCodes.mark(new Error('the "' + keys.realm + '" realm has no ' +
+      familySlot + ' credential signer to rotate'), 'STS-PKI-0312');
+  }
+  // THE FAMILY AS ITS OWN SLOT NAMES IT, not as the settings would now: an
+  // EdDSA family keeps its curve whatever `oauth2.eddsaCurve` says today.
+  let family = null;
+  if (/^EdDSA:/.test(familySlot)) {
+    const curve = familySlot.slice('EdDSA:'.length);
+    const spec = (curveSpecs || []).filter(function (one) {
+      return one.alg === 'EdDSA' && (one.curve || 'Ed25519') === curve;
+    })[0];
+    family = { slot: familySlot, kind: 'curve', alg: 'EdDSA',
+               curveSpec: spec, keyAlg: curve.toLowerCase() };
+  } else {
+    family = familyOf(current.alg, curveSpecs);
+  }
+  const next = Object.assign({}, family, {
+    slot: familySlot + '~' + (generationOf(current.slot) + 1) });
+  const made = await memberForAsync(keys, next);
+  if (!made || !made.publicJwk) {
+    log.debug("Leaving rotateFamilyAsync(). Not made.");
+    throw errorCodes.mark(new Error('the next ' + familySlot + ' credential ' +
+      'signer of "' + keys.realm + '" could not be made'), 'STS-PKI-0312');
+  }
+  await ensureCertificate(String(keys.realm || ''), made, issuerUris());
+  log.info('credential_signer: the "' + (keys.realm || 'default') + '" ' +
+           'realm\'s ' + familySlot + ' credential signer moved on to ' +
+           made.publicJwk.kid + ' (' + next.slot + '); ' +
+           current.publicJwk.kid + ' is retired and stays published for ' +
+           'the credentials it signed.');
+  log.debug("Leaving rotateFamilyAsync(). " + made.publicJwk.kid);
+  return { from: current.publicJwk.kid, to: made.publicJwk.kid,
+           slot: next.slot };
+}
+
 /**
  * Credential signers: the dedicated per-realm key that signs credentials and
  * their status lists, and the certificate that binds it to the issuer
@@ -1026,5 +1118,8 @@ module.exports = {
   trustOf: trustOf,
   trustedMembersOf: trustedMembersOf,
   signerForAsync: signerForAsync,
-  verificationRows: verificationRows
+  verificationRows: verificationRows,
+  // A key family's next generation, on a schedule (#2220).
+  credentialFamilies: credentialFamilies,
+  rotateFamilyAsync: rotateFamilyAsync
 };

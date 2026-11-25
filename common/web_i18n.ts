@@ -115,6 +115,11 @@ class WebI18n {
     if (this.namespaces.indexOf('refusals') < 0) {
       this.namespaces.push('refusals');
     }
+    // WHAT A BROWSER LACKS (#2220): any surface may have to say it cannot
+    // sign in here, use a passkey or copy, so every surface loads them.
+    if (this.namespaces.indexOf('browser') < 0) {
+      this.namespaces.push('browser');
+    }
     this.index = null;
     this.parts = [];
     this.files = {};

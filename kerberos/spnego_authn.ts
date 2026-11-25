@@ -586,7 +586,10 @@ class SpnegoAuthn {
       // the 200 with or without the AP-REP — and a specification's response
       // is not converted (`common/page_footer.ts`). With none in the shell,
       // the runtime draws none either.
-      footer: false
+      footer: false,
+      // NOR THE BROWSER CHECK (#2220), for the same reason: its script and
+      // its notice would change those responses' bodies.
+      browserCheck: false
     });
     res.set('Content-Security-Policy',
             ShellDocument.policy(app, { csp: { 'style-src': "'self'" } }));

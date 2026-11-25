@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Wie lange auf den Dienst gewartet wird. Eine große Datei erhält je Mebibyte eine Sekunde mehr."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Gleichzeitige Prüfungen"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Wie viele Dateien ein Prozess gleichzeitig an den Scanner sendet, jede über eine eigene Verbindung. Weitere warten, bis sie an der Reihe sind."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Wartende Prüfungen"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Wie viele Dateien über die laufenden hinaus auf eine Prüfung warten dürfen. Eine Datei darüber hinaus wird mit 503 abgelehnt (STS-CORE-0182), wie wenn der Scanner nicht antwortet."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "CA-Datei für einen icaps-Dienst"
@@ -1815,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Welcher Schlüssel die Credentials dc+sd-jwt und jwt_vc_json dieses Vertrauensbereichs und deren Token Status List Tokens signiert. `dedicated` — der Standard — ist ein eigener Schlüssel je Algorithmusfamilie, für nichts anderes verwendet, unter einem Zertifikat, dessen subjectAltName jeden Issuer-Bezeichner, unter dem der Vertrauensbereich antwortet, als URI nennt (kein DNS-Name), mit der erweiterten Schlüsselverwendung id-kp-documentSigning (RFC 9336) und nichts, was ein TLS-Stack akzeptieren würde, sodass eine Wallet die iss des Credentials mit seinem x5c abgleichen kann (HAIP 1.0 Abschnitt 6.1.1). Das Zertifikat wird neu ausgestellt, wenn sich die Issuer-Bezeichner ändern (global.publicBaseUrl, tls.hostnames, ein Listener). `realm-key` signiert sie mit dem allgemeinen JOSE-Schlüssel des Vertrauensbereichs, wie 1.0.0 es tat, dessen Zertifikat keinen Issuer nennt. Bereits ausgestellte Credentials bleiben auf beide Arten überprüfbar. ldp_vc und mso_mdoc sind nicht betroffen."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Credential-Signaturschlüssel rotieren alle (Tage)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Wie lange der Schlüssel eines dedizierten Credential-Signierers (keys.credentialSigner dedicated) signiert, bevor der Job keys.credential-signer-rotate den nächsten Schlüssel seiner Familie erzeugt, der von da an signiert. Der ersetzte Schlüssel signiert nichts mehr und bleibt im JWKS und im DID-Dokument des Credential-Ausstellers, sodass jedes von ihm signierte Credential weiterhin verifiziert wird. Gezählt ab dem Zeitpunkt, zu dem der Job den Schlüssel zuerst gesehen hat. 0 schaltet den Zeitplan ab. Nur im Produktmodus."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Post-Quanten- / Hybrid-Entschlüsselungsschlüssel"
@@ -1822,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "Die ML-KEM- und HPKE-JWE-Algorithmen, für die dieser Vertrauensbereich einen Entschlüsselungsschlüssel hält — ein Schlüsselpaar je Algorithmus, veröffentlicht im JWKS des Vertrauensbereichs (`use: enc`, mit `alg`) und angekündigt in `request_object_encryption_alg_values_supported` und `assertion_encryption_alg_values_supported`, sodass ein Client ein Request Object oder eine Assertion nach RFC 7523 / 7522 an diesen Vertrauensbereich mit Post-Quanten- oder PQ/T-Hybrid-Schlüsselvereinbarung verschlüsseln kann. HPKE-10-KE ist X-Wing (ML-KEM-768 + X25519). Das Verschlüsseln AN einen Client, der einen dieser Algorithmen registriert hat, braucht hier nichts. **Leer ist der Standard, und die Wahl eines Administrators:** jeder dieser Algorithmen stammt aus einem Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), und ein AKP-Schlüssel in einem JWKS ist ein Schlüsseltyp, den die JOSE-Bibliotheken vieler Clients noch nicht parsen — manche lehnen den ganzen Schlüsselsatz ab. Nennen Sie einen Algorithmus hier nur dort, wo bekannt ist, dass die Clients, die das JWKS dieses Vertrauensbereichs lesen, damit zurechtkommen. Einen zu entfernen beendet das Veröffentlichen und Akzeptieren; ihn erneut zu nennen bringt denselben Schlüssel zurück."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Anfrage-Entschlüsselungsschlüssel ersetzen alle (Tage)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Wie lange die Verschlüsselungsschlüssel für Request Objects, der OpenID4VCI-Anfrageverschlüsselungsschlüssel und die KEM-Entschlüsselungsschlüssel behalten werden, bevor der Job keys.encryption-key-rotate sie ersetzt. Der neue Schlüssel wird sofort veröffentlicht (/oauth2/jwks, die Metadaten des Credential-Ausstellers), und der ersetzte entschlüsselt noch für keys.encryptionKeyOverlapDays. Gezählt ab dem Zeitpunkt, zu dem der Job den Schlüssel zuerst gesehen hat. 0 schaltet den Zeitplan ab. Nur im Produktmodus."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "Ein ersetzter Anfrage-Entschlüsselungsschlüssel entschlüsselt noch (Tage)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Wie lange ein von keys.encryption-key-rotate ersetzter Anfrage-Entschlüsselungsschlüssel noch öffnet, was ein Client an ihn verschlüsselt hat, bevor er den neuen Schlüssel gelesen hat. Er wird währenddessen nirgends veröffentlicht, und signing.retire entfernt ihn, wenn diese Zeit vorbei ist."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -2123,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Wie lange eine einzelne Prüfung hinter /admin/secrets auf eine Antwort eines Geheimnisspeichers warten darf. Jede davon ist ein LESEN von Metadaten — ein stat der Schlüsseldatei, ein sys-Endpunkt, eine KV-Versionshistorie, ein DescribeSecret — und keine holt jemals einen Geheimniswert. Die Grenze ist da, damit das Öffnen einer Konsolenseite niemals an dem Speicher eines anderen hängen kann; eine Prüfung, der die Zeit ausgeht, wird als Zeile gezeichnet, die das sagt, genau wie eine, die abgelehnt wurde."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Zeitlimit für Aufrufe des Geheimnisspeichers (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Wie lange ein Versuch eines Aufrufs an OpenBao oder Vault, AWS KMS oder Secrets Manager, Google Cloud KMS oder Secret Manager oder Azure Key Vault warten darf; jedem SDK als dessen eigene Timeout-Option übergeben."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Versuche je Aufruf des Geheimnisspeichers"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Wie oft ein Aufruf an einen Geheimnisspeicher oder Schlüsseldienst insgesamt versucht wird: die eigene Wiederholungsgrenze der Cloud-SDKs, und für OpenBao oder Vault wird ein Aufruf, der keine Antwort, ein 5xx oder ein 429 erhielt, nach einer kurzen Pause erneut gestellt (STS-KEYS-0214, wenn jeder Versuch fehlschlug). Ein 4xx wird nie wiederholt."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS-Region"
@@ -2180,6 +2236,30 @@
     "text": "Wie viele Sitzungen jeder Prozess und jeder Anfrage-Worker höchstens auf einem Token offen hält, von denen jede eine HSM-Operation zur Zeit ausführt. Ein YubiHSM 2 hat insgesamt 16 Sitzungen, geteilt von jedem Prozess jedes Knotens: Halten Sie das Produkt aus diesem Wert, den Prozessen und den Knoten darunter."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "das Token wird einmal geöffnet, beim Start"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Zeitlimit für HSM-Operationen (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Wie lange eine HSM-Operation und das Warten auf eine Sitzung, in der sie läuft, dauern dürfen, bevor sie abgelehnt wird (STS-KEYS-0216). Eine Sitzung, deren Operation das Limit überdauert hat, wird verworfen, sobald das Modul antwortet. 0 für kein Limit."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "das Token wird einmal geöffnet, beim Start"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Wartende HSM-Operationen je Token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Wie viele HSM-Operationen in einem Prozess oder Worker auf eine Sitzung eines Tokens warten dürfen. Eine darüber hinaus wird sofort abgelehnt (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "das Token wird einmal geöffnet, beim Start"
   },
@@ -3540,16 +3620,16 @@
     "text": "Akzeptierte Algorithmen"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Die OpenPGP-Algorithmen, die ein Schlüssel verwenden darf, in der Reihenfolge der Bevorzugung. Zuerst die RFC-9980-Komposite: ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 signieren, ML-KEM-768+X25519 und ML-KEM-1024+X448 verschlüsseln. Dann die klassischen Namen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa auf nistP256, nistP384 und nistP521, rsaSign und rsaEncryptSign, x25519, x448, ecdh auf curve25519Legacy und denselben NIST-Kurven, und rsaEncrypt. Ein Name, der in dieser Liste fehlt, wird bei der Registrierung und bei der Prüfung abgelehnt (STS-OPENPGP-0004). SLH-DSA ist nicht implementiert. Der Standard nennt jeden davon."
+    "en": "f51a30de72243d25",
+    "text": "Die OpenPGP-Algorithmen, die ein Schlüssel verwenden darf, in der Reihenfolge der Bevorzugung. Zuerst die Post-Quanten-Algorithmen von RFC 9980: ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 signieren, ebenso SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f und SLH-DSA-SHAKE-256s auf einem v6-Schlüssel; ML-KEM-768+X25519 und ML-KEM-1024+X448 verschlüsseln. Dann die klassischen Namen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa auf nistP256, nistP384 und nistP521, rsaSign und rsaEncryptSign, x25519, x448, ecdh auf curve25519Legacy und denselben NIST-Kurven, und rsaEncrypt. Ein Name, der in dieser Liste fehlt, wird bei der Registrierung und bei der Prüfung abgelehnt (STS-OPENPGP-0004). Der Standard nennt jeden davon."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Nur Post-Quanten-Schlüssel registrieren"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Ein lässt einen neu registrierten Schlüssel einen Post-Quanten-Algorithmus verwenden, den openpgp.algorithms nennt: ML-DSA-65+Ed25519 oder ML-DSA-87+Ed448 für den Signierschlüssel, und ML-KEM-768+X25519 oder ML-KEM-1024+X448, wenn er einen Verschlüsselungsschlüssel hat. Es schränkt nur die Registrierung ein: ein bereits registrierter klassischer Schlüssel wird weiter geprüft und empfängt weiter Post. Kann nicht an sein, während openpgp.pqcAlongsideClassical an ist (STS-OPENPGP-0027). Standardmäßig aus."
+    "en": "b0c222dfa3cda337",
+    "text": "Eingeschaltet muss ein neu registrierter Schlüssel einen Post-Quanten-Algorithmus verwenden, den openpgp.algorithms nennt: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 oder einen der drei SLH-DSA-Algorithmen für den Signaturschlüssel, und ML-KEM-768+X25519 oder ML-KEM-1024+X448, wenn er einen Verschlüsselungsschlüssel hat. Es schränkt nur die Registrierung ein: Ein bereits registrierter klassischer Schlüssel wird weiterhin geprüft und empfängt weiterhin E-Mails. Kann nicht eingeschaltet sein, während openpgp.pqcAlongsideClassical es ist (STS-OPENPGP-0027). Standardmäßig aus."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",
@@ -4254,6 +4334,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Wie lange jede Issuing CA gilt, wenn der Aufbau keine Lebensdauer nennt. Null entspricht den fünf Jahren des Profils `issuing-ca`. Auf den Ablauf ihrer Intermediate begrenzt."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "CA-Zertifikate vor ihrem Ablauf erneuern"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Ob der tägliche Job pki.ca-renew die Root, jede Intermediate und jede Issuing CA innerhalb ihrer Vorlaufzeit (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) mit DEMSELBEN Schlüssel und Subject erneuert, sodass jedes von ihr signierte Zertifikat weiterhin verifiziert wird und ein Pin auf ihren Schlüssel gültig bleibt. Eine erneuerte Root wird neben der ersetzten unter /pki/ca/service/root-previous.cer veröffentlicht, bis diese abläuft. Eine importierte CA wird nie erneuert. Aus: nichts erneuert eine CA, und sie läuft ab wie vor 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Die Root so lange vor ihrem Ablauf erneuern (Tage)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Wie lange vor dem Ablauf der Root-CA pki.ca-renew sie erneuert, höchstens ihre halbe Laufzeit. Standardmäßig lang (drei Jahre), weil eine erneuerte Root ein neues Vertrauensanker-Zertifikat ist, das jede vertrauende Partei erhalten sollte, bevor das alte abläuft."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Eine Intermediate- oder Issuing-CA so lange vor ihrem Ablauf erneuern (Tage)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Wie lange vor dem Ablauf einer Intermediate- oder Issuing-CA pki.ca-renew sie erneuert, höchstens ihre halbe Laufzeit. Eine CA kann ihre Eltern-CA nicht überdauern, daher wartet eine, deren Eltern-CA zuerst abläuft, auf deren Erneuerung."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -5715,6 +5819,38 @@
     "en": "6a4ac147d740738b",
     "text": "Wie lange auf die Antwort eines Partners gewartet wird, bevor aufgegeben wird. Das wiegt schwerer als eine Zeitüberschreitung sonst, weil der Browser DARAUF WARTET — eine föderierte Anmeldung ist eine Person, die auf einen leeren Tab blickt, während dieser Dienst einen Code einlöst —, daher ist sie kurz genug, dass ein toter Partner eine Fehlerseite erzeugt statt hängen zu bleiben, und der Fehler die Zeitüberschreitung nennt. Bis 2026-08-30 waren es 5000, und geändert hat sich, dass der Partner hier MEIST DIESER PROZESS ist: Ein Vertrauensbereich ist eine logische Kopie dieses Dienstes, und das Erste, was irgendjemand von einem nagelneuen Vertrauensbereich verlangt, ist seine JWKS — genau das ruft die elf Post-Quantum-Schlüssel dieses Vertrauensbereichs ins Leben, und einer davon ist eine Schlüsselerzeugung SLH-DSA-SHAKE-128s von etwa fünf Sekunden. 5000 war ein Budget, das überhaupt nur funktioniert hat, weil dieser Dienst beim Antworten BLOCKIERTE: Bei gestopptem Event-Loop konnte der Timer, der dieses Budget erzwingt, nicht auslösen, bevor die Antwort schon fertig war. Die Schlüssel werden jetzt auf dem Thread-Pool von libuv erzeugt (common/pq_native.js) und vorgewärmt, wenn ein Vertrauensbereich angelegt wird, sodass der gewöhnliche Abruf Millisekunden dauert — dies ist das Budget für den, der eintrifft, während ein Vertrauensbereich noch im Entstehen ist."
   },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Ausgehende Verbindungen je Ziel"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Wie viele Verbindungen ein Prozess gleichzeitig zu einem Ziel (einem Partner, einem Empfänger, der URL eines Clients) offen hält, für jeden ausgehenden HTTP-Aufruf. Eine Anfrage darüber hinaus wartet innerhalb ihrer Gesamtfrist auf eine Verbindung, und eine Warnung wird protokolliert, sobald Anfragen erstmals warten (STS-HTTP-0032). Verbindungen werden offen gehalten und wiederverwendet."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Ausgehende Verbindungen insgesamt"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Wie viele ausgehende HTTP-Verbindungen ein Prozess insgesamt offen hält. Eine Anfrage darüber hinaus wartet innerhalb ihrer Gesamtfrist auf eine Verbindung (STS-HTTP-0032). Nie weniger als federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Gesamtfrist für ausgehende Aufrufe (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Die längste Zeit, die ein ausgehender HTTP-Aufruf insgesamt dauern darf: das Warten auf eine Verbindung, der Verbindungsaufbau, der Handshake und die ganze Antwort. Die anderen Zeitlimits gelten für Inaktivität, sodass ein langsam antwortender Gegenüber einen Aufruf sonst offen halten würde. Ein Aufruf mit einem längeren eigenen Zeitlimit erhält stattdessen dieses. Bei Ablauf der Frist endet der Aufruf als Zeitüberschreitung (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Zeitlimit für ausgehenden Verbindungsaufbau (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Wie lange der Aufbau einer neuen ausgehenden Verbindung samt TLS-Handshake dauern darf. Eine aus dem Pool wiederverwendete Verbindung wird nicht gemessen. Beim Limit endet der Aufruf als Zeitüberschreitung (STS-HTTP-0034)."
+  },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
     "text": "http:// zu einem Partner erlauben (nur Entwicklung)"
@@ -6638,6 +6774,22 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "In einem Active-Active-Cluster versiegeln der LDAPS-Listener und der Hauptport jedes Knotens (sofern tls.mainPortSharedTickets nicht aus ist) Sitzungstickets unter einem gemeinsamen Schlüssel, sodass ein Ticket, das ein Knoten ausgestellt hat, auf einem anderen fortgesetzt wird (der Listener des Debuggers behält einen Schlüssel je Knoten). So oft, in Sekunden, ersetzt der Job tls.ticket-key-rotate ihn; der ersetzte Schlüssel wird gelöscht, sodass die Geheimnisse einer fortgesetzten Sitzung aus einem mitgeschnittenen Ticket nur wiederhergestellt werden können, solange sein Schlüssel existiert, und ein Client, dessen Ticket älter ist, einen vollständigen Handshake macht. Der Schlüssel wird im Store aufbewahrt, versiegelt unter dem Schlüsselverschlüsselungsschlüssel. 0 schaltet das Teilen aus, und außerhalb des Active-Active-Modus wird nichts geteilt: Ein Knoten, der antwortet, setzt mit den eigenen Schlüsseln je Listener von OpenSSL fort, die den Prozess nie verlassen."
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Das Listener-Zertifikat ohne Neustart erneuern"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Ob der stündliche Job tls.server-certificate-renew das Zertifikat, das der Hauptport, LDAPS und der Debugger präsentieren, mit demselben Schlüssel erneuert, sobald weniger als ein Drittel seiner Gültigkeit übrig ist (oder es innerhalb von tls.serverCertificateRenewLeadDays liegt), und es ohne Neustart auf jeden Socket setzt. Jeder Knoten erneuert sein eigenes. Aus: es wird nur bei einem Start und durch Erneuern in der Konsole erneuert. Ein Zertifikat, das Sie in tls.certificateFile liefern, erneuern Sie selbst."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Das Listener-Zertifikat so lange vor seinem Ablauf erneuern (Tage, 0 = bei einem Drittel seiner Gültigkeit)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Das Listener-Zertifikat so viele Tage vor seinem Ablauf erneuern, wenn das früher ist als der Punkt, an dem ein Drittel seiner Gültigkeit übrig ist. 0, der Standard, behält das Drittel."
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7999,6 +8151,14 @@
     "en": "0ef945c098a1eeac",
     "text": "Wie lange der krbtgt-Schlüssel eines Vertrauensbereichs — der Schlüssel, unter dem jedes Ticket-Granting Ticket versiegelt ist — aktuell bleibt, bevor der Job krb5.krbtgt-rotate ihn bei der nächsten kvno durch einen neuen Zufallsschlüssel ersetzt. Der ersetzte Schlüssel wird behalten (krb5.retainedKeyVersions, für krb5.retainedKeyTtlS), damit ein unmittelbar vor der Rotation ausgestelltes TGT noch funktioniert, bis es abläuft, und der Job rotiert nie, solange dieses Fenster offen ist. 180 Tage sind die übliche Leitlinie von Active Directory. 0 schaltet die geplante Rotation aus; eine Rotation von Hand (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) funktioniert weiter. Nur Produktmodus. Steht krb5.retainedKeyVersions auf 0, bleibt auch der Job aus, weil eine Rotation, die nichts behielte, jeden Kerberos-Benutzer im Bereich unangekündigt abmelden würde."
   },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Den eigenen Akzeptor-Schlüssel dieses Dienstes rotieren alle (Tage)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Wie alt ein Dienstprinzipal-Schlüssel werden darf, bevor der Job krb5.service-key-rotate ihn durch einen neuen Zufallsschlüssel mit der nächsten kvno ersetzt; der ersetzte bleibt erhalten (krb5.retainedKeyVersions, für krb5.retainedKeyTtlS), damit bereits ausgestellte Tickets weiter funktionieren, und nie wird rotiert, solange dieses Fenster offen ist. Nur der Schlüssel, den dieser Dienst für seinen eigenen Akzeptor erzeugt hat, wird rotiert: Ein Schlüssel, dessen Keytab an einen anderen Dienst ausgegeben wurde, wird auf /admin/scheduler als fällig gemeldet, und ihn zu rotieren – was die neue Keytab ausgibt – bleibt Sache des Betreibers. Gezählt ab der letzten Rotation des Schlüssels oder seiner Erstellung. 0 schaltet den Zeitplan ab. Nur im Produktmodus."
+  },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
     "text": "PKINIT (Vorauthentifizierung mit Zertifikat)"
@@ -8154,6 +8314,22 @@
   "ldap.timeLimit|description": {
     "en": "b74ec7b68f9251f2",
     "text": "Die serverseitige Zeitbegrenzung einer Suche in Sekunden; sie ist es, die LDAP_TIME_LIMIT_EXCEEDED erzeugt; ein kürzeres eigenes timeLimit des Clients hat Vorrang. Die zuvor gesendeten Einträge sind die Antwort, als unvollständig gekennzeichnet."
+  },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Größte Nachricht eines gebundenen Clients (Bytes)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Die größte LDAP-Nachricht, die ein gebundener Client senden darf, in Bytes, gezählt nach der Länge, die ihr BER-Header angibt: Eine Verbindung, deren nächste Nachricht mehr angibt, wird geschlossen, bevor etwas davon gelesen wird (STS-LDAP-0227). Suchergebnisse sendet der Server; sie zählen nicht. Standardmäßig 5 MiB, die Grenze, die jeder HTTP-Body hier hat."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Größte Nachricht vor einem Bind (Bytes)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Die größte LDAP-Nachricht, die ein Client senden darf, bevor er gebunden hat, in Bytes: ein Bind, StartTLS oder eine Suche nach dem Root-DSE. Darüber wird die Verbindung geschlossen, bevor etwas von der Nachricht gelesen wird (STS-LDAP-0227). Standardmäßig 128 KiB, doppelt so viel wie das größte Kerberos-Token, das ein SASL-Bind tragen kann. Wirksam nie mehr als ldap.maxMessageBytes."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
@@ -11467,6 +11643,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Wie lange eine einzelne Anweisung hinter /admin/database laufen darf, als das eigene statement_timeout von PostgreSQL auf der einen Verbindung, die diese Seite ausleiht. Jede davon ist das Lesen einer Katalogansicht; die Grenze sorgt dafür, dass das Öffnen einer Seite der Konsole niemals eine Verbindung aus einem Pool festhalten kann, aus dem dieser Dienst den Protokollverkehr beantwortet. Sie wird auf dem Server gesetzt, nicht als Zeitgeber hier, weil ein Zeitgeber das Promise aufgäbe und sowohl die Anweisung als auch die Verbindung genau dort ließe, wo sie waren."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Datenbankverbindungen je Prozess"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Wie viele Verbindungen zur Datenbank jeder Prozess in seinem Pool hält. 0, der Standard, ist das Doppelte der Anfrage-Worker des Knotens und nie weniger als vier. Ein Aufrufer darüber hinaus wartet bis zu persistence.poolWaitMs auf eine freie Verbindung."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Warten auf eine Datenbankverbindung (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Wie lange ein Aufrufer auf eine freie Verbindung im Pool wartet, bevor er fehlschlägt. Ein Schreibvorgang, der so fehlschlägt, wird mit 503 beantwortet (STS-STORE-0066), und sein Flush wird erneut versucht."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Zeitlimit für den Datenbank-Verbindungsaufbau (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Wie lange der Aufbau einer neuen Datenbankverbindung dauern darf."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Haltedauer einer ungenutzten Datenbankverbindung (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Wie lange eine ungenutzte Verbindung im Pool bleibt, bevor sie geschlossen wird."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Zeitlimit für Datenbankanweisungen (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Die längste Zeit, die eine gewöhnliche Datenbankanweisung laufen darf, bevor der Server sie abbricht (statement_timeout von PostgreSQL, max_statement_time von MariaDB), protokolliert als STS-STORE-0178. 0 für keines. Das Öffnen des Speichers, seine Migrationen, die Wiederherstellung beim Start und die Online-Indexaufbauten fallen nicht darunter; Nachbefüllungen laufen in kleinen Stapeln."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "es wird am Pool gesetzt, sobald der Speicher geöffnet und gelesen ist"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Datenverzeichnis"
@@ -11911,6 +12147,14 @@
     "en": "839a4a009d203829",
     "text": "Wie lange eine an eine andere Zelle weitergeleitete Anfrage oder ein Aufruf auf dem Kanal zwischen den Zellen dauern darf, bevor als Antwort gilt, die andere Zelle sei unerreichbar (und so behandelt wird, wie es `cells.homeUnreachable` sagt)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Größte Antwort zwischen Zellen (Bytes)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Das Höchste, was ein synchroner Aufruf an eine andere Zelle als Antwort liefern darf. Darüber hinaus wird die Verbindung geschlossen und der Aufruf schlägt fehl (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Zustellversuche zwischen Zellen"
@@ -12142,6 +12386,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Wie viele Personen jede Attributquelle je Lauf der geplanten Aktualisierung liest (attribute-sources.refresh, jede Minute) und das nächste Mal nach der letzten weiterliest. Ein größerer Wert beendet einen Durchgang früher und hält einen Knoten je Lauf länger."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Verbindungen je Quelle"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Wie viele Verbindungen jeder Prozess zu einer Attributquelle hält. Eine Abfrage darüber hinaus wartet innerhalb des eigenen Zeitlimits der Quelle auf eine Verbindung. Eine Änderung wirkt bei der nächsten Abfrage jeder Quelle."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12476,8 +12728,8 @@
     "text": "Sendungen in Bearbeitung"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Wie viele Nachrichten ein Prozess aus einem Durchlauf auf einmal sendet."
+    "en": "d6de0478b866cf8b",
+    "text": "Wie viele Nachrichten ein Prozess auf einmal sendet, aus einem Durchlauf und beim ersten Versuch, nachdem eine Nachricht eingereiht wurde. Eine Nachricht, die keinen freien Platz findet, wartet auf den nächsten Durchlauf."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12492,8 +12744,8 @@
     "text": "Postausgangszeilen je Vertrauensbereich"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Die Obergrenze des Postausgangs je Vertrauensbereich: die älteste ABGESCHLOSSENE Zeile wird zuerst verworfen, eine ausstehende nie."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Die Obergrenze des Postausgangs je Vertrauensbereich: die älteste ABGESCHLOSSENE Zeile wird zuerst verworfen, eine ausstehende nie. Eine Nachricht, welche die AUSSTEHENDEN Zeilen darüber hinaus bringen würde, wird abgelehnt (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

@@ -5,6 +5,7 @@
   "reauth.here": "在此頁面登入",
   "reauth.hereInstead": "改為在此頁面登入",
   "reauth.noPopup": "此瀏覽器無法從另一個視窗傳回登入結果，請在此頁面登入。",
+  "reauth.popupBlocked": "登入視窗遭到封鎖。請允許此網站的彈出式視窗，或在此頁面登入。",
   "reauth.finish": "請在已開啟的視窗中完成登入。",
   "otherPerson.waiting": "登入的是另一個人，因此此頁面上等待送出的內容並未送出。",
   "otherPerson.typed": "登入的是另一個人，因此先前在此頁面上輸入的內容並未放回。",

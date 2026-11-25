@@ -449,6 +449,71 @@ const log = bunyan.createLogger({ name: 'sts-config',
                                   level: appconfig.logLevel || 'info' });
 
 // ---------------------------------------------------------------------------
+// A LIST OF REGULAR EXPRESSIONS AN ADMINISTRATOR WROTE (#2220, ASVS 5.0.0
+// 1.3.12): SPIFFE's http_challenge DNS patterns and sigstore identities,
+// matched against what an agent or a signing certificate names. Each entry
+// that is a pattern is held to `common/pattern_safety.js` — at most 256
+// characters, no backreference, no quantified group that is itself
+// quantified or an alternation — and must compile. `csvPatterns` on the
+// row says how an entry reads: `regex`, the whole entry; `identity-pairs`,
+// `issuer=subject`, each half a pattern only when it holds one of SPIRE's
+// regex characters (`spiffe_sigstore.ts`'s `identityAllowed()`).
+// ---------------------------------------------------------------------------
+const CSV_PATTERN_CHARS = /[*+?^${}[\]|()]/;
+
+/**
+ * Says why a list setting's regular expressions may not be stored, or null.
+ *
+ * @param raw - the value as given: text or an array
+ * @param setting - the row, whose `csvPatterns` says how an entry reads
+ * @returns the problem as a sentence, or null
+ */
+function csvPatternProblem(raw, setting) {
+  log.debug("Entering csvPatternProblem().");
+  // Lazily, and a leaf: `pattern_safety.js` requires nothing.
+  const PatternSafety = require('./pattern_safety');
+  const parts = (Array.isArray(raw) ? raw :
+                 String(raw === undefined || raw === null ? '' : raw)
+                   .split(','))
+    .map(function (part) {
+      return String(part).trim();
+    }).filter(function (part) {
+      return part.length > 0;
+    });
+  const pairs = setting.csvPatterns === 'identity-pairs';
+  for (let i = 0; i < parts.length; i++) {
+    const cut = parts[i].indexOf('=');
+    const halves = pairs
+      ? (cut > 0 ? [parts[i].slice(0, cut), parts[i].slice(cut + 1)]
+                 : [parts[i]])
+      : [parts[i]];
+    for (let j = 0; j < halves.length; j++) {
+      const pattern = halves[j];
+      if (pairs && !CSV_PATTERN_CHARS.test(pattern)) {
+        continue;
+      }
+      let problem = PatternSafety.problem(pattern, PatternSafety.PATTERN_MAX);
+      if (!problem) {
+        try {
+          new RegExp(pattern);
+        } catch (e) {
+          log.debug("Caught in csvPatternProblem(): " +
+                    ((e && e.message) || e));
+          problem = 'it does not compile: ' + e.message;
+        }
+      }
+      if (problem) {
+        log.debug("Leaving csvPatternProblem(). Refused.");
+        return 'holds the regular expression "' + pattern.slice(0, 80) +
+               '", which is refused: ' + problem;
+      }
+    }
+  }
+  log.debug("Leaving csvPatternProblem().");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Types.
 //
 // A value arrives here as a string when it came from the environment or from a
@@ -721,8 +786,24 @@ const TYPES = {
     // — addresses, host names, ids another table owns — and is not checked,
     // as before. The entries are split and trimmed as parse() does, so what
     // is checked is exactly what the reader will be handed.
-    check: function (raw, setting) {
+    // A ROW THAT DECLARES `csvPatterns` (#2220) is a list of regular
+    // expressions — `regex`, each entry one, or `identity-pairs`, each entry
+    // `issuer=subject` whose halves are one when they hold a regex
+    // character — and each is held to `csvPatternProblem()`. Only a
+    // caller's write: a value from the environment or an appconfig file is
+    // WARNED about at startup (`opts.startup`, STS-CORE-0184), and a stored
+    // override read back is not checked (`opts.stored`), so a deployment
+    // that started on one before #2220 still starts with it.
+    check: function (raw, setting, opts) {
       log.debug("Entering check().");
+      if (setting && setting.csvPatterns &&
+          !(opts && (opts.startup || opts.stored))) {
+        const patterns = csvPatternProblem(raw, setting);
+        if (patterns) {
+          log.debug("Leaving check(). An unsafe pattern.");
+          return patterns;
+        }
+      }
       const allowed = setting && Array.isArray(setting.csvValues)
         ? setting.csvValues : null;
       if (!allowed) {
@@ -1737,6 +1818,21 @@ const SETTINGS = [
     description: 'How long to wait for the service. A large file is allowed a ' +
                  'second more per mebibyte.' },
 
+
+  { key: 'malwareScan.concurrency', group: 'Malware scanning',
+    label: 'Scans at once',
+    env: 'STS_MALWARE_SCAN_CONCURRENCY', type: 'int', dflt: 8, min: 1,
+    max: 256, runtime: true, perProcess: true,
+    description: 'How many files one process sends to the scanner at once, ' +
+                 'each on its own connection. Others wait their turn.' },
+
+  { key: 'malwareScan.queueLimit', group: 'Malware scanning',
+    label: 'Scans waiting',
+    env: 'STS_MALWARE_SCAN_QUEUE_LIMIT', type: 'int', dflt: 64, min: 0,
+    max: 10000, runtime: true, perProcess: true,
+    description: 'How many files may wait for a scan beyond those running. ' +
+                 'A file past it is refused 503 (STS-CORE-0182), as when ' +
+                 'the scanner does not answer.' },
   { key: 'malwareScan.caFile', group: 'Malware scanning',
     label: 'CA file for an icaps service',
     env: 'STS_MALWARE_SCAN_CA_FILE', type: 'string', dflt: '',
@@ -4273,6 +4369,24 @@ const SETTINGS = [
                  'certificate names no issuer. Credentials already issued ' +
                  'stay verifiable either way. ldp_vc and mso_mdoc are not ' +
                  'affected.' },
+
+  // THE DEDICATED CREDENTIAL SIGNER'S SCHEDULE (#2220),
+  // `keys.credential-signer-rotate` in common/key_renewal.ts. The age is
+  // counted from when the key was first seen by the job, so an upgrade
+  // rotates nothing on its first start. Product only.
+  { key: 'keys.credentialSignerRotationIntervalDays', group: 'Key material',
+    label: 'Rotate the credential signing key every (days)',
+    env: 'STS_KEYS_CREDENTIAL_SIGNER_ROTATION_INTERVAL_DAYS', type: 'int',
+    dflt: 365, min: 0, max: 3650, runtime: true,
+    description: 'How long a dedicated credential signer\'s key ' +
+                 '(keys.credentialSigner dedicated) signs before the ' +
+                 'keys.credential-signer-rotate job makes the next key of ' +
+                 'its family, which signs from then on. The key it ' +
+                 'replaces signs nothing more and stays in the credential ' +
+                 'issuer\'s JWKS and DID document, so every credential it ' +
+                 'signed goes on verifying. Counted from when the job ' +
+                 'first saw the key. 0 switches the schedule off. Product ' +
+                 'mode only.' },
   // THE REALM'S POST-QUANTUM AND HPKE DECRYPTION KEYS (#82, 2026-09-27).
   // EMPTY BY DEFAULT, deliberately (rcbj's decision on #82): see the
   // description. `common/helpers.js`'s kemEncryptionKeysFor() makes them.
@@ -4302,6 +4416,33 @@ const SETTINGS = [
                  'realm\'s JWKS are known to cope. Removing one stops ' +
                  'publishing and accepting it; naming it again brings back ' +
                  'the same key.' },
+
+  // THE REQUEST-DECRYPTION KEYS' SCHEDULE (#2220),
+  // `keys.encryption-key-rotate` in common/key_renewal.ts and
+  // helpers.rotateEncryptionKeys(). Product only; counted from first sight.
+  { key: 'keys.encryptionKeyRotationIntervalDays', group: 'Key material',
+    label: 'Replace the request decryption keys every (days)',
+    env: 'STS_KEYS_ENCRYPTION_KEY_ROTATION_INTERVAL_DAYS', type: 'int',
+    dflt: 180, min: 0, max: 3650, runtime: true,
+    description: 'How long the request object encryption keys, the ' +
+                 'OpenID4VCI request-encryption key and the KEM ' +
+                 'decryption keys are kept before the ' +
+                 'keys.encryption-key-rotate job replaces them. The new ' +
+                 'key is published at once (/oauth2/jwks, the credential ' +
+                 'issuer metadata) and the one it replaces still decrypts ' +
+                 'for keys.encryptionKeyOverlapDays. Counted from when the ' +
+                 'job first saw the key. 0 switches the schedule off. ' +
+                 'Product mode only.' },
+
+  { key: 'keys.encryptionKeyOverlapDays', group: 'Key material',
+    label: 'A replaced request decryption key still decrypts for (days)',
+    env: 'STS_KEYS_ENCRYPTION_KEY_OVERLAP_DAYS', type: 'int', dflt: 30,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a request decryption key that ' +
+                 'keys.encryption-key-rotate replaced goes on opening what ' +
+                 'a client encrypted to it before it read the new key. ' +
+                 'It is published nowhere meanwhile, and signing.retire ' +
+                 'drops it when this has passed.' },
   // THE OTHER DIRECTION (2026-09-28, rcbj): encrypting TO a client's or a
   // wallet's key. The row above is the realm's own decryption keys; this one
   // says whether the ML-KEM and HPKE algorithms are OFFERED where this service
@@ -4846,6 +4987,28 @@ const SETTINGS = [
                  'probe that runs out is drawn as a row saying so, exactly ' +
                  'like one that was refused.' },
 
+
+  // A TIMEOUT AND A BOUNDED RETRY FOR EVERY SECRET STORE (#2220): passed to
+  // each SDK as its own options (`common/secrets.js`, `awsLimits()` and its
+  // siblings). Read at each call.
+  { key: 'keys.storeTimeoutMs', group: 'Key material',
+    label: 'Secret store call timeout (ms)',
+    env: 'STS_KEYS_STORE_TIMEOUT_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 300000, runtime: true, perProcess: true,
+    description: 'How long one attempt of a call to OpenBao or Vault, AWS ' +
+                 'KMS or Secrets Manager, Google Cloud KMS or Secret ' +
+                 'Manager, or Azure Key Vault may wait, given to each ' +
+                 'SDK as its own timeout option.' },
+
+  { key: 'keys.storeAttempts', group: 'Key material',
+    label: 'Secret store attempts per call',
+    env: 'STS_KEYS_STORE_ATTEMPTS', type: 'int', dflt: 3, min: 1, max: 10,
+    runtime: true, perProcess: true,
+    description: 'How many times a call to a secret store or key service is ' +
+                 'attempted in all: the cloud SDKs\' own retry bound, and ' +
+                 'for OpenBao or Vault a call that got no answer, a 5xx or ' +
+                 'a 429 made again after a short pause (STS-KEYS-0214 when ' +
+                 'every attempt failed). A 4xx is never repeated.' },
   { key: 'keys.kekRegion', group: 'Key material', label: 'AWS region',
     path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
     dflt: '', runtime: false,
@@ -4915,6 +5078,25 @@ const SETTINGS = [
                  'every process of every node: keep the product of this, ' +
                  'the processes and the nodes under that.' },
 
+
+  { key: 'keys.pkcs11TimeoutMs', group: 'Key material',
+    label: 'HSM operation timeout (ms)',
+    env: 'STS_KEYS_PKCS11_TIMEOUT_MS', type: 'int', dflt: 60000, min: 0,
+    max: 600000, runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup',
+    description: 'How long an HSM operation, and the wait for a session to ' +
+                 'run it on, may take before it is refused (STS-KEYS-0216). ' +
+                 'A session whose operation outlived it is discarded when ' +
+                 'the module answers. 0 for no limit.' },
+
+  { key: 'keys.pkcs11QueueLimit', group: 'Key material',
+    label: 'HSM operations waiting per token',
+    env: 'STS_KEYS_PKCS11_QUEUE_LIMIT', type: 'int', dflt: 1000, min: 1,
+    max: 100000, runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup',
+    description: 'How many HSM operations may wait for a session of one ' +
+                 'token in one process or worker. One past it is refused at ' +
+                 'once (STS-KEYS-0215).' },
   { key: 'keys.pkcs11PinProvider', group: 'Key material',
     label: 'Where the PKCS#11 PIN is read from',
     env: 'STS_KEYS_PKCS11_PIN_PROVIDER', type: 'enum',
@@ -7744,6 +7926,7 @@ const SETTINGS = [
     label: 'Algorithms accepted',
     env: 'STS_OPENPGP_ALGORITHMS', type: 'csv',
     dflt: 'ML-DSA-65+Ed25519,ML-DSA-87+Ed448,' +
+          'SLH-DSA-SHAKE-128s,SLH-DSA-SHAKE-128f,SLH-DSA-SHAKE-256s,' +
           'ML-KEM-768+X25519,ML-KEM-1024+X448,' +
           'ed25519,ed448,eddsaLegacy/ed25519Legacy,' +
           'ecdsa/nistP256,ecdsa/nistP384,ecdsa/nistP521,' +
@@ -7752,6 +7935,8 @@ const SETTINGS = [
           'ecdh/nistP384,ecdh/nistP521,rsaEncrypt',
     runtime: true, ordered: true,
     csvValues: ['ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+                'SLH-DSA-SHAKE-128s', 'SLH-DSA-SHAKE-128f',
+                'SLH-DSA-SHAKE-256s',
                 'ML-KEM-768+X25519', 'ML-KEM-1024+X448',
                 'ed25519', 'ed448', 'eddsaLegacy/ed25519Legacy',
                 'ecdsa/nistP256', 'ecdsa/nistP384', 'ecdsa/nistP521',
@@ -7761,27 +7946,33 @@ const SETTINGS = [
     selectAll: {
       aloneWhileOn: { 'openpgp.pqcOnly': ['ML-DSA-65+Ed25519',
                                           'ML-DSA-87+Ed448',
+                                          'SLH-DSA-SHAKE-128s',
+                                          'SLH-DSA-SHAKE-128f',
+                                          'SLH-DSA-SHAKE-256s',
                                           'ML-KEM-768+X25519',
                                           'ML-KEM-1024+X448'] }
     },
     description: 'The OpenPGP algorithms a key may use, in preference ' +
-                 'order. RFC 9980 composites first: ML-DSA-65+Ed25519 and ' +
-                 'ML-DSA-87+Ed448 sign, ML-KEM-768+X25519 and ' +
+                 'order. RFC 9980 post-quantum algorithms first: ' +
+                 'ML-DSA-65+Ed25519 and ML-DSA-87+Ed448 sign, as do ' +
+                 'SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f and ' +
+                 'SLH-DSA-SHAKE-256s on a v6 key; ML-KEM-768+X25519 and ' +
                  'ML-KEM-1024+X448 encrypt. Then the classical names: ' +
                  'ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa on ' +
                  'nistP256, nistP384 and nistP521, rsaSign and ' +
                  'rsaEncryptSign, x25519, x448, ecdh on curve25519Legacy ' +
                  'and the same NIST curves, and rsaEncrypt. A name absent ' +
                  'from this list is refused at registration and at ' +
-                 'verification (STS-OPENPGP-0004). SLH-DSA is not ' +
-                 'implemented. The default names every one of these.' },
+                 'verification (STS-OPENPGP-0004). The default names ' +
+                 'every one of these.' },
   { key: 'openpgp.pqcOnly', group: 'OpenPGP',
     label: 'Register post-quantum keys only',
     env: 'STS_OPENPGP_PQC_ONLY', type: 'bool', dflt: false, runtime: true,
     description: 'On, a newly registered key must use a post-quantum ' +
                  'algorithm that openpgp.algorithms names: ' +
-                 'ML-DSA-65+Ed25519 or ML-DSA-87+Ed448 for the signing ' +
-                 'key, and ML-KEM-768+X25519 or ML-KEM-1024+X448 when it ' +
+                 'ML-DSA-65+Ed25519, ML-DSA-87+Ed448 or one of the three ' +
+                 'SLH-DSA algorithms for the signing key, and ' +
+                 'ML-KEM-768+X25519 or ML-KEM-1024+X448 when it ' +
                  'has an encryption key. It narrows registration only: a ' +
                  'classical key already registered still verifies and ' +
                  'still receives mail. Cannot be on while ' +
@@ -8848,6 +9039,44 @@ const SETTINGS = [
     description: 'How long each Issuing CA is good for when the build names ' +
                  'no lifetime. Zero is the `issuing-ca` profile\'s five ' +
                  'years. Clamped to its Intermediate\'s expiry.' },
+
+  // THE SCHEDULED RENEWAL OF A CA CERTIFICATE OVER THE SAME KEY (#2220),
+  // `pki.ca-renew` in common/key_renewal.ts, common/pki.js's
+  // renewCaCertificate(). On by default in both modes: it changes no key,
+  // so nothing it signed stops verifying, and a CA that reaches its expiry
+  // unrenewed stops every chain under it.
+  { key: 'pki.caRenewal', group: 'PKI',
+    label: 'Renew CA certificates before they expire',
+    env: 'STS_PKI_CA_RENEWAL', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the daily pki.ca-renew job renews the Root, each ' +
+                 'Intermediate and each Issuing CA inside its lead ' +
+                 '(pki.rootRenewalLeadDays, pki.caRenewalLeadDays) over ' +
+                 'the SAME key and subject, so every certificate it signed ' +
+                 'goes on verifying and a pin on its key holds. A renewed ' +
+                 'Root is published beside the one it replaced, at ' +
+                 '/pki/ca/service/root-previous.cer, until that one ' +
+                 'expires. An imported CA is never renewed. Off, nothing ' +
+                 'renews a CA and it expires as it did before 1.2.0.' },
+
+  { key: 'pki.rootRenewalLeadDays', group: 'PKI',
+    label: 'Renew the Root this long before it expires (days)',
+    env: 'STS_PKI_ROOT_RENEWAL_LEAD_DAYS', type: 'int', dflt: 1095,
+    min: 1, max: 36500, runtime: true,
+    description: 'How long before the Root CA expires pki.ca-renew renews ' +
+                 'it, at most half its lifetime. Long by default (three ' +
+                 'years), because a renewed Root is a new trust anchor ' +
+                 'certificate that every relying party should be given ' +
+                 'before the old one expires.' },
+
+  { key: 'pki.caRenewalLeadDays', group: 'PKI',
+    label: 'Renew an Intermediate or Issuing CA this long before it ' +
+           'expires (days)',
+    env: 'STS_PKI_CA_RENEWAL_LEAD_DAYS', type: 'int', dflt: 365,
+    min: 1, max: 36500, runtime: true,
+    description: 'How long before an Intermediate or Issuing CA expires ' +
+                 'pki.ca-renew renews it, at most half its lifetime. A CA ' +
+                 'cannot outlive its parent, so one whose parent expires ' +
+                 'first waits for the parent\'s renewal.' },
 
   { key: 'pki.maxStoredObjects', group: 'PKI',
     label: 'Certificates and keys the workbench store keeps, per realm',
@@ -11508,6 +11737,51 @@ const SETTINGS = [
                  'milliseconds — this is the budget for the one that arrives ' +
                  'while a realm is still being born.' },
 
+
+  // THE LIMITS EVERY OUTBOUND HTTP CALL SHARES (#2220): the shared agent's
+  // two connection caps, the overall deadline and the connect timeout,
+  // applied by `common/outbound_limits.ts` to federation_http.ts and every
+  // other dialer. Per process, because the agent is.
+  { key: 'federation.outboundMaxSockets', group: 'Federation',
+    label: 'Outbound connections per destination',
+    env: 'STS_FEDERATION_OUTBOUND_MAX_SOCKETS', type: 'int', dflt: 64,
+    min: 1, max: 4096, runtime: true, perProcess: true,
+    description: 'How many connections one process holds open to one ' +
+                 'destination (a partner, a receiver, a client\'s URL) at ' +
+                 'once, for every outbound HTTP call. A request past it ' +
+                 'waits for a connection, within its overall deadline, and ' +
+                 'a warning is logged when requests first wait ' +
+                 '(STS-HTTP-0032). Connections are kept alive and reused.' },
+
+  { key: 'federation.outboundMaxTotalSockets', group: 'Federation',
+    label: 'Outbound connections in all',
+    env: 'STS_FEDERATION_OUTBOUND_MAX_TOTAL_SOCKETS', type: 'int',
+    dflt: 1024, min: 1, max: 65536, runtime: true, perProcess: true,
+    description: 'How many outbound HTTP connections one process holds ' +
+                 'open in all. A request past it waits for a connection, ' +
+                 'within its overall deadline (STS-HTTP-0032). Never less ' +
+                 'than federation.outboundMaxSockets.' },
+
+  { key: 'federation.outboundDeadlineMs', group: 'Federation',
+    label: 'Outbound overall deadline (ms)',
+    env: 'STS_FEDERATION_OUTBOUND_DEADLINE_MS', type: 'int', dflt: 120000,
+    min: 1000, max: 3600000, runtime: true, perProcess: true,
+    description: 'The longest any outbound HTTP call may take in all: the ' +
+                 'wait for a connection, the connect, the handshake and the ' +
+                 'whole answer. The other timeouts are of inactivity, so a ' +
+                 'peer that answers slowly would otherwise keep a call ' +
+                 'open. A call whose own timeout is longer gets that ' +
+                 'instead. At the deadline the call ends as a timeout ' +
+                 '(STS-HTTP-0033).' },
+
+  { key: 'federation.outboundConnectTimeoutMs', group: 'Federation',
+    label: 'Outbound connect timeout (ms)',
+    env: 'STS_FEDERATION_OUTBOUND_CONNECT_TIMEOUT_MS', type: 'int',
+    dflt: 10000, min: 100, max: 120000, runtime: true, perProcess: true,
+    description: 'How long a new outbound connection may take to connect, ' +
+                 'with its TLS handshake. A connection reused from the pool ' +
+                 'is not timed. At the limit the call ends as a timeout ' +
+                 '(STS-HTTP-0034).' },
   // THE THREE OUTBOUND TRANSPORT SETTINGS (#171), which were ONE —
   // `federation.outboundAllowInsecure` — honoured in product mode. They cover
   // every request federation_http.ts makes and every requester that borrows
@@ -13424,6 +13698,34 @@ const SETTINGS = [
                  'active-active mode nothing is shared: one node answering ' +
                  'resumes on OpenSSL\'s own per-listener keys, which never ' +
                  'leave the process.' },
+
+  // THE LISTENER CERTIFICATE RENEWED WHILE THE PROCESS RUNS (#2220),
+  // `tls.server-certificate-renew` in tls/tls_server.js: per process, in
+  // every node's front process, over the same key. On by default: it does
+  // what every restart already did.
+  { key: 'tls.serverCertificateRenewal', group: 'TLS',
+    label: 'Renew the listener certificate without a restart',
+    env: 'STS_TLS_SERVER_CERTIFICATE_RENEWAL', type: 'bool', dflt: true,
+    runtime: true, perProcess: true,
+    description: 'Whether the hourly tls.server-certificate-renew job ' +
+                 'renews the certificate the main port, LDAPS and the ' +
+                 'debugger present, over the same key, once less than a ' +
+                 'third of its validity is left (or it is inside ' +
+                 'tls.serverCertificateRenewLeadDays), and puts it on ' +
+                 'every socket without a restart. Each node renews its ' +
+                 'own. Off, it is renewed only at a start and by the ' +
+                 'console\'s Renew. A certificate you supply in ' +
+                 'tls.certificateFile is yours to renew.' },
+
+  { key: 'tls.serverCertificateRenewLeadDays', group: 'TLS',
+    label: 'Renew the listener certificate this long before it expires ' +
+           '(days, 0 = at a third of its validity)',
+    env: 'STS_TLS_SERVER_CERTIFICATE_RENEW_LEAD_DAYS', type: 'int', dflt: 0,
+    min: 0, max: 3650, runtime: true, perProcess: true,
+    description: 'Renew the listener certificate this many days before it ' +
+                 'expires, where that is earlier than the point a third ' +
+                 'of its validity is left. 0, the default, keeps the ' +
+                 'third.' },
 
   // THE MAIN PORT'S CONNECTIONS, POOLED (#406, 2026-10-02). The main port
   // asks every full handshake for a client certificate, and a browser holding
@@ -15579,6 +15881,27 @@ const SETTINGS = [
                  'would sign every Kerberos user in the realm out ' +
                  'unannounced.' },
 
+  // SERVICE PRINCIPAL KEYS ON A SCHEDULE (#2220), `krb5.service-key-rotate`
+  // in kerberos/krb5_krbtgt_rotation.ts. Only a key this service made for
+  // its own acceptor is rotated; one whose keytab was handed out is
+  // reported as due. Product only.
+  { key: 'krb5.serviceKeyRotationIntervalDays', group: 'Kerberos',
+    label: 'Rotate this service\'s own acceptor key every (days)',
+    env: 'KRB5_SERVICE_KEY_ROTATION_INTERVAL_DAYS', type: 'int', dflt: 180,
+    min: 0, max: 3650, runtime: true,
+    description: 'How old a service principal key may get before the ' +
+                 'krb5.service-key-rotate job replaces it with a new ' +
+                 'random key at the next kvno, keeping the one it replaces ' +
+                 '(krb5.retainedKeyVersions, for krb5.retainedKeyTtlS) so ' +
+                 'tickets already issued keep working, and never while ' +
+                 'that window is open. Only the key this service made for ' +
+                 'its own acceptor is rotated: a key whose keytab was ' +
+                 'handed to another service is reported as due on ' +
+                 '/admin/scheduler, and rotating it, which hands out the ' +
+                 'new keytab, stays the operator\'s act. Counted from the ' +
+                 'key\'s last rotation or its creation. 0 switches the ' +
+                 'schedule off. Product mode only.' },
+
   // ---------------------------------------------------------------------------
   // PKINIT (#179, 2026-10-05): a certificate — a smart card's, a PIV token's —
   // as the Kerberos pre-authentication, for a person whose second factor is a
@@ -15837,6 +16160,44 @@ const SETTINGS = [
                  'which is what produces LDAP_TIME_LIMIT_EXCEEDED; a ' +
                  'client\'s own shorter timeLimit wins. The entries sent ' +
                  'before it are the answer, marked incomplete.' },
+
+  // THE LARGEST MESSAGE A CLIENT MAY SEND (#2220), read from its BER header
+  // by `ldap/ldap_message_guard.ts` before ldapjs buffers any of it, on 389
+  // and 636 alike. Only CLIENT-TO-SERVER messages are counted: a search
+  // result is the server's, however large. The numbers:
+  //   * AFTER A BIND, 5 MiB — the limit every HTTP body here is held to
+  //     (`common/app.js`), so anything the console or the APIs could write
+  //     fits through LDAP too. A modify carrying a jpegPhoto (hundreds of
+  //     KB), a certificate chain (a few KB each) or a group of tens of
+  //     thousands of member DNs (about 60 bytes each) is well inside it.
+  //   * BEFORE A BIND, 128 KiB. What a client sends first is a bind (a DN
+  //     and a password: under a kilobyte), StartTLS, or a root DSE search.
+  //     The largest is a SASL bind carrying a Kerberos token, which Windows
+  //     caps with MaxTokenSize at 48,000 bytes by default and 65,535 at
+  //     most — half this limit. Bigger than that is memory spent for
+  //     somebody who has not said who they are.
+  // Read at each message's header, so a change applies to the next one.
+  { key: 'ldap.maxMessageBytes', group: 'LDAP',
+    label: 'Largest message from a bound client (bytes)',
+    env: 'LDAP_MAX_MESSAGE_BYTES', type: 'int', dflt: 5242880,
+    min: 65536, max: 268435456, runtime: true, perProcess: true,
+    description: 'The largest LDAP message a client that has bound may ' +
+                 'send, in bytes, counted from the length its BER header ' +
+                 'declares: a connection whose next message declares more ' +
+                 'is closed before any of it is read (STS-LDAP-0227). ' +
+                 'Search results are sent by the server and do not count. ' +
+                 '5 MiB by default, the limit every HTTP body here has.' },
+
+  { key: 'ldap.maxMessageBytesBeforeBind', group: 'LDAP',
+    label: 'Largest message before a bind (bytes)',
+    env: 'LDAP_MAX_MESSAGE_BYTES_BEFORE_BIND', type: 'int', dflt: 131072,
+    min: 4096, max: 268435456, runtime: true, perProcess: true,
+    description: 'The largest LDAP message a client may send before it has ' +
+                 'bound, in bytes: a bind, StartTLS or a root DSE search. ' +
+                 'Over it the connection is closed before any of the ' +
+                 'message is read (STS-LDAP-0227). 128 KiB by default, ' +
+                 'twice the largest Kerberos token a SASL bind can carry. ' +
+                 'Never more than ldap.maxMessageBytes in effect.' },
 
   { key: 'ldap.plainListener', group: 'LDAP', label: 'Plain LDAP listener',
     env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: strongerInProduct(false, true), derived: true,
@@ -19975,7 +20336,7 @@ const SETTINGS = [
   { key: 'spiffe.httpChallengeAllowedDnsPatterns', group: 'SPIFFE',
     label: 'http_challenge allowed host names (regular expressions)',
     env: 'STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS', type: 'csv',
-    dflt: '', runtime: true,
+    dflt: '', runtime: true, csvPatterns: 'regex',
     description: 'SPIRE\'s allowed_dns_patterns, comma-separated regular ' +
                  'expressions. An http_challenge agent\'s host name must ' +
                  'match one BEFORE this server looks it up or dials it. ' +
@@ -20322,7 +20683,7 @@ const SETTINGS = [
   { key: 'spiffe.dockerSigstoreAllowedIdentities', group: 'SPIFFE',
     label: 'docker sigstore: allowed signer identities',
     env: 'STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_IDENTITIES', type: 'csv',
-    dflt: '', runtime: true,
+    dflt: '', runtime: true, csvPatterns: 'identity-pairs',
     description: 'SPIRE\'s allowed_identities, one issuer=subject pair per ' +
                  'element: the OIDC issuer and the subject a keyless ' +
                  'signing certificate must name. Either half containing one ' +
@@ -20965,6 +21326,58 @@ const SETTINGS = [
                  'server rather than as a timer here, because a timer would ' +
                  'abandon the promise and leave both the statement and the ' +
                  'connection exactly where they were.' },
+
+  // THE POOL AND ITS WAITS, AND A STATEMENT TIMEOUT (#2220): fixed numbers
+  // in the driver until then, which are these rows' defaults. Read when the
+  // store is opened; `persistence_postgres.js` and `knex_store.js` argue
+  // them, and `knex_store.js`'s `boundStatements()` says which statements
+  // the timeout does not cover and why.
+  { key: 'persistence.poolSize', group: 'Persistence',
+    label: 'Database connections per process',
+    env: 'STS_PERSISTENCE_POOL_SIZE', type: 'int', dflt: 0, min: 0,
+    max: 1000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How many connections each process keeps in its pool to ' +
+                 'the database. 0, the default, is twice the node\'s ' +
+                 'request workers and never fewer than four. A caller past ' +
+                 'it waits for a free connection for up to ' +
+                 'persistence.poolWaitMs.' },
+
+  { key: 'persistence.poolWaitMs', group: 'Persistence',
+    label: 'Wait for a database connection (ms)',
+    env: 'STS_PERSISTENCE_POOL_WAIT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 120000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How long a caller waits for a free connection in the ' +
+                 'pool before it fails. A write that fails so is answered ' +
+                 '503 (STS-STORE-0066) and its flush is tried again.' },
+
+  { key: 'persistence.connectTimeoutMs', group: 'Persistence',
+    label: 'Database connect timeout (ms)',
+    env: 'STS_PERSISTENCE_CONNECT_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 120000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How long a new database connection may take to be made.' },
+
+  { key: 'persistence.idleTimeoutMs', group: 'Persistence',
+    label: 'Idle database connection kept for (ms)',
+    env: 'STS_PERSISTENCE_IDLE_TIMEOUT_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 3600000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How long an idle connection stays in the pool before it ' +
+                 'is closed.' },
+
+  { key: 'persistence.statementTimeoutMs', group: 'Persistence',
+    label: 'Database statement timeout (ms)',
+    env: 'STS_PERSISTENCE_STATEMENT_TIMEOUT_MS', type: 'int', dflt: 300000,
+    min: 0, max: 86400000, runtime: false, perProcess: true,
+    restartReason: 'it is set on the pool once the store is open and read',
+    description: 'The longest an ordinary database statement may run before ' +
+                 'the server cancels it (PostgreSQL\'s statement_timeout, ' +
+                 'MariaDB\'s max_statement_time), logged as ' +
+                 'STS-STORE-0178. 0 for none. Opening the store, its ' +
+                 'migrations, the restore at start and the online index ' +
+                 'builds are not under it; backfills run in small batches.' },
   { key: 'persistence.dataDir', group: 'Persistence', label: 'Data directory',
     env: 'STS_PERSISTENCE_DATA_DIR', type: 'string', dflt: './data',
     runtime: false,
@@ -21762,6 +22175,14 @@ const SETTINGS = [
                  'as the other cell being unreachable (and handled as ' +
                  '`cells.homeUnreachable` says).' },
 
+
+  { key: 'cells.maxAnswerBytes', group: 'Cells',
+    label: 'Largest inter-cell answer (bytes)',
+    env: 'STS_CELL_MAX_ANSWER_BYTES', type: 'int', dflt: 16777216,
+    min: 65536, max: 1073741824, runtime: true, perProcess: true,
+    description: 'The most a synchronous call to another cell may answer. ' +
+                 'Past it the connection is closed and the call fails ' +
+                 '(STS-CELL-0212).' },
   // THE DURABLE DELIVERIES BETWEEN CELLS (`common/cell_deliveries.ts`):
   // the shared outbound queue's numbers, for its inter-cell kind.
   { key: 'cells.deliveryAttempts', group: 'Cells',
@@ -22118,6 +22539,15 @@ const SETTINGS = [
                  'the scheduled refresh (attribute-sources.refresh, every ' +
                  'minute), picking up after the last one next time. Larger ' +
                  'finishes a pass sooner and holds a node longer per run.' },
+
+  { key: 'attributeSources.poolSize', group: 'Attribute sources',
+    label: 'Connections per source',
+    env: 'STS_ATTRIBUTE_SOURCES_POOL_SIZE', type: 'int', dflt: 4, min: 1,
+    max: 64, runtime: true, perProcess: true,
+    description: 'How many connections each process keeps to one attribute ' +
+                 'source. A lookup past it waits for a connection within ' +
+                 'the source\'s own timeout. A change takes effect at each ' +
+                 'source\'s next lookup.' },
   // -------------------------------------------------------------------------
   // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.
   //
@@ -22447,7 +22877,10 @@ const SETTINGS = [
   { key: 'mail.concurrency', group: 'Mail', label: 'Sends in flight',
     env: 'STS_MAIL_CONCURRENCY', type: 'int', dflt: 4, min: 1, max: 64,
     runtime: true,
-    description: 'How many messages one process sends at once from a sweep.' },
+    description: 'How many messages one process sends at once, from a ' +
+                 'sweep and on the first attempt after a message is ' +
+                 'queued. A message that finds none free waits for the ' +
+                 'next sweep.' },
   { key: 'mail.retentionS', group: 'Mail', label: 'Outbox retention (seconds)',
     env: 'STS_MAIL_RETENTION_S', type: 'int', dflt: 604800, min: 3600,
     max: 31536000, runtime: true,
@@ -22461,7 +22894,9 @@ const SETTINGS = [
     env: 'STS_MAIL_MAX_ROWS', type: 'int', dflt: 10000, min: 10,
     max: 1000000, runtime: true,
     description: 'The cap on the outbox, per realm: the oldest FINISHED row ' +
-                 'is dropped first, and a pending one never.' },
+                 'is dropped first, and a pending one never. A message that ' +
+                 'would take the PENDING rows past it is refused ' +
+                 '(STS-MAIL-0244).' },
   { key: 'mail.ratePerRecipient', group: 'Mail',
     label: 'Messages per recipient per window',
     env: 'STS_MAIL_RATE_PER_RECIPIENT', type: 'int', dflt: 20, min: 1,
@@ -24127,7 +24562,12 @@ function overrideProblem(key, raw, forRealm, withRules) {
     return '"' + key + '" holds a NUL character or half of a surrogate ' +
       'pair, which this service cannot store.';
   }
-  const problem = TYPES[setting.type].check(raw, setting);
+  // A STORED value (`withRules` false: a restore, a replica's pull) is not
+  // held to `csvPatterns` (#2220): a pattern written before the rule must
+  // survive a restart, and is refused only at its next save.
+  const problem = TYPES[setting.type].check(raw, setting,
+                                            withRules ? undefined
+                                                      : { stored: true });
   if (problem) {
     log.debug("Leaving overrideProblem().");
     return '"' + key + '" ' + problem + '.';
@@ -24298,6 +24738,10 @@ function checkOverrideCode(key, raw, forRealm) {
   if (unstorableText(raw)) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0171';
+  }
+  if (setting.csvPatterns && csvPatternProblem(raw, setting)) {
+    log.debug("Leaving checkOverrideCode(). An unsafe pattern.");
+    return 'STS-CORE-0183';
   }
   if (TYPES[setting.type].check(raw, setting)) {
     log.debug("Leaving checkOverrideCode().");
@@ -25325,6 +25769,14 @@ function refuseMalformedSettings() {
       if (problem) {
         named.push('  ' + layer.where + ': "' + setting.key + '" ' + problem);
       }
+      if (!problem && setting.csvPatterns &&
+          csvPatternProblem(layer.raw, setting)) {
+        log.warn(errorCodes.tag('STS-CORE-0184') + 'config: ' +
+                 layer.where + ': "' + setting.key + '" ' +
+                 csvPatternProblem(layer.raw, setting) + '. It is used as ' +
+                 'configured; /admin/config and the management API refuse ' +
+                 'it on the next save.');
+      }
       if (!problem && setting.absoluteUri &&
           TYPES[setting.type].check(layer.raw, setting)) {
         log.warn(errorCodes.tag('STS-CORE-0176') + 'config: ' +
@@ -25472,7 +25924,9 @@ function parseAs(key, raw) {
   if (problem) {
     log.debug("Leaving parseAs(). Refused: " + problem);
     return errorCodes.mark({ ok: false, problem: '"' + key + '" ' + problem },
-                           'STS-CORE-0006');
+                           setting.csvPatterns &&
+                           csvPatternProblem(raw, setting)
+                             ? 'STS-CORE-0183' : 'STS-CORE-0006');
   }
   const parsed = TYPES[setting.type].parse(raw, setting);
   log.debug("Leaving parseAs(). Parsed.");

@@ -123,6 +123,24 @@ const IDLE_TIMEOUT_MS = 30000;
 // (`KnexTimeoutError`), which `timedOutWaiting()` recognises.
 const ACQUIRE_TIMEOUT_TEXT = /Timeout acquiring a connection/i;
 
+// A statement the server cancelled at a statement timeout: PostgreSQL's
+// 57014, MariaDB's 1969 (#2220). Logged under its code where the pool's
+// bound is in force, and passed on unchanged: the caller's own failure
+// path (its code, a 503, a retried flush) is what decides what happens.
+// No Entering/Leaving pair: once per failed statement.
+function noteCancelled(pool, err) {
+  if (!pool || !pool.statementMs || !err) {
+    return;
+  }
+  if (err.code === '57014' || err.errno === 1969 ||
+      err.code === 'ER_STATEMENT_TIMEOUT') {
+    log.warn(errorCodes.tag('STS-STORE-0178') + 'persistence: a statement ' +
+             'was cancelled at its statement timeout (' + pool.statementMs +
+             ' ms, persistence.statementTimeoutMs, unless it set its own): ' +
+             String(err.message || err).slice(0, 200));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // TWO ENGINES, ONE SHAPE (#677). The store's second engine is MariaDB, dialled
 // by Knex's `mysql2` client. Everything above the layer was written against
@@ -331,8 +349,13 @@ class StoreClient {
    */
   query(text, values) {
     log.debug("Entering StoreClient.query().");
+    const pool = this.pool;
     log.debug("Leaving StoreClient.query().");
-    return runOn(this.pool.engine, this.connection, text, values);
+    return runOn(pool.engine, this.connection, text, values)
+      .catch(function (err) {
+        noteCancelled(pool, err);
+        throw err;
+      });
   }
 
   on(event, fn) {
@@ -340,6 +363,19 @@ class StoreClient {
     this.connection.on(event, fn);
     log.debug("Leaving StoreClient.on().");
     return this;
+  }
+
+  /**
+   * Says that the borrower reset the session (`RESET ALL`, or MariaDB's
+   * `max_statement_time` set back to 0), so the pool's statement bound
+   * (`StorePool.boundStatements()`) is set on it again before it is next
+   * lent (#2220).
+   */
+  sessionReset() {
+    log.debug("Entering StoreClient.sessionReset().");
+    // -1: no bound value, so the next lend sets the pool's again, 0 or not.
+    this.connection.__stsStatementMs = -1;
+    log.debug("Leaving StoreClient.sessionReset().");
   }
 
   removeListener(event, fn) {
@@ -505,7 +541,9 @@ class StorePool {
    * @param settings - `{ connectionString, ssl, connectionTimeoutMillis }`,
    *   what the dialect's `pg.Client` is given (`dialOptions()` decides the
    *   TLS, once, in `persistence_postgres.js`)
-   * @param options - `max` (connections), `idleTimeoutMillis`
+   * @param options - `max` (connections), `idleTimeoutMillis`,
+   *   `acquireTimeoutMillis` (the wait for a free connection, the connect
+   *   timeout where it is not given)
    */
   constructor(knex, settings, options) {
     log.debug("Entering StorePool.constructor().");
@@ -518,6 +556,13 @@ class StorePool {
     // borrower's (`guardClient()`), not the pool's idle report.
     this.held = new Set();
     this.max = Number(opts.max) > 0 ? Number(opts.max) : 4;
+    // THE STATEMENT BOUND (#2220): 0, none, until `boundStatements()`.
+    this.statementMs = 0;
+    // How long a caller waits for a free connection (#2220,
+    // `persistence.poolWaitMs`): the connect timeout where it is not given,
+    // which is what it always was.
+    const waitMs = Number(opts.acquireTimeoutMillis) > 0
+      ? Number(opts.acquireTimeoutMillis) : connectMs;
     // Which engine (#677): `pg` for PostgreSQL, `mysql2` for MariaDB.
     this.engine = engineOf(Object.assign({}, settings,
                                          { engine: opts.engine ||
@@ -547,7 +592,7 @@ class StorePool {
             ? Number(opts.idleTimeoutMillis) : IDLE_TIMEOUT_MS,
           // How long a caller waits for a slot: `pg-pool`'s
           // `connectionTimeoutMillis` bounded that wait too.
-          acquireTimeoutMillis: connectMs,
+          acquireTimeoutMillis: waitMs,
           // A connection the database does not answer fails with `pg`'s own
           // connect timeout, which is the error a caller should see; tarn's
           // create timeout is set past it so that it never fires first.
@@ -677,7 +722,68 @@ class StorePool {
     log.debug("Leaving StorePool.acquire().");
     return this.knex.client.acquireConnection().then(function (connection) {
       self.held.add(connection);
+      // A connection never bound is under no bound: nothing to set until
+      // `boundStatements()` asks for one.
+      if ((connection.__stsStatementMs || 0) === self.statementMs) {
+        return connection;
+      }
+      return self.applyBound(connection);
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // A STATEMENT TIMEOUT ON ORDINARY QUERIES (#2220, ASVS 5.0.0 13.1.3).
+  //
+  // Set as the SESSION's default on each pooled connection, once, the first
+  // time it is lent after the bound is set or changed — PostgreSQL's
+  // `statement_timeout`, MariaDB's `max_statement_time` (in seconds) — so it
+  // costs one statement per connection, not one per query. A statement past
+  // it is cancelled by the server, which hands the connection back: a
+  // timer here would abandon the promise and leave the statement running.
+  //
+  // THE HEAVY STATEMENTS ARE NOT UNDER IT, by where they run:
+  //   * opening the store — the schema, its migrations, and the restore of
+  //     every table into memory — runs before `persistence.start()` calls
+  //     `boundStatements()`, on connections that carry no bound;
+  //   * the online index builds and the LISTEN, liveness and bridge
+  //     connections are `dedicated()` ones, outside the pool and outside
+  //     the bound (and the liveness queries set their own, `SET LOCAL`);
+  //   * the backfills run in batches of a few thousand rows, each a
+  //     statement far inside a bound measured in minutes;
+  //   * `bulk_import.js` and the tools open pools that are never bound.
+  // A statement that sets its own (`SET LOCAL statement_timeout`, the
+  // metrics page's `SET`) overrides it for itself.
+  // -------------------------------------------------------------------------
+  /**
+   * Sets the statement bound every pooled connection is lent under.
+   *
+   * @param ms - milliseconds; 0 for none
+   */
+  boundStatements(ms) {
+    log.debug("Entering StorePool.boundStatements(). " + ms);
+    this.statementMs = Math.max(0, Math.floor(Number(ms) || 0));
+    log.debug("Leaving StorePool.boundStatements().");
+  }
+
+  // The bound set on one connection before it is lent. A connection that
+  // will not take it is given back broken and the acquire fails, as a
+  // connection whose session cannot be set up fails (afterCreate).
+  applyBound(connection) {
+    log.debug("Entering StorePool.applyBound().");
+    const self = this;
+    const ms = this.statementMs;
+    const sql = this.engine === 'mariadb'
+      ? 'SET SESSION max_statement_time = ' + (ms / 1000)
+      : 'SET statement_timeout = ' + ms;
+    log.debug("Leaving StorePool.applyBound().");
+    return runOn(this.engine, connection, sql, []).then(function () {
+      connection.__stsStatementMs = ms;
       return connection;
+    }, function (err) {
+      log.debug("Caught in StorePool.applyBound(): " +
+                ((err && err.message) || err));
+      self.giveBack(connection, err);
+      throw err;
     });
   }
 
@@ -734,6 +840,7 @@ class StorePool {
         self.giveBack(connection);
         return result;
       }, function (err) {
+        noteCancelled(self, err);
         self.giveBack(connection, err);
         throw err;
       });

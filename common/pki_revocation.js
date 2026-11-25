@@ -2276,8 +2276,15 @@ function issuedList(scopeId, caId) {
   if (id === 'intermediate' && row) {
     Object.keys(row.issuing || {}).forEach(function (useCaseId) {
       const tier = row.issuing[useCaseId];
-      add(tier.serialHex, tier.subject, tier.notAfter, 'issuing-ca',
-          ((pki.useCase(useCaseId) || {}).label || useCaseId) + ' Issuing CA');
+      const label = ((pki.useCase(useCaseId) || {}).label || useCaseId) +
+                    ' Issuing CA';
+      add(tier.serialHex, tier.subject, tier.notAfter, 'issuing-ca', label);
+      // AND EACH CERTIFICATE A RENEWAL REPLACED OVER THE SAME KEY (#2220):
+      // a client may still hold a chain carrying it, and a responder with
+      // no record of the serial would answer `unknown` about it.
+      (tier.previous || []).forEach(function (one) {
+        add(one.serialHex, one.subject, one.notAfter, 'issuing-ca', label);
+      });
     });
   }
 
@@ -2287,10 +2294,16 @@ function issuedList(scopeId, caId) {
     pki.knownScopes().concat([pki.PROCESS_SCOPE]).forEach(function (one) {
       const held = pki.rawRowFor(one);
       if (held && held.intermediate) {
+        const label = (one === pki.PROCESS_SCOPE ? 'process'
+                                                 : (one || 'default')) +
+                      ' Intermediate CA';
         add(held.intermediate.serialHex, held.intermediate.subject,
-            held.intermediate.notAfter, 'intermediate-ca',
-            (one === pki.PROCESS_SCOPE ? 'process' : (one || 'default')) +
-            ' Intermediate CA');
+            held.intermediate.notAfter, 'intermediate-ca', label);
+        // The renewed-away certificates of it too (#2220), as above.
+        (held.intermediate.previous || []).forEach(function (old) {
+          add(old.serialHex, old.subject, old.notAfter, 'intermediate-ca',
+              label);
+        });
       }
     });
   }

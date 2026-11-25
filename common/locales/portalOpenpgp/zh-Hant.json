@@ -53,5 +53,19 @@
   "done.mail.openpgp": "您的郵件現在以您的 OpenPGP 金鑰加密。",
   "done.mail.smime": "您的郵件現在以您的 S/MIME 憑證加密。",
   "done.smimeSet": "您的 S/MIME 憑證已設定。",
-  "done.smimeRemoved": "您的 S/MIME 憑證已移除。"
+  "done.smimeRemoved": "您的 S/MIME 憑證已移除。",
+  "kem.heading": "由本服務簽發的 ML-KEM 憑證",
+  "kem.intro": "本服務可以為 {mail} 向您簽發一張後量子 S/MIME 憑證。ML-KEM 金鑰無法對請求簽章，因此您需要以另一種方式證明它屬於您：本服務用它加密一個秘密，您再把這個秘密傳回來。",
+  "kem.step1": "使用 OpenSSL 3.5 或更新版本產生一個 ML-KEM 金鑰，妥善保管私鑰，並把公鑰貼到下方。",
+  "kem.key": "您的 ML-KEM 公鑰（-----BEGIN PUBLIC KEY-----）",
+  "kem.ask": "傳送金鑰",
+  "kem.step2": "請在 {at} 之前用您的私鑰解封裝這段 {algorithm} 密文，並把輸出的秘密貼到下方。",
+  "kem.secret": "秘密（64 個十六進位字元）",
+  "kem.issue": "簽發憑證",
+  "kem.again": "換一個金鑰重新開始",
+  "kem.issuedHeading": "您的新 S/MIME 憑證",
+  "kem.issuedSub": "一張序號為 {serial} 的 {algorithm} 憑證現在是您的 S/MIME 憑證。請儲存它，並與您的私鑰一起匯入郵件程式。",
+  "kem.save": "儲存憑證",
+  "done.kemChallenge": "您的 {algorithm} 金鑰已被接受。請解封裝下方的挑戰並把秘密傳回。",
+  "done.kemIssued": "您的 {algorithm} S/MIME 憑證 {serial} 已簽發並設定。"
 }

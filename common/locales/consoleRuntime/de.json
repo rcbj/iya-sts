@@ -5,6 +5,7 @@
   "reauth.here": "Auf dieser Seite anmelden",
   "reauth.hereInstead": "Stattdessen auf dieser Seite anmelden",
   "reauth.noPopup": "Dieser Browser kann eine Anmeldung nicht aus einem anderen Fenster zurückgeben, daher melden Sie sich auf dieser Seite an.",
+  "reauth.popupBlocked": "Das Anmeldefenster wurde blockiert. Erlauben Sie Pop-ups für diese Website oder melden Sie sich auf dieser Seite an.",
   "reauth.finish": "Schließen Sie die Anmeldung in dem Fenster ab, das sich geöffnet hat.",
   "otherPerson.waiting": "Eine andere Person hat sich angemeldet, daher wurde das, was auf dieser Seite wartete, nicht gesendet.",
   "otherPerson.typed": "Eine andere Person hat sich angemeldet, daher wurde das, was zuvor auf dieser Seite eingegeben wurde, nicht wieder eingesetzt.",

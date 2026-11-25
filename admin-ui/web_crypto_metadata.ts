@@ -709,7 +709,54 @@ class CryptoMetadataPage {
       '</th><td>' +
       self.prose(pq.keyEstablishment.whatWouldClose) +
       '</td></tr></tbody></table>');
+    html += self.renderTlsKeyExchange(report.tlsKeyExchange, t);
     return CryptoMetadataPage.tabFramed(html);
+  }
+
+  // WHICH KEY EXCHANGE CLIENTS NEGOTIATED (#2220): `GET
+  // /admin-api/tls/key-exchange`, composed into the view as
+  // `tlsKeyExchange`. Absent — a realm administrator, whose token is
+  // refused that process-wide read — the frame is not drawn.
+  /**
+   * Draws the TLS key exchange counts.
+   *
+   * @param kx - the answer of `GET /admin-api/tls/key-exchange`, or absent
+   * @param t - the translator
+   * @returns the frame as HTML, or an empty string
+   */
+  static renderTlsKeyExchange(kx, t) {
+    if (!kx || !Array.isArray(kx.listeners)) {
+      return '';
+    }
+    const pqMark = '<strong>' + t.html('consoleCryptoMetadata.pqAvailable') +
+      '</strong>';
+    const classical = '<span class="why">' +
+      t.html('consoleCryptoMetadata.classicalOnly') + '</span>';
+    const rows = [];
+    kx.listeners.forEach(function (one) {
+      (one.groups || []).forEach(function (g) {
+        rows.push('<tr><td class="n">' + esc(one.label) + '</td><td><code>' +
+          esc(g.group) + '</code></td><td>' +
+          (g.postQuantum ? pqMark : classical) + '</td><td>' +
+          esc(String(g.connections)) + '</td><td>' + esc(g.lastAt) +
+          '</td></tr>');
+      });
+    });
+    return kit.frame('<h3>' + t.html('consoleCryptoMetadata.tlsKxHeading') +
+      '</h3>' +
+      kit.note(t.html('consoleCryptoMetadata.tlsKxNote')) +
+      '<p>' + t.html('consoleCryptoMetadata.tlsKxSummary', {
+        pq: String(kx.postQuantum), total: String(kx.connections),
+        since: String(kx.since) }) + '</p>' +
+      (rows.length
+        ? '<table><thead><tr><th class="n">' +
+          t.html('consoleCryptoMetadata.tlsKxListener') + '</th><th>' +
+          t.html('consoleCryptoMetadata.tlsKxGroup') + '</th><th>' +
+          t.html('consoleCryptoMetadata.thState') + '</th><th>' +
+          t.html('consoleCryptoMetadata.tlsKxConnections') + '</th><th>' +
+          t.html('consoleCryptoMetadata.tlsKxLast') +
+          '</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>'
+        : kit.note(t.html('consoleCryptoMetadata.tlsKxNone'))));
   }
 
   static renderStandards(report, t) {

@@ -5,6 +5,7 @@
   "reauth.here": "Mag-sign in sa pahinang ito",
   "reauth.hereInstead": "Sa pahinang ito na lang mag-sign in",
   "reauth.noPopup": "Hindi kayang ibalik ng browser na ito ang sign-in mula sa ibang window, kaya mag-sign in sa pahinang ito.",
+  "reauth.popupBlocked": "Na-block ang window ng pag-sign in. Payagan ang mga pop-up para sa site na ito, o mag-sign in sa pahinang ito.",
   "reauth.finish": "Tapusin ang pag-sign in sa window na nagbukas.",
   "otherPerson.waiting": "Ibang tao ang nag-sign in, kaya hindi ipinadala ang naghihintay sa pahinang ito.",
   "otherPerson.typed": "Ibang tao ang nag-sign in, kaya hindi ibinalik ang na-type sa pahinang ito kanina.",

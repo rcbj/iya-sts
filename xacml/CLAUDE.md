@@ -687,6 +687,23 @@ goes through static validation, so a policy that does not typecheck is refused
 while somebody is still looking at it rather than going Indeterminate on every
 request for ever.
 
+**A regexp-match pattern is bounded at the save, not in `validate()` (#2220).**
+`validate()` also runs when a stored policy is READ, so a rule added there
+refuses a policy stored before it, which then decides nothing. The bound —
+`common/pattern_safety.js`: at most 1024 characters, no backreference, no
+quantified group that is itself quantified or an alternation — is a
+`patternCheck` on the six functions, walked by `xacml_validate.js`'s
+`patternProblemsIn()` over the whole model, and refused by the store's
+`write()` only for a document that CHANGED (`STS-XACML-0338`), so enable,
+disable and the root demotion still work on an old policy. The Policies page
+lists it among the problems. At evaluation `boundedMatch()` makes the same
+shapes, and a value over 4096 characters, a processing error
+(`STS-XACML-0339`, once per pattern) — the backstop for a stored policy, an
+`ldapmodify` and a pattern fetched from an attribute. **The Rust engine
+(`xsd_regex.rs`'s `bounded_match()`) holds the same two evaluation rules for
+PARITY ONLY**: its `regex` crate is linear-time and needs neither, but a PDP
+and a remote PEP must give one answer for one stored policy.
+
 **One policy is seeded**, role-based, and the seeded directory was given
 `employeeType` to match it — alice and bob are staff, carol is admin. The two
 seeds have to agree or neither demonstrates anything: a policy granting on an

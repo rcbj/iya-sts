@@ -741,6 +741,7 @@ Scope: `admin:read`.
 | `page.accessTypes[].required` | list |  |  |
 | `page.accessTypes[].required[]` | string |  |  |
 | `page.accessTypes[].schema` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
+| `page.accessTypes[].schemaProblem` | string |  | What a write would refuse of this stored definition today (#2220): a schema outside the keyword subset, or a pattern of the exponential shape. Empty when a write accepts it; the definition is used either way. |
 | `page.accessTypes[].source` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `page.accessTypes[].stored` | string |  |  |
 | `page.accessTypes[].type` | string |  |  |
