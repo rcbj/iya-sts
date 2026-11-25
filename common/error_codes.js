@@ -20993,6 +20993,12 @@ const CODES = [
       'stream, and an Add Subject is refused, rather than sent to a ' +
       'receiver that may not be entitled to it (SSF 1.0 section 10.1).',
     spec: 'none (logged); the event is not delivered to that stream' },
+  { code: 'STS-SSF-0166',
+    summary: 'pep-policies-changed could not be built or sent for a remote ' +
+      'PEP embedded in an application (#2028). Logged and nothing else: ' +
+      'the event is a hint, the policy change it follows has happened, and ' +
+      'the PEP converges on its fallback poll.',
+    spec: 'none (a log line)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -26096,6 +26102,67 @@ const CODES = [
       'attribute), or the value was longer than 4096 characters (#2220). ' +
       'Logged once per pattern; the remote PEP decides alike.',
     spec: 'XACML 3.0 section B.8 processing-error (Indeterminate)' },
+  { code: 'STS-XACML-0340',
+    summary: 'A remote PEP registered (or sent a heartbeat) as kind ' +
+      'embedded, and its entry is bound to no application ' +
+      '(stsPepApplication, set-pep-application): an embedded PEP is ' +
+      'admitted only for the application an administrator bound it to ' +
+      '(#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 ' +
+      'access_denied' },
+  { code: 'STS-XACML-0341',
+    summary: 'A remote PEP registered (or sent a heartbeat) as kind ' +
+      'embedded naming no application, or an application other than the ' +
+      'one its entry is bound to: a PEP key copied into another ' +
+      'application cannot pose as that application\'s PEP (#2026). ' +
+      'Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 ' +
+      'access_denied' },
+  { code: 'STS-XACML-0342',
+    summary: 'A remote PEP sent a protocolVersion this service does not ' +
+      'support (the supported set is 1), or an embedded PEP sent none ' +
+      '(#2026). Nothing was recorded; the PEP\'s package must be upgraded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0343',
+    summary: 'A remote PEP sent mode with kind container (or no kind, ' +
+      'which is container): central and local are an embedded PEP\'s ' +
+      'modes (#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0344',
+    summary: 'A remote PEP sent a kind that is neither container nor ' +
+      'embedded, or registered as embedded with a mode that is neither ' +
+      'central nor local, or a policyEvents report outside none, ' +
+      'requested, excluded and down (#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0345',
+    summary: 'GET /xacml/pep/policies?scope=bound-application was asked by ' +
+      'a caller that is not a registered embedded PEP in local mode bound ' +
+      'to the application it registered for (#2027): the pull scoped to ' +
+      'an application, which carries that application\'s own policy, is ' +
+      'answered to that application\'s local PEP and nobody else. Nothing ' +
+      'was sent.',
+    spec: 'GET /xacml/pep/policies: HTTP 403 access_denied' },
+  { code: 'STS-XACML-0346',
+    summary: 'GET /xacml/pep/policies named a scope this service does not ' +
+      'have: repository (or none) and bound-application are the two (#2027).',
+    spec: 'GET /xacml/pep/policies: HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0347',
+    summary: 'Whether an application enforces fine-grained authorization ' +
+      'could not be read while building its local PEP\'s scoped pull ' +
+      '(#2027), so the PEP was sent the realm root and its closure, which ' +
+      'is what AuthZEN decides the application by when it cannot read it ' +
+      'either. Logged.',
+    spec: 'none (a log line; the pull is answered)' },
+  { code: 'STS-XACML-0348',
+    summary: 'Whether what an embedded remote PEP pulls moved could not be ' +
+      'decided after a change to the policies or the AuthZEN catalogue ' +
+      '(#2028), so no pep-policies-changed was sent for it. Logged and ' +
+      'nothing else: the change itself stands, and the PEP converges on its ' +
+      'fallback poll.',
+    spec: 'none (a log line)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

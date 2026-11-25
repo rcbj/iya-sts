@@ -82,6 +82,16 @@
 // answer does not wait for any of it. A delay between batches of one act is
 // not a periodic timer (root CLAUDE.md, *Anything periodic*).
 //
+// 3. WHAT AN EMBEDDED REMOTE PEP PULLS MOVED (#2028, part of #1206):
+// `pepPoliciesChanged()`. `xacml/xacml.ts` decides, after a policy or
+// catalogue change has committed, that a PEP bound to an application holds
+// out-of-date policies or catalogue, and hands each one here; this sends
+// `pep-policies-changed` through `ssf.pepPoliciesChanged()` in the AMBIENT
+// realm, to the streams that application owns. It is the third act about
+// the issuer's own state rather than a person, and the same rules hold: a
+// process that never loaded `ssf.ts` sends nothing, and nothing here waits
+// for or throws into the deploy that already happened.
+//
 // NOT A SLOT (rule 3e): there is no require of a route module here — `ssf.ts`
 // is read from the cache, and `pki.js`, `tls_client_certificates.js`,
 // `helpers.js` and `account_signals.ts` are libraries reached lazily.
@@ -115,6 +125,7 @@ interface Delivery {
 
 interface SsfEmitter {
   serviceKeyChanged?(kind: string, notice: object): Promise<Delivery>;
+  pepPoliciesChanged?(notice: object): Promise<Delivery>;
 }
 
 interface ServiceSignalsDeps {
@@ -288,6 +299,46 @@ class ServiceSignals {
   // belongs to, or `*` for the listener, which is every realm's. `notice`:
   // `{ rotated: [{ unit, from, to }], reason, trustDomain?, bundleChanged? }`.
   // Resolves the number of SETs handed over; never rejects.
+  /**
+   * Sends `pep-policies-changed` for one remote PEP embedded in an
+   * application, in the ambient realm (#2028). Never rejects and never
+   * throws.
+   *
+   * @param notice - `application`, `pep`, `changed` and `syncToken`
+   * @returns a promise of the number of streams it was sent to
+   */
+  pepPoliciesChanged(notice?: Json): Promise<number> {
+    const { log, findSsf } = this.deps;
+    log.debug('Entering ServiceSignals.pepPoliciesChanged().');
+    const ssf = findSsf();
+    if (!ssf || typeof ssf.pepPoliciesChanged !== 'function') {
+      log.debug('Leaving ServiceSignals.pepPoliciesChanged(). Shared ' +
+                'Signals is not loaded in this process, so nothing is sent.');
+      return Promise.resolve(0);
+    }
+    let answer: Promise<Delivery>;
+    try {
+      answer = Promise.resolve(ssf.pepPoliciesChanged(notice || {}));
+    } catch (e) {
+      log.debug('Caught in ServiceSignals.pepPoliciesChanged(): ' +
+                ((e && e.message) || e));
+      log.warn('service signals: pep-policies-changed threw and nothing ' +
+               'was sent: ' + ((e && e.message) || e));
+      log.debug('Leaving ServiceSignals.pepPoliciesChanged(). Threw.');
+      return Promise.resolve(0);
+    }
+    log.debug('Leaving ServiceSignals.pepPoliciesChanged().');
+    return answer.then(function (d: Delivery): number {
+      return Number(d && d.sent) || 0;
+    }, function (e: Json): number {
+      log.debug('Caught in ServiceSignals.pepPoliciesChanged(): ' +
+                ((e && e.message) || e));
+      log.warn('service signals: pep-policies-changed failed: ' +
+               ((e && e.message) || e));
+      return 0;
+    });
+  }
+
   /**
    * Reports that a key relying parties pin rotated, through
    * `ssf.serviceKeyChanged()` inside each realm it belongs to.
@@ -890,5 +941,6 @@ export = {
   snapshot: slot.forward('snapshot'),
   hierarchyChanged: slot.forward('hierarchyChanged'),
   caRevoked: slot.forward('caRevoked'),
-  fanOut: slot.forward('fanOut')
+  fanOut: slot.forward('fanOut'),
+  pepPoliciesChanged: slot.forward('pepPoliciesChanged')
 };

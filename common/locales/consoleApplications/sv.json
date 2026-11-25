@@ -1032,5 +1032,6 @@
   "protection.removeN": "Ta bort uttryck {n}",
   "protection.addList": "Lägg till listan i fältet",
   "protection.recipientOne": "{field} rymmer ett uttryck: lämna exakt ett i listan.",
-  "protection.addedN": "Lade till {n} uttryck i {field}. Tryck på Spara i formuläret för att behålla dem."
+  "protection.addedN": "Lade till {n} uttryck i {field}. Tryck på Spara i formuläret för att behålla dem.",
+  "embeddedPeps.eventsExcluded": "Programmets Shared Signals-strömmar kan inte bära pep-policies-changed (dess ssfAllowedEvents utesluter den, eller så rapporterade PEP:en det), så dessa PEP:er i läget local får veta om en policyändring först vid sin reservhämtning: {peps}. Lägg till urn:iya:sts:secevent:event-type:pep-policies-changed i ssfAllowedEvents."
 }

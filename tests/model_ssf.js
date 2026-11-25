@@ -69,8 +69,8 @@ async function buildCheck(t) {
   t.check(lib.checkSsf(generated).length === 0,
           'A. the generated Shared Signals model is clean',
           lib.checkSsf(generated).join('; '));
-  t.check(generated.events.length === 30 && generated.formats.length === 11,
-          'A. it holds thirty event types and eleven formats',
+  t.check(generated.events.length === 31 && generated.formats.length === 11,
+          'A. it holds thirty-one event types (#2028) and eleven formats',
           generated.events.length + ', ' + generated.formats.length);
   const refused = function (what, pattern, change) {
     const broken = copy();

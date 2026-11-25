@@ -1283,6 +1283,10 @@
     "en": "a254d6c56c6f82ac",
     "text": "एक एम्बेडेड रिमोट PEP को उसके एप्लिकेशन से बाँधा गया, या अलग किया गया"
   },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "एक रिमोट PEP ने दूसरा नीति दायरा खींचना शुरू किया"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "एक दूरस्थ PEP ने PIP से एक विषय की विशेषताएँ माँगीं"

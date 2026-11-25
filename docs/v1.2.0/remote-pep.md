@@ -2847,6 +2847,32 @@ A PEP can also run inside an application, embedded through an authentication lib
 - **Deleting the application removes its bindings**, each with an audit row, so an application registered later under the same identifier inherits none.
 - The application's page lists the PEPs bound to it (*Embedded PEPs*). Every change is audited as `xacml.pep.binding`.
 
+### Registering an embedded PEP
+
+An embedded PEP registers and sends heartbeats like the container, and says what it is ([#2026](https://github.com/rcbj/iya-sts/issues/2026)):
+
+| Member | Values |
+|---|---|
+| `kind` | `container` or `embedded`. A PEP that sends none is a container, so an older PEP keeps working. |
+| `application` | The application it is embedded in. It must be the one its entry is bound to. |
+| `mode` | `central` (every decision asked of `POST /access/v1/evaluation`) or `local` (its application's policies pulled and decided in process). Embedded only. |
+| `protocolVersion` | The PEP protocol version its package speaks. This service supports `1`. |
+| `policyEvents` | On a heartbeat: `none`, `requested`, `excluded` or `down`, whether its application's Shared Signals stream can carry `pep-policies-changed`. |
+
+Refused, and nothing recorded: an embedded PEP whose entry is bound to no application (403, `STS-XACML-0340`) or to another application (403, `STS-XACML-0341`); an unsupported or missing protocol version (400, `STS-XACML-0342`); `mode` with a container (400, `STS-XACML-0343`); an unknown kind, mode or `policyEvents` (400, `STS-XACML-0344`). A heartbeat is checked the same way, so moving or removing a binding refuses the PEP's next heartbeat.
+
+The *Remote PEPs* list and the PEP's page show the kind, application, mode, protocol version and policy-change events. An embedded PEP's page has only its Overview and Decisions: it has no reverse proxy, listeners, managed settings or AuthZEN edge.
+
+**In `central` mode** the PEP asks `POST /access/v1/evaluation` and `/evaluations` on its own `authzen:evaluate` token. Its binding admits it as if it held `AUTHZEN_PEPS`, scoped to its bound application and no other: a `context.application` naming another is refused (403), and none named means the bound one. It needs no AuthZEN group membership.
+
+**In `local` mode** the PEP pulls `GET /xacml/pep/policies?scope=bound-application` ([#2027](https://github.com/rcbj/iya-sts/issues/2027)) and decides in process. It is sent:
+
+- its application's own fine-grained authorization policy, as the root, when the application enforces fine-grained authorization; otherwise the realm's root policy;
+- every policy that one references, transitively;
+- nothing else: never another application's policy, and never the access or issuance policy.
+
+The answer has a token of its own, so `If-None-Match` answers `304` until something the PEP holds changes; a change elsewhere in the realm does not move it. Only a registered embedded PEP in `local` mode, bound to the application it registered for, is answered; anybody else is refused (403, `STS-XACML-0345`), and a scope other than `repository` or `bound-application` is 400 (`STS-XACML-0346`). The PEP's page says which scope it pulls, and a change of scope is audited as `xacml.pep.scope`.
+
 ## See also
 
 - [Authorization overview](authorization.md) — every authorization decision this service makes, and where each is documented

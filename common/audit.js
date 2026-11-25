@@ -1343,6 +1343,11 @@ const ACTIONS = [
   // (#2025). The row names the PEP and the application.
   { action: 'xacml.pep.binding', category: 'authorization',
     label: 'An embedded remote PEP was bound to its application, or unbound' },
+  // A remote PEP pulled a policy scope other than the one it pulled before
+  // (#2027): `repository` or `bound-application`. Written on a change only,
+  // so a PEP polling every few seconds is one row, not one a poll.
+  { action: 'xacml.pep.scope', category: 'authorization',
+    label: 'A remote PEP began pulling another policy scope' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 

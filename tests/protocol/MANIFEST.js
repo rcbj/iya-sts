@@ -1215,6 +1215,29 @@ const JOBS = [
   // listeners in, every row passing, on the first local memory run.
   { file: 'sts_xacml_pep_proxy_cluster.js', browser: false, local: true,
     timeoutMs: 2400000 },
+  // #2026: an embedded remote PEP (#1206) on its own DPoP-bound tokens, as
+  // the iya-pep package sends them: registration refused unbound, bound
+  // elsewhere, with an unsupported protocol version and with mode on a
+  // container (each code on the audit log), then accepted with kind,
+  // application, mode and protocol version on /admin-api/xacml/peps; a
+  // heartbeat's policyEvents, and the next heartbeat refused once the
+  // binding moves; AuthZEN in central mode scoped to the bound application
+  // (xacml_pep_embedded in process). In a realm of its own.
+  { file: 'sts_xacml_pep_embedded.js', browser: false, local: true },
+  // #2027: the policy pull scoped to a bound application, pulled as the
+  // iya-pep package pulls it: an enforcing application's own policy to its
+  // local PEP and nobody else, the root and its closure for one that
+  // enforces nothing, the scope's own token (304, unmoved by a change
+  // outside it), the refusals with their codes, and the row's pullScope
+  // and audit (xacml_pep_scope in process). In a realm of its own.
+  { file: 'sts_xacml_pep_scope.js', browser: false, local: true },
+  // #2028: a policy change heard over Shared Signals. A deploy to the root
+  // an application is decided by puts one pep-policies-changed SET on the
+  // bound application's poll stream and none on another application's, and
+  // ssfAllowedEvents naming only caep withholds it and lists the PEP in the
+  // application's pepEventsExcluded (pep_policies_changed in process). In a
+  // realm of its own.
+  { file: 'sts_pep_policies_changed.js', browser: false, local: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
   // (2026-09-18): every one of these families was covered in process and by
   // nothing driven over the network, so a stack behind a load balancer said
@@ -3065,6 +3088,12 @@ const JOBS = [
   // refusals through the editor's API (xacml_pap).
   { file: 'sts_xacml_pap.js', browser: false, local: true,
     optIn: '444' },
+  // #2025: an embedded remote PEP bound to its application through
+  // /admin-api/xacml (set-pep-application, clear-pep-application,
+  // issue-pep-credential with an application), the application's page, the
+  // clean-up when the application is deleted, and the audit rows
+  // (xacml_pep_binding in process). In a realm of its own.
+  { file: 'sts_xacml_pep_binding.js', browser: false, local: true },
   // D12 (#444): the AuthZEN binding for OAuth 2.0 token exchange over
   // /access/v1/evaluation(s), in both modes (authzen_token_exchange).
   // Posts an outside test Root to the client truststore and removes it.

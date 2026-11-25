@@ -460,7 +460,12 @@ token revocation send CAEP `session-revoked` (session `gnap-grant:<id>` /
 `gnap-token:<jti>`), modification sends `token-claims-change`, and the scope
 installed with `ssf_streams.setSubjectScope('gnap', …)` refuses a stream owned by
 a GNAP web application (a `gnap-client` with a finish URI) any subject who never
-approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
+approved a grant to it. **A subject naming the stream's own application and no person is
+covered (#2028)** (`namesOnlyItself()`, through `ssf_subjects.applicationIdOf()`):
+`pep-policies-changed` is about the application its embedded PEP is bound to,
+is sent only to that application's streams, and both rules are about people,
+so it was refused on every GNAP-owned stream and a local PEP embedded in a
+GNAP client never heard of a change. `tests/pep_policies_changed.js` G. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
 and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
 itself.
 

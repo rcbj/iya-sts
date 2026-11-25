@@ -2151,6 +2151,30 @@
     "en": "b2a987046bb7d733",
     "text": "Vad fjärr-PEP:en senast rapporterade, i ett hjärtslag, om varje lyssnare den har (#1760), miljöns fyra och de definierade: ett JSON-dokument { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, med när det kom. Tillståndet är ett av listening, waiting, failed och off och orsaken en ur en sluten mängd, aldrig operativsystemets text; certifikatet är subjekt, utfärdare, serienummer, subjectAltName, giltighet och fingeravtryck för det den serverar. Alla andra medlemmar kastas. Ett hjärtslag utan det behåller det, ett med null rensar det och en registrering tar bort det. Saknas hos en PEP som är äldre än lyssnarna, vilket konsolen visar som inte rapporterat."
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Vilken sorts fjärr-PEP som registrerade sig (#2026, del av #1206): container, avbildningen xacml-pep, eller embedded, en PEP i ett autentiseringsbibliotek via ett iya-pep-paket. En registrering som inte anger någon är container, så en äldre PEP läses som den alltid har lästs. En inbäddad PEP har ingen omvänd proxy, inga lyssnare och ingen AuthZEN-kant."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "Programmet som en inbäddad fjärr-PEP sade att den är inbäddad i när den registrerade sig (#2026). Godtas bara om det är programmet som dess post är bunden till (stsPepApplication, satt av en administratör), så det kan skilja sig från bindningen bara fram till PEP:ens nästa hjärtslag, som avvisas så snart de skiljer sig. Tomt för en container."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "En inbäddad fjärr-PEP:s läge (#2026): central, där varje beslut efterfrågas hos den här tjänstens AuthZEN-utvärderingsslutpunkt, eller local, där den hämtar sitt programs policyer och beslutar i processen. Tomt för en container, som inte får skicka något."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "PEP-protokollversionen som fjärr-PEP:ens paket talar, enligt dess registrering eller senaste hjärtslag (#2026). Den här tjänsten stöder version 1 och avvisar alla andra, så ett bibliotek som har hamnat efter syns i stället för att tyst vara fel. Tomt för en PEP som inte skickar någon (containern)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Om strömmen för programmet som en inbäddad fjärr-PEP är inbäddad i kan bära händelsen pep-policies-changed, enligt PEP:ens senaste hjärtslag (#2026): none (värden har ingen signalström, så PEP:en hämtar regelbundet), requested, excluded (programmets ssfEvents utesluter den) eller down. Tomt tills det har rapporterats."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Vad fjärr-PEP:en senast hämtade från GET /xacml/pep/policies (#2027): repository, varje aktiverad policy utom de undanhållna (containerns hämtning), eller bound-application, en inbäddad PEP:s i läget local: programmets egen policy, eller sfärens rot, och höljet av dess referenser. Behålls vid en ny registrering; ett byte granskas som xacml.pep.scope. Tomt tills den har hämtat."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Vad PEP:en än sade om sig själv när den registrerade sig."

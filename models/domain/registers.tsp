@@ -90,6 +90,27 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepListenersInUse"})
   `listenersInUse`?: string;
 
+  // #2026: an embedded PEP's kind, application, mode, protocol version and
+  // its stream's report.
+  @fromAttr(#{attr: "xacmlPepKind"})
+  `kind`?: string;
+
+  @fromAttr(#{attr: "xacmlPepApplication"})
+  `application`?: string;
+
+  @fromAttr(#{attr: "xacmlPepMode"})
+  `mode`?: string;
+
+  @fromAttr(#{attr: "xacmlPepProtocolVersion"})
+  `protocolVersion`?: integer;
+
+  @fromAttr(#{attr: "xacmlPepPolicyEvents"})
+  `policyEvents`?: string;
+
+  // #2027: what it last pulled.
+  @fromAttr(#{attr: "xacmlPepPullScope"})
+  `pullScope`?: string;
+
   @fromAttr(#{attr: "description"})
   `description`?: string[];
 }

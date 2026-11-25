@@ -1904,6 +1904,13 @@ nothing" sentence now names it as one of two exceptions.
   limit by having created its stream first.
 * **SSF's own two events are always allowed**, because a receiver refused its
   verification event cannot learn that its stream works.
+* **This service's own events that name NOBODY are always allowed too**
+  (`allowedEventsFor()`), being about the transmitter. **One that names a
+  subject is not** (#2028): `pep-policies-changed`, about the application an
+  embedded PEP is in, is withheld unless the list names its URI, as a CAEP or
+  RISC type is. The catalogue row's `subject` decides (`none` or not), so no
+  type is named in the code (`xacml/CLAUDE.md`, *An embedded PEP hears of a
+  change over Shared Signals*).
 
 `tests/protocol/sts_ssf_allowed_events.js` holds all of it against an
 unrestricted control stream; six mutants, all caught, two only after the job

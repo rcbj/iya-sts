@@ -2151,6 +2151,30 @@
     "en": "b2a987046bb7d733",
     "text": "Ang huling iniulat ng remote PEP, sa isang heartbeat, tungkol sa bawat listener nito (#1760), ang apat ng environment nito at ang mga itinakda: isang JSON document na { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, kasama kung kailan ito dumating. Ang state ay isa sa listening, waiting, failed at off at ang reason ay isa sa isang saradong set, hindi kailanman ang teksto ng operating system; ang sertipiko ay ang subject, issuer, serial, subjectAltName, bisa at fingerprint ng sine-serve nito. Itinatapon ang anumang ibang member. Pinananatili ito ng isang heartbeat na wala nito, binubura ito ng isang may null, at inaalis ito ng isang registration. Wala ito sa isang PEP na mas luma kaysa sa mga listener, na ipinapakita ng console bilang hindi iniulat."
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Kung anong uri ng remote PEP ang nagparehistro (#2026, bahagi ng #1206): container, ang image na xacml-pep, o embedded, isang PEP sa loob ng authentication library sa pamamagitan ng iya-pep package. Ang pagpaparehistrong walang sinasabi ay container, kaya binabasa ang mas lumang PEP gaya ng dati. Walang reverse proxy, listener o AuthZEN edge ang naka-embed na PEP."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "Ang application na sinabi ng naka-embed na remote PEP na kinalalagyan nito nang magparehistro ito (#2026). Tinatanggap lang kung ito ang application na pinagbigkisan ng entry nito (stsPepApplication, itinakda ng administrator), kaya maaari lang itong maiba sa binding hanggang sa susunod na heartbeat ng PEP, na tinatanggihan kapag hindi na sila magkatugma. Walang laman para sa container."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "Ang mode ng naka-embed na remote PEP (#2026): central, kung saan itinatanong ang bawat desisyon sa AuthZEN evaluation endpoint ng serbisyong ito, o local, kung saan kinukuha nito ang mga patakaran ng application nito at nagpapasya sa loob ng proseso. Walang laman para sa container, na hindi maaaring magpadala nito."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "Ang bersyon ng protocol ng PEP na sinasalita ng package ng remote PEP, ayon sa pagpaparehistro o huling heartbeat nito (#2026). Sinusuportahan ng serbisyong ito ang bersyon 1 at tinatanggihan ang iba, kaya nakikita ang library na naiwan sa halip na tahimik na mali. Walang laman para sa PEP na walang ipinapadala (ang container)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Kung kaya ng stream ng application na kinalalagyan ng naka-embed na remote PEP na dalhin ang event na pep-policies-changed, ayon sa huling heartbeat ng PEP (#2026): none (walang signal stream ang host, kaya pana-panahong nagtatanong ang PEP), requested, excluded (hindi ito kasama sa ssfEvents ng application) o down. Walang laman hanggang maiulat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Ang huling kinuha ng remote PEP mula sa GET /xacml/pep/policies (#2027): repository, bawat naka-enable na patakaran maliban sa mga ipinagkait (ang pagkuha ng container), o bound-application, ang sa naka-embed na PEP sa local mode: ang sariling patakaran ng application nito, o ang root ng realm, at ang closure ng mga reference nito. Pinananatili sa muling pagpaparehistro; ang pagbabago ay naa-audit bilang xacml.pep.scope. Walang laman hanggang may makuha."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Anuman ang sinabi ng PEP tungkol sa sarili nito nang mag-register ito."

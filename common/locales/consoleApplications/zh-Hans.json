@@ -1032,5 +1032,6 @@
   "protection.removeN": "移除表达式 {n}",
   "protection.addList": "将列表添加到字段",
   "protection.recipientOne": "{field} 只容纳一个表达式：请在列表中只保留一个。",
-  "protection.addedN": "已向 {field} 添加 {n} 个表达式。请在表单上按“保存”以保留它们。"
+  "protection.addedN": "已向 {field} 添加 {n} 个表达式。请在表单上按“保存”以保留它们。",
+  "embeddedPeps.eventsExcluded": "此应用的 Shared Signals 流无法传递 pep-policies-changed（其 ssfAllowedEvents 将其排除，或 PEP 报告如此），因此这些 local 模式的 PEP 只能在后备轮询时得知策略变更：{peps}。请将 urn:iya:sts:secevent:event-type:pep-policies-changed 加入 ssfAllowedEvents。"
 }
