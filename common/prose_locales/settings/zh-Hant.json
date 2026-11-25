@@ -272,8 +272,24 @@
     "text": "進行敏感變更所需的登入近期程度（分鐘）"
   },
   "account.recentAuthMinutes|description": {
-    "en": "4bfb2112a9f37a5d",
-    "text": "要變更某人的登入方式，必須在多少分鐘內登入過。在入口網站上：本人的第二因素、復原代碼、通行金鑰、應用程式密碼、憑證、簽署金鑰、自行簽發的 ID、電子郵件地址或錢包憑證提供，以及結束本人的其他工作階段；須先重新登入。對管理員而言：透過主控台或 /admin-api 變更某人的密碼、第二因素、通行金鑰、復原代碼、電子郵件地址或應用程式密碼，/admin-api 會以 RFC 9470 的 insufficient_user_authentication 回應。0 表示不要求，為開發模式預設值。產品模式預設 15。"
+    "en": "99c8adf052996759",
+    "text": "要變更某人的登入方式，必須在多少分鐘內登入過。在入口網站上：本人的第二因素、復原代碼、通行金鑰、應用程式密碼、憑證、簽署金鑰、自行簽發的 ID、電子郵件地址或錢包憑證提供，以及結束本人的其他工作階段；須先重新登入。對管理員而言：透過主控台或 /admin-api 變更某人的密碼、第二因素、通行金鑰、復原代碼、電子郵件地址或應用程式密碼，/admin-api 會以 RFC 9470 的 insufficient_user_authentication 回應。管理員授予或移除角色，建立、變更或刪除信任領域，操作 PKI、簽章金鑰、金鑰加密金鑰或機密推送目的地，或變更任何設定時，同樣如此（#2161）。0 表示不要求，為開發模式預設值。產品模式預設 15。"
+  },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "每人每個時間窗口的帳戶變更次數"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "一位已登入的人在 account.writeWindowS 時間窗口內可透過 /account-api（入口網站）對自己帳戶進行的變更次數：個人資料編輯、註冊或移除認證資料、撤回同意、裝置變更。依權杖的 subject 計數，而非依位址，因此同一位址後的人不會共用此額度。超過後，變更會以 429 和 Retry-After 拒絕，直到時間窗口結束；讀取帳戶不受影響。0 表示不限制，這是開發模式的預設值。產品模式預設為 300。"
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "帳戶變更時間窗口（秒）"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "計數 account.writesPerSubject 的時間窗口，單位為秒。與這裡的每個速率限制一樣，是固定窗口。"
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -346,6 +362,22 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "在 Strict-Transport-Security 加入 includeSubDomains，使瀏覽器對此服務主機名稱的所有子網域也使用 HTTPS。產品模式預設開啟。若某個子網域仍需透過純 HTTP 回應，請關閉。"
+  },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "向非管理員顯示確切的建置"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "確切的版本、建置編號、建置時間和 commit 是否出現在管理員以外的人可以讀到的地方：每個頁面的頁尾、登入、入口網站和報表 API 及其 OpenAPI 文件，以及此服務向合作夥伴發出的請求的 User-Agent。auto（預設）在開發模式下顯示，在產品模式下隱藏；產品模式下文件改為提供 API 本身的版本，User-Agent 只有產品名稱；on 和 off 在任一模式下強制設定。主控台和管理 API 一律顯示建置。"
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "申請加入 HSTS 預先載入清單"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "在 Strict-Transport-Security 中加入 preload(僅產品模式會傳送此標頭),以便可在 hstspreload.org 將主機名稱提交至瀏覽器的預先載入清單。預先載入會使整個可註冊網域及其每個子網域在所有瀏覽器中都只能使用 HTTPS,而退出清單需要數個月。僅在「對子網域套用 HSTS」開啟時傳送。"
   },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
@@ -3027,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "上一列的 RFC 8705 版本，適用於相同的介面：出示的存取權杖必須帶有 `cnf[\"x5t#S256\"]`，連線必須帶有該憑證。**它需要主連接埠以 HTTPS 繫結**（global.https），而偵錯工具的接聽程式自 2026-09-15 起開始「索取」用戶端憑證，讓繫結的權杖得以在那裡出示——只是索取，從不強制要求。不是本服務簽發的權杖也受相同規則約束：即使權杖本身無法驗證，其所帶的繫結仍會被檢查。"
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "僅簽發寄件者約束的存取權杖"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "預設關閉，除非該領域的每個用戶端都能綁定其權杖，否則應保持關閉（ASVS 5.0.0 10.3.5 與 10.4.14，#2183）。開啟後，權杖端點只向能綁定權杖的請求簽發存取權杖：DPoP 證明（RFC 9449）或連線的用戶端憑證（RFC 8705），二者任一，適用於每種授權類型。授權端點拒絕會在瀏覽器中簽發權杖的 response_type（隱含與混合 `token`），因為這種權杖永遠無法綁定。兩者都不傳送的用戶端會以 invalid_dpop_proof 被拒，並指明此設定。上面兩列在資源處拒絕未綁定的權杖；這一列拒絕簽發它。"
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "開放動態用戶端註冊（產品模式）"
@@ -3096,8 +3136,8 @@
     "text": "用戶端秘密有效期（天）"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "本服務鑄造或被給予之每個用戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之用戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值，或建立表單為應用程式的第一個秘密指名了其他值。「零」（預設）即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
+    "en": "0282a861551627b6",
+    "text": "本服務鑄造或被給予之每個用戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之用戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值，或建立表單為應用程式的第一個秘密指名了其他值。預設值為 365 天（ASVS 5.0.0 13.3.4）；「零」即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -5078,6 +5118,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 section 4 的全域原則：授權端點會拒絕任何未攜帶此服務於 /oauth2/par 簽發之 request_uri 的要求，在此伺服器上回應 invalid_request 與 400。以 require_pushed_authorization_requests 發佈。預設為關閉，因為每個傳送一般授權要求的用戶端都會被拒絕。用戶端可以透過其項目上的 oauthRequirePushedAuthorizationRequests（註冊時的 require_pushed_authorization_requests）對自己提出同樣的要求，具名授權伺服器的設定檔也可以發佈它。"
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "僅在推送的請求中接受 authorization_details"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "預設關閉（ASVS 5.0.0 10.4.15，#2185）。開啟後，授權端點會在本伺服器上以 invalid_request 與 400 拒絕攜帶 RFC 9396 authorization_details 且未經由 /oauth2/par 簽發之 request_uri 送達的請求，使豐富授權請求永遠不會出現在瀏覽器的網址中。以值傳遞的已簽署請求物件也會被拒絕：它同樣經過瀏覽器。不含 authorization_details 的請求不受影響；上面一列使每個請求都必須推送。"
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
@@ -7874,6 +7922,14 @@
   "krb5.pkinitRequireFreshness|description": {
     "en": "77b517dda5eb4231",
     "text": "PKINIT 要求是否必須攜帶 RFC 8070 新鮮度權杖——由此 KDC 在時鐘偏差範圍內以 KDC_ERR_PREAUTH_REQUIRED 簽發的權杖。它能防止事先以借來的智慧卡簽署的 AuthPack 在之後被使用。MIT Kerberos 1.17 及更新版本與 Heimdal 會在被要求時傳送。警告：關閉時，PKINIT 要求只受其自身時間戳記與重送檢查約束。"
+  },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT 要求 paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "PKINIT 要求是否必須攜帶 Microsoft 的 paChecksum2（MS-PKCA 第 2.2.3 節）——即要求本文的 SHA-256、SHA-384 或 SHA-512，與 RFC 4556 要求的 SHA-1 paChecksum 並列。已傳送的 paChecksum2 無論如何都會受到驗證，以 SHA-1 計算的 paChecksum2 在產品模式下會被拒絕。預設為關閉，因為 MIT Kerberos 不會傳送它；Windows 11 以及 Windows Server 2022 23H2 及更新版本會傳送。開啟後，未傳送它的用戶端（包括匿名 PKINIT）會以 KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED 被拒絕。"
   },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
@@ -12387,6 +12443,14 @@
     "en": "4f3937bae763d218",
     "text": "在人員的帳戶被停用、其工作階段被管理員結束、其密碼被變更或重設、其認證被標記為遭入侵，或開始進行復原時，透過其項目上的位址通知該人員。人員無法選擇不接收這些通知；操作員可以在此將其關閉。"
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "憑據變更通知"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "當某人的通行密鑰或安全金鑰、驗證器應用程式、應用程式專用密碼、一次性驗證碼或 YubiKey OTP 權杖、一組復原碼、憑證、憑證登入繫結、S/MIME 憑證或 OpenPGP 金鑰被新增或移除時，通知此人，並說明由誰、在何時完成。一次操作做出的多項變更合併為一封郵件。關閉後不傳送任何此類通知；密碼變更通知不受影響。在安全通知關閉或未設定傳輸方式時不傳送任何郵件。"
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "通知管理員系統行為"
@@ -12474,6 +12538,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "一位人員可同時執行的報表工作數。"
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "每人每個時間窗口的報表執行與下載次數"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Reports API 的呼叫方在 report.actWindowS 時間窗口內可執行的高成本操作次數：一次臨時查詢或預覽、一個排入佇列的工作、一次執行已儲存的定義、一次下載結果。依權杖的 subject 計數，而非依位址。超過後，此類操作會以 429 和 Retry-After 拒絕，直到時間窗口結束；清單與定義仍可讀取。0 表示不限制，這是開發模式的預設值。產品模式預設為 240。"
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "報表操作時間窗口（秒）"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "計數 report.actsPerSubject 的時間窗口，單位為秒。與這裡的每個速率限制一樣，是固定窗口。"
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

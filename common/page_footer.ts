@@ -37,12 +37,20 @@
 // origin of its own with pages of its own, and the companion is not part
 // of the service.
 //
-// A LIBRARY (rule 3): `helpers`, `version` and `page_locale`, which are
-// leaves here; it registers nothing.
+// THE BUILD ONLY WHERE IT MAY BE SHOWN (#2142, ASVS 5.0.0 13.4.6). Every
+// shell and error page is served to anybody, the console's included, so in
+// product (`mode.publishesBuildDetail()`) the facts carry no version and no
+// build line, and the footer draws no version line. The console draws it
+// again from its shell answer once an administrator is signed in
+// (`WebFooter.drawnIn()`'s `known`).
+//
+// A LIBRARY (rule 3): `helpers`, `version`, `mode` and `page_locale`, which
+// are leaves here; it registers nothing.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
 import version = require('./version');
+import mode = require('./mode');
 import PageLocale = require('./page_locale');
 import WebFooter = require('./web_footer');
 
@@ -57,7 +65,8 @@ type Json = any;
 class PageFooter {
   /**
    * The facts the footer draws: the version and its build line, as
-   * `common/version.js` reads them, and the year.
+   * `common/version.js` reads them — both empty where the build may not be
+   * shown (#2142) — and the year.
    *
    * @param now - optional; the time, now when left out
    * @returns `{ version, buildInfo, year }`
@@ -66,8 +75,9 @@ class PageFooter {
                               year: string } {
     log.debug("Entering PageFooter.facts().");
     const v = version.load();
-    const out = { version: String(v.version || ''),
-                  buildInfo: String(version.buildInfo(v) || ''),
+    const shown = mode.publishesBuildDetail();
+    const out = { version: shown ? String(v.version || '') : '',
+                  buildInfo: shown ? String(version.buildInfo(v) || '') : '',
                   year: String((now || new Date()).getUTCFullYear()) };
     log.debug("Leaving PageFooter.facts(). " + out.version);
     return out;

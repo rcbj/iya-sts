@@ -753,10 +753,10 @@ file's header argues each point. What a maintainer needs quickly:
   (`replayHeld()`): the body re-checked against the schema, the caller the
   requester (whose authority is re-checked with `effectiveRoles()` first),
   the `authTime` the approver's — every held act is one #2161 puts under the
-  recent-sign-in rule, so the approval asks it (`signInTooOld()`) and the
+  recent-sign-in rule, so the approval asks it (`AdminApi.signInIsStale()`, #2161's one rule; the POST step asks it of the decision operations as well, by their `Admin roles` tag) and the
   replay carries what it verified. A replay carries `__dualControlReplay` and
   is never held again.
-* **The single-administrator rule: the act PROCEEDS** (`STS-ADMIN-0962`, or
+* **The single-administrator rule: the act PROCEEDS** (`STS-ADMIN-0976`, or
   `0963` where the open development API names nobody) when fewer than two
   people could decide it. Refusing the setting instead would test the roster
   once and could later hold every act — the off switch included — for ever.

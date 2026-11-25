@@ -70,6 +70,10 @@ interface HardwareTokensApiDeps {
   // The SSH user CA (the #1955 review): a person's certificates and an
   // administrator's revocation, lazily for the same reason.
   loadSshUserCa(): Json;
+  // The account signals (#2163): a token assigned here is a credential
+  // added, told as every other door tells one. Optional, so a test's deps
+  // built before it tell nothing.
+  loadSignals?(): Json;
 }
 
 // The acts, in the order the unknown-action sentence names them.
@@ -119,6 +123,9 @@ class HardwareTokensApi {
       },
       loadSshUserCa: function (): Json {
         return require('../common/ssh_user_ca');
+      },
+      loadSignals: function (): Json {
+        return require('../ssf/account_signals');
       }
     };
   }
@@ -342,6 +349,31 @@ class HardwareTokensApi {
                                   'remove-yubiotp', 'ykval-client-add',
                                   'ykval-client-remove'];
 
+  // A TOKEN AN ADMINISTRATOR GAVE A PERSON IS A CREDENTIAL ADDED (#2163),
+  // told as CAEP credential-change and mailed to the person, as the portal's
+  // claim of the same token is. Never throws: the token is assigned.
+  private tokenAssigned(username: string, typeName: string, ref: string,
+                        actor: string): void {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokensApi.tokenAssigned(). " + typeName);
+    try {
+      const signals = this.deps.loadSignals ? this.deps.loadSignals() : null;
+      if (signals && typeof signals.credentialChanged === 'function') {
+        signals.credentialChanged({ username: username,
+          credentialType: signals[typeName], changeType: 'create',
+          initiatingEntity: 'admin', via: 'api',
+          reasonAdmin: 'An administrator (' + (actor || 'unnamed') +
+                       ') assigned token ' + ref + ' to ' + username + '.',
+          reasonUser: 'An administrator gave you a one-time code token.' });
+      }
+    } catch (e) {
+      log.debug("Caught in HardwareTokensApi.tokenAssigned(): " +
+                ((e && e.message) || e));
+      // The assignment stands whether or not anybody is told.
+    }
+    log.debug("Leaving HardwareTokensApi.tokenAssigned().");
+  }
+
   // -------------------------------------------------------------------------
   // THE OATH ACTS (#1955 P4). `import-pskc` takes the seed file's XML text
   // and its pre-shared key or password, which reach `pskc.open()` and
@@ -406,6 +438,10 @@ class HardwareTokensApi {
                      why: String(r.why || '') };
           }) });
       } else if (action === 'assign-oath') {
+        self.tokenAssigned(String(body.username || ''),
+          String((result.token && result.token.kind) || '') === 'totp'
+            ? 'TOTP_CREDENTIAL_TYPE' : 'HOTP_CREDENTIAL_TYPE',
+          String((result.token && result.token.key) || ''), actor);
         self.sendJson(res, 200, { ok: true,
           message: 'Token ' + result.token.key + ' is assigned to ' +
                    result.token.holder + '.', token: result.token });
@@ -488,6 +524,9 @@ class HardwareTokensApi {
                      why: String(r.why || '') };
           }) });
       } else if (action === 'assign-yubiotp') {
+        self.tokenAssigned(String(body.username || ''),
+          'YUBIOTP_CREDENTIAL_TYPE',
+          String((result.token && result.token.serial) || ''), actor);
         self.sendJson(res, 200, { ok: true,
           message: 'YubiKey OTP ' + result.token.serial +
                    ' is assigned to ' + result.token.holder + '.',

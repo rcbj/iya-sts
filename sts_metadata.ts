@@ -6028,6 +6028,30 @@ const ENDPOINTS: EndpointEntry[] = [
           '`setting` and its `value`, through the ordinary settings write. ' +
           'Needs admin:write. Written to ou=signerTrustAnchors, so a change ' +
           'survives a restart.' },
+  { path: '/admin-api/truststores', group: 'Management API',
+    name: 'Named truststores and the use cases that trust them',
+    specs: ['rfc5280', 'openapi'],
+    what: 'The Truststores, Use cases and System truststore tabs of ' +
+          '/admin/pki/trust over JSON (#2118): every truststore this realm ' +
+          'can name (built-in, view, setting, SPIFFE bundle or named) with ' +
+          'what it holds counted and the use cases that trust it, every use ' +
+          'case with what it trusts now and its default, the limits, and ' +
+          'node\'s default store described certificate by certificate ' +
+          'without PEM.' },
+  { path: '/admin-api/truststores/:action', group: 'Management API',
+    name: 'Change a named truststore or what a use case trusts',
+    specs: ['rfc5280', 'openapi'],
+    what: 'show | create | delete | add | remove | assign | unassign — the ' +
+          'controls of the Truststores and Use cases tabs of ' +
+          '/admin/pki/trust (#2118). show takes a `name` (and `withPem`) and ' +
+          'writes nothing; create takes a `name` and a `description`; delete ' +
+          'is refused while a use case trusts the truststore; add takes ' +
+          '`certificates`, each through the admission rule and each refusal ' +
+          'named; remove takes a `fingerprint`; assign takes a `useCase` and ' +
+          'its ordered `truststores`, and unassign returns the use case to ' +
+          'its default. A service-wide use case is assigned from the default ' +
+          'realm only. Needs admin:write. Written to ou=truststores, so a ' +
+          'change survives a restart.' },
   { path: '/admin-api/pki/:action', group: 'Management API',
     name: 'Build a hierarchy, issue a key pair, author a certificate',
     specs: ['rfc5280'],

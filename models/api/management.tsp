@@ -13294,7 +13294,7 @@ op `deleteRiskDatasetVersion`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"20
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
+op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
   @js(#{`examples`:#["fr"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
@@ -13440,7 +13440,7 @@ op `saveMailTemplate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string;
     @js(#{`description`:"One line."}) `subject`: string;
     @js(#{`description`:"The text part."}) `text`: string;
@@ -13476,7 +13476,7 @@ op `saveMailTemplate`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetMailTemplate`(@js(#{`examples`:#[#{`template`:"test-message",`lang`:"de"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
@@ -20543,7 +20543,7 @@ op `revokeAdminRole`(@js(#{`examples`:#[#{`username`:"rcbj",`role`:"read"}]}) `r
   }
 
 @js(#{
-    `description`:"Whether two-person approval (#2166) is on in this realm and IN FORCE: when fewer than two people could decide an act needing an authority, that act runs at once (STS-ADMIN-0962) rather than lock the realm out, and `why` says so."
+    `description`:"Whether two-person approval (#2166) is on in this realm and IN FORCE: when fewer than two people could decide an act needing an authority, that act runs at once (STS-ADMIN-0976) rather than lock the realm out, and `why` says so."
   }) @component model `DualControlState` {
     `on`: boolean;
     `lifetimeHours`?: integer;
@@ -20567,7 +20567,7 @@ op `revokeAdminRole`(@js(#{`examples`:#[#{`username`:"rcbj",`role`:"read"}]}) `r
   #{
     `operationId`:"getApprovals",
     `summary`:"Administrator acts held for a second administrator",
-    `description`:"TWO-PERSON APPROVAL (#2166, ASVS 5.0.0 2.3.5), off by default (`admin.dualControl`, per realm). With it on, the acts `table` lists are not done when the first administrator asks: each is stored and answered 202 with its id, and waits here until a second, different administrator holding the same authority approves or refuses it, its requester withdraws it, or it expires (`admin.dualControlLifetimeHours`).\n\n`state` says whether the control is on and IN FORCE: when fewer than two people could decide an act, the act runs at once and the audit row says nobody approved it (STS-ADMIN-0962), so that a realm can never be locked out. `requests` lists every held act this realm keeps, pending ones first; with `id`, `request` is that one. `you` is the caller's name, so a page can tell its own requests from others'.\n\n**Mirrors** `GET /admin/approvals` on the admin console.",
+    `description`:"TWO-PERSON APPROVAL (#2166, ASVS 5.0.0 2.3.5), off by default (`admin.dualControl`, per realm). With it on, the acts `table` lists are not done when the first administrator asks: each is stored and answered 202 with its id, and waits here until a second, different administrator holding the same authority approves or refuses it, its requester withdraws it, or it expires (`admin.dualControlLifetimeHours`).\n\n`state` says whether the control is on and IN FORCE: when fewer than two people could decide an act, the act runs at once and the audit row says nobody approved it (STS-ADMIN-0976), so that a realm can never be locked out. `requests` lists every held act this realm keeps, pending ones first; with `id`, `request` is that one. `you` is the caller's name, so a page can tell its own requests from others'.\n\n**Mirrors** `GET /admin/approvals` on the admin console.",
     `tags`:#["Admin roles"],
     `responses`:#{
       `200`:#{
@@ -34319,6 +34319,385 @@ op `setParanoidPkiRow`(@js(#{`examples`:#[#{`setting`:"pki.paranoidFidoMds",`val
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc46,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
+
+// #2118 PHASE 4: NAMED TRUSTSTORES (`common/truststores.ts`) AND THE USE
+// CASES THAT TRUST THEM (`common/truststore_use_cases.ts`), drawn on
+// Protocols → PKI trust's Truststores, Use cases and System truststore tabs.
+// Certificates and sentences only; a refusal's code is recorded, never sent.
+@hoisted model TruststoreAdminRow {
+  @js(#{`description`:"Unique in its realm. A built-in (`system`, `service-root`, …), a view (`signers`, `client-certificates`), a legacy setting (`setting:<key>`), a SPIFFE bundle (`spiffe:<trust domain>`) or a named truststore."}) `name`: string;
+  @js(#{`description`:"`built-in`, `view`, `setting`, `spiffe` or `named`."}) `kind`: string;
+  @js(#{`description`:"`service` (the default realm's, nameable by a handshake or outbound use case) or `realm`."}) `scope`: string;
+  @js(#{`description`:"Whether this realm may change it here: built-ins, views and settings are changed where they are kept, and a service-wide named truststore only from the default realm."}) `readOnly`: boolean;
+  `description`: string;
+  @js(#{`description`:"The self-issued certificates it holds."}) `anchors`: integer;
+  @js(#{`description`:"The certificates it holds that are steps on a path, not anchors."}) `intermediates`: integer;
+  @js(#{`description`:"Why what it names could not be read (an unreadable legacy file), in English; empty where nothing is wrong."}) `problem`: string;
+  @js(#{`description`:"Who created a named truststore, by name."}) `addedBy`?: string;
+  @js(#{`description`:"A SPIFFE bundle truststore's trust domain."}) `trustDomain`?: string;
+  @js(#{`description`:"A SPIFFE bundle truststore's JWT-SVID keys, counted."}) `jwtKeys`?: integer;
+  @js(#{`description`:"The use cases that trust it in this realm, assigned or by default."}) `usedBy`: (string)[];
+  @js(#{`description`:"A named truststore's certificates, without PEM; absent for any other kind (`showTruststore` answers any truststore whole)."}) `certificates`?: (TruststoreAdminCertificate)[]
+}
+
+@hoisted model TruststoreAdminCertificate {
+  @js(#{`description`:"`anchor` or `intermediate`."}) `kind`: string;
+  `subject`: string;
+  `issuer`: string;
+  @js(#{`description`:"Milliseconds since the epoch."}) `notBefore`: numeric;
+  @js(#{`description`:"Milliseconds since the epoch."}) `notAfter`: numeric;
+  @js(#{`description`:"SHA-256, upper-case hex without colons: what `removeTruststoreCertificate` names."}) `fingerprint256`: string;
+  @js(#{`description`:"The certificate as PEM; left out where the caller asked for none."}) `pem`?: string;
+  @js(#{`description`:"Why a block is no certificate, in English."}) `unadmittable`?: string
+}
+
+@js(#{`description`:"One JWT-SVID key of a SPIFFE bundle, as a JWK (RFC 7517): its public members only."}) @hoisted model TruststoreAdminJwk {
+  `kty`: string;
+  `use`?: string;
+  `kid`?: string;
+  `alg`?: string;
+  `crv`?: string;
+  `x`?: string;
+  `y`?: string;
+  `n`?: string;
+  `e`?: string;
+  `x5c`?: (string)[];
+  `x5t`?: string;
+  `x5t#S256`?: string
+}
+
+@hoisted model TruststoreAdminDetail {
+  `name`: string;
+  `kind`: string;
+  `scope`: string;
+  `readOnly`: boolean;
+  `description`: string;
+  `anchors`: integer;
+  `intermediates`: integer;
+  `problem`: string;
+  `addedBy`?: string;
+  `trustDomain`?: string;
+  `jwtKeys`?: integer;
+  `usedBy`: (string)[];
+  `certificates`: (TruststoreAdminCertificate)[];
+  @js(#{`description`:"A SPIFFE bundle truststore's JWT-SVID keys, as JWKs; empty for any other."}) `jwks`: (TruststoreAdminJwk)[]
+}
+
+@hoisted model TruststoreUseCaseAdminRow {
+  `id`: string;
+  `title`: string;
+  @js(#{`description`:"`service` (decided with no realm in hand, so it names only the default realm's truststores) or `realm`."}) `scope`: string;
+  @js(#{`description`:"`x509`, `spiffe` (names SPIFFE bundles only), `pins` (trusts what each entry registers), `fixed` (this service's own hierarchy) or `admission`."}) `kind`: string;
+  @js(#{`description`:"`inbound` (a certificate presented to this service) or `outbound` (the server this service dials)."}) `direction`: string;
+  @js(#{`description`:"What it trusts now, in order: its assignment, or its default."}) `names`: (string)[];
+  `defaults`: (string)[];
+  @js(#{`description`:"What it falls back to when its default list yields no anchor; never used for an assignment."}) `fallback`: (string)[];
+  @js(#{`description`:"Whether `names` is an assignment rather than the default."}) `assigned`: boolean;
+  @js(#{`description`:"Whether it may be assigned truststores at all."}) `assignable`: boolean;
+  @js(#{`description`:"Whether a realm other than the default may give it a list of its own, for that realm's own outbound connections (#2148)."}) `overridable`: boolean;
+  @js(#{`description`:"Whether this realm has given it a list of its own; false in the default realm."}) `realmOverride`: boolean;
+  @js(#{`description`:"Where it is decided, by source file."}) `sites`: (string)[]
+}
+
+@endpoint("/admin-api/truststores",
+  "get",
+  #{
+    `operationId`:"getTruststores",
+    `summary`:"Named truststores and the use cases that trust them (#2118)",
+    `description`:"Everything the Truststores, Use cases and System truststore tabs of /admin/pki/trust draw: every truststore this realm can name with what it holds counted and the use cases that trust it, every use case with what it trusts now and its default, the limits, and node's default store (`system`) certificate by certificate without PEM.\n\n**Mirrors** `GET /admin/pki/trust` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The truststores of this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getTruststores`(`responses/200/content/application~1json/schema`: {
+    `realm`: string;
+    `stores`: (TruststoreAdminRow)[];
+    `useCases`: (TruststoreUseCaseAdminRow)[];
+    `limits`: {
+      @js(#{`description`:"Named truststores per realm."}) `maxStores`: integer;
+      @js(#{`description`:"Anchors per named truststore."}) `maxAnchors`: integer;
+      @js(#{`description`:"Intermediates per named truststore."}) `maxIntermediates`: integer;
+      @js(#{`description`:"Whether the directory that keeps named truststores is installed in this process."}) `installed`: boolean
+    };
+    @js(#{`description`:"Node's default store, what the built-in `system` holds: the roots bundled with node plus NODE_EXTRA_CA_CERTS, sorted by subject, without PEM."}) `system`: {`count`: integer; `certificates`: (TruststoreAdminCertificate)[]};
+    `actions`: (string)[]
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@js(#{
+    `description`:"One or more PEM blocks, as one string or a list.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_truststores_add_b_application_json_certificates_h3301 {string, (string)[]}
+
+@js(#{
+    `description`:"The truststores, in order: a list, or one string separated by commas or spaces.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_truststores_assign_b_application_json_truststores_h3302 {string, (string)[]}
+
+@endpoint("/admin-api/truststores/show",
+  "post",
+  #{
+    `operationId`:"showTruststore",
+    `summary`:"One truststore, with what it holds (#2118)",
+    `description`:"Any truststore this realm can name, each certificate described: subject, issuer, validity and SHA-256 fingerprint, with its PEM unless `withPem` is false; a SPIFFE bundle truststore with its JWT-SVID keys. Writes nothing.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The truststore.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `showTruststore`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The truststore's name.",`maxLength`:200}) `name`: string;
+    @js(#{`description`:"False leaves each certificate's PEM out, for a large store such as `system`."}) `withPem`?: boolean
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`?: string;
+    `truststore`: TruststoreAdminDetail
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/truststores/create",
+  "post",
+  #{
+    `operationId`:"createTruststore",
+    `summary`:"Create a named truststore (#2118)",
+    `description`:"An empty truststore in this realm; the default realm's are service-wide. A name is 1 to 63 lower-case letters, digits and hyphens and is none of the built-in names; a realm holds at most 64.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The truststore was created.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `createTruststore`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The truststore's name.",`maxLength`:200}) `name`: string;
+    @js(#{`description`:"What it is for, for a reader."}) `description`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `name`: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/truststores/delete",
+  "post",
+  #{
+    `operationId`:"deleteTruststore",
+    `summary`:"Delete a named truststore (#2118)",
+    `description`:"A named truststore of this realm and every certificate in it. Refused while any use case in the realm trusts it, by assignment or by default; a built-in, a view, a setting or a SPIFFE bundle is changed where it is kept.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The truststore was deleted.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `deleteTruststore`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The truststore's name.",`maxLength`:200}) `name`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `name`: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/truststores/add",
+  "post",
+  #{
+    `operationId`:"addTruststoreCertificates",
+    `summary`:"Add certificates to a named truststore (#2118)",
+    `description`:"One or more PEM certificates, each through the admission rule in every mode: a self-signed CA is an anchor, any other CA an intermediate that must chain to an anchor the truststore holds, and a leaf is refused by name. A bundle's refusals are named one by one and do not stop its other blocks; it is refused whole only when nothing in it was admitted or already held.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What was added, what was already held and each refusal by name.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `addTruststoreCertificates`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The truststore's name.",`maxLength`:200}) `name`: string;
+    @js(#{`description`:"One or more PEM blocks, as one string or a list."}) `certificates`: post_admin_api_truststores_add_b_application_json_certificates_h3301
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `name`: string;
+    `added`: (TruststoreAdminCertificate)[];
+    `duplicates`: integer;
+    `refused`: ({`subject`: string; `why`: string})[]
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/truststores/remove",
+  "post",
+  #{
+    `operationId`:"removeTruststoreCertificate",
+    `summary`:"Remove a certificate from a named truststore (#2118)",
+    `description`:"By its SHA-256 fingerprint, in either spelling.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate was removed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeTruststoreCertificate`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The truststore's name.",`maxLength`:200}) `name`: string;
+    @js(#{`description`:"The SHA-256 fingerprint, with or without colons."}) `fingerprint`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `name`: string;
+    `fingerprint`: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/truststores/assign",
+  "post",
+  #{
+    `operationId`:"assignTruststores",
+    `summary`:"Assign a use case its truststores (#2118)",
+    `description`:"The ordered list of truststores a use case trusts in this realm, in every mode; a service-wide use case is assigned in the default realm, whichever realm asks. Every name must exist; a service-wide use case may name only the default realm's truststores; a SPIFFE use case names SPIFFE bundles only and only it may; a fixed or pinned use case is not assigned.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The use case and what it trusts now.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `assignTruststores`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The use case, by id."}) `useCase`: string;
+    @js(#{`description`:"The truststores, in order: a list, or one string separated by commas or spaces."}) `truststores`: post_admin_api_truststores_assign_b_application_json_truststores_h3302
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `useCase`: string;
+    `names`: (string)[]
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/truststores/unassign",
+  "post",
+  #{
+    `operationId`:"unassignTruststores",
+    `summary`:"Return a use case to its default truststores (#2118)",
+    `description`:"Clears the use case's assignment in this realm (or, for a service-wide one, in the default realm), so it trusts its default list again.\n\n**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The use case and what it trusts now.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `unassignTruststores`(`requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The use case, by id."}) `useCase`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `useCase`: string;
+    `names`: (string)[]
+  },
+  `responses/400/content/application~1json/schema`: WithOkMessageErrors,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/pki/build",
   "post",

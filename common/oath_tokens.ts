@@ -737,6 +737,40 @@ class OathTokens {
     return { ok: true, key: key };
   }
 
+  /**
+   * Tells the account signals that a token's credential was retired with
+   * its lost token (#2163): CAEP credential-change, and the person's mail,
+   * which `hardware_tokens.markLost()` gathers into one notice. Required at
+   * the moment of use, as `mail_factor.ts` does; never throws.
+   *
+   * @param username - the holder
+   * @param typeName - the account signals' credential-type constant's name
+   * @param ref - the token's key or serial
+   * @param ctx - the retirement's `{ initiatingEntity, via, actor }`
+   */
+  static toldRetired(username: string, typeName: string, ref: string,
+                     ctx: Json): void {
+    helpers.log.debug("Entering OathTokens.toldRetired(). " + typeName);
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ username: username,
+        credentialType: signals[typeName], changeType: 'delete',
+        initiatingEntity: ctx && ctx.initiatingEntity === 'admin'
+          ? 'admin' : 'user',
+        via: String((ctx && ctx.via) || ''),
+        reasonAdmin: 'Token ' + ref + ' of ' + username + ' was reported ' +
+                     'lost by ' + String((ctx && ctx.actor) || 'someone') +
+                     ', and its credential was retired.',
+        reasonUser: 'A token of yours was reported lost, and its ' +
+                    'credential was removed.' });
+    } catch (e) {
+      helpers.log.debug("Caught in OathTokens.toldRetired(): " +
+                        ((e && e.message) || e));
+      // The credential is retired whether or not anybody is told.
+    }
+    helpers.log.debug("Leaving OathTokens.toldRetired().");
+  }
+
   // The lost-key retirer of one kind (header): the person's credential goes
   // only if it is still this token's.
   private async retire(kind: string, c: Json, ctx: Json): Promise<Json> {
@@ -756,6 +790,10 @@ class OathTokens {
       if (record && !record.unusable && record.token === key) {
         removed = credentials.removeTotp(username);
       }
+    }
+    if (removed && removed.ok && !removed.already) {
+      OathTokens.toldRetired(username, kind === 'hotp'
+        ? 'HOTP_CREDENTIAL_TYPE' : 'TOTP_CREDENTIAL_TYPE', key, ctx);
     }
     const row = await this.rowOf(key);
     if (row) {

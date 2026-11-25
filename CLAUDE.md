@@ -104,6 +104,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `deploy/aws/`, `deploy/gcp/`, `deploy/azure/`, `deploy/multicloud/` | **Not part of the mock**: Terraform for the cluster on each cloud (only AWS has been applied). Each directory's `CLAUDE.md`. |
 | `debugger/` | The embedded identity protocol debugger, on a listener of its own. `debugger/embedded/` is build output, never source. `debugger/CLAUDE.md`. |
 | `rust/` | The Rust conversion (#444); `rust/DESIGN.md` is the design. Only the remote PEP runs on it; the Node service runs none of it. |
+| `sdk/` | **Not part of the service's tree**: the optional SDKs the image installs into `/opt/sts-sdk` (node-vault, and what `STS_CLOUD_SDKS` names), one pinned npm workspace each and one lockfile (#2141). The `Dockerfile` comment above the install is its documentation. |
 | `postgres/` | The database container's files, never this service's. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site: how to USE this service, one folder per release (`v1.2.0/` the latest, `v1.1.0/` and `v1.0.0/` frozen). `docs/CLAUDE.md`. |
 | `env/` | The appconfig files, each a layer over `defaults.js`. `env/CLAUDE.md`. |
@@ -328,6 +329,7 @@ holds is the table above; what each module is for is that directory's
 | `common/applications.js` | `setFgaLifecycle` (an application's fine-grained policy created and retired with it), filled by `xacml/fga_policies.ts` at 23c (#564) | `common/CLAUDE.md` |
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
 | `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
+| `common/truststores.ts` | `setDirectory` (a realm's named truststores, their certificates and its use-case assignments under `ou=truststores`), filled by `ldap/ldap_server.js` (#2118) | `common/CLAUDE.md` (*Named truststores*) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
 | `xacml/xacml_pep_binding.ts` | `setDirectory` (a PEP's entry located with its binding, `stsPepApplication` written and nothing else, its holders), filled by `ldap/ldap_server.js` (#2025) | `xacml/CLAUDE.md` |
 | `common/openpgp_keys.ts` | `setDirectory` (a person located with their S/MIME values, the five OpenPGP/mail-encryption attributes written, a person by `mail`), filled by `ldap/ldap_server.js` (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |

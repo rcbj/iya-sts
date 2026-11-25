@@ -618,6 +618,28 @@ class YubiOtpStore {
         onlySerial: serial });
       if (removed && removed.publicId) {
         this.dropPublicId(removed.publicId, removed.id);
+        // A CREDENTIAL REMOVED IS TOLD (#2163), as the OATH tokens' is:
+        // CAEP credential-change and the person's mail, which
+        // `hardware_tokens.markLost()` gathers into one notice. Required
+        // at the moment of use; the retirement stands either way.
+        try {
+          const signals = require('../ssf/account_signals');
+          signals.credentialChanged({ username: username,
+            credentialType: signals.YUBIOTP_CREDENTIAL_TYPE,
+            changeType: 'delete',
+            initiatingEntity: ctx && ctx.initiatingEntity === 'admin'
+              ? 'admin' : 'user',
+            via: String((ctx && ctx.via) || ''),
+            reasonAdmin: 'YubiKey OTP ' + serial + ' of ' + username +
+                         ' was reported lost, and its credential was ' +
+                         'retired.',
+            reasonUser: 'A YubiKey of yours was reported lost, and its ' +
+                        'YubiKey OTP was removed.' });
+        } catch (e) {
+          log.debug("Caught in YubiOtpStore.retire(): " +
+                    ((e && e.message) || e));
+          // The credential is retired whether or not anybody is told.
+        }
       }
     } catch (e) {
       log.error(this.deps.errorCodes.tag('STS-YUBIOTP-0028') +

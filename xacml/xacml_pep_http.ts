@@ -148,12 +148,15 @@ import InstanceSlot = require('../common/instance_slot');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
 import version = require('../common/version');
+// Whether the User-Agent may name the build (#2142). A leaf of this module.
+import mode = require('../common/mode');
 import OutboundTls = require('../common/outbound_tls');
 // The realm's `pep-tls` chain, the default trust of a nudge (2026-11-14). A
 // LIBRARY (rule 3w) that registers no route and requires nothing here.
 import pki = require('../common/pki');
 // The one place this service parses a certificate (#453), for the pin.
 import stsCrypto = require('../common/crypto');
+import truststores = require('../common/truststores');
 
 const { URL } = url;
 
@@ -292,7 +295,15 @@ class PepNotifier {
         helpers.log.debug("Leaving pepTlsChain().");
         return pki.useCaseChainPems('', 'pep-tls');
       },
-      userAgent: version.userAgent('xacml-pdp-notify'),
+      // ASKED PER REQUEST (#2142): product leaves the build out, and the
+      // mode is per realm and may change while the process runs.
+      get userAgent(): string {
+        helpers.log.debug("Entering PepNotifier.defaultDeps().userAgent.");
+        const out = version.userAgent('xacml-pdp-notify',
+          mode.publishesBuildDetail());
+        helpers.log.debug("Leaving PepNotifier.defaultDeps().userAgent.");
+        return out;
+      },
       pdpIdentity: function () {
         helpers.log.debug("Entering pdpIdentity().");
         // The base `/xacml/pep/*` is served under in this realm: pinned
@@ -450,7 +461,15 @@ class PepNotifier {
         anchors.push(pem);
       });
     }
-    const verified: any = OutboundTls.verifiedOptions(anchors);
+    // `outbound-xacml-pep`'s truststores where it is assigned (#2118); the pin
+    // to this realm's pep-tls Issuing CA below holds either way.
+    const assigned = truststores.namesFor('outbound-xacml-pep').assigned ?
+      OutboundTls.optionsFor('outbound-xacml-pep') : null;
+    if (assigned && assigned.problem) {
+      log.debug('Leaving PepNotifier.trust(). A store is unusable.');
+      return { ok: false, options: {}, why: assigned.problem.why };
+    }
+    const verified: any = assigned || OutboundTls.verifiedOptions(anchors);
     const hostCheck = verified.checkServerIdentity;
     verified.checkServerIdentity = function (host: string, cert: any) {
       const problem = hostCheck(host, cert);

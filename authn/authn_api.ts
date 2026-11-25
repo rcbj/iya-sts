@@ -556,6 +556,12 @@ interface AuthnApiDeps {
  */
 class AuthnApi {
   /**
+   * The API's own version, for the document's `info.version` where the
+   * build may not be shown (#2142).
+   */
+  static readonly API_VERSION = '1';
+
+  /**
    * Builds the API over its dependencies.
    *
    * @param deps - the modules it uses
@@ -793,9 +799,13 @@ class AuthnApi {
   openApi(req: AuthnRequest<'openApi'>, res: AuthnAnswering<'openApi'>): void {
     const { log, authn, helpers } = this.deps;
     log.debug("Entering AuthnApi.openApi().");
+    // OpenAPI requires `info.version`; where the build may not be shown
+    // (#2142) it is this API's own, as the reports API's document says.
+    const shown = require('../common/mode').publishesBuildDetail();
     authn.answerJson(res, 200, AuthnApi.document({
       baseUrl: helpers.baseUrlOf(req),
-      version: String(version.load().version || '') }));
+      version: shown ? String(version.load().version || '') :
+        AuthnApi.API_VERSION }));
     log.debug("Leaving AuthnApi.openApi().");
   }
 

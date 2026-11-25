@@ -1357,6 +1357,15 @@ const CODES = [
       'process never defined and the store no longer lists (#1938); it is ' +
       'asked again at the next realm read.',
     spec: '' },
+  { code: 'STS-CORE-0181',
+    summary: 'security.hstsPreload is on while ' +
+      'security.hstsIncludeSubDomains is off, so Strict-Transport-Security ' +
+      'is sent without preload: the HSTS preload list accepts a host only ' +
+      'when its header covers every subdomain (#2165). Logged when this ' +
+      'starts; /admin/mode shows it on the strict-transport-security row. ' +
+      'Turn on security.hstsIncludeSubDomains, or turn off ' +
+      'security.hstsPreload.',
+    spec: 'none — a warning; the header is still sent, without preload' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -5561,6 +5570,51 @@ const CODES = [
       'persisted (#2092); the list built is answered and the next build ' +
       'makes it again.',
     spec: 'Nothing: GET /pki/ssh-user-krl/{scope} answers the KRL' },
+  { code: 'STS-PKI-0300',
+    summary: 'The named truststores\' directory half is not installed in ' +
+      'this process (#2118): a partial slot was refused, or a write was ' +
+      'asked of a process with no directory.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0301',
+    summary: 'A truststore name resolves to nothing in the realm (#2118): ' +
+      'no built-in, view, setting, SPIFFE bundle or named truststore has ' +
+      'it, or the named truststore holds no such certificate.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}; at a validation, the use case\'s own refusal' },
+  { code: 'STS-PKI-0302',
+    summary: 'A service-wide use case was assigned a truststore a realm ' +
+      'other than the default defines (#2118, D2): a handshake, an ' +
+      'outbound dial and the database carry no realm.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0303',
+    summary: 'A truststore assignment names no use case this service has, ' +
+      'one that is not assigned truststores (pins, its own hierarchy, an ' +
+      'admission rule), or no truststore at all (#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0304',
+    summary: 'A SPIFFE use case was assigned a truststore that is not a ' +
+      'SPIFFE bundle, or another use case a SPIFFE bundle (#2118, D5).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0305',
+    summary: 'A new truststore\'s name is not 1 to 63 lower-case letters, ' +
+      'digits and hyphens, is a built-in name, or is taken in the realm ' +
+      '(#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0306',
+    summary: 'A named truststore is full: 64 per realm, 32 anchors or 64 ' +
+      'intermediates per truststore, or the directory itself (#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0307',
+    summary: 'A named truststore a use case of the realm still trusts was ' +
+      'asked to be deleted (#2118); the assignment is changed first.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -12315,6 +12369,25 @@ const CODES = [
       'DPoP proof: every token issued to that client is DPoP-bound (RFC ' +
       '9449) to the PEP\'s assertion key (#1827\'s follow-up).',
     spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-1013',
+    summary: 'The token endpoint refused to issue an access token that ' +
+      'nothing would bind: oauth2.accessTokenRequireSenderConstraint is on ' +
+      'and the request carried neither a DPoP proof nor a client ' +
+      'certificate (#2183, ASVS 5.0.0 10.3.5, 10.4.14).',
+    spec: 'RFC 9449 section 7.1: HTTP 400 invalid_dpop_proof' },
+  { code: 'STS-OAUTH-1014',
+    summary: 'The authorization endpoint refused a response_type that would ' +
+      'mint an access token in the browser, which could never be bound, ' +
+      'while oauth2.accessTokenRequireSenderConstraint is on (#2183).',
+    spec: 'RFC 6749 section 4.1.2.1: the redirect carries ' +
+      'unsupported_response_type' },
+  { code: 'STS-OAUTH-1015',
+    summary: 'The authorization endpoint refused a request that carried ' +
+      'RFC 9396 authorization_details and was not pushed, while ' +
+      'oauth2.authorizationDetailsRequirePar is on (#2185, ASVS 5.0.0 ' +
+      '10.4.15).',
+    spec: 'RFC 9126 section 4: HTTP 400 invalid_request, answered on this ' +
+      'server' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -16285,6 +16358,22 @@ const CODES = [
       'that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE ' +
       'instead of its reply; the change is retried (GitHub run #569).',
     spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
+  { code: 'STS-KRB-0260',
+    summary: 'A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 over ' +
+      'an algorithm this KDC does not accept: one MS-PKCA does not list, ' +
+      'or SHA-1 in product mode without crypto.allowLegacyHashes (#2125).',
+    spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
+      'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
+  { code: 'STS-KRB-0261',
+    summary: 'A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 that ' +
+      'is not the digest of the KDC-REQ-BODY under the algorithm it names ' +
+      '(#2125).',
+    spec: 'MS-PKCA section 2.2.3: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0262',
+    summary: 'A PKINIT PKAuthenticator carried no MS-PKCA paChecksum2, ' +
+      'which krb5.pkinitRequirePaChecksum2 requires (#2125).',
+    spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
+      'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -17230,6 +17319,11 @@ const CODES = [
       'attribute may be behind the entry until its job catches it up ' +
       '(#2050, #2051).',
     spec: 'none — logged' },
+  { code: 'STS-LDAP-0226',
+    summary: 'An LDAP search was refused before it read any entry: one of ' +
+      'its substring assertions held more components (initial, any, ' +
+      'final) than the limit of 32 (#2137).',
+    spec: 'LDAP adminLimitExceeded (11)' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -29168,69 +29262,78 @@ const CODES = [
       '(#2080).',
     spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
   { code: 'STS-ADMIN-0956',
+    summary: '/admin-api/truststores was asked for an action it does not ' +
+      'have; the refusal names the seven it has (#2118).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0957',
+    summary: 'A named truststore write was not made and the truststore ' +
+      'registry gave no code of its own for why: the directory carried out ' +
+      'nothing (#2118).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0970',
     summary: 'A decision on a held administrator act (two-person approval, ' +
       '#2166) named no act this realm holds, or an action POST ' +
       '/admin-api/approvals does not have.',
     spec: 'HTTP 404 (or 400 for an unknown action) { ok: false, errors }' },
-  { code: 'STS-ADMIN-0957',
+  { code: 'STS-ADMIN-0971',
     summary: 'The administrator who asked for a held act tried to approve or ' +
       'refuse it themselves; a second, different administrator must ' +
       '(#2166).',
     spec: 'HTTP 403 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0958',
+  { code: 'STS-ADMIN-0972',
     summary: 'A held administrator act was approved or refused by a caller ' +
       'that is not a person: an application\'s token, or nobody where ' +
       'the management API is open (#2166).',
     spec: 'HTTP 403 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0959',
+  { code: 'STS-ADMIN-0973',
     summary: 'A held administrator act was approved or refused by a person ' +
       'whose token does not carry the authority the act needs (Admin ' +
       'Write, or Security Administrator for a security change) ' +
       '(#2166).',
     spec: 'HTTP 403 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0960',
+  { code: 'STS-ADMIN-0974',
     summary: 'A held administrator act was approved, refused or withdrawn ' +
       'after it expired (admin.dualControlLifetimeHours); it is never ' +
       'run (#2166).',
     spec: 'HTTP 409 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0961',
+  { code: 'STS-ADMIN-0975',
     summary: 'A high-risk administrator act was neither held nor run: the ' +
       'realm already holds the most acts awaiting a second ' +
       'administrator it keeps (#2166).',
     spec: 'HTTP 400 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0962',
+  { code: 'STS-ADMIN-0976',
     summary: 'A high-risk administrator act ran without a second ' +
       'administrator, though two-person approval is on: nobody but ' +
       'its requester holds the authority it needs, and the act runs ' +
       'rather than locking the realm out (#2166). Recorded, not ' +
       'refused.',
     spec: 'none (an audit row; the act\'s own answer)' },
-  { code: 'STS-ADMIN-0963',
+  { code: 'STS-ADMIN-0977',
     summary: 'A high-risk administrator act ran without a second ' +
       'administrator, though two-person approval is on: the ' +
       'management API is open (adminApi.authRequired off, development ' +
       'only) and names no administrator (#2166). Recorded, not ' +
       'refused.',
     spec: 'none (an audit row; the act\'s own answer)' },
-  { code: 'STS-ADMIN-0964',
+  { code: 'STS-ADMIN-0978',
     summary: 'A held administrator act was approved, refused or withdrawn ' +
       'after it had already been decided or withdrawn (#2166).',
     spec: 'HTTP 409 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0965',
+  { code: 'STS-ADMIN-0979',
     summary: 'A held administrator act was approved, and not run: the ' +
       'administrator who asked for it no longer holds the authority ' +
       'it needs (#2166).',
     spec: 'HTTP 409 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0966',
+  { code: 'STS-ADMIN-0980',
     summary: 'A held administrator act was approved and run, and the act ' +
       'itself was refused when it ran against the state as it is now; ' +
       'its own answer is `result` (#2166).',
     spec: 'HTTP 409 { ok: false, errors, result }' },
-  { code: 'STS-ADMIN-0967',
+  { code: 'STS-ADMIN-0981',
     summary: 'Somebody other than the administrator who asked for a held act ' +
       'tried to withdraw it; they may refuse it instead (#2166).',
     spec: 'HTTP 403 { ok: false, errors }' },
-  { code: 'STS-ADMIN-0968',
+  { code: 'STS-ADMIN-0982',
     summary: 'The two-person approval expiry job (admin.dual-control) failed ' +
       'in a realm; the job reports the run failed and a read still ' +
       'applies each deadline (#2166).',
@@ -30390,6 +30493,15 @@ const CODES = [
   { code: 'STS-ACCOUNT-0023',
     summary: 'A token was refused because the person it names no longer exists.',
     spec: 'HTTP 401' },
+  { code: 'STS-ACCOUNT-0024',
+    summary: 'A signed-in person made more writes to their own account ' +
+      '(profile edits, credentials enrolled or removed, consents ' +
+      'withdrawn, device changes: every act of /account-api that is not ' +
+      'a GET) than account.writesPerSubject allows in an ' +
+      'account.writeWindowS window, counted by the token\'s subject; ' +
+      'further writes are refused until the window passes, and reads go ' +
+      'on (#2167, ASVS 5.0.0 2.4.2).',
+    spec: 'HTTP 429 { ok: false, errors, messages } with Retry-After' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -31844,6 +31956,14 @@ const CODES = [
       'visible to its owner.',
     spec: 'forbidden (HTTP 403); recorded for a scheduled run, whose ' +
       'occurrence is consumed' },
+  { code: 'STS-REPORT-0062',
+    summary: 'A caller of the Reports API made more expensive acts (an ad ' +
+      'hoc query or preview, a job queued, a saved definition run, a ' +
+      'result downloaded) than report.actsPerSubject allows in a ' +
+      'report.actWindowS window, counted by the token\'s subject; further ' +
+      'acts are refused until the window passes, and the other ' +
+      'operations go on (#2167, ASVS 5.0.0 2.4.2).',
+    spec: 'too_many_requests (HTTP 429) with Retry-After' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +

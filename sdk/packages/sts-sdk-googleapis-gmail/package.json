@@ -1,0 +1,10 @@
+{
+  "name": "sts-sdk-googleapis-gmail",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "Pins @googleapis/gmail for the image prefix /opt/sts-sdk (Dockerfile).",
+  "dependencies": {
+    "@googleapis/gmail": "22.1.0"
+  }
+}

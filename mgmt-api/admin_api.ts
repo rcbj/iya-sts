@@ -747,6 +747,48 @@ const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'create-app-password', 'revoke-app-password', 'export-ldif',
   'import-ldif', 'delete'];
 
+// ---------------------------------------------------------------------------
+// THE OTHER ACTS THAT NEED A RECENT SIGN-IN (#2161, ASVS 5.0.0 7.5.3; rcbj,
+// 2026-11-24). The list above names actions of `/users/:action` and
+// `/mfa/:action`, and those two handlers check it themselves. This is
+// declared by FAMILY rather than by action. `registerRoutes()` checks it
+// for every POST before the handler runs, so an action or a route added to
+// one of these families later needs no edit to be covered:
+//
+//   * by OpenAPI TAG: role grants and removals (`Admin roles`: the console
+//     roster; `Roles`: the role register, its members, permissions, owners
+//     and eligibility), the trust realms (create, change, remove), the PKI
+//     (CA, intermediate, certificates, revocation, the signer truststore,
+//     paranoid PKI mode) and the settings (`Configuration`: every
+//     `config/*` write, `global.mode` among them). A setting is not sorted
+//     into "security" and "other" here, because such a list is one a new
+//     security setting could be left off.
+//   * by ROUTE, where the tag is shared with acts that are not one of these
+//     (`Service` covers the mail outbox and the scheduler too): the signing
+//     keys (`/keys/*`: rotate, emergency, export), the data keys and the
+//     key-encryption key (`/encryption/*`), the TLS client truststore, and
+//     the secret push destinations (`/secret-destinations/*`), which hold
+//     what a rotated password is pushed with.
+//   * by ACTION, on a route whose other acts are not one of these: the
+//     krbtgt key, which signs every ticket and PAC, and a person's keytab
+//     reset, which sets their password.
+//   * and every request the gate already classifies as a Security
+//     Administrator's change (#645, `common/security_operations.ts`).
+//
+// An act marked `writesNothing` (a console form helper) is not asked. As for
+// the list above, only a token with a person behind it is asked, because a
+// program has nobody to sign in again, and the window is the same
+// `account.recentAuthMinutes`.
+// ---------------------------------------------------------------------------
+const RECENT_SIGN_IN_TAGS = ['Admin roles', 'Roles', 'Trust realms', 'PKI',
+  'Configuration'];
+const RECENT_SIGN_IN_ROUTES = ['/keys/:action', '/encryption/:action',
+  '/tls/trust/:action', '/secret-destinations/:action'];
+const RECENT_SIGN_IN_ACTIONS = {
+  '/kerberos/principals/:action': ['rotate-krbtgt', 'rotate-krbtgt-invalidate',
+    'reset-person-keytab']
+};
+
 class AdminApi {
   /**
    * Builds the management API over the given dependencies.
@@ -1785,15 +1827,78 @@ class AdminApi {
     const { log } = this.deps;
     log.debug("Entering AdminApi.reauthenticationOwed().");
     const caller = res && res.locals && res.locals.apiCaller;
-    const limit = Number(require('../common/config')
-      .value('account.recentAuthMinutes')) * 60;
-    if (!limit || !caller || caller.kind !== 'person' ||
-        REAUTHENTICATED_ACTIONS.indexOf(String(action)) < 0) {
+    if (REAUTHENTICATED_ACTIONS.indexOf(String(action)) < 0) {
       log.debug("Leaving AdminApi.reauthenticationOwed(). Not asked.");
       return false;
     }
-    const at = Number(caller.authTime || 0);
     log.debug("Leaving AdminApi.reauthenticationOwed().");
+    return AdminApi.signInIsStale(caller);
+  }
+
+  // Which of the families above a POST to a row is in: the family's name,
+  // or null where the act needs no recent sign-in beyond the list above.
+  /**
+   * Names the recent sign-in family a POST to a route row is in (#2161).
+   *
+   * @param entry - the route row
+   * @param action - the action the request names, '' for none
+   * @param securityChange - what the gate classified the request as, if
+   *   anything (#645)
+   * @returns the family's name, or null
+   */
+  static recentSignInFamilyOf(entry, action, securityChange?) {
+    log.debug("Entering AdminApi.recentSignInFamilyOf().");
+    const asked = String(action || '');
+    const declared = (entry && entry.actions || []).filter(function (one) {
+      return one.action === asked;
+    })[0];
+    if (declared && declared.writesNothing) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). Writes nothing.");
+      return null;
+    }
+    if (securityChange) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). A security " +
+                "change.");
+      return 'security change';
+    }
+    const route = String((entry && (entry.route || entry.path)) || '')
+      .replace(BASE, '');
+    if (entry && RECENT_SIGN_IN_TAGS.indexOf(String(entry.tag)) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + entry.tag + ".");
+      return String(entry.tag);
+    }
+    if (RECENT_SIGN_IN_ROUTES.indexOf(route) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + route + ".");
+      return route;
+    }
+    if ((RECENT_SIGN_IN_ACTIONS[route] || []).indexOf(asked) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + route + " " +
+                asked + ".");
+      return route + ' ' + asked;
+    }
+    log.debug("Leaving AdminApi.recentSignInFamilyOf(). None.");
+    return null;
+  }
+
+  // Whether the PERSON behind the token signed in longer ago than
+  // `account.recentAuthMinutes` allows. Zero (development's default) asks
+  // nobody; a program is never asked.
+  /**
+   * Whether the caller must sign in again before a sensitive act.
+   *
+   * @param caller - `res.locals.apiCaller`
+   * @returns true when the sign-in is stale
+   */
+  static signInIsStale(caller) {
+    log.debug("Entering AdminApi.signInIsStale().");
+    const limit = Number(require('../common/config')
+      .value('account.recentAuthMinutes')) * 60;
+    if (!limit || !caller || caller.kind !== 'person') {
+      log.debug("Leaving AdminApi.signInIsStale(). Not asked.");
+      return false;
+    }
+    const at = Number(caller.authTime || 0);
+    log.debug("Leaving AdminApi.signInIsStale().");
     return !(at > 0 && Date.now() / 1000 - at <= limit);
   }
 
@@ -1886,7 +1991,7 @@ class AdminApi {
       body: body, caller: res.locals && res.locals.apiCaller,
       authority: security ? 'SECURITY_ADMIN' : 'ADMIN_WRITE' });
     if (result.refused) {
-      errorCodes.mark(res, result.code || 'STS-ADMIN-0961');
+      errorCodes.mark(res, result.code || 'STS-ADMIN-0975');
       this.sendJson(res, 400, { ok: false, errors: result.errors });
       log.debug("Leaving AdminApi.holdForSecondAdministrator(). Refused.");
       return true;
@@ -1964,7 +2069,7 @@ class AdminApi {
     }
     if (body.action !== 'approve') {
       log.debug("Leaving AdminApi.decideHeld(). Unknown action.");
-      return { ok: false, status: 400, errorCode: 'STS-ADMIN-0956',
+      return { ok: false, status: 400, errorCode: 'STS-ADMIN-0970',
                errors: ['Unknown action "' + body.action + '". The three ' +
                         'are: approve, refuse, withdraw.'] };
     }
@@ -1972,7 +2077,7 @@ class AdminApi {
     // under the recent-sign-in rule, so the person who lets it run must have
     // signed in within `account.recentAuthMinutes` (0: not asked), answered
     // as RFC 9470 says so the console signs in again in its popup.
-    if (self.signInTooOld(res)) {
+    if (AdminApi.signInIsStale(caller)) {
       self.refuseStaleSignIn(req, res);
       log.debug("Leaving AdminApi.decideHeld(). Sign in again.");
       return null;
@@ -1988,7 +2093,7 @@ class AdminApi {
               ".");
     return { ok: result.ok,
              status: result.ok ? 200 : 409,
-             errorCode: result.ok ? '' : 'STS-ADMIN-0966',
+             errorCode: result.ok ? '' : 'STS-ADMIN-0980',
              message: result.ok
                ? 'Approved: ' + result.approval.what + ' ran as ' +
                  result.approval.requester + '\'s act.'
@@ -1998,28 +2103,6 @@ class AdminApi {
                  'The act was refused when it ran.']),
              approval: result.approval,
              result: result.body };
-  }
-
-  /**
-   * Whether the person this request's token names signed in longer ago than
-   * `account.recentAuthMinutes` allows. A program has no person to ask.
-   *
-   * @param res - the response, whose locals name the caller
-   * @returns true when they must sign in again
-   */
-  signInTooOld(res): boolean {
-    const { log } = this.deps;
-    log.debug("Entering AdminApi.signInTooOld().");
-    const caller = res && res.locals && res.locals.apiCaller;
-    const limit = Number(require('../common/config')
-      .value('account.recentAuthMinutes')) * 60;
-    if (!limit || !caller || caller.kind !== 'person') {
-      log.debug("Leaving AdminApi.signInTooOld(). Not asked.");
-      return false;
-    }
-    const at = Number(caller.authTime || 0);
-    log.debug("Leaving AdminApi.signInTooOld().");
-    return !(at > 0 && Date.now() / 1000 - at <= limit);
   }
 
   /**
@@ -6375,7 +6458,7 @@ class AdminApi {
                 return;
               }
               if (!result.ok) {
-                errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0956');
+                errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0970');
               }
               const answer = Object.assign({}, result);
               const status = Number(answer.status) ||
@@ -9250,6 +9333,60 @@ class AdminApi {
           { action: 'remove', operationId: 'removeSignerTrustAnchor' },
           { action: 'recheck', operationId: 'recheckPinnedCertificates' },
           { action: 'set-row', operationId: 'setParanoidPkiRow' }
+        ] }),
+
+      // #2118 PHASE 4. Named truststores and the use cases that trust them,
+      // the Truststores, Use cases and System truststore tabs of
+      // /admin/pki/trust. A path of its own rather than more actions under
+      // `/pki/trust`, whose `add` and `remove` already mean the signer
+      // truststore (which this API keeps, unchanged, as the `signers` view).
+      // The forms post from the two tabs, so each names its tab
+      // (`web_forms.ts` resolves `<page>#<tab> <action>` first): the page's
+      // own `add` stays `/pki/trust/add`.
+      { method: 'GET', path: BASE + '/truststores', tag: 'PKI',
+        operationId: 'getTruststores',
+        mirrors: 'GET /admin/pki/trust',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores endpoint.");
+          self.sendJson(res, 200, adminViews.namedTruststoresJson(req));
+          log.debug("Leaving the management API truststores endpoint.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/truststores/:action', tag: 'PKI',
+        mirrors: 'POST /admin/pki/trust#pki-trust-tab-truststores and ' +
+                 'POST /admin/pki/trust#pki-trust-tab-usecases',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          // AWAITED, AND THE REJECTION IS TURNED INTO A REFUSAL, `/pki/trust`'s
+          // reason: Express 4 does not look at what a handler returns.
+          adminActions.namedTruststoresAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) })
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0141');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API truststores action " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API truststores action " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0141');
+              self.sendJson(res, 500, { ok: false, errors: [e.message] });
+            });
+        },
+        actions: [
+          { action: 'show', operationId: 'showTruststore' },
+          { action: 'create', operationId: 'createTruststore' },
+          { action: 'delete', operationId: 'deleteTruststore' },
+          { action: 'add', operationId: 'addTruststoreCertificates' },
+          { action: 'remove', operationId: 'removeTruststoreCertificate' },
+          { action: 'assign', operationId: 'assignTruststores' },
+          { action: 'unassign', operationId: 'unassignTruststores' }
         ] }),
 
       ApiRows.actions({ method: 'POST',
@@ -12586,6 +12723,9 @@ class AdminApi {
         // not make it — see `common/security_operations.ts`.
         const securityChange = mdmFeed || pepFeed || consoleOp ? null
           : self.securityChangeOf(req);
+        // Kept for the route wrapper: a security change is one of the
+        // families that need a recent sign-in (#2161).
+        res.locals.securityChange = securityChange;
         const scopesWanted = mdmFeed ? 'device:compliance'
           : pepFeed ? 'xacml:pep-audit'
           : (consoleOp ? 'admin:console'
@@ -13581,11 +13721,25 @@ class AdminApi {
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
           return undefined;
         }
+        // A RECENT SIGN-IN FOR THE FAMILIES THAT NEED ONE (#2161), after
+        // the body is known to be well formed and before anything acts —
+        // before a hold too (#2166), so a held act's requester has signed
+        // in recently, and the decisions on held acts (tag `Admin roles`)
+        // are asked it as well.
+        const family = AdminApi.recentSignInFamilyOf(entry, asked,
+          res.locals.securityChange);
+        if (family && AdminApi.signInIsStale(res.locals.apiCaller)) {
+          log.debug("The management API asked for a recent sign-in before " +
+                    (entry.operationId || path) + " (" + family + ").");
+          self.refuseStaleSignIn(req, res);
+          return undefined;
+        }
         // TWO-PERSON APPROVAL (#2166): a held act is stored and answered
-        // 202 here, after the gate and the schema and before the handler,
-        // so the console's forms and a program's calls meet the one check.
-        // A replay of an approved act carries `__dualControlReplay` and is
-        // not held again.
+        // 202 here, after the gate, the schema and the recent sign-in and
+        // before the handler, so the console's forms and a program's calls
+        // meet the one check. An approved act's replay calls its handler
+        // directly (`replayHeld()`), with the approver's sign-in time, and
+        // is never held again.
         if (!req.__dualControlReplay &&
             self.holdForSecondAdministrator(entry, path, req, res)) {
           return undefined;

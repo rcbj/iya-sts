@@ -19,16 +19,16 @@
 //
 //   A. the setting off: nothing is held, and the act runs at once
 //   B. on: the act is held (202, an id, a Location), and does not run
-//   C. the requester cannot approve it (STS-ADMIN-0957), an application
-//      cannot (STS-ADMIN-0958), a person without the authority cannot
-//      (STS-ADMIN-0959)
+//   C. the requester cannot approve it (STS-ADMIN-0971), an application
+//      cannot (STS-ADMIN-0972), a person without the authority cannot
+//      (STS-ADMIN-0973)
 //   D. a second administrator approves it: the act runs, and the audit row
 //      names both
-//   E. refuse and withdraw; withdraw by somebody else (STS-ADMIN-0967); a
-//      decided act cannot be decided again (STS-ADMIN-0964)
+//   E. refuse and withdraw; withdraw by somebody else (STS-ADMIN-0981); a
+//      decided act cannot be decided again (STS-ADMIN-0978)
 //   F. expiry, at the read and by the job, with a clock of the test's own
 //   G. the single-administrator rule: nobody else holds the authority, and
-//      the act runs, recorded as STS-ADMIN-0962
+//      the act runs, recorded as STS-ADMIN-0976
 //   H. an approval asks for a recent sign-in (RFC 9470's answer, 401)
 //   I. parity: every row of the table is a management API POST that mirrors
 //      a console page; the decision operations mirror /admin/approvals; the
@@ -271,20 +271,20 @@ async function run(t) {
 
     // C. who may not decide
     const self = await decide(callerOf(alice), 'approve', id);
-    t.check(self.result && self.result.errorCode === 'STS-ADMIN-0957' &&
+    t.check(self.result && self.result.errorCode === 'STS-ADMIN-0971' &&
             self.result.status === 403 && !holdsWrite(carol),
-            'C1. the requester cannot approve their own act (STS-ADMIN-0957)',
+            'C1. the requester cannot approve their own act (STS-ADMIN-0971)',
             JSON.stringify(self.result));
     const machine = await decide({ kind: 'application', name: 'sts-api-client',
                                    roles: ['ADMIN_WRITE'] }, 'approve', id);
-    t.check(machine.result && machine.result.errorCode === 'STS-ADMIN-0958',
-            'C2. an application cannot approve one (STS-ADMIN-0958)',
+    t.check(machine.result && machine.result.errorCode === 'STS-ADMIN-0972',
+            'C2. an application cannot approve one (STS-ADMIN-0972)',
             JSON.stringify(machine.result));
     const reader = await decide(callerOf(dave, ['ADMIN_READ']), 'approve', id);
-    t.check(reader.result && reader.result.errorCode === 'STS-ADMIN-0959' &&
+    t.check(reader.result && reader.result.errorCode === 'STS-ADMIN-0973' &&
             !holdsWrite(carol),
             'C3. a person without Admin Write cannot approve it ' +
-            '(STS-ADMIN-0959)', JSON.stringify(reader.result));
+            '(STS-ADMIN-0973)', JSON.stringify(reader.result));
 
     // D. a second administrator approves: the act runs
     const seqD = lastSeq();
@@ -304,9 +304,9 @@ async function run(t) {
                 approved.result.approval.status },
                              row: row.detail }).slice(0, 700));
     const again = await decide(callerOf(bob), 'approve', id);
-    t.check(again.result && again.result.errorCode === 'STS-ADMIN-0964' &&
+    t.check(again.result && again.result.errorCode === 'STS-ADMIN-0978' &&
             again.result.status === 409,
-            'E1. a decided act cannot be decided again (STS-ADMIN-0964)',
+            'E1. a decided act cannot be decided again (STS-ADMIN-0978)',
             JSON.stringify(again.result));
 
     // E. refuse and withdraw
@@ -320,8 +320,8 @@ async function run(t) {
             JSON.stringify(refused.result));
     const third = tryGrant(callerOf(alice), dave).got.body.approval.id;
     const notYours = await decide(callerOf(bob), 'withdraw', third);
-    t.check(notYours.result && notYours.result.errorCode === 'STS-ADMIN-0967',
-            'E3. only the requester may withdraw (STS-ADMIN-0967)',
+    t.check(notYours.result && notYours.result.errorCode === 'STS-ADMIN-0981',
+            'E3. only the requester may withdraw (STS-ADMIN-0981)',
             JSON.stringify(notYours.result));
     const withdrawn = await decide(callerOf(alice), 'withdraw', third);
     t.check(withdrawn.result && withdrawn.result.ok === true &&
@@ -330,9 +330,9 @@ async function run(t) {
             'E4. alice withdraws her own: withdrawn, and nothing ran',
             JSON.stringify(withdrawn.result));
     const unknown = await decide(callerOf(bob), 'approve', 'dc_nothing');
-    t.check(unknown.result && unknown.result.errorCode === 'STS-ADMIN-0956' &&
+    t.check(unknown.result && unknown.result.errorCode === 'STS-ADMIN-0970' &&
             unknown.result.status === 404,
-            'E5. an unknown id is 404 (STS-ADMIN-0956)',
+            'E5. an unknown id is 404 (STS-ADMIN-0970)',
             JSON.stringify(unknown.result));
 
     // H. the approver's recent sign-in
@@ -363,12 +363,12 @@ async function run(t) {
     t.check(alone.answered === false &&
             rowsSince(seqG, 'admin.dual-control.proceeded').some(
               function (one) {
-                return one.errorCode === 'STS-ADMIN-0962';
+                return one.errorCode === 'STS-ADMIN-0976';
               }) &&
             dualControl.state().inForce === false &&
             /fewer than two/.test(dualControl.state().why),
             'G. with nobody but alice holding Admin Write the act is not ' +
-            'held — it runs, recorded STS-ADMIN-0962 — and the state says ' +
+            'held — it runs, recorded STS-ADMIN-0976 — and the state says ' +
             'the control is not in force', JSON.stringify(alone));
     rbac.grant(bob, 'write', { via: 'test' });
 
@@ -423,10 +423,10 @@ async function run(t) {
   const late = await lib.approve(idF, callerOf(bob), function () {
     return Promise.resolve({ status: 200, body: { ok: true } });
   });
-  t.check(heldF.held === true && late.errorCode === 'STS-ADMIN-0960' &&
+  t.check(heldF.held === true && late.errorCode === 'STS-ADMIN-0974' &&
           lib.get(idF).status === 'expired',
           'F1. an act past its deadline is expired at the read, and an ' +
-          'approval of it is refused (STS-ADMIN-0960) and runs nothing',
+          'approval of it is refused (STS-ADMIN-0974) and runs nothing',
           JSON.stringify({ held: heldF.held, late: late }));
   const heldF2 = lib.hold({ row: lib.rowOf('rotateKek'),
                             operationId: 'rotateKek',

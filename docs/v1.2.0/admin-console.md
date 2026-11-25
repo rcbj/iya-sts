@@ -260,7 +260,7 @@ act's row names both administrators.
 **A realm cannot be locked out.** When fewer than two people could decide an
 act (nobody but the requester holds the authority, or the management API is
 open in development), the act runs at once. The audit row says nobody
-approved it (`STS-ADMIN-0962`, `STS-ADMIN-0963`). **Mode** (`/admin/mode`)
+approved it (`STS-ADMIN-0976`, `STS-ADMIN-0977`). **Mode** (`/admin/mode`)
 shows whether two-person approval is on and in force, and how many people
 could decide each kind of act.
 

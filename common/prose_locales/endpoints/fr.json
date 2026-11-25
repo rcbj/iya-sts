@@ -879,6 +879,14 @@
     "en": "49eac4924ef09867",
     "text": "Modifier le magasin de confiance des signataires, une ligne paranoïaque, ou revérifier les épinglages"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "Magasins de confiance nommés et les cas d’usage qui leur font confiance"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "Modifier un magasin de confiance nommé ou ce à quoi un cas d’usage fait confiance"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Construire une hiérarchie, émettre une paire de clés, rédiger un certificat"

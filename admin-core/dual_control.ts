@@ -38,7 +38,7 @@
 //
 // THE SINGLE-ADMINISTRATOR RULE: when fewer than two people could decide —
 // the requester left out — the act PROCEEDS, and the audit row says nobody
-// approved it (`STS-ADMIN-0962`). Refusing to turn the setting on instead
+// approved it (`STS-ADMIN-0976`). Refusing to turn the setting on instead
 // would test the roster once, on the day it was turned on; a realm whose
 // administrators later left (and a person can leave the admin group over
 // LDAP, SCIM or a delete, none of which this holds) would have every held
@@ -73,7 +73,7 @@ const RETENTION_S = 7 * 86400;
 const PENDING_KEY = 'pending:requests';
 
 // The most pending requests one realm holds; past it a new hold is refused
-// (STS-ADMIN-0961), so the index row stays one small row.
+// (STS-ADMIN-0975), so the index row stays one small row.
 const MAX_PENDING = 200;
 
 // The id prefix, so an id is recognisably one of these in a log line.
@@ -605,28 +605,28 @@ class DualControl {
     // so there are no two administrators to tell apart: the act runs, and
     // the row says so.
     if (!caller || !caller.name) {
-      self.recordProceeded(spec, 'STS-ADMIN-0963',
+      self.recordProceeded(spec, 'STS-ADMIN-0977',
                            'the management API named no caller');
       log.debug("Leaving DualControl.hold(). No caller.");
-      return { held: false, code: 'STS-ADMIN-0963' };
+      return { held: false, code: 'STS-ADMIN-0977' };
     }
     // THE SINGLE-ADMINISTRATOR RULE (the header).
     const approvers = self.approversOf(authority, caller.name);
     if (approvers.length < 1) {
-      self.recordProceeded(spec, 'STS-ADMIN-0962',
+      self.recordProceeded(spec, 'STS-ADMIN-0976',
                            'nobody but the requester holds ' + authority);
       log.debug("Leaving DualControl.hold(). Nobody else could decide.");
-      return { held: false, code: 'STS-ADMIN-0962' };
+      return { held: false, code: 'STS-ADMIN-0976' };
     }
     const pending = self.pendingIds();
     if (pending.length >= MAX_PENDING) {
       audit.audit({ action: 'admin.dual-control.held', category: 'admin',
-                    actor: caller.name, errorCode: 'STS-ADMIN-0961',
+                    actor: caller.name, errorCode: 'STS-ADMIN-0975',
                     target: spec.operationId, outcome: 'refused',
                     detail: { operation: spec.operationId,
                               pending: pending.length } });
       log.debug("Leaving DualControl.hold(). Too many pending.");
-      return { held: false, refused: true, code: 'STS-ADMIN-0961',
+      return { held: false, refused: true, code: 'STS-ADMIN-0975',
                errors: ['This realm already holds ' + pending.length +
                         ' acts waiting for a second administrator. Decide ' +
                         'or withdraw some on /admin/approvals first.'] };
@@ -838,7 +838,7 @@ class DualControl {
     let why = '';
     const name = String((caller && caller.name) || '');
     if (!caller || !name || caller.kind !== 'person') {
-      code = 'STS-ADMIN-0958';
+      code = 'STS-ADMIN-0972';
       why = 'Only a person signed in to the console or holding a person\'s ' +
             'access token may ' + verb + ' a held act; this caller is ' +
             (name ? 'an application' : 'nobody') + '.';
@@ -846,11 +846,11 @@ class DualControl {
                  .toLowerCase() ||
                (caller.sub && row.requester.sub &&
                 String(caller.sub) === String(row.requester.sub))) {
-      code = 'STS-ADMIN-0957';
+      code = 'STS-ADMIN-0971';
       why = 'You asked for this act, so you cannot ' + verb + ' it: a ' +
             'second, different administrator must. You may withdraw it.';
     } else if ((caller.roles || []).indexOf(row.authority) < 0) {
-      code = 'STS-ADMIN-0959';
+      code = 'STS-ADMIN-0973';
       why = 'Deciding this act needs ' + row.authority + ', the authority ' +
             'the act itself needs, and this token does not carry it.';
     }
@@ -874,13 +874,13 @@ class DualControl {
     const row = this.get(id);
     let out: Json = null;
     if (!row) {
-      out = { ok: false, errorCode: 'STS-ADMIN-0956', status: 404,
+      out = { ok: false, errorCode: 'STS-ADMIN-0970', status: 404,
               errors: ['There is no held act ' + JSON.stringify(String(id)) +
                        ' in this realm.'] };
     } else if (row.status !== 'pending') {
       out = { ok: false, status: 409,
-              errorCode: row.status === 'expired' ? 'STS-ADMIN-0960'
-                                                  : 'STS-ADMIN-0964',
+              errorCode: row.status === 'expired' ? 'STS-ADMIN-0974'
+                                                  : 'STS-ADMIN-0978',
               errors: ['This held act is ' + row.status + ', so it can no ' +
                        'longer be ' + (verb === 'withdraw' ? 'withdrawn'
                          : verb + 'd') + '.'] };
@@ -930,9 +930,9 @@ class DualControl {
     if (!self.requesterStillHolds(row)) {
       self.finish(row, 'failed', caller.name,
                   'the requester no longer holds ' + row.authority,
-                  'STS-ADMIN-0965');
+                  'STS-ADMIN-0979');
       log.debug("Leaving DualControl.approve(). Requester lost it.");
-      return { ok: false, status: 409, errorCode: 'STS-ADMIN-0965',
+      return { ok: false, status: 409, errorCode: 'STS-ADMIN-0979',
                errors: [row.requester.name + ' no longer holds ' +
                         row.authority + ', so the act they asked for is not ' +
                         'run.'] };
@@ -961,10 +961,10 @@ class DualControl {
                                                  answer.body.errors) || []) };
     self.finish(row, ok ? 'done' : 'failed', caller.name,
                 ok ? 'approved and run' : 'approved, and the act was refused ' +
-                'when it ran', ok ? '' : 'STS-ADMIN-0966');
+                'when it ran', ok ? '' : 'STS-ADMIN-0980');
     audit.audit({ action: 'admin.dual-control.approved', category: 'admin',
                   actor: row.requester.name, target: row.id,
-                  errorCode: ok ? '' : 'STS-ADMIN-0966',
+                  errorCode: ok ? '' : 'STS-ADMIN-0980',
                   outcome: ok ? 'success' : 'failure',
                   summary: row.what + ' (' + row.operationId + '), asked by ' +
                            row.requester.name + ', approved by ' +
@@ -1027,10 +1027,10 @@ class DualControl {
         String(row.requester.name).toLowerCase()) {
       audit.audit({ action: 'admin.dual-control.decision-refused',
                     category: 'admin', actor: name, target: row.id,
-                    errorCode: 'STS-ADMIN-0967',
+                    errorCode: 'STS-ADMIN-0981',
                     detail: { request: row.id, verb: 'withdraw' } });
       log.debug("Leaving DualControl.withdraw(). Not the requester.");
-      return { ok: false, status: 403, errorCode: 'STS-ADMIN-0967',
+      return { ok: false, status: 403, errorCode: 'STS-ADMIN-0981',
                errors: ['Only ' + row.requester.name + ', who asked for ' +
                         'this act, may withdraw it. Refuse it instead.'] };
     }
@@ -1096,7 +1096,7 @@ class DualControl {
                     detail: { request: row.id, operation: row.operationId,
                               requestedBy: row.requester.name,
                               decidedBy: actor || '' } });
-    } else if (status === 'failed' && code === 'STS-ADMIN-0965') {
+    } else if (status === 'failed' && code === 'STS-ADMIN-0979') {
       audit.audit({ action: 'admin.dual-control.failed', category: 'admin',
                     actor: actor, target: row.id, errorCode: code,
                     outcome: 'refused',
@@ -1189,7 +1189,7 @@ class DualControl {
         requests.delete(PENDING_KEY);
       }
     } catch (e) {
-      log.error(errorCodes.tag('STS-ADMIN-0968') + 'dual control: the ' +
+      log.error(errorCodes.tag('STS-ADMIN-0982') + 'dual control: the ' +
                 'sweep failed: ' + ((e && e.message) || e));
       throw e;
     }

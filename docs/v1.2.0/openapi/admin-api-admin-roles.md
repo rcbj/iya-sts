@@ -34,7 +34,7 @@ Unless an operation below says otherwise, any status it does not list answers th
 
 TWO-PERSON APPROVAL (#2166, ASVS 5.0.0 2.3.5), off by default (`admin.dualControl`, per realm). With it on, the acts `table` lists are not done when the first administrator asks: each is stored and answered 202 with its id, and waits here until a second, different administrator holding the same authority approves or refuses it, its requester withdraws it, or it expires (`admin.dualControlLifetimeHours`).
 
-`state` says whether the control is on and IN FORCE: when fewer than two people could decide an act, the act runs at once and the audit row says nobody approved it (STS-ADMIN-0962), so that a realm can never be locked out. `requests` lists every held act this realm keeps, pending ones first; with `id`, `request` is that one. `you` is the caller's name, so a page can tell its own requests from others'.
+`state` says whether the control is on and IN FORCE: when fewer than two people could decide an act, the act runs at once and the audit row says nobody approved it (STS-ADMIN-0976), so that a realm can never be locked out. `requests` lists every held act this realm keeps, pending ones first; with `id`, `request` is that one. `you` is the caller's name, so a page can tell its own requests from others'.
 
 **Mirrors** `GET /admin/approvals` on the admin console.
 
@@ -91,7 +91,7 @@ Scope: `admin:read`.
 | `requests[].requester` | string | yes | Who asked for it. |
 | `requests[].status` | one of `pending`, `approved`, `done`, `failed`, `refused`, `withdrawn`, `expired` | yes | `pending` until somebody decides it; then `done` (approved and run), `failed` (approved, and the act was refused when it ran, or its requester no longer held the authority), `refused`, `withdrawn` or `expired`. |
 | `requests[].what` | string |  | What it does, in a sentence. |
-| `state` | object | yes | Whether two-person approval (#2166) is on in this realm and IN FORCE: when fewer than two people could decide an act needing an authority, that act runs at once (STS-ADMIN-0962) rather than lock the realm out, and `why` says so. |
+| `state` | object | yes | Whether two-person approval (#2166) is on in this realm and IN FORCE: when fewer than two people could decide an act needing an authority, that act runs at once (STS-ADMIN-0976) rather than lock the realm out, and `why` says so. |
 | `state.authorities` | list |  | Per authority, how many people could decide an act needing it. |
 | `state.authorities[].authority` | string | yes |  |
 | `state.authorities[].holders` | integer | yes |  |
