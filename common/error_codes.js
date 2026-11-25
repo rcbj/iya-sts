@@ -5651,8 +5651,11 @@ const CODES = [
       'or both of pasted keys and a jwks_uri were given; or a Trust ' +
       'Anchor\'s key set was given a jwks_uri (#2150); or an SSH CA ' +
       'truststore was given no key, more than 32, or a line that is not ' +
-      'an SSH public key (#2151). Also recorded where a stored key set no ' +
-      'longer reads, at a verification.',
+      'an SSH public key (#2151); or a cosign, sigstore-root or tuf-root ' +
+      'truststore was given no document, one over 256 KiB, or one that is ' +
+      'not PEM public keys, a trusted root or a TUF root (#2152). Also ' +
+      'recorded where a stored key set or a setting\'s file no longer ' +
+      'reads.',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0309',

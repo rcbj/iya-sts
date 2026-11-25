@@ -6820,14 +6820,14 @@ Scope: `admin:read`.
 | `stores[].intermediates` | integer | yes | The certificates it holds that are steps on a path, not anchors. |
 | `stores[].jwksUri` | string |  | A key-set truststore's jwks_uri, where its keys are fetched rather than pasted. |
 | `stores[].jwtKeys` | integer |  | A SPIFFE bundle truststore's JWT-SVID keys, counted. |
-| `stores[].keys` | integer |  | A key-set truststore's pasted keys, counted, 0 for one that is fetched; or an SSH CA truststore's keys, counted. |
+| `stores[].keys` | integer |  | A key-set truststore's pasted keys, counted, 0 for one that is fetched; an SSH CA truststore's keys, counted; or a document truststore's documents (a setting's files), counted. |
 | `stores[].kind` | string | yes | `built-in`, `view`, `setting`, `spiffe` or `named`. |
 | `stores[].name` | string | yes | Unique in its realm. A built-in (`system`, `service-root`, …), a view (`signers`, `client-certificates`), a legacy setting (`setting:<key>`), a SPIFFE bundle (`spiffe:<trust domain>`) or a named truststore. |
 | `stores[].party` | string |  | A key-set truststore's party, the one whose JSON Web Tokens its keys may verify: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`. |
 | `stores[].problem` | string | yes | Why what it names could not be read (an unreadable legacy file), in English; empty where nothing is wrong. |
 | `stores[].readOnly` | boolean | yes | Whether this realm may change it here: built-ins, views and settings are changed where they are kept, and a service-wide named truststore only from the default realm. |
 | `stores[].scope` | string | yes | `service` (the default realm's, nameable by a handshake or outbound use case) or `realm`. |
-| `stores[].storeKind` | string |  | What it holds where that is not certificates: `jwks`, a key set (#2149), or `ssh`, SSH certificate authority keys (#2151). |
+| `stores[].storeKind` | string |  | What it holds where that is not certificates: `jwks`, a key set (#2149), `ssh`, SSH certificate authority keys (#2151), or `cosign`, `sigstore-root` or `tuf-root`, Sigstore trust material held as a document (#2152). |
 | `stores[].trustDomain` | string |  | A SPIFFE bundle truststore's trust domain. |
 | `stores[].usedBy` | list | yes | The use cases that trust it in this realm, assigned or by default. |
 | `stores[].usedBy[]` | string |  |  |
@@ -6988,10 +6988,11 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `description` | string |  | What it is for, for a reader. |
+| `document` | string |  | A document truststore's document: PEM public keys (`cosign`), a trusted_root.json (`sigstore-root`) or a TUF root.json (`tuf-root`), as text (#2152). |
 | `jwks` | map, or string |  |  |
 | `jwks.{key}` | any JSON |  |  |
 | `jwksUri` | string |  | A key set's jwks_uri, fetched under the outbound policy; not with `jwks`. |
-| `kind` | string |  | `x509` (the default: certificates), `jwks`: a key set bound to one party (#2149), or `ssh`: SSH certificate authority keys (#2151). |
+| `kind` | string |  | `x509` (the default: certificates), `jwks`: a key set bound to one party (#2149), `ssh`: SSH certificate authority keys (#2151), or `cosign`, `sigstore-root` or `tuf-root`: a document of Sigstore trust material (#2152). |
 | `name` | string | yes | The truststore's name. |
 | `party` | string |  | A key set's party: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`. Fixed once created. |
 | `sshKeys` | string |  | An `ssh` truststore's SSH CA public keys, in authorized_keys form, one per line (#2151). |
@@ -7122,6 +7123,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `document` | string |  | For a document truststore: its new document, as text (#2152). |
 | `jwks` | map, or string |  |  |
 | `jwks.{key}` | any JSON |  |  |
 | `jwksUri` | string |  | A jwks_uri, fetched under the outbound policy; not with `jwks`. |

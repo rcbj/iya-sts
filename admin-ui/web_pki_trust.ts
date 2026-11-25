@@ -222,6 +222,49 @@ class PkiTrustPage {
         : '') + '</td></tr>';
   }
 
+  // A document truststore's row (#2152): which kind of Sigstore trust
+  // material, how many documents, who trusts it, and for one this realm
+  // holds, a form that replaces its document.
+  private static documentOf(row: Json, writable: boolean, ctx: Json): string {
+    const t = ctx.t;
+    const named = row.kind === 'named';
+    const detail = named && writable
+      ? '<details><summary>' + t.html('consolePkiTrust.setKeysHeading') +
+        '</summary><form method="post" action="' + PAGE + '#' + TAB_STORES +
+        '"><input type="hidden" name="action" value="set-keys">' +
+        '<input type="hidden" name="name" value="' + kit.esc(row.name) +
+        '"><textarea name="document" rows="6" aria-label="' +
+        kit.esc(t.text('consolePkiTrust.createDocument')) + '"></textarea>' +
+        '<div class="formrow"><button type="submit">' +
+        t.html('consolePkiTrust.setKeysButton') + '</button></div></form>' +
+        '</details>'
+      : '';
+    const control = writable
+      ? '<form method="post" action="' + PAGE + '#' + TAB_STORES + '">' +
+        '<input type="hidden" name="action" value="delete">' +
+        '<input type="hidden" name="name" value="' + kit.esc(row.name) + '">' +
+        '<button type="submit" class="secondary">' +
+        t.html('consolePkiTrust.deleteStore') + '</button></form>'
+      : '<span class="sub">' + PkiTrustPage.whereChanged(row, ctx) +
+        '</span>';
+    return '<tr><td><code>' + kit.esc(row.name) + '</code>' +
+      (row.description ? '<div class="sub">' + kit.esc(row.description) +
+        '</div>' : '') +
+      (row.problem ? '<div class="state-invalid">' + kit.esc(row.problem) +
+        '</div>' : '') + detail + '</td><td>' +
+      PkiTrustPage.kindText(row.kind, t) + '<div class="sub"><code>' +
+      kit.esc(row.storeKind) + '</code></div></td><td>' +
+      (row.scope === 'service' ? t.html('consolePkiTrust.scopeService')
+                               : t.html('consolePkiTrust.scopeRealm')) +
+      '</td><td>' + t.html('consolePkiTrust.documentsHeld',
+                           { n: String(row.keys || 0) }) + '</td><td>' +
+      ((row.usedBy || []).map(function (one: string) {
+        return '<code>' + kit.esc(one) + '</code>';
+      }).join(', ') || '<span class="sub">' +
+        t.html('consolePkiTrust.nobody') + '</span>') + '</td><td>' +
+      control + '</td></tr>';
+  }
+
   // A key set's row (#2149): its party, its keys or jwks_uri, who trusts it,
   // and for one this realm holds, a form that replaces its keys.
   private static keySetOf(row: Json, writable: boolean, ctx: Json): string {
@@ -293,6 +336,10 @@ class PkiTrustPage {
     const writable = !row.readOnly && row.kind === 'named' && ctx.write;
     if (row.storeKind === 'jwks' || row.storeKind === 'ssh') {
       return PkiTrustPage.keySetOf(row, writable, ctx);
+    }
+    if (['cosign', 'sigstore-root', 'tuf-root']
+          .indexOf(row.storeKind) >= 0) {
+      return PkiTrustPage.documentOf(row, writable, ctx);
     }
     const holds = t.html('consolePkiTrust.holds', {
       anchors: String(row.anchors), intermediates: String(row.intermediates)
@@ -375,7 +422,13 @@ class PkiTrustPage {
         t.html('consolePkiTrust.createKindX509') + '</option><option ' +
         'value="jwks">' + t.html('consolePkiTrust.createKindJwks') +
         '</option><option value="ssh">' +
-        t.html('consolePkiTrust.createKindSsh') + '</option></select></div>' +
+        t.html('consolePkiTrust.createKindSsh') + '</option>' +
+        '<option value="cosign">' + t.html('consolePkiTrust.createKindCosign') +
+        '</option><option value="sigstore-root">' +
+        t.html('consolePkiTrust.createKindSigstoreRoot') + '</option>' +
+        '<option value="tuf-root">' +
+        t.html('consolePkiTrust.createKindTufRoot') + '</option>' +
+        '</select></div>' +
         '<div class="formrow"><label for="truststore-party">' +
         t.html('consolePkiTrust.createParty') + '</label><input ' +
         'type="text" id="truststore-party" name="party" size="40" ' +
@@ -389,6 +442,10 @@ class PkiTrustPage {
         '</div><div class="formrow"><label for="truststore-ssh-keys">' +
         t.html('consolePkiTrust.createSshKeys') + '</label><textarea ' +
         'id="truststore-ssh-keys" name="sshKeys" rows="3"></textarea></div>' +
+        '<div class="formrow"><label for="truststore-document">' +
+        t.html('consolePkiTrust.createDocument') + '</label><textarea ' +
+        'id="truststore-document" name="document" rows="4"></textarea>' +
+        '</div>' +
         '<div class="formrow"><button type="submit">' +
         t.html('consolePkiTrust.createButton') + '</button></div></form>')
       : kit.note(t.html('consolePkiTrust.needsWrite'));

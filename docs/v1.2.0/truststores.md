@@ -91,6 +91,28 @@ checks a host certificate against; it defaults to the setting
 truststore. SSH CA keys and certificates never stand in for each other
 (`STS-PKI-0309`).
 
+## Sigstore trust material
+
+The SPIFFE Docker workload attestor's Sigstore check (#2152) trusts three
+kinds of document, each a truststore kind of its own that holds one
+document as text, at most 256 KiB:
+
+* **`cosign`**: 1 to 32 PEM public keys, for keyed signatures. Use case
+  `sigstore-cosign-key`, default `setting:spiffe.dockerSigstorePublicKeyFiles`.
+* **`sigstore-root`**: a Sigstore `trusted_root.json` (Fulcio, Rekor and CT
+  log keys), used while TUF is off. Several are combined into one, as the
+  format already lists several authorities and logs. Use case
+  `sigstore-trusted-root`, default
+  `setting:spiffe.dockerSigstoreTrustedRootFile`.
+* **`tuf-root`**: the TUF `root.json` the trusted root is delivered under.
+  TUF starts from exactly one root, so the first one the use case names
+  counts. TUF is on while `sigstore-tuf-root` names a root and
+  `spiffe.dockerSigstoreTufUrl` is set. Use case `sigstore-tuf-root`,
+  default `setting:spiffe.dockerSigstoreTufRootFile`.
+
+Each default reads the setting's files as before, under
+`security.fileRoots`, so nothing changes until you assign a truststore.
+
 ## Scope: service-wide and per realm
 
 Truststores you create in the **default realm** are service-wide. A
@@ -168,6 +190,9 @@ unassigned and its default list holds no anchor.
 | `claims-provider-jwt` | Aggregated or distributed claims a claims provider signed | realm | jwks | `registered-keys` |  |
 | `oidfed-anchor` | A Trust Anchor an OpenID Federation trust chain ends at, and its keys | realm | jwks | `registered-keys` |  |
 | `spiffe-sshpop` | An SSH host certificate a SPIFFE sshpop agent presents | realm | ssh | `setting:spiffe.sshpopCertAuthorities` |  |
+| `sigstore-cosign-key` | A cosign public key an image signature is verified with | realm | cosign | `setting:spiffe.dockerSigstorePublicKeyFiles` |  |
+| `sigstore-trusted-root` | A pinned Sigstore trusted root (Fulcio, Rekor and CT log keys), while TUF is off | realm | sigstore-root | `setting:spiffe.dockerSigstoreTrustedRootFile` |  |
+| `sigstore-tuf-root` | The TUF root the Sigstore trusted root is delivered under | realm | tuf-root | `setting:spiffe.dockerSigstoreTufRootFile` |  |
 | `revocation-signer` | A CRL issuer outside the path of the certificate checked | service | x509 | `setting:pki.revocationCrlIssuersFile` |  |
 | `cell-peer` | Another cell of this deployment | service | fixed | `service-root` |  |
 | `ca-import` | A certificate authority imported into this service's hierarchy | realm | admission | — |  |

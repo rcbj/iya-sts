@@ -174,8 +174,13 @@ class SigstoreTuf {
     const { log } = this.deps;
     log.debug("Entering SigstoreTuf.off().");
     let why = '';
-    if (!this.rootFile()) {
-      why = 'spiffe.dockerSigstoreTufRootFile is empty';
+    // ON while the sigstore-tuf-root use case names a root (#2152): by
+    // default the setting's file, as before.
+    const named: any = require('../common/truststores')
+      .documentsFor('sigstore-tuf-root');
+    if (!named.documents.length && !named.problems.length) {
+      why = named.assigned ? 'the sigstore-tuf-root truststores hold no ' +
+        'TUF root' : 'spiffe.dockerSigstoreTufRootFile is empty';
     } else if (!this.repository()) {
       why = 'spiffe.dockerSigstoreTufUrl is empty';
     }
@@ -191,10 +196,19 @@ class SigstoreTuf {
    *   the file's bytes
    */
   firstRoot(): { root: any; key: string } {
-    const { log, fs, stsCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering SigstoreTuf.firstRoot().");
-    require('../common/outbound_tls').assertNamedFile(this.rootFile());
-    const text = fs.readFileSync(this.rootFile());
+    // THE FIRST ROOT the sigstore-tuf-root use case names (#2152): TUF
+    // bootstraps from exactly one. Its bytes key the state, as the file's
+    // did, so a deployment that keeps the setting keeps its state.
+    const named: any = require('../common/truststores')
+      .documentsFor('sigstore-tuf-root');
+    if (named.problems.length && !named.documents.length) {
+      log.debug("Leaving SigstoreTuf.firstRoot(). Unreadable.");
+      throw new Error(String(named.problems[0].why));
+    }
+    const text = Buffer.from(String((named.documents[0] || {}).text || ''),
+                             'utf8');
     log.debug("Leaving SigstoreTuf.firstRoot().");
     return { root: JSON.parse(text.toString('utf8')),
              key: stsCrypto.sha256Hex(Buffer.concat([

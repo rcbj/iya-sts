@@ -26635,6 +26635,8 @@ function truststoreRows() {
       jwksUri: (a.ststruststorejwksuri || [])[0] || '',
       // An SSH CA truststore's (#2151): its keys, one per line.
       sshKeys: (a.ststruststoresshkeys || [])[0] || '',
+      // A document truststore's (#2152): the document as text.
+      document: (a.ststruststoredocument || [])[0] || '',
       addedBy: (a.ststrustanchoraddedby || [])[0] || '',
       addedAt: stored.createdAt || ''
     };
@@ -26666,12 +26668,13 @@ function writeTruststore(row) {
   }
   // A key-set truststore (#2149): written whole each time, so a changed key
   // set or jwks_uri replaces the old one rather than accumulating beside it.
-  ['party', 'jwks', 'jwksUri', 'sshKeys'].forEach(function (name) {
-    if (row[name]) {
-      attributes['stsTruststore' + name.charAt(0).toUpperCase() +
-                 name.slice(1)] = String(row[name]);
-    }
-  });
+  ['party', 'jwks', 'jwksUri', 'sshKeys', 'document'].forEach(
+    function (name) {
+      if (row[name]) {
+        attributes['stsTruststore' + name.charAt(0).toUpperCase() +
+                   name.slice(1)] = String(row[name]);
+      }
+    });
   putEntry(dn, attributes, { origin: 'truststore' });
   log.debug("Leaving writeTruststore().");
   return true;
