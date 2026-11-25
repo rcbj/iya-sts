@@ -109,6 +109,7 @@ import pki = require('./pki');
 import errorCodes = require('./error_codes');
 import mode = require('./mode');
 import webauthnCodec = require('../authn/webauthn');
+import truststores = require('./truststores');
 
 type Json = any;
 
@@ -441,7 +442,8 @@ class DeviceAttestation {
     }
     const chain = await this.chainOf(ders[0], ders.slice(1),
       pki.deviceAttestationAnchors('androidKeyAttestation',
-        config.value('devices.androidAttestationTrustAnchors')));
+        truststores.configuredPems('device-attestation-android')
+          .join('\n')));
     const said = 'Android Key Attestation, version ' +
       description.attestationVersion + ', security level ' + level;
     if (!chain.ok) {
@@ -534,7 +536,7 @@ class DeviceAttestation {
     // Step 1: the chain.
     const chain = await this.chainOf(x5c[0], x5c.slice(1),
       pki.deviceAttestationAnchors('appleAppAttest',
-        config.value('devices.appleAppAttestTrustAnchors')));
+        truststores.configuredPems('device-attestation-apple').join('\n')));
     if (!chain.ok) {
       log.debug("Leaving DeviceAttestation.appAttest(). Chain.");
       return falsified('the certificate chain does not end at the Apple App ' +
@@ -804,7 +806,7 @@ class DeviceAttestation {
     const chain = await this.chainOf(ak, certs.filter(function (one) {
       return one !== ak;
     }), pki.deviceAttestationAnchors('tpm',
-                                     config.value('devices.tpmTrustAnchors')),
+      truststores.configuredPems('device-attestation-tpm').join('\n')),
     'tpm');
     const said = 'TPM 2.0 key attestation (TPM2_Certify, ' + scheme.family +
       '/' + scheme.hash + '), extraData ' +

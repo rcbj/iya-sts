@@ -827,7 +827,9 @@
   "roleSelection": 779,
   "roleSelectionExclusive": 780,
   "appDynamicRoleSelection": 781,
-  "xacmlRole": 782
+  "xacmlRole": 782,
+  "stsTruststoreKind": 1005,
+  "stsTruststoreAssignment": 1006
  },
  "classes": {
   "spiffeAgent": 1,
@@ -851,6 +853,8 @@
   "stsServiceAccountPolicy": 19,
   "stsSignerTrustAnchor": 20,
   "stsTrustAnchor": 21,
+  "stsTruststore": 25,
+  "stsTruststoreAssignments": 26,
   "xacmlPep": 22,
   "xacmlPepCluster": 24,
   "xacmlPolicy": 23

@@ -1270,6 +1270,15 @@ is an empty field. A field is quoted when it contains a comma, a
 quotation mark, CR or LF. A quotation mark inside a quoted field is
 doubled.
 
+A text value that a spreadsheet would read as a formula gets a single
+quote (`'`) in front of it: one whose first character is `=`, `+`, `-`,
+`@`, a tab, a carriage return or NUL. `=SUM(A1)` is written `'=SUM(A1)`,
+so Excel, LibreOffice and Google Sheets show it as text instead of
+running it. The quote is visible in the cell. A number is never
+prefixed: a negative count such as `-5` stays a number you can sum. The
+text `-5` (a name someone typed, say) is prefixed like any other text.
+The same rule applies to the passkey report's CSV export.
+
 **PDF.** PDF 1.4, Helvetica, WinAnsi, US Letter. A value wraps within
 its column: a long value takes as many lines as it needs, broken at a
 space where one falls within the line, and a line feed in a value starts
@@ -1291,7 +1300,9 @@ Swedish. Chinese is drawn in English, and the page adds
 
 The body is `{ "error", "error_description" }`. `error` is the public
 token. The description is one English sentence. The `STS-REPORT-` code
-is recorded and logged. It is not in the body.
+is recorded and logged. It is not in the body. A refusal whose sentence is
+a catalog message also carries `messages: [{ key, params }]`, which the
+`/report` page draws in its own language.
 
 | Token | HTTP | When |
 |---|---|---|
@@ -1311,6 +1322,7 @@ is recorded and logged. It is not in the body.
 | `job_not_ready` | 409 | The result was asked for before the job completed. |
 | `result_expired` | 410 | The artifact aged out, or the job completed and the bytes are gone. |
 | `too_many_jobs` | 429 | This person or this realm already has as many queued and running jobs as the queue allows. |
+| `too_many_requests` | 429 | This caller has spent its budget of expensive acts: more queries or previews, jobs queued, definitions run and results downloaded than `report.actsPerSubject` allows in `report.actWindowS` (240 in ten minutes by default in product mode; off in development). `Retry-After` says how many seconds remain. Counted by the token's subject, so other callers are not affected, and the lists, definitions and a job's status can still be read (`STS-REPORT-0062`). |
 | `unavailable` | 400 | A report could not be completed. The code's own note says 500; this API answers 400. |
 
 `GET` or `HEAD` is the only method on `/report` itself. Anything else is

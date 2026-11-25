@@ -1375,9 +1375,11 @@ class Credentials {
   // `verifyPrepare()` — the reserved refusal, development mode, a missing name,
   // a missing store, a store that threw, nobody by that name, a stored form
   // this service did not write. Those are the overwhelming majority of refusals
-  // and none of them costs 68ms. What comes back is either a finished answer or
-  // the stored value to compare against, and the two doors differ only in which
-  // process runs the comparison.
+  // and none of them NEEDS a derivation — though since #2136 the ones that
+  // would otherwise tell a guesser an account exists PAY for one anyway
+  // (`decoy`; `spendDecoy()` below). What comes back is either a finished
+  // answer or the stored value to compare against, and the two doors differ
+  // only in which process runs the comparison.
   //
   // The alternative — an async door with its own copy of those seven refusals —
   // is the shape this file exists to avoid: `verify()` is the one place a
@@ -1416,7 +1418,10 @@ class Credentials {
       log.info('credentials: ' + name + ' is disabled and was refused (via ' +
                via + ').');
       log.debug('Leaving Credentials.verifyPrepare(). Disabled.');
-      return { done: this.disabledRefusal(name, via) };
+      // #2136: in a mode that compares passwords, the refusal costs what a
+      // wrong password does, so its timing does not say the name exists.
+      return { name: name, decoy: mode.verifiesCredentials(),
+               done: this.disabledRefusal(name, via) };
     }
 
     // A SERVICE ACCOUNT AT A DOOR ITS POLICY DOES NOT OPEN (#221), in BOTH
@@ -1429,7 +1434,8 @@ class Credentials {
     if (accountRefused) {
       log.debug('Leaving Credentials.verifyPrepare(). A service account at ' +
                 'a door its policy closes.');
-      return { done: accountRefused };
+      return { name: name, decoy: mode.verifiesCredentials(),
+               done: accountRefused };
     }
 
     if (!mode.verifiesCredentials()) {
@@ -1480,7 +1486,13 @@ class Credentials {
                 'holds a password.');
       // `name` rides beside the refusal: a person with no password may still
       // hold an app password, and `verify()` asks about that first (#101).
-      return { name: name, via: via, done: coded('STS-AUTHN-0052', { ok: false,
+      // `decoy` (#2136): THE ACCOUNT-EXISTENCE TIMING. This refusal used to
+      // cost nothing where a wrong password costs a derivation, so the
+      // response time named the accounts that exist. Both doors now verify
+      // the presented password against `crypto.decoyPasswordHash()` and
+      // discard the result; the refusal and its reason are unchanged.
+      return { name: name, via: via, decoy: true,
+               done: coded('STS-AUTHN-0052', { ok: false,
                reason: 'no-credential',
                detail: 'no ' + PASSWORD_ATTRIBUTE + ' is set for "' + name +
                        '". In product mode a person with no stored ' +
@@ -1499,7 +1511,8 @@ class Credentials {
                ' that this service did not write and cannot read. It is ' +
                'being REFUSED rather than compared as plaintext.');
       log.debug('Leaving Credentials.verifyPrepare(). Unreadable stored form.');
-      return { name: name, via: via, done: coded('STS-AUTHN-0053',
+      return { name: name, via: via, decoy: true,
+               done: coded('STS-AUTHN-0053',
                            { ok: false, reason: 'unreadable-credential',
                detail: 'the stored ' + PASSWORD_ATTRIBUTE + ' is not in the ' +
                        'form this service writes, so it cannot be ' +
@@ -1508,6 +1521,82 @@ class Credentials {
 
     log.debug('Leaving Credentials.verifyPrepare(). A comparison is needed.');
     return { stored: stored, name: name, via: via };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DECOY DERIVATION (#2136, ASVS 5.0.0 6.3.8 and 11.2.4). A refusal
+  // `verifyPrepare()` decided without a comparison — nobody by that name, a
+  // stored value this service cannot read, a disabled account, a service
+  // account at a door its policy closes — still costs one derivation: the
+  // presented password verified against `crypto.decoyPasswordHash()` at the
+  // hash spec the person's password policy would write, and the result
+  // DISCARDED. Without it the response time said which accounts exist,
+  // whatever the response said. Only in a mode that compares passwords
+  // (`verifyPrepare()` sets `decoy` there and nowhere else): development
+  // compares none, so every answer there is equally cheap already.
+  //
+  // It never throws and never changes the answer: a spec that cannot be
+  // read falls back to the default one, and a hash that cannot be made is
+  // logged and skipped, because a refusal that failed to cost enough is
+  // still the right refusal.
+  // ---------------------------------------------------------------------------
+  private decoyHash(name) {
+    const { log, crypto, passwordPolicy } = this.deps;
+    log.debug('Entering Credentials.decoyHash().');
+    let spec = null;
+    try {
+      spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
+    } catch (e) {
+      log.debug('Caught in Credentials.decoyHash(): ' +
+                ((e && e.message) || e));
+      spec = null;
+    }
+    let hash = '';
+    try {
+      hash = crypto.decoyPasswordHash(spec);
+    } catch (e) {
+      log.debug('Caught in Credentials.decoyHash(): ' +
+                ((e && e.message) || e));
+      log.warn('credentials: no decoy password hash could be made, so a ' +
+               'refusal that needed no comparison costs less than a wrong ' +
+               'password this time: ' + ((e && e.message) || e));
+      hash = '';
+    }
+    log.debug('Leaving Credentials.decoyHash().');
+    return hash;
+  }
+
+  // On this thread, as `verify()` runs its comparison.
+  private spendDecoy(name, password) {
+    const { log, crypto } = this.deps;
+    log.debug('Entering Credentials.spendDecoy().');
+    const hash = this.decoyHash(name);
+    if (hash) {
+      crypto.verifySecret(String(password == null ? '' : password), hash);
+    }
+    log.debug('Leaving Credentials.spendDecoy().');
+  }
+
+  // On libuv's thread pool, as `verifyAsync()` runs its comparison. Never
+  // rejects: `verifySecretAsync()` does not either.
+  private spendDecoyAsync(name, password) {
+    const { log, crypto } = this.deps;
+    log.debug('Entering Credentials.spendDecoyAsync().');
+    const hash = this.decoyHash(name);
+    if (!hash) {
+      log.debug('Leaving Credentials.spendDecoyAsync(). No decoy.');
+      return Promise.resolve(false);
+    }
+    log.debug('Leaving Credentials.spendDecoyAsync(). On libuv.');
+    return crypto.verifySecretAsync(String(password == null ? '' : password),
+                                    hash)
+      .then(() => {
+        return false;
+      }, (e) => {
+        log.debug('Caught in Credentials.spendDecoyAsync(): ' +
+                  ((e && e.message) || e));
+        return false;
+      });
   }
 
   // The answer, once the comparison has been made in whichever process made it.
@@ -1806,6 +1895,9 @@ class Credentials {
       }
     }
     if (ready.done) {
+      if (ready.decoy) {
+        this.spendDecoy(ready.name, password);
+      }
       this.noteRefusal(username, opts, ready.done);
       log.debug('Leaving Credentials.verify(). Decided without a derivation.');
       return ready.done;
@@ -2041,6 +2133,13 @@ class Credentials {
       log.debug('Entering Credentials.verifyAsync() password step.');
       if (ready.done) {
         this.noteRefusal(username, opts, ready.done);
+        if (ready.decoy) {
+          log.debug('Leaving Credentials.verifyAsync() password step. ' +
+                    'Decided without a derivation; a decoy one on libuv.');
+          return this.spendDecoyAsync(ready.name, password).then(() => {
+            return ready.done;
+          });
+        }
         log.debug('Leaving Credentials.verifyAsync() password step. ' +
                   'Decided without a derivation.');
         return Promise.resolve(ready.done);

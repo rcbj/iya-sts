@@ -883,6 +883,14 @@
     "en": "49eac4924ef09867",
     "text": "Den Signierer-Truststore ändern, eine Paranoid-Zeile oder die Pins erneut prüfen"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "Benannte Truststores und die Anwendungsfälle, die ihnen vertrauen"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "Einen benannten Truststore ändern oder das, wem ein Anwendungsfall vertraut"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Eine Hierarchie aufbauen, ein Schlüsselpaar ausstellen, ein Zertifikat verfassen"

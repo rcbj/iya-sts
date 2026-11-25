@@ -55,6 +55,8 @@ Do not edit it by hand.
 | [Signer trust anchor](#signer-trust-anchor) | `SignerTrustAnchor` | ou=signerTrustAnchors | 5 |
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
+| [Named truststore](#named-truststore) | `Truststore` | ou=truststores | 2 |
+| [Truststore assignments](#truststore-assignments) | `TruststoreAssignments` |  | 1 |
 | [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 26 |
 | [XACML policy enforcement point cluster](#xacml-policy-enforcement-point-cluster) | `XacmlPepCluster` | ou=pepClusters | 5 |
 | [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 12 |
@@ -1341,6 +1343,38 @@ One entry per client truststore anchor, in the default realm.
 | `stsTrustAnchorAddedBy` | one | this service | `1.3.6.1.4.1.67607.1.1.690` | Who added the anchor, from the console or the management API; empty where nobody is recorded. |
 | `stsTrustAnchorCertificate` | one | this service | `1.3.6.1.4.1.67607.1.1.691` | The anchor's certificate, PEM. A client certificate presented at a TLS handshake may chain to it. |
 | `stsTrustAnchorFingerprint` | one | this service | `1.3.6.1.4.1.67607.1.1.692` | The certificate's SHA-256 fingerprint, which also names the entry. |
+
+## Named truststore
+
+TypeSpec model `Truststore`.
+Container `ou=truststores`.
+Held in the catalogue. No SCHEMA module.
+One entry per named truststore; its certificates are stsSignerTrustAnchor entries beneath it.
+
+| Class | Origin | OID | Kind | Superior | Description |
+|---|---|---|---|---|---|
+| `stsTruststore` | this service | `1.3.6.1.4.1.67607.1.2.25` | structural | top | This service's class for a named truststore. |
+| `top` | RFC | `2.5.6.0` | abstract |  | The abstract class every entry carries. |
+
+| Attribute | Values | Origin | OID | Description |
+|---|---|---|---|---|
+| `stsTrustAnchorAddedBy` | one | this service | `1.3.6.1.4.1.67607.1.1.690` | Who created the truststore, from the console or the management API; empty where nobody is recorded. |
+| `stsTruststoreKind` | one | this service | `1.3.6.1.4.1.67607.1.1.1005` | What the truststore holds: x509 (certificate authorities). Absent is x509. |
+
+## Truststore assignments
+
+TypeSpec model `TruststoreAssignments`.
+Held in the catalogue. No SCHEMA module.
+One entry, cn=assignments: the truststores each use case of this realm trusts.
+
+| Class | Origin | OID | Kind | Superior | Description |
+|---|---|---|---|---|---|
+| `stsTruststoreAssignments` | this service | `1.3.6.1.4.1.67607.1.2.26` | structural | top | This service's class for a realm's truststore assignments. |
+| `top` | RFC | `2.5.6.0` | abstract |  | The abstract class every entry carries. |
+
+| Attribute | Values | Origin | OID | Description |
+|---|---|---|---|---|
+| `stsTruststoreAssignment` | several | this service | `1.3.6.1.4.1.67607.1.1.1006` | One use case and the truststores it trusts, as '<use case> <name>,<name>', in order. A use case with no value trusts its default list. |
 
 ## XACML policy enforcement point
 

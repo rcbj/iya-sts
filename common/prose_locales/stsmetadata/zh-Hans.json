@@ -1747,6 +1747,14 @@
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row——/admin/pki/trust 上的控件。add 接受 `certificates`（一个或多个 PEM 块，每个都经过准入规则，每次拒绝都会指明），并可用 `purposes` 加以限制；remove 接受一个 `fingerprint`；recheck 立即运行审计；set-row 接受一个 `pki.paranoid*` `setting` 及其 `value`，经由普通的设置写入。需要 admin:write。写入 ou=signerTrustAnchors，因此更改在重启后依然存在。"
   },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "以 JSON 形式提供的 /admin/pki/trust 的“信任库”“用例”和“系统信任库”选项卡（#2118）：此领域可以指名的每个信任库（内置、视图、设置、SPIFFE 包或命名），附带其内容计数和信任它的用例；每个用例当前信任的内容及其默认值；各项限制；以及逐个证书描述（不含 PEM）的 node 默认存储。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign——/admin/pki/trust 的“信任库”和“用例”选项卡上的控件（#2118）。show 接受一个 `name`（及 `withPem`），不写入任何内容；create 接受一个 `name` 和一个 `description`；只要有用例信任该信任库，delete 就会被拒绝；add 接受 `certificates`，每个都经过准入规则，每次拒绝都会指明；remove 接受一个 `fingerprint`；assign 接受一个 `useCase` 及其有序的 `truststores`，unassign 将用例恢复为默认值。作用于整个服务的用例只能从默认领域分配。需要 admin:write。写入 ou=truststores，因此更改在重启后依然存在。"
+  },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
     "text": "非规范。两个控制台页面背后的十二个操作——/admin/pki 上的 build、clear、issue、revoke，以及 证书工作台上的 apply-profile、generate-keys、generate-alt-keys、issue-certificate、use-key、remove-object、clear-store、export——通过这些页面调用的同一个 pkiAction() 执行。**它以解析结果而非直接返回的方式应答**：签发全程使用 Web Crypto，因此这是此 API 中两个需要 await 的操作处理程序之一（另一个是 /admin-api/ssf）。`issue` 只交出私钥一次，本服务不保留第二份副本；`export` 以 base64 返回密钥材料，与 /admin-api/keys/export 相同，理由也相同。**对应用而言，`revoke` 不吊销任何东西**：它将密钥对从应用上移除，从而使本服务不再接受该密钥签名的内容，而证书仍然可以正常构成证书链——回复中会明确这样说明。`issue` 和 `revoke` 接收的 `target` 可以是 application（默认）或 person——个人在其 ou=users 条目上以 stsAssertion* 形式持有多个密钥对，每个都只能对其本人作出断言；带 `handle` 的 `revoke` 会把其中一个列入其签发机构的 CRL（#1290）。对应 POST /admin/pki、POST /admin/pki/certificate 和 POST /admin/pki/person。"

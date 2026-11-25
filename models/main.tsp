@@ -30,6 +30,7 @@ import "./directory/claim_provider.tsp";
 import "./directory/kerberos_trust.tsp";
 import "./directory/trust_anchor.tsp";
 import "./directory/signer_trust_anchor.tsp";
+import "./directory/truststore.tsp";
 import "./directory/names.tsp";
 import "./domain/identity.tsp";
 import "./domain/application.tsp";

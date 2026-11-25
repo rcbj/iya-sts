@@ -883,6 +883,14 @@
     "en": "49eac4924ef09867",
     "text": "Cambiar el almacén de confianza de firmantes, una fila paranoica, o volver a comprobar las fijaciones"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "Almacenes de confianza con nombre y los casos de uso que confían en ellos"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "Cambiar un almacén de confianza con nombre o aquello en que confía un caso de uso"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Construir una jerarquía, emitir un par de claves, redactar un certificado"

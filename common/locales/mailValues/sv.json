@@ -12,5 +12,8 @@
   "act.credentialCompromised": "autentiseringsuppgift markerad som komprometterad",
   "act.accountDisabled": "kontot inaktiverat",
   "rights.access": "åtkomst",
-  "address.none": "(ingen)"
+  "address.none": "(ingen)",
+  "credentialChange.item": "{kind, select, passkey {passkey eller säkerhetsnyckel} totp {autentiseringsapp} app-password {applösenord} hotp {engångskodstoken} yubiotp {YubiKey OTP} recovery-codes {återställningskoder} certificate {certifikat} certificate-binding {certifikatkoppling för inloggning} smime {S/MIME-certifikat} openpgp {OpenPGP-nyckel} other {inloggningsuppgift}}: {change, select, added {tillagd} generated {genererade} removed {borttagen} other {ändrad}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {passkey eller säkerhetsnyckel} totp {autentiseringsapp} app-password {applösenord} hotp {engångskodstoken} yubiotp {YubiKey OTP} recovery-codes {återställningskoder} certificate {certifikat} certificate-binding {certifikatkoppling för inloggning} smime {S/MIME-certifikat} openpgp {OpenPGP-nyckel} other {inloggningsuppgift}} ”{label}”: {change, select, added {tillagd} generated {genererade} removed {borttagen} other {ändrad}}",
+  "credentialChange.by": "{entity, select, user {av dig, i portalen eller vid inloggning} other {av en administratör}}"
 }

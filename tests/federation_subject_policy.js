@@ -124,6 +124,13 @@ function childMain() {
 
     // --- a cookie jar, and a request that keeps it --------------------------
     let jar = {};
+    // Every flow cookie (#1497) set and cleared on an answer (#2139).
+    const flowLines = { set: 0, cleared: 0 };
+    function flowCookiesInJar() {
+      return Object.keys(jar).filter(function (k) {
+        return /sts_fed_flow_/.test(k);
+      });
+    }
     function cookieHeader() {
       return Object.keys(jar).map(function (k) {
         return k + '=' + jar[k];
@@ -152,6 +159,9 @@ function childMain() {
             if (i > 0) {
               const name = pair.slice(0, i).trim();
               const value = pair.slice(i + 1).trim();
+              if (/sts_fed_flow_/.test(name)) {
+                flowLines[value ? 'set' : 'cleared'] += 1;
+              }
               if (value) {
                 jar[name] = value;
               } else {
@@ -605,7 +615,21 @@ function childMain() {
     const CAROL = 'fsp-carol-' + MODE;
     makePerson(CAROL, 'local-carol@sp.example');
     mark = auditCount();
+    const flowBefore = { set: flowLines.set, cleared: flowLines.cleared };
     got = await signIn(CAROL, { link: 'cancel' });
+    // THE FLOW'S COOKIE IS CLEARED BY THE ANSWER THAT ENDS IT (#2139): the
+    // partner's answer at the assertion consumer service, which hands the
+    // person on to the linking screen, clears it.
+    if (MODE === 'product') {
+      note(flowLines.set - flowBefore.set === 1 &&
+           flowLines.cleared - flowBefore.cleared === 1 &&
+           flowCookiesInJar().length === 0,
+           '1i-000. a flow\'s cookie is set at its start and cleared by the ' +
+           'answer that ends it (#2139)', JSON.stringify({
+             set: flowLines.set - flowBefore.set,
+             cleared: flowLines.cleared - flowBefore.cleared,
+             left: flowCookiesInJar() }));
+    }
     const carol = entryOf(CAROL);
     note(got.r.status === 403 && viewOf(got.r) &&
          viewOf(got.r).what === 'The account was not linked' &&
@@ -615,6 +639,40 @@ function childMain() {
          '1i. Cancel at the linking screen: refused 403 (STS-FED-0099), ' +
          'nothing linked or written',
          got.r.status + ' ' + JSON.stringify(codesSince(mark)));
+
+    // THE PARTNER'S ERROR ENDS THE FLOW TOO, AND STARTS DO NOT ACCUMULATE
+    // (#2139).
+    if (MODE === 'product') {
+      jar = {};
+      const started = await request('GET', '/realm/' + SP +
+                                    '/federation/login/' + REL);
+      const state = new URL(String(started.headers.location || ''), base)
+        .searchParams.get('state') || '';
+      const heldAtStart = flowCookiesInJar().length;
+      const refused = await request('GET', '/realm/' + SP +
+        '/federation/acs/' + REL + '?error=access_denied&state=' +
+        encodeURIComponent(state));
+      note(state && heldAtStart === 1 && refused.status === 400 &&
+           flowCookiesInJar().length === 0,
+           '1i-0000. a partner\'s error answer clears the flow\'s cookie ' +
+           '(#2139)', JSON.stringify({ state: !!state, heldAtStart: heldAtStart,
+             status: refused.status, left: flowCookiesInJar() }));
+      jar = {};
+      const counts = [];
+      let first = '';
+      for (let i = 0; i < 11; i += 1) {
+        await request('GET', '/realm/' + SP + '/federation/login/' + REL);
+        counts.push(flowCookiesInJar().length);
+        first = first || flowCookiesInJar()[0] || '';
+        // Apart by a millisecond at least, so that the names order by age.
+        await wait(2);
+      }
+      note(Math.max.apply(null, counts) === 8 && counts[10] === 8 &&
+           counts[0] === 1 && first && jar[first] === undefined,
+           '1i-00000. eleven starts in one browser leave at most eight live ' +
+           'flow cookies, the oldest cleared (#2139)', JSON.stringify(counts));
+      jar = {};
+    }
 
     // A SECOND FACTOR HELD
     const DAVE = 'fsp-dave-' + MODE;

@@ -1775,7 +1775,10 @@ person until their new passkey has signed them in on their own device.
    cn in **Group**.
 2. On **People**, the *classical only* count is the people the rule would
    refuse at sign-in. Click *list them*, and **Export CSV** for a list of
-   them; [mail reminders](#reminders-by-mail) can ask them for you.
+   them (a username that starts with `=`, `+`, `-` or `@` is written with a
+   `'` in front, so a spreadsheet shows it rather than running it; see
+   [Reporting](reporting.md#formats)); [mail reminders](#reminders-by-mail)
+   can ask them for you.
 3. On **Models**, see which authenticators already make ML-DSA passkeys, and
    which of your people's do not.
 4. When *classical only* is near zero, set `postQuantumRequired` on that

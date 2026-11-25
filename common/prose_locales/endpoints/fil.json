@@ -883,6 +883,14 @@
     "en": "49eac4924ef09867",
     "text": "Baguhin ang signer truststore, isang paranoid row, o muling suriin ang mga pin"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "Mga pinangalanang truststore at ang mga use case na nagtitiwala sa mga ito"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "Baguhin ang isang pinangalanang truststore o ang pinagkakatiwalaan ng isang use case"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Bumuo ng hierarchy, mag-issue ng key pair, gumawa ng certificate"

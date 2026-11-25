@@ -883,6 +883,14 @@
     "en": "49eac4924ef09867",
     "text": "變更簽署者信任存放區或某個偏執列，或重新檢查釘選"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "具名信任庫及信任它們的使用情境"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "變更具名信任庫或使用情境所信任的內容"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "建立階層、簽發金鑰組、撰寫憑證"

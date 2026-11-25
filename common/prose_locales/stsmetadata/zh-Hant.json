@@ -1747,6 +1747,14 @@
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — /admin/pki/trust 上的控制項。add 接受 `certificates`（一個或多個 PEM 區塊，各自經過收納規則，並點名每項拒絕），並以 `purposes` 加以限制；remove 接受單一 `fingerprint`；recheck 立即執行稽核；set-row 接受 `pki.paranoid*` 的 `setting` 及其 `value`，透過一般的設定寫入。需要 admin:write。寫入 ou=signerTrustAnchors，因此變更在重新啟動後依然存在。"
   },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "以 JSON 形式提供的 /admin/pki/trust 的「信任庫」「使用情境」和「系統信任庫」分頁（#2118）：此領域可以指名的每個信任庫（內建、檢視、設定、SPIFFE 套件或具名），附帶其內容計數和信任它的使用情境；每個使用情境目前信任的內容及其預設值；各項限制；以及逐一憑證描述（不含 PEM）的 node 預設儲存區。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign——/admin/pki/trust 的「信任庫」和「使用情境」分頁上的控制項（#2118）。show 接受一個 `name`（及 `withPem`），不寫入任何內容；create 接受一個 `name` 和一個 `description`；只要有使用情境信任該信任庫，delete 就會被拒絕；add 接受 `certificates`，每個都經過准入規則，每次拒絕都會指明；remove 接受一個 `fingerprint`；assign 接受一個 `useCase` 及其有序的 `truststores`，unassign 將使用情境恢復為預設值。適用於整個服務的使用情境只能從預設領域指派。需要 admin:write。寫入 ou=truststores，因此變更在重新啟動後依然存在。"
+  },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
     "text": "非規格端點。兩個主控台頁面背後的「十二個」動作——/admin/pki 上的 build、clear、issue、revoke，以及 憑證工作台上的 apply-profile、generate-keys、generate-alt-keys、issue-certificate、use-key、remove-object、clear-store、export——透過那些頁面所呼叫的同一個 pkiAction()。**它以解析而非直接傳回的方式回應**：簽發從頭到尾都是 Web Crypto，因此這是此 API 中兩個需要 await 的動作處理常式之一（另一個是 /admin-api/ssf）。`issue` 會「交出私密金鑰一次」，本服務不保留第二份複本；`export` 以 base64 傳回金鑰資料，與 /admin-api/keys/export 相同，理由也相同。**對應用程式而言，`revoke` 不撤銷任何東西**：它將金鑰組從應用程式上移除，使本服務不再「接受」該金鑰所簽署的內容，而憑證仍持續鏈結——回覆中就是這麼說的。`issue` 與 `revoke` 接收 `target`，值為 application（預設）或 person——個人在其 ou=users 項目上以 stsAssertion* 持有多組金鑰組，每組都只能針對本人進行斷言；帶 `handle` 的 `revoke` 會將其中一組列入其簽發機構的 CRL（#1290）。對應 POST /admin/pki、POST /admin/pki/certificate 與 POST /admin/pki/person。"

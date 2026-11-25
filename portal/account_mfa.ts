@@ -891,7 +891,8 @@ class AccountMfa {
       // the event the console's clear already sends.
       if (stored.ok) {
         this.deps.accountSignals().recoveryInformationChanged({
-          username: username, via: 'portal' });
+          username: username, via: 'portal', changeType: 'create',
+          initiatingEntity: 'user' });
       }
       audit.record({
         category: 'authentication',

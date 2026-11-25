@@ -3900,6 +3900,14 @@ may no longer have is taken off with an audit row (`STS-OAUTH-0579`), the
 permission, removing a protected scope from a client must stop the next refresh
 minting it again; the resource servers' own `declares()` check stops the tokens
 already out. It runs before the debugger narrowing, which keeps its role rule.
+**Its one allowance (#2169, rcbj: "Obey the spec. Allowances must be made to
+achieve that."):** a pre-authorized code redeemed by a wallet that names NO
+client (OpenID4VCI 1.0 section 6.1) keeps `offer_scopes`, the scopes of the
+offer's configurations read off the code's record (`offerScopesOf()`), which
+is also the scope the grant mints. There is no client to have declared
+anything, the offer is the authorization, and without a credential scope
+`vc_issued.ts` files the credential under nobody. Anything else on that
+token is narrowed as before; a wallet that names a client is that client.
 
 **RFC 7591'S `scope` IS THE DECLARATION** (`applyRegistrationFields()` writes it
 to `oauthAllowedScope`; `registrationOf()` returns it), so a registration naming

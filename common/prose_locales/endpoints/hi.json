@@ -883,6 +883,14 @@
     "en": "49eac4924ef09867",
     "text": "हस्ताक्षरकर्ता विश्वास-भंडार या एक अतिसतर्क पंक्ति बदलें, या पिन की पुनः जाँच करें"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "नामित ट्रस्टस्टोर और उन पर भरोसा करने वाले उपयोग-मामले"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "किसी नामित ट्रस्टस्टोर को या किसी उपयोग-मामले के भरोसे को बदलें"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "एक पदानुक्रम बनाएँ, एक कुंजी युग्म जारी करें, एक प्रमाणपत्र की रचना करें"

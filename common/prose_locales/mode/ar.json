@@ -587,6 +587,18 @@
     "en": "0a4ee080bb81a76f",
     "text": "يُسأل الشخص مرة واحدة لكل تطبيق قبل أن يسجّل SAML 2.0 أو SAML 1.1 أو WS-Federation دخوله إليه، ويُحتفَظ بالجواب. يوقف saml2.ssoConsent وsaml11.ssoConsent وwsfed.ssoConsent ذلك لكل بروتوكول، وتتجاوزها قيمة التطبيق الخاصة."
   },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "لا يُعرض البناء الدقيق إلا للمسؤولين"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "يحمل تذييل كل صفحة، وواجهات تسجيل الدخول والبوابة والتقارير ومستندات OpenAPI الخاصة بها، الإصدارَ ورقم البناء ووقت البناء والـ commit، ويذكر User-Agent كل طلب ترسله هذه الخدمة الإصدارَ."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "لا يحمل أيٌّ منها البناء: لا سطر إصدار في التذييل، ويذكر مستند OpenAPI إصدار الواجهة نفسها، ويكون User-Agent اسم المنتج وحده. ما زالت وحدة التحكم وواجهة الإدارة تُظهران البناء. ضبط security.publishBuildInfo على on يُظهره من جديد."
+  },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
     "text": "تأتي أسرار الواجهة الخلفية من مخزن أسرار"

@@ -87,10 +87,23 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
 * **HTTPS.** The main port is HTTPS, and a process with `global.https` off does
   not start. The plain-HTTP revocation and SCEP listener stays, because
   RFC 5280, RFC 5019 and RFC 8894 expect those services over HTTP.
+* **The build.** No page, API answer or outbound request that someone other
+  than an administrator can see names the exact version, build number, build
+  time or commit: the page footer has no version line, the sign-in and portal
+  APIs' OpenAPI documents give the API's own version (`1`), the reports, portal
+  and front-page answers carry an empty version, and the User-Agent of every
+  request to a partner is `sts (<component>)`. The console and the management
+  API still show the build. `security.publishBuildInfo` set to `on` shows it
+  everywhere again (ASVS 5.0.0 13.4.6).
 * **HSTS.** Every response over TLS carries
   `Strict-Transport-Security: max-age=31536000; includeSubDomains`. Turn off
   `security.hstsIncludeSubDomains` if a subdomain of the host name must still
-  answer over plain HTTP. See [TLS](tls.md#strict-transport-security).
+  answer over plain HTTP. `security.hstsPreload`, off by default, adds
+  `preload` so the domain can be submitted to the browsers' preload list;
+  that commits the whole registrable domain and every subdomain to HTTPS in
+  every browser and takes months to undo, so read
+  [Preloading](tls.md#preloading) first. See
+  [TLS](tls.md#strict-transport-security).
 * **Content Security Policy reports.** Every page tells browsers to report a
   policy violation to `/web/csp-report`, and Monitoring → CSP reports counts
   them. Set `cspReports.forwardUrl` to send each one to your own collector as
@@ -191,8 +204,15 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   app passwords, exporting or importing a person, or deleting one, through the
   console or `/admin-api` must have signed in within
   the same time: the console asks them to sign in again and carries on, and the
-  API answers RFC 9470's `insufficient_user_authentication`. A program using the
-  API with its own credentials is not asked.
+  API answers RFC 9470's `insufficient_user_authentication`. **Since #2161 the
+  same holds for** granting or removing a role (an administrator role
+  included), creating, changing or removing a trust realm, every PKI act (a
+  CA, an Intermediate, a certificate, a revocation, the signer truststore),
+  rotating, exporting or emergency-replacing the signing keys, the data keys
+  and the key-encryption key, the TLS client truststore, the secret push
+  destinations, the krbtgt key and a person's keytab, every setting (the mode
+  among them) and every change only a Security Administrator may make. A
+  program using the API with its own credentials is not asked.
 * **Clearing a lost factor needs a reason.** An administrator removing a
   person's authenticator app, passkeys, recovery codes or emailed factor must say
   how the person's identity was verified. It is kept on the audit row.
@@ -368,8 +388,14 @@ default. When it is on, product mode reaches the scanner over TLS only. See
 
 [`SECURITY.md`](https://github.com/rcbj/iya-sts/blob/main/SECURITY.md) sets how
 quickly a vulnerable dependency is fixed and how to report a vulnerability. Images
-install exactly what the lockfiles name, and a daily check covers the published
-image as well as the lockfiles.
+install exactly what the lockfiles name, with `npm ci`, and a daily check covers
+the published image as well as the lockfiles. That includes the optional SDKs
+under `/opt/sts-sdk`, the Vault client every image carries and whatever
+`STS_CLOUD_SDKS` adds: each is pinned in the repository's `sdk/` directory and
+installed from `sdk/package-lock.json` with install scripts off (only `pkcs11js`,
+a native module, is built after). A build that names an SDK the lockfile does not
+pin, or a version it does not hold, fails. The base images are named by version
+tag, not by digest.
 
 The image holds a CycloneDX inventory of its npm dependencies at
 `/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at

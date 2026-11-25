@@ -422,6 +422,10 @@ namespace IyaSts.Directory;
   // The signer truststore's two more (#1360); the three above are reused.
   "stsSignerTrustAnchor", "stsSignerTrustAnchorKind",
   "stsSignerTrustAnchorPurpose",
+  // The named truststores (#2118): a truststore under ou=truststores, its
+  // certificates the signer class above, and one entry of assignments.
+  "stsTruststore", "stsTruststoreKind", "stsTruststoreAssignments",
+  "stsTruststoreAssignment",
 
   // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
   // above and it is the SECOND of them that can be read back and used — a set

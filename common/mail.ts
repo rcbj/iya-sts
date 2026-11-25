@@ -1443,12 +1443,39 @@ class Mail {
   //       other; only that namespace, so a caller cannot reach a page's words
   //   { date: <ms or ISO> }                         an instant, in UTC with
   //       the zone named (`Translator.date()`)
+  //   { list: [ <value>, ... ] }                    each element resolved as
+  //       above (a message, an instant, or data) and the whole joined as a
+  //       list in that language (`Intl.ListFormat`), for a notice of several
+  //       lines (#2163)
   //
   // Anything else is DATA (a name, an address, a username, a refusal's own
   // English reason) and is left exactly as it was. A message's params are
   // data too, put in as strings. A value that cannot be resolved renders
   // empty rather than as `[object Object]`.
   // -------------------------------------------------------------------------
+  /**
+   * Joins the lines of a list in a language (`Intl.ListFormat`, a
+   * conjunction), or with semicolons where that language has no list form.
+   *
+   * @param parts - the lines, already in words
+   * @param lang - the language
+   * @returns the list as one value
+   */
+  static listOf(parts: string[], lang: string): string {
+    helpers.log.debug("Entering Mail.listOf(). " + parts.length);
+    let out = parts.join('; ');
+    try {
+      out = new Intl.ListFormat(lang, { style: 'long', type: 'conjunction' })
+        .format(parts);
+    } catch (e) {
+      helpers.log.debug("Caught in Mail.listOf(): " +
+                        ((e && e.message) || e));
+      // A tag Intl does not know: the plain join above stands.
+    }
+    helpers.log.debug("Leaving Mail.listOf().");
+    return out;
+  }
+
   /**
    * Resolves every value given as a message or an instant into words in one
    * language; every other value is left as it was.
@@ -1465,6 +1492,7 @@ class Mail {
         return String(one || '');
       }).filter(Boolean);
     log.debug("Entering Mail.resolveValues(). " + langs.join(' '));
+    const self = this;
     const out: Json = {};
     let t: Json = null;
     const translator = function (): Json {
@@ -1500,6 +1528,18 @@ class Mail {
                    (typeof v.date === 'number' ||
                     typeof v.date === 'string')) {
           out[name] = translator().date(v.date);
+        } else if (Array.isArray(v.list)) {
+          // Each element through this same function, one at a time, so a
+          // list holds nothing a single value could not.
+          const parts: string[] = [];
+          v.list.forEach((one: unknown, i: number): void => {
+            const said = self.resolveValues({ ['v' + i]: one }, langs);
+            const text = String(said['v' + i] == null ? '' : said['v' + i]);
+            if (text) {
+              parts.push(text);
+            }
+          });
+          out[name] = Mail.listOf(parts, langs[0] || 'en');
         } else {
           out[name] = '';
         }

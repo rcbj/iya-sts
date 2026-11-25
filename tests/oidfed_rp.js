@@ -31,7 +31,14 @@
 //      ValidateClientAssertionClaims, which never takes the Entity
 //      Identifier at the token endpoint);
 //   2. an `issuer` naming another entity is still refused (STS-FED-0149);
-//   3. an `issuer` equal to the Entity Identifier is used as before.
+//   3. an `issuer` equal to the Entity Identifier is used as before;
+//   4. the realm's `openid_relying_party` metadata declares, as `scope`,
+//      every scope its federated relationships ask for, once (#2169): an
+//      OP registers it automatically, and one that issues a client only
+//      what it declared (this service's own in product, #1589) refused
+//      `profile` and `email` to a realm whose metadata named none. A
+//      relationship naming no scope adds nothing, a disabled one is left
+//      out, and with none there is no member.
 // ===========================================================================
 
 const OidfedRp = require('../oidfed/oidfed_rp').OidfedRp;
@@ -125,6 +132,49 @@ function rpOver(metadata) {
   return new OidfedRp(deps);
 }
 
+// An rp over `rpOver()`'s deps, with the realm's relationships, an ES256
+// key and the assertion consumer service, for relyingPartyMetadata().
+function metadataOver(records) {
+  log.debug("Entering metadataOver().");
+  const rp = rpOver(suiteMetadata());
+  const deps = rp.deps;
+  deps.signingKeys = function () {
+    log.debug("Entering signingKeys().");
+    log.debug("Leaving signingKeys().");
+    return [{ alg: 'ES256', publicJwk: { kty: 'EC', crv: 'P-256',
+                                         x: 'x', y: 'y', kid: 'k1' } }];
+  };
+  deps.federation = function () {
+    log.debug("Entering federation().");
+    log.debug("Leaving federation().");
+    return {
+      list: function () {
+        log.debug("Entering list().");
+        log.debug("Leaving list().");
+        return records;
+      },
+      isEnabled: function (r) {
+        log.debug("Entering isEnabled().");
+        log.debug("Leaving isEnabled().");
+        return r.fedEnabled !== 'FALSE';
+      }
+    };
+  };
+  deps.federationSp = function () {
+    log.debug("Entering federationSp().");
+    log.debug("Leaving federationSp().");
+    return {
+      acsUrl: function (base, r) {
+        log.debug("Entering acsUrl().");
+        log.debug("Leaving acsUrl().");
+        return base + '/federation/acs/' + r.fedId;
+      }
+    };
+  };
+  log.debug("Leaving metadataOver().");
+  return rp;
+}
+
 const RECORD = { fedId: 'suite', fedRole: 'service-provider',
                  fedProtocol: 'oidc', fedPeer: PEER,
                  fedTrustAnchor: ANCHOR };
@@ -181,6 +231,31 @@ async function run(t) {
   t.check(same.ok && same.record.fedOpIssuer === PEER,
           '3. an issuer equal to the Entity Identifier is used as before',
           JSON.stringify(same.ok ? same.record.fedOpIssuer : same));
+
+  t.log.info('=== 4. the scopes the realm\'s metadata declares (#2169) ===');
+  const rel = function (id, fields) {
+    return Object.assign({}, RECORD, { fedId: id }, fields);
+  };
+  const md = metadataOver([
+    rel('a', { fedScope: 'openid profile email' }),
+    rel('b', { fedScope: 'email  phone' }),
+    rel('c', { fedScope: '' }),
+    rel('off', { fedScope: 'address', fedEnabled: 'FALSE' }),
+    rel('d', { fedScope: 'accounts openid' })
+  ]).relyingPartyMetadata({});
+  t.check(md && md.scope === 'openid profile email phone accounts',
+          '4a. `scope` is every scope the enabled federated relationships ' +
+          'ask for, once, in order, a disabled one\'s left out',
+          JSON.stringify(md && md.scope));
+  t.check(md && md.redirect_uris.length === 4 &&
+          md.client_registration_types[0] === 'automatic',
+          '4b. the rest of the metadata is as before',
+          JSON.stringify(md && md.redirect_uris));
+  const none = metadataOver([rel('c', { fedScope: '' })])
+    .relyingPartyMetadata({});
+  t.check(none && !('scope' in none),
+          '4c. with no relationship naming a scope there is no `scope` ' +
+          'member', JSON.stringify(none));
   log.debug("Leaving run().");
 }
 

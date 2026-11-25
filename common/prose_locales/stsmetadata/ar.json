@@ -1747,6 +1747,14 @@
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — عناصر التحكم في /admin/pki/trust. يأخذ add قيمة `certificates` (كتلة PEM واحدة أو أكثر، كل واحدة عبر قاعدة القبول وكل رفض مسمًّى)، مع `purposes` لتقييدها؛ ويأخذ remove قيمة `fingerprint` واحدة؛ ويشغّل recheck التدقيق الآن؛ ويأخذ set-row إعدادًا `setting` من النمط `pki.paranoid*` وقيمته `value`، عبر كتابة الإعدادات العادية. يحتاج admin:write. يُكتب إلى ou=signerTrustAnchors، فيبقى التغيير بعد إعادة التشغيل."
   },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "تبويبات مخازن الثقة وحالات الاستخدام ومخزن ثقة النظام في /admin/pki/trust عبر JSON (#2118): كل مخزن ثقة يستطيع نطاق الثقة هذا تسميته (مضمّن أو عرض أو إعداد أو حزمة SPIFFE أو مسمّى) مع عدّ ما يحويه وحالات الاستخدام التي تثق به، وكل حالة استخدام مع ما تثق به الآن وقائمتها الافتراضية، والحدود، والمخزن الافتراضي لـ node موصوفًا شهادةً شهادةً دون PEM."
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — عناصر التحكم في تبويبي مخازن الثقة وحالات الاستخدام في /admin/pki/trust (#2118). يأخذ show قيمة `name` (و`withPem`) ولا يكتب شيئًا؛ ويأخذ create قيمة `name` وقيمة `description`؛ ويُرفض delete ما دامت حالة استخدام تثق بالمخزن؛ ويأخذ add قيمة `certificates`، كل واحدة عبر قاعدة القبول وكل رفض مسمًّى؛ ويأخذ remove قيمة `fingerprint`؛ ويأخذ assign قيمة `useCase` و`truststores` مرتبة، ويعيد unassign حالة الاستخدام إلى قائمتها الافتراضية. حالة الاستخدام التي تسري على الخدمة كلها لا تُسنَد إلا من نطاق الثقة الافتراضي. يحتاج admin:write. يُكتب إلى ou=truststores، فيبقى التغيير بعد إعادة التشغيل."
+  },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
     "text": "خارج المواصفة. العمليات الاثنتا عشرة خلف صفحتي وحدة التحكم — build وclear وissue وrevoke على /admin/pki، وapply-profile وgenerate-keys وgenerate-alt-keys وissue-certificate وuse-key وremove-object وclear-store وexport على منضدة عمل الشهادات — عبر pkiAction() نفسه الذي تستدعيه تلك الصفحات. **يُحَلّ بدل أن يُعاد**: الإصدار هو Web Crypto حتى القاع، فهذه أحد معالجَي العمليات في هذه الواجهة اللذين ينتظران (/admin-api/ssf هو الآخر). يسلّم `issue` المفتاح الخاص مرة واحدة ولا تحتفظ هذه الخدمة بنسخة ثانية منه؛ ويعيد `export` مادة المفتاح بصيغة base64، مثل /admin-api/keys/export وللسبب نفسه. **بالنسبة إلى تطبيق لا يلغي `revoke` شيئًا**: ينزع زوج المفاتيح عن التطبيق، فتتوقف هذه الخدمة عن قبول ما يوقّعه ذلك المفتاح، وتستمر الشهادة في السلسلة — والرد يقول ذلك بهذه الكلمات. يأخذ `issue` و`revoke` قيمة `target` هي application (الافتراضي) أو person — يحمل الشخص عدة أزواج مفاتيح على مدخلته ou=users بصيغة stsAssertion*، ولا يجوز لكل منها أن يُقرّ إلا عن ذلك الشخص، ويضع `revoke` مع `handle` واحدًا منها على CRL سلطته (#1290). يطابق POST /admin/pki وPOST /admin/pki/certificate وPOST /admin/pki/person."

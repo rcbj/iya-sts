@@ -946,7 +946,7 @@ api applications/create '{"identifier":"generate-secret-app","protocols":["oauth
 ```
 
 The value is whole days, 0 to 730, and 0 never expires. Left out or empty, it
-is `oauth2.clientSecretLifetimeDays`, which is 0 by default. A lifetime given
+is `oauth2.clientSecretLifetimeDays`, which is 365 by default. A lifetime given
 with no secret is refused. `tests/application_generate_secret.js` creates
 with 30 and with 0.
 
@@ -973,7 +973,7 @@ with the secret's id hands it back and writes an audit row.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `oauth2.clientSecretLifetimeDays` | `0` | The lifetime of a secret when none is given. 0 never expires. |
+| `oauth2.clientSecretLifetimeDays` | `365` | The lifetime of a secret when none is given. 0 never expires. |
 | `oauth2.clientSecretOverlapS` | `604800` | How long a rotation leaves the old secrets working. 0 makes a rotation a regeneration. |
 | `oauth2.clientSecretsMax` | `5` | How many secrets one application may hold (`STS-REG-0208` past it). |
 | `oauth2.clientSecretExpiryWarningDays` | `14` | How far ahead the daily job `oauth2.client-secret-expiry` warns about a secret that is about to expire. |
