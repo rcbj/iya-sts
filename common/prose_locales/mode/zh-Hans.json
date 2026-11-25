@@ -119,6 +119,18 @@
     "en": "01bf0ea288cde1c4",
     "text": "签发策略的 protocol-not-declared 规则会拒绝通过应用未声明的协议族进行的签发（STS-XACML-0084）：向只声明了 OAuth 2.0 的应用签发 ID Token，向声明了 OpenID Connect 的应用签发 SAML 断言。未声明任何协议的应用不会被拒绝。"
   },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "访问类型的 JSON Schema 限于一个子集，其每个模式都受到限制"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "通过控制台或管理 API 写入的定义，其模式只能使用限制模式可用的关键字，每个模式都受正则表达式的限制；其他一律拒绝（STS-REG-0374）。在该规则之前保存的定义仍按原样使用，本行对其报告 ASVS 5.0.0 1.3.12 未满足。"
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "相同。"
+  },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
     "text": "GNAP 访问权限只会授予访问类型目录中声明的类型"

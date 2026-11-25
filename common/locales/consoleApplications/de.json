@@ -518,6 +518,7 @@
   "a3.factIntrospection": "Introspection-Claims",
   "a3.factLimits": "Limits-Schema",
   "a3.limitsRefused": "keine: Limits werden abgelehnt",
+  "a3.writeWouldRefuse": "VOR EINER STRENGEREN REGEL GESPEICHERT: Sie wird weiterhin wie geschrieben verwendet, doch ein Speichern würde heute abgelehnt",
   "a3.factInteraction": "Interaktion (Phase 6)",
   "a3.consentForcedBy": "; Einwilligung erzwungen durch ",
   "a3.factAcr": "Authentifizierungsstufe (Phase 6)",

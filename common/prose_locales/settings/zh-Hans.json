@@ -8079,6 +8079,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "服务器端对搜索的时间限制，以秒为单位，LDAP_TIME_LIMIT_EXCEEDED 正是由此产生；客户端自己的 timeLimit 更短时以其为准。在此之前已发送的条目即为答复，并标记为不完整。"
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "已绑定客户端的最大消息（字节）"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "已绑定的客户端可发送的最大 LDAP 消息，以字节计，按其 BER 头声明的长度计算：下一条消息声明超过此值的连接，会在读取其任何内容之前被关闭（STS-LDAP-0227）。搜索结果由服务器发送，不计入。默认 5 MiB，即此处每个 HTTP 请求体的上限。"
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "绑定前的最大消息（字节）"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "客户端在绑定之前可发送的最大 LDAP 消息，以字节计：一次绑定、StartTLS 或根 DSE 搜索。超过此值时，会在读取消息任何内容之前关闭连接（STS-LDAP-0227）。默认 128 KiB，是 SASL 绑定可携带的最大 Kerberos 令牌的两倍。实际生效时从不超过 ldap.maxMessageBytes。"
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "明文 LDAP 监听器"

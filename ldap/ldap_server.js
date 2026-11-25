@@ -200,6 +200,8 @@ const readPolicy = require('./directory_read_policy');
 // 2026-10-14): `(uid=ALICE)` finds `uid=alice`, as RFC 4519's caseIgnoreMatch
 // says. A static utility class that requires nothing, asked once per entry.
 const ldapMatching = require('./ldap_matching');
+// The largest message a client may send, read from its header (#2220).
+const LdapMessageGuard = require('./ldap_message_guard');
 // WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26): the rule
 // table and the edit, a LIBRARY that cannot require this file (it is loaded
 // by the console long before this one) and so is handed the two functions it
@@ -19292,9 +19294,81 @@ servers.forEach(function (one) {
   ['connection', 'secureConnection'].forEach(function (event) {
     one.server.on(event, function (socket) {
       holdSocket(socket);
+      // THE MESSAGE SIZE GUARD (#2220), on the socket ldapjs reads: the
+      // plain one, or the TLS one once its handshake is done (the raw socket
+      // under a TLS server carries no parser, and is skipped). ldapjs's
+      // connection handler ran first — it was registered when the server
+      // was built — so its `data` listener is the one put behind the guard.
+      if (socket.parser) {
+        guardMessages(socket);
+      }
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// THE LARGEST MESSAGE A CLIENT MAY SEND (#2220): `ldap_message_guard.ts`
+// argues it. The limits are read at each message's header, from the
+// default realm — the listeners are the process's, and a socket has no realm
+// until a bind names one — so a change applies to the next message.
+// ---------------------------------------------------------------------------
+// When a refusal was last logged, and how many have gone unlogged since, so
+// a flood of oversized messages is one line a minute rather than one each.
+let messageRefusalLoggedAt = 0;
+let messageRefusalsUnlogged = 0;
+
+/**
+ * Puts the message size guard between a connection and ldapjs's parser.
+ *
+ * @param socket - the connection, after ldapjs's connection handler ran
+ */
+function guardMessages(socket) {
+  log.debug("Entering guardMessages().");
+  // No Entering/Leaving pair in `limits` or `isBound`: the guard asks them
+  // at every message's header, and a pair per message would drown the log
+  // (the hot-path exception). `refused` runs once per closed connection.
+  LdapMessageGuard.install(socket, {
+    log: log,
+    limits: function () {
+      return {
+        bound: Number(config.value('ldap.maxMessageBytes')),
+        unbound: Number(config.value('ldap.maxMessageBytesBeforeBind'))
+      };
+    },
+    isBound: function (one) {
+      const dn = one.ldap && one.ldap.bindDN ? String(one.ldap.bindDN) : '';
+      return !!dn && dn.toLowerCase() !== 'cn=anonymous';
+    },
+    refused: function (one, refusal) {
+      log.debug("Entering refused().");
+      const now = Date.now();
+      if (now - messageRefusalLoggedAt < 60000) {
+        messageRefusalsUnlogged += 1;
+        log.debug("Leaving refused(). Counted, not logged.");
+        return;
+      }
+      const peer = (one.ldap && one.ldap.id) ||
+        ((one.remoteAddress || '?') + ':' + (one.remotePort || '?'));
+      log.warn(errorCodes.tag('STS-LDAP-0227') + 'ldap: closed the ' +
+               'connection from ' + peer + ': ' +
+               (refusal.reason === 'indefinite'
+                 ? 'a message used BER\'s indefinite length, which LDAP ' +
+                   'does not allow'
+                 : 'a message declared ' + refusal.declared + ' bytes, ' +
+                   'over the ' + refusal.limit + ' allowed ' +
+                   (refusal.bound ? '(ldap.maxMessageBytes)'
+                     : 'before a bind (ldap.maxMessageBytesBeforeBind)')) +
+               '. None of it was read.' +
+               (messageRefusalsUnlogged
+                 ? ' ' + messageRefusalsUnlogged + ' more connection(s) ' +
+                   'were closed for this in the last minute.' : ''));
+      messageRefusalLoggedAt = now;
+      messageRefusalsUnlogged = 0;
+      log.debug("Leaving refused().");
+    }
+  });
+  log.debug("Leaving guardMessages().");
+}
 
 // A socket this process now holds, until it closes. A function of its own so
 // that `tests/cluster_signout_signals.js` can hand it a socket without a

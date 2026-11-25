@@ -119,6 +119,18 @@
     "en": "01bf0ea288cde1c4",
     "text": "簽發原則的 protocol-not-declared 規則，會拒絕透過應用程式未宣告之協定系列進行的簽發（STS-XACML-0084）：例如對只宣告 OAuth 2.0 的應用程式簽發 ID Token，或對宣告 OpenID Connect 的應用程式簽發 SAML 斷言。未宣告任何協定的應用程式不會被拒絕。"
   },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "存取類型的 JSON Schema 限於一個子集，其每個模式都受到限制"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "透過主控台或管理 API 寫入的定義，其結構描述只能使用限制結構描述可用的關鍵字，每個模式都受正規表示式的限制；其他一律拒絕（STS-REG-0374）。在該規則之前儲存的定義仍按原樣使用，本列對其回報 ASVS 5.0.0 1.3.12 未滿足。"
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "相同。"
+  },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
     "text": "GNAP 存取權限只會授予存取類型目錄所宣告的類型"

@@ -8079,6 +8079,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "Tidsgränsen på serversidan för en sökning, i sekunder, vilket är det som ger LDAP_TIME_LIMIT_EXCEEDED; en klients egen kortare timeLimit vinner. Posterna som skickats före den är svaret, markerat som ofullständigt."
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Största meddelande från en bunden klient (byte)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Det största LDAP-meddelande en klient som har bundit får skicka, i byte, räknat från längden som dess BER-huvud anger: en anslutning vars nästa meddelande anger mer stängs innan något av det läses (STS-LDAP-0227). Sökresultat skickas av servern och räknas inte. 5 MiB som standard, gränsen som varje HTTP-kropp har här."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Största meddelande före en bindning (byte)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Det största LDAP-meddelande en klient får skicka innan den har bundit, i byte: en bindning, StartTLS eller en sökning efter rot-DSE. Över det stängs anslutningen innan något av meddelandet läses (STS-LDAP-0227). 128 KiB som standard, dubbelt så stort som den största Kerberos-token en SASL-bindning kan bära. Aldrig mer än ldap.maxMessageBytes i praktiken."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "Okrypterad LDAP-lyssnare"

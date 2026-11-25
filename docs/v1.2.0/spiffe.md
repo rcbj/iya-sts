@@ -257,7 +257,10 @@ SPIRE's `image-signature:verified`, `image-attestations:verified` and
    come from a [truststore](truststores.md#sigstore-trust-material) assigned
    to `sigstore-cosign-key`, `sigstore-trusted-root` or `sigstore-tuf-root`;
 2. for keyless signatures, the signers you accept
-   (`spiffe.dockerSigstoreAllowedIdentities`, `issuer=subject`);
+   (`spiffe.dockerSigstoreAllowedIdentities`, `issuer=subject`); a half
+   holding a regular expression is refused at a save when it is longer than
+   256 characters, uses a backreference, nests a quantifier, or does not
+   compile (`STS-CORE-0182`, 1.2.0);
 3. the registries the signatures may be fetched from
    (`spiffe.dockerSigstoreAllowedRegistries`) — Docker Hub is
    `index.docker.io`, and list its token host `auth.docker.io` and blob host
@@ -479,8 +482,11 @@ with no answer inside `spiffe.attestationChallengeTimeout`, the call fails
 
 **`http_challenge` is the one place this server dials an address a caller
 named.** The host name must match `spiffe.httpChallengeAllowedDnsPatterns`
-before it is looked up. That list is empty by default, which refuses every
-agent; this is stricter than SPIRE, whose empty list allows any name. In product
+before it is looked up, and a save refuses a pattern longer than 256
+characters, with a backreference or a nested quantifier such as `(a+)+`, or
+that does not compile (`STS-CORE-0182`; one set in the environment is logged
+at startup as `STS-CORE-0183` and used). That list is empty by default, which
+refuses every agent; this is stricter than SPIRE, whose empty list allows any name. In product
 mode internal addresses are refused, and in every mode the request follows no
 redirect and reads at most 64 bytes.
 

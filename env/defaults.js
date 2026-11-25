@@ -1074,6 +1074,8 @@ var config = {
     workerDirectoryBudgetMs: 5000,                                                                                                 // Worker directory budget per request (ms)
     sizeLimit: 500,                                                                                                                // Search size limit
     timeLimit: 30,                                                                                                                 // Search time limit (s)
+    maxMessageBytes: 5242880,                                                                                                      // Largest message from a bound client (bytes)
+    maxMessageBytesBeforeBind: 131072,                                                                                             // Largest message before a bind (bytes)
     selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode", // Attributes a person may change on their own entry
     directoryReadableAttributes: "",                                                                                               // Attributes a person may read of other people
     groupMembersReadable: false                                                                                                    // Members may read their group's member list

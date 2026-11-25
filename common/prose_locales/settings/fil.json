@@ -8079,6 +8079,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "Ang server-side na time limit para sa isang search, sa segundo, na siyang nagbubunga ng LDAP_TIME_LIMIT_EXCEEDED; nananaig ang sariling timeLimit ng client kapag mas maikli ito. Ang mga entry na naipadala bago ito ang sagot, na minarkahang hindi kumpleto."
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Pinakamalaking mensahe mula sa naka-bind na client (bytes)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Ang pinakamalaking LDAP na mensahe na maaaring ipadala ng isang client na naka-bind na, sa bytes, binibilang mula sa haba na idinedeklara ng BER header nito: ang koneksyon na ang susunod na mensahe ay nagdedeklara ng higit pa ay isinasara bago mabasa ang anuman dito (STS-LDAP-0227). Ang mga resulta ng paghahanap ay ipinapadala ng server at hindi binibilang. 5 MiB bilang default, ang limitasyon ng bawat HTTP body dito."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Pinakamalaking mensahe bago mag-bind (bytes)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Ang pinakamalaking LDAP na mensahe na maaaring ipadala ng isang client bago ito mag-bind, sa bytes: isang bind, StartTLS o paghahanap sa root DSE. Kapag lumampas, isinasara ang koneksyon bago mabasa ang anuman sa mensahe (STS-LDAP-0227). 128 KiB bilang default, doble ng pinakamalaking Kerberos token na kayang dalhin ng SASL bind. Hindi kailanman higit sa ldap.maxMessageBytes sa bisa."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "Plain na LDAP listener"

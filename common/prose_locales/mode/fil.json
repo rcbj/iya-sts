@@ -119,6 +119,18 @@
     "en": "01bf0ea288cde1c4",
     "text": "Tinatanggihan ng protocol-not-declared rule ng issuance policy ang issuance sa pamamagitan ng protocol family na hindi idineklara para sa application (STS-XACML-0084): ID Token sa application na idineklara para sa OAuth 2.0 lang, SAML assertion sa idineklara para sa OpenID Connect. Hindi tinatanggihan ang application na walang idineklara."
   },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "Ang JSON Schema ng isang access type ay limitado sa isang subset, at bawat pattern nito sa isang hangganan"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "Ang isang depinisyon na isinulat sa console o sa management API ay naglilimita ng schema nito sa mga keyword na maaaring gamitin ng isang limits schema, at bawat pattern sa hangganan ng isang regular expression; tinatanggihan ang anumang iba pa (STS-REG-0374). Ang naka-save bago ang patakarang iyon ay ginagamit pa rin gaya ng pagkaka-save, at iniuulat ng hilerang ito ang ASVS 5.0.0 1.3.12 bilang hindi natugunan para dito."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "Ganoon din."
+  },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
     "text": "Ipinagkakaloob lang ang GNAP access right na may type na idinedeklara ng access-type catalogue"

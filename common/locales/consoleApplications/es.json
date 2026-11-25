@@ -518,6 +518,7 @@
   "a3.factIntrospection": "Claims de introspección",
   "a3.factLimits": "Esquema de límites",
   "a3.limitsRefused": "ninguno: los límites se rechazan",
+  "a3.writeWouldRefuse": "GUARDADA ANTES DE UNA REGLA MÁS ESTRICTA: se sigue usando tal como está escrita, y guardarla hoy se rechazaría",
   "a3.factInteraction": "Interacción (fase 6)",
   "a3.consentForcedBy": "; consentimiento forzado por ",
   "a3.factAcr": "Nivel de autenticación (fase 6)",

@@ -518,6 +518,7 @@
   "a3.factIntrospection": "自我檢查聲明",
   "a3.factLimits": "限制結構描述",
   "a3.limitsRefused": "無：限制會被拒絕",
+  "a3.writeWouldRefuse": "在更嚴格的規則之前儲存：仍按原樣使用，但如今儲存它會被拒絕",
   "a3.factInteraction": "互動（第 6 階段）",
   "a3.consentForcedBy": "；強制同意的動作：",
   "a3.factAcr": "驗證等級（第 6 階段）",
