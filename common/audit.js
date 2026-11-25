@@ -758,6 +758,14 @@ const ACTIONS = [
     label: 'How mail to a person is encrypted was changed' },
   { action: 'openpgp.smime-certificate', category: 'directory',
     label: 'A person\'s S/MIME certificate was set or removed' },
+  // AN ML-KEM S/MIME CERTIFICATE THIS REALM ISSUES (#2220), on a proof of
+  // possession `common/openpgp_keys.ts` asks for: the challenge, and an
+  // answer that did not match. The issuance itself is the enrollment's row
+  // and `openpgp.smime-certificate`'s.
+  { action: 'openpgp.smime-kem-challenge', category: 'directory',
+    label: 'An ML-KEM S/MIME proof-of-possession challenge was issued' },
+  { action: 'openpgp.smime-kem-refused', category: 'directory',
+    label: 'An ML-KEM S/MIME certificate was not issued' },
   // THE CLASSICAL OpenPGP KEY KEPT BESIDE A POST-QUANTUM ONE (#2009 P2),
   // written by `common/openpgp_keys.ts`.
   { action: 'openpgp.classical-kept', category: 'directory',

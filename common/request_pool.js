@@ -3154,7 +3154,11 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           // #2164: the counts and the per-address limit are
                           // the front's, so a report and the read of them
                           // land in this process (`common/csp_reports.ts`).
-                          '/web/csp-report', '/admin-api/csp-reports'];
+                          '/web/csp-report', '/admin-api/csp-reports',
+                          // #2220: every listener's socket is the front's,
+                          // and so are the key-exchange counts
+                          // (`tls/key_exchange.ts`).
+                          '/admin-api/tls/key-exchange'];
 
 // ---------------------------------------------------------------------------
 // THE LIVENESS PROBE IS ANSWERED HERE, AT ONCE, AND WAITS FOR NOTHING (#624,

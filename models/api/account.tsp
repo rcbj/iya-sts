@@ -5324,7 +5324,25 @@ op `revokeSshCertificate`(
   @js(#{`description`:"The registered key, or null."}) `key`: OpenPgpKeyView | null;
   @js(#{`description`:"The outstanding registration challenge, or null."}) `challenge`: OpenPgpChallengeView | null;
   `wkd`: OpenPgpWkdView;
-  `mailEncryption`: OpenPgpMailView
+  `mailEncryption`: OpenPgpMailView;
+  @js(#{`description`:"The outstanding ML-KEM S/MIME proof-of-possession challenge (#2220), or null."}) `smimeKemChallenge`: OpenPgpKemChallengeView | null;
+  @js(#{`description`:"In the answer of `smime-kem-issue` only: the certificate just issued, drawn once."}) `smimeKemIssued`?: OpenPgpKemIssuedView
+}
+
+// #2220: AN ML-KEM S/MIME CERTIFICATE THIS REALM ISSUES, on a proof of
+// possession (RFC 9810 section 5.2.8.3.3's challenge-response protocol;
+// `KEMKPOPChallengeResp` in its section 5.2.8.4).
+@js(#{`description`:"An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates."}) @hoisted model OpenPgpKemChallengeView {
+  @js(#{`description`:"`ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`."}) `algorithm`: string;
+  @js(#{`description`:"The ML-KEM ciphertext, base64."}) `cipherText`: string;
+  @js(#{`description`:"When it lapses, ISO 8601."}) `expiresAt`: string
+}
+
+@js(#{`description`:"The ML-KEM S/MIME certificate just issued (#2220), now your S/MIME certificate."}) @hoisted model OpenPgpKemIssuedView {
+  @js(#{`description`:"The certificate, PEM."}) `certificate`: string;
+  @js(#{`description`:"The certificate and the chain above it, PEM, leaf first; the Root excluded."}) `chain`: (string)[];
+  `serial`: string;
+  `algorithm`: string
 }
 
 @endpoint("/account-api/openpgp",
@@ -5385,7 +5403,9 @@ op `getOpenPgp`(`responses/200/content/application~1json/schema`: OpenPgpPortalV
     "publish",
     "withdraw",
     "mail-encryption",
-    "smime"
+    "smime",
+    "smime-kem-challenge",
+    "smime-kem-issue"
   }
 
 @endpoint("/account-api/openpgp",
@@ -5394,7 +5414,7 @@ op `getOpenPgp`(`responses/200/content/application~1json/schema`: OpenPgpPortalV
     `operationId`:"actOnOpenPgp",
     `tags`:#["Devices"],
     `summary`:"Registers, removes or publishes your OpenPGP key, or sets your mail encryption",
-    `description`:"`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an algorithm `openpgp.algorithms` names (including an RFC 9980 composite), carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `openpgp.pqcOnly` narrows a new registration to a post-quantum composite. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/openpgp`.",
+    `description`:"`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an algorithm `openpgp.algorithms` names (including an RFC 9980 composite), carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `openpgp.pqcOnly` narrows a new registration to a post-quantum composite. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). `smime-kem-challenge` takes `publicKey`, an ML-KEM public key (RFC 9935; the PEM `openssl pkey -pubout` writes), and answers in the view's `smimeKemChallenge` a ciphertext encapsulated to it (#2220). `smime-kem-issue` takes `secret`, the 32-octet shared secret `openssl pkeyutl -decap` recovers from it with the private key, hex or base64: on a match the realm's EST Issuing CA issues an ML-KEM S/MIME certificate naming your address (the `email` profile, `keyEncipherment` only), it becomes your S/MIME certificate, and the answer's `view.smimeKemIssued` carries it with its chain. The challenge is spent whatever the answer. It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/openpgp`.",
     `parameters`:#[
 
     ],
@@ -5435,10 +5455,11 @@ op `getOpenPgp`(`responses/200/content/application~1json/schema`: OpenPgpPortalV
   })
 op `actOnOpenPgp`(`requestBody/content/application~1json/schema`: {
     `action`: post_account_api_openpgp_b_application_json_action;
-    @js(#{`description`:"`register`: the armored OpenPGP public key.",`maxLength`:65536}) `publicKey`?: string;
+    @js(#{`description`:"`register`: the armored OpenPGP public key. `smime-kem-challenge`: the ML-KEM public key, PEM.",`maxLength`:65536}) `publicKey`?: string;
     @js(#{`description`:"`register`: the challenge signed with `gpg --clearsign`.",`maxLength`:16384}) `signed`?: string;
     @js(#{`description`:"`mail-encryption`: `none`, `openpgp` or `smime`.",`maxLength`:16}) `choice`?: string;
-    @js(#{`description`:"`smime`: a PEM or base64 DER certificate; empty removes it.",`maxLength`:16384}) `certificate`?: string
+    @js(#{`description`:"`smime`: a PEM or base64 DER certificate; empty removes it.",`maxLength`:16384}) `certificate`?: string;
+    @js(#{`description`:"`smime-kem-issue`: the shared secret decapsulated from the challenge, hex or base64.",`maxLength`:256}) `secret`?: string
   },
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;

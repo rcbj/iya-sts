@@ -3544,16 +3544,16 @@
     "text": "Algoritmos aceptados"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Los algoritmos OpenPGP que una clave puede usar, por orden de preferencia. Primero los compuestos RFC 9980: ML-DSA-65+Ed25519 y ML-DSA-87+Ed448 firman, ML-KEM-768+X25519 y ML-KEM-1024+X448 cifran. Después los nombres clásicos: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa en nistP256, nistP384 y nistP521, rsaSign y rsaEncryptSign, x25519, x448, ecdh en curve25519Legacy y las mismas curvas NIST, y rsaEncrypt. Un nombre ausente de esta lista se rechaza en el registro y en la verificación (STS-OPENPGP-0004). SLH-DSA no está implementado. El valor predeterminado nombra cada uno de ellos."
+    "en": "f51a30de72243d25",
+    "text": "Los algoritmos OpenPGP que puede usar una clave, en orden de preferencia. Primero los algoritmos poscuánticos de RFC 9980: ML-DSA-65+Ed25519 y ML-DSA-87+Ed448 firman, igual que SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f y SLH-DSA-SHAKE-256s en una clave v6; ML-KEM-768+X25519 y ML-KEM-1024+X448 cifran. Después los nombres clásicos: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sobre nistP256, nistP384 y nistP521, rsaSign y rsaEncryptSign, x25519, x448, ecdh sobre curve25519Legacy y las mismas curvas NIST, y rsaEncrypt. Un nombre ausente de esta lista se rechaza en el registro y en la verificación (STS-OPENPGP-0004). El valor predeterminado los nombra todos."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Registrar solo claves poscuánticas"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Activado, una clave recién registrada debe usar un algoritmo poscuántico que nombre openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para la clave de firma, y ML-KEM-768+X25519 o ML-KEM-1024+X448 cuando tenga una clave de cifrado. Solo restringe el registro: una clave clásica ya registrada sigue verificándose y sigue recibiendo correo. No puede estar activado mientras lo esté openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Desactivado de manera predeterminada."
+    "en": "b0c222dfa3cda337",
+    "text": "Activado, una clave recién registrada debe usar un algoritmo poscuántico que nombre openpgp.algorithms: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 o uno de los tres algoritmos SLH-DSA para la clave de firma, y ML-KEM-768+X25519 o ML-KEM-1024+X448 cuando tiene una clave de cifrado. Solo restringe el registro: una clave clásica ya registrada sigue verificándose y sigue recibiendo correo. No puede estar activado mientras lo esté openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Desactivado por defecto."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",

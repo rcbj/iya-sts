@@ -383,6 +383,7 @@
   "endpoints.route./admin-api/wstrust.name": "WS-Trust settings",
   "endpoints.route./admin-api/wsfed.name": "WS-Federation settings",
   "endpoints.route./admin-api/tls.name": "TLS / mutual TLS settings",
+  "endpoints.route./admin-api/tls/key-exchange.name": "TLS key exchange negotiated",
   "endpoints.route./admin-api/tls/trust.name": "Client-certificate truststore",
   "endpoints.route./admin-api/tls/trust/:action.name": "Add or remove a client-certificate trust anchor",
   "endpoints.route./admin-api/tls-connection.name": "What this service saw of a request's TLS connection",

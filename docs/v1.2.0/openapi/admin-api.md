@@ -73,7 +73,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Sessions](admin-api-sessions.html) | 3 |  |
 | [Shared Signals](admin-api-shared-signals.html) | 14 |  |
 | [Sign-out](admin-api-sign-out.html) | 6 |  |
-| [TLS](admin-api-tls.html) | 5 |  |
+| [TLS](admin-api-tls.html) | 6 |  |
 | [TOTP MFA](admin-api-totp-mfa.html) | 1 |  |
 | [Token lifetimes](admin-api-token-lifetimes.html) | 3 | How long an access token, an ID Token and a refresh token issued here last, and how far out a clock may be before this service stops believing one of its own. Four of the settings under Configuration, behind a name that promises four rather than forty-nine — and a door that refuses a key it does not recognise instead of ignoring it. |
 | [Tokens](admin-api-tokens.html) | 14 | What has been issued, and the revocation of the three kinds that can be revoked. |

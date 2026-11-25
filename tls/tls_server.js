@@ -7980,6 +7980,11 @@ function connectionView(req) {
       encrypted: !!socket.encrypted,
       protocol: tlsFact('protocol'),
       cipher: tlsFact('cipher'),
+      // THE KEY EXCHANGE THIS CONNECTION NEGOTIATED (#2220), read off the
+      // session the server holds — tls/key_exchange.ts. Lazily: a library
+      // that requires nothing of this module.
+      keyExchange: socket.encrypted
+        ? require('./key_exchange').negotiatedOn(socket) : null,
       peerAddress: clientAddress.normalise(socket.remoteAddress) || null,
       clientAddress: clientAddress.clientAddressOf(req)
     },

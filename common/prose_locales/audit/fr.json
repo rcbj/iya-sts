@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "Le certificat S/MIME d'une personne a été défini ou supprimé"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "Un défi de preuve de possession S/MIME ML-KEM a été émis"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "Un certificat S/MIME ML-KEM n'a pas été délivré"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "Une clé OpenPGP classique a été conservée à côté de la clé post-quantique qui l’a remplacée"

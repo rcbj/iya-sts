@@ -3544,16 +3544,16 @@
     "text": "الخوارزميات المقبولة"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "خوارزميات OpenPGP التي يجوز لمفتاح استخدامها، بترتيب التفضيل. مركّبات RFC 9980 أولًا: يوقّع ML-DSA-65+Ed25519 وML-DSA-87+Ed448، ويشفّر ML-KEM-768+X25519 وML-KEM-1024+X448. ثم الأسماء التقليدية: ed25519 وed448 وeddsaLegacy/ed25519Legacy، وecdsa على nistP256 وnistP384 وnistP521، وrsaSign وrsaEncryptSign، وx25519 وx448، وecdh على curve25519Legacy وعلى منحنيات NIST نفسها، وrsaEncrypt. يُرفض الاسم الغائب عن هذه القائمة عند التسجيل وعند التحقق (STS-OPENPGP-0004). SLH-DSA غير مُنفَّذ. وتسمّي القيمة الافتراضية كل واحد من هذه."
+    "en": "f51a30de72243d25",
+    "text": "خوارزميات OpenPGP التي يجوز للمفتاح استخدامها، بترتيب التفضيل. أولًا خوارزميات ما بعد الكم في RFC 9980: توقّع ML-DSA-65+Ed25519 وML-DSA-87+Ed448، وكذلك SLH-DSA-SHAKE-128s وSLH-DSA-SHAKE-128f وSLH-DSA-SHAKE-256s على مفتاح v6؛ وتشفّر ML-KEM-768+X25519 وML-KEM-1024+X448. ثم الأسماء الكلاسيكية: ed25519 وed448 وeddsaLegacy/ed25519Legacy وecdsa على nistP256 وnistP384 وnistP521 وrsaSign وrsaEncryptSign وx25519 وx448 وecdh على curve25519Legacy والمنحنيات NIST نفسها، وrsaEncrypt. يُرفض الاسم الغائب عن هذه القائمة عند التسجيل وعند التحقق (STS-OPENPGP-0004). القيمة الافتراضية تسمّيها جميعًا."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "تسجيل المفاتيح ما بعد الكم فقط"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "عند التشغيل، يجب أن يستخدم المفتاح المسجَّل حديثًا خوارزمية ما بعد الكم يسمّيها openpgp.algorithms: ML-DSA-65+Ed25519 أو ML-DSA-87+Ed448 لمفتاح التوقيع، وML-KEM-768+X25519 أو ML-KEM-1024+X448 عندما يكون له مفتاح تشفير. يضيّق التسجيل فقط: المفتاح التقليدي المسجَّل من قبل يظل يُتحقق منه ويتلقى البريد. لا يمكن تشغيله مع openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). متوقف افتراضيًا."
+    "en": "b0c222dfa3cda337",
+    "text": "عند التشغيل، يجب أن يستخدم المفتاح المسجّل حديثًا خوارزمية ما بعد الكم تسمّيها openpgp.algorithms: ML-DSA-65+Ed25519 أو ML-DSA-87+Ed448 أو إحدى خوارزميات SLH-DSA الثلاث لمفتاح التوقيع، وML-KEM-768+X25519 أو ML-KEM-1024+X448 عندما يكون له مفتاح تشفير. يضيّق التسجيل فقط: المفتاح الكلاسيكي المسجّل مسبقًا يظل يُتحقَّق منه ويظل يتلقى البريد. لا يمكن تشغيله ما دام openpgp.pqcAlongsideClassical مشغّلًا (STS-OPENPGP-0027). متوقف افتراضيًا."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",

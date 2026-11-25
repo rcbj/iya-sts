@@ -22,9 +22,13 @@
 //       once; afterwards the job `post-login.mail-classical-retire` (this
 //       module's) removes it from the entry and so from the directory.
 //       `common/openpgp_keys.ts` holds the second slot.
-//   D4  An ML-KEM S/MIME certificate is UPLOADED: this realm issues none
-//       (a KEM key cannot sign a request, so issuing one needs a proof of
-//       possession of its own; a later ticket).
+//   D4  An ML-KEM S/MIME certificate is UPLOADED at this step (a KEM key
+//       cannot sign a request, so issuing one needs a proof of possession
+//       of its own; a later ticket). That ticket is #2220: the realm now
+//       issues one on `/portal/openpgp`, on an RFC 9810 challenge-response
+//       (`common/openpgp_keys.ts`), and a certificate issued there is what
+//       this activity then finds on the entry. The step itself still takes
+//       an upload.
 //
 // WHO IS DUE IT (`due()`), from the person's entry and never the progress
 // row, so "done" is always the credentials' to say:

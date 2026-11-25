@@ -2571,6 +2571,10 @@
     "en": "019419feb342ad45",
     "text": "以 JSON 形式提供的 GET /admin/tls：tls.* 设置，全部仅在重启时生效，因为证书在任何东西开始监听之前就已签发、套接字也已绑定。主端口是否为 HTTPS 由 global.https 决定，它与进程自身的设置一起位于 /admin-api/config。只读。"
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220)。自本节点前端进程启动以来，其监听器上每次完成的 TLS 握手协商出的密钥交换组，按监听器和组计数，以及其中有多少是后量子的（ML-KEM 组）。显示在 /admin/crypto-metadata 上。它不改变任何内容。"
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "以 JSON 形式提供的 GET /admin/tls/trust：每个客户端证书信任锚，及其主题、颁发者、序列号、有效期、指纹、PEM 和来源（`file` 或 `runtime`），通过 ?page= 和 ?per= 分页。整个进程只有一个信任库，因此在任何领域前缀下应答都相同。其中没有私钥——信任库只保存证书。运行时信任锚持久保存在目录中；`file` 信任锚则不然。"

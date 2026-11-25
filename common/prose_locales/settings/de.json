@@ -3544,16 +3544,16 @@
     "text": "Akzeptierte Algorithmen"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Die OpenPGP-Algorithmen, die ein Schlüssel verwenden darf, in der Reihenfolge der Bevorzugung. Zuerst die RFC-9980-Komposite: ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 signieren, ML-KEM-768+X25519 und ML-KEM-1024+X448 verschlüsseln. Dann die klassischen Namen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa auf nistP256, nistP384 und nistP521, rsaSign und rsaEncryptSign, x25519, x448, ecdh auf curve25519Legacy und denselben NIST-Kurven, und rsaEncrypt. Ein Name, der in dieser Liste fehlt, wird bei der Registrierung und bei der Prüfung abgelehnt (STS-OPENPGP-0004). SLH-DSA ist nicht implementiert. Der Standard nennt jeden davon."
+    "en": "f51a30de72243d25",
+    "text": "Die OpenPGP-Algorithmen, die ein Schlüssel verwenden darf, in der Reihenfolge der Bevorzugung. Zuerst die Post-Quanten-Algorithmen von RFC 9980: ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 signieren, ebenso SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f und SLH-DSA-SHAKE-256s auf einem v6-Schlüssel; ML-KEM-768+X25519 und ML-KEM-1024+X448 verschlüsseln. Dann die klassischen Namen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa auf nistP256, nistP384 und nistP521, rsaSign und rsaEncryptSign, x25519, x448, ecdh auf curve25519Legacy und denselben NIST-Kurven, und rsaEncrypt. Ein Name, der in dieser Liste fehlt, wird bei der Registrierung und bei der Prüfung abgelehnt (STS-OPENPGP-0004). Der Standard nennt jeden davon."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Nur Post-Quanten-Schlüssel registrieren"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Ein lässt einen neu registrierten Schlüssel einen Post-Quanten-Algorithmus verwenden, den openpgp.algorithms nennt: ML-DSA-65+Ed25519 oder ML-DSA-87+Ed448 für den Signierschlüssel, und ML-KEM-768+X25519 oder ML-KEM-1024+X448, wenn er einen Verschlüsselungsschlüssel hat. Es schränkt nur die Registrierung ein: ein bereits registrierter klassischer Schlüssel wird weiter geprüft und empfängt weiter Post. Kann nicht an sein, während openpgp.pqcAlongsideClassical an ist (STS-OPENPGP-0027). Standardmäßig aus."
+    "en": "b0c222dfa3cda337",
+    "text": "Eingeschaltet muss ein neu registrierter Schlüssel einen Post-Quanten-Algorithmus verwenden, den openpgp.algorithms nennt: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 oder einen der drei SLH-DSA-Algorithmen für den Signaturschlüssel, und ML-KEM-768+X25519 oder ML-KEM-1024+X448, wenn er einen Verschlüsselungsschlüssel hat. Es schränkt nur die Registrierung ein: Ein bereits registrierter klassischer Schlüssel wird weiterhin geprüft und empfängt weiterhin E-Mails. Kann nicht eingeschaltet sein, während openpgp.pqcAlongsideClassical es ist (STS-OPENPGP-0027). Standardmäßig aus."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",

@@ -3544,16 +3544,16 @@
     "text": "接受的演算法"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "金鑰可以使用的 OpenPGP 演算法，依優先順序。先是 RFC 9980 複合演算法：ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 用於簽章，ML-KEM-768+X25519 與 ML-KEM-1024+X448 用於加密。然後是經典名稱：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 與 nistP521 上的 ecdsa，rsaSign 與 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲線上的 ecdh，以及 rsaEncrypt。不在此清單中的名稱在登記和驗證時被拒絕（STS-OPENPGP-0004）。未實作 SLH-DSA。預設值列出上述每一個。"
+    "en": "f51a30de72243d25",
+    "text": "金鑰可以使用的 OpenPGP 演算法，依優先順序排列。首先是 RFC 9980 的後量子演算法：ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 用於簽章，v6 金鑰上的 SLH-DSA-SHAKE-128s、SLH-DSA-SHAKE-128f 與 SLH-DSA-SHAKE-256s 也用於簽章；ML-KEM-768+X25519 與 ML-KEM-1024+X448 用於加密。接著是傳統名稱：ed25519、ed448、eddsaLegacy/ed25519Legacy、nistP256、nistP384 與 nistP521 上的 ecdsa、rsaSign 與 rsaEncryptSign、x25519、x448、curve25519Legacy 及相同 NIST 曲線上的 ecdh，以及 rsaEncrypt。不在此清單中的名稱在註冊與驗證時會被拒絕（STS-OPENPGP-0004）。預設值列出了所有這些。"
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "僅登記後量子金鑰"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "開啟後，新登記的金鑰必須使用 openpgp.algorithms 點名的後量子演算法：簽章金鑰為 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密金鑰則為 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登記：已經登記的經典金鑰仍可驗證，仍可接收郵件。不能與 openpgp.pqcAlongsideClassical 同時開啟（STS-OPENPGP-0027）。預設關閉。"
+    "en": "b0c222dfa3cda337",
+    "text": "開啟後，新註冊的金鑰必須使用 openpgp.algorithms 列出的後量子演算法：簽章金鑰使用 ML-DSA-65+Ed25519、ML-DSA-87+Ed448 或三種 SLH-DSA 演算法之一，有加密金鑰時使用 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只限制註冊：已註冊的傳統金鑰仍可驗證，仍會收到郵件。openpgp.pqcAlongsideClassical 開啟時不能開啟（STS-OPENPGP-0027）。預設關閉。"
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",

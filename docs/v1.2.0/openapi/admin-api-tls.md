@@ -144,7 +144,7 @@ Scope: `admin:read`.
 
 **What this service saw of THIS request: its TLS connection, its client certificate and its forwarding headers**
 
-Describes the request that asked — and only that one — as this service saw and believed it. `connection`: `https`, `encrypted`, the TLS `protocol` and `cipher` negotiated, the socket's `peerAddress` and the `clientAddress` this service believes. `clientCertificate`: whether one was `presented` on the connection, whether it `verified` against the client truststore (`GET /admin-api/tls/trust`) or the `authorizationError` OpenSSL gave, the `certificate` (subject, issuer, serial, validity, subjectAltName, key, SHA-256 fingerprint and PEM), its RFC 8705 `thumbprint`, what the identity gate made of it (`identity`: issued here, accepted, kind, username, realm, why not) and the `revocation` verdict `GET /tls/sign-in` would act on. `forwarded`: `global.trustProxy` and `global.trustedProxies`, whether the peer is a trusted proxy and whether the forwarding headers were `believed`, the `effectiveBaseUrl` every issuer and endpoint is built from, each forwarding header with its value, and the client-certificate headers a proxy might set — which this service READS NONE OF, in either mode.
+Describes the request that asked — and only that one — as this service saw and believed it. `connection`: `https`, `encrypted`, the TLS `protocol` and `cipher` negotiated, the `keyExchange` group it negotiated and whether that was post-quantum (an ML-KEM group, alone or in a hybrid; #2220), the socket's `peerAddress` and the `clientAddress` this service believes. `clientCertificate`: whether one was `presented` on the connection, whether it `verified` against the client truststore (`GET /admin-api/tls/trust`) or the `authorizationError` OpenSSL gave, the `certificate` (subject, issuer, serial, validity, subjectAltName, key, SHA-256 fingerprint and PEM), its RFC 8705 `thumbprint`, what the identity gate made of it (`identity`: issued here, accepted, kind, username, realm, why not) and the `revocation` verdict `GET /tls/sign-in` would act on. `forwarded`: `global.trustProxy` and `global.trustedProxies`, whether the peer is a trusted proxy and whether the forwarding headers were `believed`, the `effectiveBaseUrl` every issuer and endpoint is built from, each forwarding header with its value, and the client-certificate headers a proxy might set — which this service READS NONE OF, in either mode.
 
 **IT CHANGES NOTHING**: no session is started (that is `GET /tls/sign-in`), no sighting recorded, no setting written.
 
@@ -270,6 +270,12 @@ Scope: `admin:read`.
 | `connection.clientAddress` | string, or null |  |  |
 | `connection.encrypted` | boolean |  |  |
 | `connection.https` | boolean |  |  |
+| `connection.keyExchange` | object |  |  |
+| `connection.keyExchange.codePoint` | integer, or null |  |  |
+| `connection.keyExchange.group` | string |  |  |
+| `connection.keyExchange.hybrid` | boolean |  |  |
+| `connection.keyExchange.postQuantum` | boolean |  |  |
+| `connection.keyExchange.protocol` | string, or null |  |  |
 | `connection.peerAddress` | string, or null |  |  |
 | `connection.protocol` | string, or null |  |  |
 | `forwarded` | object |  |  |
@@ -303,6 +309,49 @@ Scope: `admin:read`.
 | `forwarded.trustedProxies[]` | string |  |  |
 | `forwarded.whatItMeans` | string |  |  |
 | `generatedAt` | string |  |  |
+
+## GET /admin-api/tls/key-exchange
+
+`getTlsKeyExchange`
+
+**Which key exchange the TLS connections to this node negotiated, and how many were post-quantum**
+
+Every completed TLS handshake on this node's listeners since its front process started (#2220), read from the session the server holds: `connections` in all, `postQuantum` (an ML-KEM group, alone or in a hybrid such as X25519MLKEM768), `classical` and `unknown`; and per listener (`main`, `ldaps`, `debugger`, `custom:<id>`) its `groups`, each with its `group` name, its IANA `codePoint`, whether it is `postQuantum` and a `hybrid`, its `connections` and when it was last seen (`lastAt`). At most 32 groups a listener, the rest counted as `other`. A TLS 1.2 connection with RSA key transport is counted as `none`. The counts are this node's, answered by its front process, and are not kept across a restart. It changes nothing.
+
+**Mirrors** the Post-quantum tab of `GET /admin/crypto-metadata` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The key exchange counts.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `classical` | integer | yes |  |
+| `connections` | integer | yes |  |
+| `droppedListeners` | integer | yes |  |
+| `listeners` | list | yes |  |
+| `listeners[].connections` | integer | yes |  |
+| `listeners[].groups` | list | yes |  |
+| `listeners[].groups[].codePoint` | number, or null | yes |  |
+| `listeners[].groups[].connections` | integer | yes |  |
+| `listeners[].groups[].group` | string | yes |  |
+| `listeners[].groups[].hybrid` | boolean | yes |  |
+| `listeners[].groups[].lastAt` | string | yes |  |
+| `listeners[].groups[].postQuantum` | boolean | yes |  |
+| `listeners[].label` | string | yes |  |
+| `listeners[].listener` | string | yes |  |
+| `listeners[].postQuantum` | integer | yes |  |
+| `note` | string | yes |  |
+| `postQuantum` | integer | yes |  |
+| `since` | string | yes |  |
+| `unknown` | integer | yes |  |
 
 ## GET /admin-api/tls/trust
 

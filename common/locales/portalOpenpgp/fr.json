@@ -53,5 +53,19 @@
   "done.mail.openpgp": "Vos messages sont désormais chiffrés avec votre clé OpenPGP.",
   "done.mail.smime": "Vos messages sont désormais chiffrés avec votre certificat S/MIME.",
   "done.smimeSet": "Votre certificat S/MIME est défini.",
-  "done.smimeRemoved": "Votre certificat S/MIME a été supprimé."
+  "done.smimeRemoved": "Votre certificat S/MIME a été supprimé.",
+  "kem.heading": "Un certificat ML-KEM de ce service",
+  "kem.intro": "Ce service peut vous délivrer un certificat S/MIME post-quantique pour {mail}. Une clé ML-KEM ne peut pas signer une demande ; vous prouvez donc autrement qu'elle est à vous : ce service chiffre un secret pour elle, et vous renvoyez ce secret.",
+  "kem.step1": "Créez une clé ML-KEM avec OpenSSL 3.5 ou une version ultérieure, gardez la clé privée et collez la clé publique ci-dessous.",
+  "kem.key": "Votre clé publique ML-KEM (-----BEGIN PUBLIC KEY-----)",
+  "kem.ask": "Envoyer la clé",
+  "kem.step2": "Désencapsulez ce chiffré {algorithm} avec votre clé privée avant {at}, puis collez ci-dessous le secret affiché.",
+  "kem.secret": "Le secret (64 caractères hexadécimaux)",
+  "kem.issue": "Délivrer le certificat",
+  "kem.again": "Recommencer avec une autre clé",
+  "kem.issuedHeading": "Votre nouveau certificat S/MIME",
+  "kem.issuedSub": "Un certificat {algorithm}, numéro de série {serial}, est désormais votre certificat S/MIME. Enregistrez-le et importez-le avec votre clé privée dans votre logiciel de messagerie.",
+  "kem.save": "Enregistrer le certificat",
+  "done.kemChallenge": "Votre clé {algorithm} a été acceptée. Désencapsulez le défi ci-dessous et renvoyez le secret.",
+  "done.kemIssued": "Votre certificat S/MIME {algorithm} {serial} est délivré et défini."
 }

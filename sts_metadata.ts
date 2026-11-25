@@ -8043,6 +8043,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'bound before anything is listening. Whether the MAIN port is ' +
           'HTTPS is global.https, on /admin-api/config with the process\'s ' +
           'own settings. Read-only.' },
+  { path: '/admin-api/tls/key-exchange', group: 'Management API',
+    name: 'TLS key exchange negotiated',
+    specs: ['rfc8446', 'openapi'],
+    what: 'NON-SPEC (#2220). The key exchange group every completed TLS ' +
+          'handshake on this node\'s listeners negotiated since its front ' +
+          'process started, counted per listener and group, and how many ' +
+          'were post-quantum (an ML-KEM group). Drawn on ' +
+          '/admin/crypto-metadata. It changes nothing.' },
   { path: '/admin-api/tls/trust', group: 'Management API',
     name: 'Client-certificate truststore',
     specs: ['rfc5280', 'openapi'],

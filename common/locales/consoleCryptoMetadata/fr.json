@@ -251,5 +251,13 @@
   "thAlgName": "Algorithme",
   "thAlgSigns": "Signe",
   "thAlgAccepts": "Accepte",
-  "thAlgWhyNot": "Pourquoi non"
+  "thAlgWhyNot": "Pourquoi non",
+  "tlsKxHeading": "Échange de clés TLS, tel que négocié",
+  "tlsKxNote": "Ce que chaque négociation TLS terminée sur les listeners de ce nœud a négocié depuis le démarrage de son processus frontal, lu dans la session que conserve le serveur. Post-quantique signifie un groupe ML-KEM, seul ou dans un hybride. Les compteurs sont ceux de ce nœud et ne survivent pas à un redémarrage.",
+  "tlsKxSummary": "{pq} des {total} connexions depuis {since} étaient post-quantiques.",
+  "tlsKxListener": "Listener",
+  "tlsKxGroup": "Groupe",
+  "tlsKxConnections": "Connexions",
+  "tlsKxLast": "Vu pour la dernière fois",
+  "tlsKxNone": "Aucune connexion TLS n'a encore été comptée sur ce nœud."
 }

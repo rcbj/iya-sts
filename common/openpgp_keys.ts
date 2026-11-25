@@ -1370,6 +1370,248 @@ class OpenPgpKeys {
   }
 
   // -------------------------------------------------------------------------
+  // AN ML-KEM S/MIME CERTIFICATE THIS REALM ISSUES (#2220).
+  //
+  // #2009's D4 made an ML-KEM certificate UPLOADED, and left a realm-issued
+  // one to a later ticket because a KEM key cannot sign a certification
+  // request: there is nothing for the usual proof of possession to check.
+  // This is that ticket's route: RFC 9810 (CMP v3) section 5.2.8.3.3's
+  // direct method, the challenge-response protocol (written there for a
+  // decryption key; section 5.2.8.4 names the KEM case,
+  // `KEMKPOPChallengeResp`), for a key that cannot sign:
+  //
+  //   1. `issueSmimeKemChallenge()` takes the person's ML-KEM public key,
+  //      encapsulates to it (`crypto.smimeKemChallenge()`) and answers the
+  //      ciphertext. Only the SHA-256 of the shared secret is kept, beside
+  //      the key, for `openpgp.challengeLifetimeS`, ONE per person: in the
+  //      challenge store the OpenPGP registration uses, under the key
+  //      `kem:<entryUUID>` so the two never meet.
+  //   2. The person runs `openssl pkeyutl -decap` with their private key
+  //      and sends back the 32-octet secret (hex or base64).
+  //      `issueSmimeKemCertificate()` compares it in constant time; the
+  //      challenge is SPENT whatever the answer (a cluster claim on its
+  //      nonce, as a registration's is), so a wrong answer costs a new
+  //      challenge rather than a second guess.
+  //   3. A match is issued by the realm's EST Issuing CA under the `email`
+  //      profile, through `common/cert_enrollment.ts`'s `issue()` — the
+  //      enrollment core, so the names come from the entry (its `mail` as
+  //      the rfc822Name), the realm's est.allowedProfiles, lifetime and
+  //      certificate cap apply, the serial is recorded where OCSP and the
+  //      CRL look, and it is audited as any enrollment is. `pki.js`
+  //      certifies `keyEncipherment` alone for an ML-KEM key (RFC 9935).
+  //   4. The certificate becomes the person's S/MIME certificate through
+  //      `setSmimeCertificate()`, unchanged, and is answered with its chain.
+  //
+  // An uploaded certificate is still taken exactly as before.
+  // -------------------------------------------------------------------------
+  /**
+   * Issues a proof-of-possession challenge for an ML-KEM S/MIME certificate.
+   *
+   * @param username - the person
+   * @param publicKey - the ML-KEM public key, a PEM SubjectPublicKeyInfo
+   * @param ctx - `{ actor, via }`
+   * @returns `{ ok, challenge: { algorithm, cipherText, expiresAt },
+   *   command }`, or a coded refusal
+   */
+  issueSmimeKemChallenge(username: string, publicKey: string,
+                         ctx: Json): Json {
+    const { log, crypto: c, now } = this.deps;
+    log.debug("Entering OpenPgpKeys.issueSmimeKemChallenge().");
+    const p = this.person(username);
+    if (!p) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemChallenge(). Nobody.");
+      return this.refuse(this.deps.directory() ? 'STS-OPENPGP-0013'
+                                               : 'STS-OPENPGP-0020',
+                         'There is no person "' + String(username || '') +
+                         '" in this realm.');
+    }
+    if (!OpenPgpKeys.splitAddress(p.mail).domain) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemChallenge(). No address.");
+      return this.refuse('STS-OPENPGP-0006', p.username + '\'s entry has ' +
+        'no mail address, and an S/MIME certificate names the address on ' +
+        'the entry.');
+    }
+    if (!c.smimeKemAvailable()) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemChallenge(). No ML-KEM.");
+      return this.refuse('STS-OPENPGP-0036', 'This service cannot ' +
+        'encapsulate to an ML-KEM key on this runtime, so it cannot ask ' +
+        'for the proof of possession an ML-KEM certificate needs.');
+    }
+    const key: Json = c.smimeKemPublicKeyOf(String(publicKey || ''));
+    if (!key.ok) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemChallenge(). The key.");
+      return this.refuse('STS-OPENPGP-0035', String(key.error) + '.');
+    }
+    const holder = this.holderOf(p.username);
+    const made: Json = c.smimeKemChallenge(key);
+    const issuedAt = now();
+    const lifetimeS = Number(this.setting('openpgp.challengeLifetimeS'));
+    const row = { kind: 'smime-kem', algorithm: key.name,
+                  spkiPem: key.spkiPem, secretDigest: made.secretDigest,
+                  cipherText: made.cipherText.toString('base64'),
+                  nonce: c.randomBytes(24).toString('base64url'),
+                  issuedAt: issuedAt,
+                  expiresAt: issuedAt + lifetimeS * 1000,
+                  actor: String((ctx && ctx.actor) || ''),
+                  via: String((ctx && ctx.via) || '') };
+    challenges.set(OpenPgpKeys.kemHolderKey(holder), row);
+    this.recordAudit('openpgp.smime-kem-challenge', row.actor, p.username,
+      'an ' + key.name + ' S/MIME proof-of-possession challenge was issued ' +
+      'for ' + p.username, { via: row.via, algorithm: key.name,
+                             expiresAt: new Date(row.expiresAt)
+                               .toISOString() });
+    log.debug("Leaving OpenPgpKeys.issueSmimeKemChallenge().");
+    return { ok: true, challenge: {
+      algorithm: key.name,
+      cipherText: made.cipherText.toString('base64'),
+      expiresAt: new Date(row.expiresAt).toISOString() },
+      command: 'base64 -d > challenge.bin && openssl pkeyutl -decap ' +
+               '-inkey mlkem.key -in challenge.bin -secret secret.bin && ' +
+               'xxd -p -c 64 secret.bin' };
+  }
+
+  /**
+   * Issues the ML-KEM S/MIME certificate a person proved possession of, and
+   * makes it their S/MIME certificate.
+   *
+   * @param username - the person
+   * @param secret - the shared secret they decapsulated, hex or base64
+   * @param ctx - `{ actor, via }`
+   * @returns `{ ok, certificate, chain, serial, subject }`, or a coded
+   *   refusal
+   */
+  async issueSmimeKemCertificate(username: string, secret: string,
+                                 ctx: Json): Promise<Json> {
+    const { log, crypto: c, now, errorCodes: codes } = this.deps;
+    log.debug("Entering OpenPgpKeys.issueSmimeKemCertificate().");
+    const actor = String((ctx && ctx.actor) || '');
+    const via = String((ctx && ctx.via) || '');
+    const self = this;
+    const refused = function (answer: Json): Json {
+      self.recordAudit('openpgp.smime-kem-refused', actor,
+        String(username || ''), 'an ML-KEM S/MIME certificate was not ' +
+        'issued for ' + String(username || '') + ': ' +
+        String(answer.error || ''), { via: via }, 'refused',
+        codes.codeOf(answer));
+      return answer;
+    };
+    const p = this.person(username);
+    if (!p) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemCertificate(). Nobody.");
+      return this.refuse(this.deps.directory() ? 'STS-OPENPGP-0013'
+                                               : 'STS-OPENPGP-0020',
+                         'There is no person "' + String(username || '') +
+                         '" in this realm.');
+    }
+    const key = OpenPgpKeys.kemHolderKey(this.holderOf(p.username));
+    const held: Json = challenges.get(key);
+    const at = now();
+    if (!held || held.kind !== 'smime-kem' ||
+        !(Number(held.expiresAt) > at)) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemCertificate(). No " +
+                "challenge.");
+      return refused(this.refuse('STS-OPENPGP-0037', 'There is no ' +
+        'outstanding ML-KEM challenge for ' + p.username + ', or it ' +
+        'lapsed: ask for a new one.'));
+    }
+    // SPENT ONCE, WHATEVER THE ANSWER (the block above).
+    const spent: Json = await this.deps.claims.claim({
+      scope: CHALLENGE_SCOPE, value: String(held.nonce),
+      ttlMs: Math.max(1000, Number(held.expiresAt) - at + 60000) });
+    challenges.delete(key);
+    if (!spent.ok) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemCertificate(). Spent.");
+      return refused(this.refuse('STS-OPENPGP-0037', spent.reason === 'used'
+        ? 'That challenge was already answered: ask for a new one.'
+        : 'The challenge could not be spent (the store did not answer); ' +
+          'ask for a new one.'));
+    }
+    if (!c.smimeKemAnswerMatches(String(held.secretDigest),
+                                 String(secret || ''))) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemCertificate(). Wrong " +
+                "secret.");
+      return refused(this.refuse('STS-OPENPGP-0038', 'That is not the ' +
+        'secret this service encapsulated to the ' + String(held.algorithm) +
+        ' key: decapsulate the challenge with its private key (openssl ' +
+        'pkeyutl -decap) and send the 32-octet secret, hex or base64. The ' +
+        'challenge is spent; ask for a new one.'));
+    }
+    // Lazily: the enrollment core reaches the directory, the PKI and the
+    // realm's rules, and this module is loaded long before it.
+    const enrollment: Json = require('./cert_enrollment');
+    const issued: Json = await enrollment.issue({
+      family: 'est', profile: 'email',
+      principal: enrollment.sessionPrincipal(p.username, 'portal',
+                                             { admin: false }),
+      target: { kind: 'person', id: p.username },
+      publicKeyPem: String(held.spkiPem),
+      requested: { emails: [p.mail] },
+      keySource: 'client', keyAlg: String(held.algorithm),
+      via: 'the user portal (ML-KEM S/MIME, #2220)'
+    });
+    if (!issued || !issued.ok) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemCertificate(). Not " +
+                "issued.");
+      return refused(this.refuse('STS-OPENPGP-0039', 'The realm\'s EST ' +
+        'Issuing CA did not issue the certificate: ' +
+        String(((issued && issued.errors) || [])[0] ||
+               'the authority refused') + '.'));
+    }
+    // `issue()` answers the record it kept on the entry: the certificate
+    // and the chain above it, the Root excluded.
+    const record: Json = issued.record || {};
+    const pem = String(record.certificatePem || '');
+    const set: Json = this.setSmimeCertificate(p.username, pem, ctx);
+    if (!set.ok) {
+      log.debug("Leaving OpenPgpKeys.issueSmimeKemCertificate(). Not set.");
+      return refused(set);
+    }
+    log.debug("Leaving OpenPgpKeys.issueSmimeKemCertificate(). " +
+              set.serial);
+    return { ok: true, certificate: pem,
+             chain: [pem].concat(record.chainPem || []),
+             serial: String(set.serial), subject: String(set.subject),
+             algorithm: String(held.algorithm) };
+  }
+
+  /**
+   * A person's outstanding ML-KEM S/MIME challenge, as the portal draws it:
+   * the algorithm, the ciphertext and when it lapses; null when there is
+   * none. The secret's digest and the key stay in the store.
+   *
+   * @param username - the person
+   * @returns `{ algorithm, cipherText, expiresAt }`, or null
+   */
+  smimeKemChallengeOf(username: string): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering OpenPgpKeys.smimeKemChallengeOf().");
+    const holder = this.person(username) ? this.holderOf(username) : '';
+    const held: Json = holder
+      ? challenges.get(OpenPgpKeys.kemHolderKey(holder)) : null;
+    if (!held || held.kind !== 'smime-kem' ||
+        !(Number(held.expiresAt) > now())) {
+      log.debug("Leaving OpenPgpKeys.smimeKemChallengeOf(). None.");
+      return null;
+    }
+    log.debug("Leaving OpenPgpKeys.smimeKemChallengeOf().");
+    return { algorithm: String(held.algorithm),
+             cipherText: String(held.cipherText),
+             expiresAt: new Date(Number(held.expiresAt)).toISOString() };
+  }
+
+  /**
+   * The challenge store's key for a person's ML-KEM challenge.
+   *
+   * @param holder - the person's entryUUID
+   * @returns the key
+   */
+  static kemHolderKey(holder: string): string {
+    helpers.log.debug("Entering OpenPgpKeys.kemHolderKey().");
+    helpers.log.debug("Leaving OpenPgpKeys.kemHolderKey().");
+    return 'kem:' + String(holder || '');
+  }
+
+  // -------------------------------------------------------------------------
   // THE PUBLICATION REGISTER (header).
   // -------------------------------------------------------------------------
   private async unpublish(holder: string): Promise<void> {
@@ -1964,6 +2206,9 @@ export = {
   registerRoutes: slot.forward('registerRoutes'),
   view: slot.forward('view'),
   issueChallenge: slot.forward('issueChallenge'),
+  issueSmimeKemChallenge: slot.forward('issueSmimeKemChallenge'),
+  issueSmimeKemCertificate: slot.forward('issueSmimeKemCertificate'),
+  smimeKemChallengeOf: slot.forward('smimeKemChallengeOf'),
   register: slot.forward('register'),
   removeKey: slot.forward('removeKey'),
   setPublication: slot.forward('setPublication'),

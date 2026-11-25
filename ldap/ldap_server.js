@@ -18544,12 +18544,15 @@ function rekeyLdaps(why) {
   try {
     const current = tlsServer.serverCertificate();
     Object.assign(serverCertificate, current);
+    // EVERY listener certificate, as the main port presents them (#2220):
+    // `clientTruststoreOptions()` answers parallel `key` and `cert` arrays,
+    // one bundle per `tls.certificateAlgorithms` entry, and OpenSSL picks
+    // the one the client's signature algorithms allow.
+    const context = tlsServer.clientTruststoreOptions(ldapsPolicy());
     secureServer.server.setSecureContext(Object.assign({
-      // The leaf, its chain and the Root (#1064), as every listener presents
-      // them — tls_server.js's presentedBundlePem().
-      cert: tlsServer.presentedBundlePem(current),
-      key: current.privateKeyPem,
-      ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
+      cert: context.cert,
+      key: context.key,
+      ca: context.ca
     }, tlsProtocolOptions()));
   } catch (e) {
     // The listener still has the context it had, so this is a certificate
@@ -18606,10 +18609,24 @@ if (serverCertificate && serverCertificate.certPem &&
     ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
   }, tlsProtocolOptions(),
   tlsServer.clientAuthOptions(ldapsPolicy().clientAuth)));
+  // ---------------------------------------------------------------------
+  // EVERY CERTIFICATE ON 636, NOT THE FIRST (#2220). The constructor above
+  // takes ONE certificate, because the ldapjs fork refuses anything but a
+  // string or a Buffer for `certificate` (lib/server.js) and this repository
+  // changes the fork only in the fork. So the context is replaced at once
+  // with the main port's: `clientTruststoreOptions()` answers PARALLEL
+  // `key` and `cert` arrays, one per `tls.certificateAlgorithms` entry, and
+  // OpenSSL serves the one that matches the signature algorithms the client
+  // offered — RSA to an ordinary client, ML-DSA to a post-quantum one, on
+  // the same port. Until #2220 the callback below answered the first
+  // certificate alone, so `applyAnchors()` put RSA back on every truststore
+  // change. It answers both arrays now; with one certificate configured
+  // that is the same single bundle it always was.
+  // ---------------------------------------------------------------------
   tlsServer.trustClientCertificatesOn(secureServer.server,
     'LDAPS (' + LDAPS_PORT + ')', function () {
-      return { key: serverCertificate.privateKeyPem,
-               cert: tlsServer.presentedBundlePem(serverCertificate) };
+      const context = tlsServer.clientTruststoreOptions(ldapsPolicy());
+      return { key: context.key, cert: context.cert };
     }, { kind: 'ldaps' });
   // Under paranoid PKI mode LDAPS holds a client certificate as the main port
   // does, with revocation, and the stream waits for the verdict (#1360).
@@ -18618,6 +18635,10 @@ if (serverCertificate && serverCertificate.certPem &&
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.
   sessionTickets.track(secureServer.server, 'LDAPS (' + LDAPS_PORT + ')');
+  // The key exchange each handshake negotiated, counted per group (#2220,
+  // tls/key_exchange.ts), as on the main port.
+  require('../tls/key_exchange').install(secureServer.server, 'ldaps',
+                                         'LDAPS (' + LDAPS_PORT + ')');
 } else {
   tlsListenError = 'there was no server certificate at startup';
   log.warn(errorCodes.tag('STS-LDAP-0029') +

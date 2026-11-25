@@ -7769,6 +7769,7 @@ const SETTINGS = [
     label: 'Algorithms accepted',
     env: 'STS_OPENPGP_ALGORITHMS', type: 'csv',
     dflt: 'ML-DSA-65+Ed25519,ML-DSA-87+Ed448,' +
+          'SLH-DSA-SHAKE-128s,SLH-DSA-SHAKE-128f,SLH-DSA-SHAKE-256s,' +
           'ML-KEM-768+X25519,ML-KEM-1024+X448,' +
           'ed25519,ed448,eddsaLegacy/ed25519Legacy,' +
           'ecdsa/nistP256,ecdsa/nistP384,ecdsa/nistP521,' +
@@ -7777,6 +7778,8 @@ const SETTINGS = [
           'ecdh/nistP384,ecdh/nistP521,rsaEncrypt',
     runtime: true, ordered: true,
     csvValues: ['ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+                'SLH-DSA-SHAKE-128s', 'SLH-DSA-SHAKE-128f',
+                'SLH-DSA-SHAKE-256s',
                 'ML-KEM-768+X25519', 'ML-KEM-1024+X448',
                 'ed25519', 'ed448', 'eddsaLegacy/ed25519Legacy',
                 'ecdsa/nistP256', 'ecdsa/nistP384', 'ecdsa/nistP521',
@@ -7786,27 +7789,33 @@ const SETTINGS = [
     selectAll: {
       aloneWhileOn: { 'openpgp.pqcOnly': ['ML-DSA-65+Ed25519',
                                           'ML-DSA-87+Ed448',
+                                          'SLH-DSA-SHAKE-128s',
+                                          'SLH-DSA-SHAKE-128f',
+                                          'SLH-DSA-SHAKE-256s',
                                           'ML-KEM-768+X25519',
                                           'ML-KEM-1024+X448'] }
     },
     description: 'The OpenPGP algorithms a key may use, in preference ' +
-                 'order. RFC 9980 composites first: ML-DSA-65+Ed25519 and ' +
-                 'ML-DSA-87+Ed448 sign, ML-KEM-768+X25519 and ' +
+                 'order. RFC 9980 post-quantum algorithms first: ' +
+                 'ML-DSA-65+Ed25519 and ML-DSA-87+Ed448 sign, as do ' +
+                 'SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f and ' +
+                 'SLH-DSA-SHAKE-256s on a v6 key; ML-KEM-768+X25519 and ' +
                  'ML-KEM-1024+X448 encrypt. Then the classical names: ' +
                  'ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa on ' +
                  'nistP256, nistP384 and nistP521, rsaSign and ' +
                  'rsaEncryptSign, x25519, x448, ecdh on curve25519Legacy ' +
                  'and the same NIST curves, and rsaEncrypt. A name absent ' +
                  'from this list is refused at registration and at ' +
-                 'verification (STS-OPENPGP-0004). SLH-DSA is not ' +
-                 'implemented. The default names every one of these.' },
+                 'verification (STS-OPENPGP-0004). The default names ' +
+                 'every one of these.' },
   { key: 'openpgp.pqcOnly', group: 'OpenPGP',
     label: 'Register post-quantum keys only',
     env: 'STS_OPENPGP_PQC_ONLY', type: 'bool', dflt: false, runtime: true,
     description: 'On, a newly registered key must use a post-quantum ' +
                  'algorithm that openpgp.algorithms names: ' +
-                 'ML-DSA-65+Ed25519 or ML-DSA-87+Ed448 for the signing ' +
-                 'key, and ML-KEM-768+X25519 or ML-KEM-1024+X448 when it ' +
+                 'ML-DSA-65+Ed25519, ML-DSA-87+Ed448 or one of the three ' +
+                 'SLH-DSA algorithms for the signing key, and ' +
+                 'ML-KEM-768+X25519 or ML-KEM-1024+X448 when it ' +
                  'has an encryption key. It narrows registration only: a ' +
                  'classical key already registered still verifies and ' +
                  'still receives mail. Cannot be on while ' +

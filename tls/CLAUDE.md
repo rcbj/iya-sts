@@ -2369,3 +2369,25 @@ is asked for the kind the certificate is. `cardAuthRefusalOf()` is unchanged;
 the rule it asks now reads the policy's `smartCardCardAuth` row.
   `tests/certificate_binding.js` holds both in process over stubs; no protocol
   job binds a second listener for it yet.
+
+## LDAPS PRESENTS EVERY CERTIFICATE, AND EVERY LISTENER COUNTS ITS KEY EXCHANGE (#2220, 2026-11-25)
+
+* **636 serves what the main port serves.** The ldapjs fork's constructor
+  refuses anything but a string or a Buffer for `certificate`, so LDAPS is
+  built with the first certificate and its context replaced at once with
+  `clientTruststoreOptions()`'s parallel `key`/`cert` arrays — through
+  `trustClientCertificatesOn()`'s callback (which until #2220 answered the
+  first certificate alone, so `applyAnchors()` put RSA back on every
+  truststore change) and `rekeyLdaps()`. No change to the fork.
+* **`tls/key_exchange.ts` counts the group each handshake negotiated**,
+  per listener (`main`, `ldaps`, `debugger`, `custom:<id>`), installed beside
+  `alert_close.ts` on each. The server side has no `getEphemeralKeyInfo()`
+  (null on a server socket), so the group is read from `getSession()`:
+  OpenSSL's SSL_SESSION DER carries `kex_group` under [19], the IANA code
+  point the ServerHello named. An encoding that is OpenSSL's, read
+  defensively: anything else is `unknown`, never a failure. The counts are
+  the front process's, so `GET /admin-api/tls/key-exchange` is in
+  `request_pool.js`'s NEVER_DISPATCHED, and under `/admin/tls` for
+  `admin_scope.ts` (a realm's token is refused it). `/admin/crypto-metadata`
+  composes it; `connectionView()` adds `connection.keyExchange`.
+  `tests/tls_pq_listeners.js` holds both halves.

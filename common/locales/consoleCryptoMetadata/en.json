@@ -251,5 +251,13 @@
   "thAlgName": "Algorithm",
   "thAlgSigns": "Signs",
   "thAlgAccepts": "Accepts",
-  "thAlgWhyNot": "Why not"
+  "thAlgWhyNot": "Why not",
+  "tlsKxHeading": "TLS key exchange, as negotiated",
+  "tlsKxNote": "What each completed TLS handshake on this node's listeners negotiated since its front process started, read from the session the server holds. Post-quantum means an ML-KEM group, alone or in a hybrid. The counts are this node's and are not kept across a restart.",
+  "tlsKxSummary": "{pq} of {total} connections since {since} were post-quantum.",
+  "tlsKxListener": "Listener",
+  "tlsKxGroup": "Group",
+  "tlsKxConnections": "Connections",
+  "tlsKxLast": "Last seen",
+  "tlsKxNone": "No TLS connection has been counted on this node yet."
 }
