@@ -120,7 +120,7 @@
   "createKind": "Innehåller",
   "createKindX509": "certifikat",
   "createKindJwks": "en nyckeluppsättning bunden till en part",
-  "createParty": "Part (endast nyckeluppsättning): client:, federation: eller claims-provider:…",
+  "createParty": "Part (endast nyckeluppsättning): client:, federation:, claims-provider: eller oidfed-anchor:…",
   "createJwks": "Publika nycklar, som JSON Web Key Set",
   "createJwksUri": "Eller en jwks_uri"
 }

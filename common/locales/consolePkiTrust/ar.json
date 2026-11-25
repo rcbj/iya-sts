@@ -120,7 +120,7 @@
   "createKind": "تحتوي",
   "createKindX509": "شهادات",
   "createKindJwks": "مجموعة مفاتيح مرتبطة بطرف واحد",
-  "createParty": "الطرف (لمجموعة المفاتيح فقط): client: أو federation: أو claims-provider:…",
+  "createParty": "الطرف (لمجموعة المفاتيح فقط): client: أو federation: أو claims-provider: أو oidfed-anchor:…",
   "createJwks": "المفاتيح العامة، بصيغة JSON Web Key Set",
   "createJwksUri": "أو jwks_uri"
 }

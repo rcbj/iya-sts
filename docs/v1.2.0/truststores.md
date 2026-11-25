@@ -60,14 +60,24 @@ only (at most 32), or a `jwks_uri`, which is fetched under the same outbound
 policy and cache as a client's registered `jwks_uri`. A private or symmetric
 key is refused (`STS-PKI-0308`).
 
-Four use cases verify with key sets: `client-jws`, `federation-jwt`,
-`ssf-set` and `claims-provider-jwt`. Each defaults to the built-in view
+Five use cases verify with key sets: `client-jws`, `federation-jwt`,
+`ssf-set`, `claims-provider-jwt` and `oidfed-anchor`. Each defaults to the built-in view
 **`registered-keys`**: each party's own registered keys, read exactly as
 before. Assign a use case `registered-keys` and a key set to add keys for
 one party, for example to pin a partner's current keys while its
 `jwks_uri` is unreliable. Leave `registered-keys` out and every party of
 that use case is verified only against key sets bound to it. A key set and
 a certificate truststore are never interchangeable (`STS-PKI-0309`).
+
+**OpenID Federation Trust Anchors** (#2150) are key sets too, bound to
+`oidfed-anchor:<entity id>`. Naming one in the `oidfed-anchor` use case
+makes that entity a Trust Anchor of the realm with those keys, or adds the
+keys to an anchor already registered under OpenID Federation; leaving
+`registered-keys` out makes the key sets the realm's only anchors. An
+anchor's keys are trusted out of band, so its key set is always pasted
+keys, never a `jwks_uri`. Trust Mark issuers are not configured here: a
+Trust Mark is verified with its issuer's keys as established through the
+issuer's own chain to an anchor.
 
 ## Scope: service-wide and per realm
 
@@ -144,6 +154,7 @@ unassigned and its default list holds no anchor.
 | `federation-jwt` | A token a federation partner signed: its ID Token, logout token or signed response | realm | jwks | `registered-keys` |  |
 | `ssf-set` | A Security Event Token an SSF transmitter partner signed | realm | jwks | `registered-keys` |  |
 | `claims-provider-jwt` | Aggregated or distributed claims a claims provider signed | realm | jwks | `registered-keys` |  |
+| `oidfed-anchor` | A Trust Anchor an OpenID Federation trust chain ends at, and its keys | realm | jwks | `registered-keys` |  |
 | `revocation-signer` | A CRL issuer outside the path of the certificate checked | service | x509 | `setting:pki.revocationCrlIssuersFile` |  |
 | `cell-peer` | Another cell of this deployment | service | fixed | `service-root` |  |
 | `ca-import` | A certificate authority imported into this service's hierarchy | realm | admission | — |  |

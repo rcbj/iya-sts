@@ -120,7 +120,7 @@
   "createKind": "Naglalaman",
   "createKindX509": "mga sertipiko",
   "createKindJwks": "isang key set na nakatali sa isang partido",
-  "createParty": "Partido (key set lamang): client:, federation: o claims-provider:…",
+  "createParty": "Partido (key set lamang): client:, federation:, claims-provider: o oidfed-anchor:…",
   "createJwks": "Mga pampublikong key, bilang JSON Web Key Set",
   "createJwksUri": "O isang jwks_uri"
 }

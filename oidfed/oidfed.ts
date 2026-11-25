@@ -650,9 +650,29 @@ class Oidfed {
     const { log, store, keys } = this.deps;
     log.debug("Entering Oidfed.anchors().");
     const self = this;
-    const out: Json[] = store.entries(KINDS.ANCHOR).map(function (e) {
-      return { entityId: e.entityId, jwks: (e.data || {}).jwks,
-               localRealm: '' };
+    // WHICH ANCHORS COUNT (#2150): the `oidfed-anchor` use case's list. Its
+    // default, `registered-keys`, is everything this function read before;
+    // a key set bound to `oidfed-anchor:<entity id>` adds that anchor, or
+    // adds its keys to a registered one; and a list without
+    // `registered-keys` makes the bound key sets the only anchors.
+    const bound: Json = require('../common/truststores')
+      .boundKeySets('oidfed-anchor', 'oidfed-anchor');
+    const out: Json[] = !bound.registered ? [] :
+      store.entries(KINDS.ANCHOR).map(function (e) {
+        return { entityId: e.entityId, jwks: (e.data || {}).jwks,
+                 localRealm: '' };
+      });
+    bound.sets.forEach(function (set: Json) {
+      const held = out.filter(function (a: Json): boolean {
+        return a.entityId === set.party;
+      })[0];
+      if (held) {
+        const keys = ((held.jwks && held.jwks.keys) || []).concat(set.keys);
+        held.jwks = Object.assign({}, held.jwks || {}, { keys: keys });
+        return;
+      }
+      out.push({ entityId: set.party, jwks: { keys: set.keys.slice() },
+                 localRealm: '' });
     });
     const add = function (entityId: string, realm: Json): void {
       log.debug("Entering add(). " + entityId);
@@ -668,10 +688,11 @@ class Oidfed {
                  }) });
       log.debug("Leaving add().");
     };
-    if (this.implicitTopology() && !this.isDefaultRealm()) {
+    if (bound.registered && this.implicitTopology() &&
+        !this.isDefaultRealm()) {
       add(this.defaultEntityId(req), this.defaultRealm());
     }
-    if (!this.authorityHints(req).length) {
+    if (bound.registered && !this.authorityHints(req).length) {
       add(this.entityId(req), this.deps.realms.current());
     }
     log.debug("Leaving Oidfed.anchors(). " + out.length);

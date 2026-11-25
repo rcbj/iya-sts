@@ -120,7 +120,7 @@
   "createKind": "Holds",
   "createKindX509": "certificates",
   "createKindJwks": "a key set bound to one party",
-  "createParty": "Party (a key set only): client:, federation: or claims-provider:…",
+  "createParty": "Party (a key set only): client:, federation:, claims-provider: or oidfed-anchor:…",
   "createJwks": "Public keys, as a JSON Web Key Set",
   "createJwksUri": "Or a jwks_uri"
 }

@@ -120,7 +120,7 @@
   "createKind": "內容",
   "createKindX509": "憑證",
   "createKindJwks": "綁定到某一方的金鑰集",
-  "createParty": "參與方（僅金鑰集）：client:、federation: 或 claims-provider:…",
+  "createParty": "參與方（僅金鑰集）：client:、federation:、claims-provider: 或 oidfed-anchor:…",
   "createJwks": "公開金鑰，作為 JSON Web Key Set",
   "createJwksUri": "或 jwks_uri"
 }
