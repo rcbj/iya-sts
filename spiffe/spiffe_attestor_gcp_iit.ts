@@ -212,10 +212,31 @@ class GcpIitAttestor {
     const sdk = load(COMPUTE_PACKAGE);
     const file = String(config.value('spiffe.gcpIitServiceAccountFile') ||
                         '');
+    // The key file is READ HERE, checked and read through one descriptor
+    // (#2247), and its JSON handed to the client as `credentials`, so the
+    // SDK never opens the path after the check. A file that is not JSON (a
+    // legacy P12 key) can only be handed over by name, after the path check.
+    let options: any = {};
     if (file) {
-      require('../common/outbound_tls').assertNamedFile(file);
+      const outbound = require('../common/outbound_tls');
+      const text = outbound.readNamedFile(file);
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        log.debug("Caught in GcpIitAttestor.instance(): " +
+                  ((e && e.message) || e));
+        // Not JSON: the SDK reads it by name, as before.
+        parsed = null;
+      }
+      if (parsed && typeof parsed === 'object') {
+        options = { credentials: parsed };
+      } else {
+        outbound.assertNamedFile(file);
+        options = { keyFilename: file };
+      }
     }
-    const client = new sdk.InstancesClient(file ? { keyFilename: file } : {});
+    const client = new sdk.InstancesClient(options);
     const answer = await client.get({ project: identity.project_id,
                                       zone: identity.zone,
                                       instance: identity.instance_name });

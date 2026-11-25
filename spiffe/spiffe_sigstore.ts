@@ -498,9 +498,9 @@ class SigstoreVerifier {
       return '';
     }
     try {
-      require('../common/outbound_tls').assertNamedFile(file);
-      const auths = (JSON.parse(fs.readFileSync(file, 'utf8')) || {}).auths ||
-                    {};
+      // Checked and read through one descriptor (#2247).
+      const auths = (JSON.parse(require('../common/outbound_tls')
+        .readNamedFile(file, { fs: fs })) || {}).auths || {};
       const names = registry === DOCKER_HUB
         ? [DOCKER_HUB, 'https://index.docker.io/v1/', 'docker.io']
         : [registry, 'https://' + registry];
