@@ -5643,6 +5643,22 @@ const CODES = [
       'asked to be deleted (#2118); the assignment is changed first.',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0308',
+    summary: 'A key-set truststore was refused its party or its keys ' +
+      '(#2149): the party is not client:, federation: or claims-provider:' +
+      '<id>; the key set is not JSON, holds no key, more than 32, a key ' +
+      'without kty, or a private or symmetric key; or neither or both of ' +
+      'pasted keys and a jwks_uri were given. Also recorded where a stored ' +
+      'key set no longer reads, at a verification.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0309',
+    summary: 'A key set and a certificate truststore were confused ' +
+      '(#2149): a key-set use case was assigned a certificate truststore, ' +
+      'another use case a key set, a certificate was added to a key set, ' +
+      'or keys were set on a certificate truststore.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

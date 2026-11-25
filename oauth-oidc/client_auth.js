@@ -434,7 +434,14 @@ async function verifyAssertion(opts) {
     const found = [];
     let readingProblem = '';
     let readingProblemCode = '';
-    [opts.jwks, opts.assertionJwks].forEach(function (text) {
+    // WHICH SOURCES COUNT (#2149): the `client-jws` use case's list. By
+    // default the client's registration, as below; a key set bound to this
+    // client adds its keys, and a list without `registered-keys` leaves the
+    // registration out.
+    const sources = assertionGrant.clientKeySources(clientId);
+    const registered = !sources || sources.registered;
+    (registered ? [opts.jwks, opts.assertionJwks] : [])
+      .forEach(function (text) {
       if (!text) {
         return;
       }
@@ -466,7 +473,7 @@ async function verifyAssertion(opts) {
     // cached by `client_jwks.js`; the header's `kid` fetches again when the
     // cached set lacks it (a client that rotated its keys).
     let fetchedWhy = '';
-    if (!opts.jwks && opts.jwksUri) {
+    if (registered && !opts.jwks && opts.jwksUri) {
       const fetched = await assertionGrant.ensurePartyKeys(
         { oauthJwksUri: opts.jwksUri }, 'application', header && header.kid);
       fetchedWhy = (fetched && fetched.why) || '';
@@ -474,7 +481,24 @@ async function verifyAssertion(opts) {
                                   'application')
         .keys.forEach(function (one) { found.push(one); });
     }
-    if (!found.length && opts.jwksUri) {
+    let boundUnfetched = 0;
+    if (sources && sources.sets.length) {
+      const boundFetch = await assertionGrant.ensurePartyKeys({},
+        'application', header && header.kid, clientId);
+      fetchedWhy = fetchedWhy || (boundFetch && boundFetch.why) || '';
+      const bound = assertionGrant.boundKeys(sources);
+      boundUnfetched = bound.unfetched;
+      bound.keys.forEach(function (one) {
+        found.push(one);
+      });
+    }
+    if (!found.length && boundUnfetched) {
+      log.debug("Leaving verifyAssertion(). A bound key set gave no key.");
+      return { ok: false, errorCode: 'STS-OAUTH-0005', description: 'the ' +
+               'key set bound to this client in a truststore could not be ' +
+               'fetched' + (fetchedWhy ? ': ' + fetchedWhy : '') + '.' };
+    }
+    if (!found.length && registered && opts.jwksUri) {
       log.debug("Leaving verifyAssertion(). The jwks_uri gave no key.");
       return { ok: false, errorCode: 'STS-OAUTH-0005', description: 'this ' +
                                        'client registered a jwks_uri and its ' +

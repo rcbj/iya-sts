@@ -113,7 +113,16 @@ async function directoryChild() {
   const inUse = truststores.remove(id, 'partners');
   const cleared = truststores.assign(id, 'saml-signer', []);
   const removed = truststores.remove(id, 'partners');
+  // A key set (#2149), through the real directory: its three attributes.
+  const keyMade = truststores.create(id, { name: 'acme-keys', kind: 'jwks',
+    party: 'client:acme', jwksUri: 'https://keys.example.net/jwks' });
+  const keyRow = truststores.stores(id).filter(function (one) {
+    return one.name === 'acme-keys';
+  })[0] || {};
+  const keyGone = truststores.remove(id, 'acme-keys');
   process.stdout.write('DIRECTORY ' + JSON.stringify({
+    keyMade: keyMade.ok, keyParty: keyRow.party, keyUri: keyRow.jwksUri,
+    keyKind: keyRow.storeKind, keyGone: keyGone.ok,
     made: made.ok, added: added.added.length, assigned: assigned.ok,
     names: resolved.names, anchors: resolved.anchors.length,
     otherRealm: otherRealm.names, inUse: inUse.code, cleared: cleared.ok,
@@ -349,6 +358,104 @@ module.exports = {
       t.check(truststores.remove(realmA, 'realm-relay').ok,
               'the realm\'s truststore is deleted once unassigned');
 
+      // E4. KEY SETS, BOUND TO ONE PARTY (#2149).
+      t.log.info('E4. key sets');
+      const pair = require('crypto').generateKeyPairSync('ec',
+        { namedCurve: 'P-256' });
+      const pub = Object.assign({ kid: 'bound-' + stamp, alg: 'ES256' },
+        pair.publicKey.export({ format: 'jwk' }));
+      const priv = pair.privateKey.export({ format: 'jwk' });
+      const setOf = function (keys) {
+        return JSON.stringify({ keys: keys });
+      };
+      const acme = 'ks-acme-' + stamp;
+      const bound = 'ks-bound-' + stamp;
+      const certs = 'ks-certs-' + stamp;
+      const refusedWith = function (spec) {
+        return truststores.create('default', Object.assign({ name: 'ks-bad',
+          kind: 'jwks' }, spec)).code;
+      };
+      t.check(refusedWith({ party: 'person:alice', jwks: setOf([pub]) }) ===
+              'STS-PKI-0308', 'a key set names a client, a federation ' +
+              'relationship or a claims provider');
+      t.check(refusedWith({ party: 'client:' + acme,
+                            jwks: setOf([priv]) }) === 'STS-PKI-0308',
+              'a private key is never stored');
+      t.check(refusedWith({ party: 'client:' + acme, jwks: setOf([pub]),
+                            jwksUri: 'https://keys.example.net/jwks' }) ===
+              'STS-PKI-0308', 'pasted keys or a jwks_uri, not both');
+      t.check(refusedWith({ party: 'client:' + acme, jwks: '{"keys":[]}' }) ===
+              'STS-PKI-0308', 'an empty key set is refused');
+      t.check(refusedWith({ party: 'client:' + acme,
+                            jwksUri: 'ftp://keys.example.net/' }) ===
+              'STS-PKI-0308', 'a jwks_uri is an https URL');
+      t.check(truststores.create('default', { name: bound, kind: 'jwks',
+        party: 'client:' + acme, jwks: setOf([pub]) }).ok,
+              'a key set bound to one client is created');
+      t.check(truststores.create('default', { name: certs }).ok,
+              'a certificate truststore beside it');
+      const boundRow = truststores.stores('default').filter(function (one) {
+        return one.name === bound;
+      })[0];
+      t.check(boundRow && boundRow.storeKind === 'jwks' &&
+              boundRow.party === 'client:' + acme && boundRow.keys === 1,
+              'the list says what it is, whose, and how many keys',
+              JSON.stringify(boundRow || {}));
+      const toKeySet = await truststores.addCertificates('default', bound,
+        '-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----');
+      t.check(toKeySet.refused.length === 1 &&
+              toKeySet.refused[0].code === 'STS-PKI-0309',
+              'a certificate is not added to a key set');
+      t.check(truststores.setKeys('default', certs,
+                                  { jwks: setOf([pub]) }).code ===
+              'STS-PKI-0309', 'keys are not set on a certificate truststore');
+      t.check(truststores.assign('default', 'saml-signer', [bound]).code ===
+              'STS-PKI-0309', 'a certificate use case does not name a key set');
+      t.check(truststores.assign('default', 'client-jws', [certs]).code ===
+              'STS-PKI-0309', 'a key-set use case does not name a ' +
+              'certificate truststore');
+      t.check(truststores.assign('default', 'client-jws',
+                                 ['registered-keys', bound]).ok,
+              'client-jws names the registration and the bound key set');
+      const forAcme = truststores.keySources('client-jws',
+        { kind: 'client', id: acme }, 'default');
+      const forOther = truststores.keySources('client-jws',
+        { kind: 'client', id: acme + '-other' }, 'default');
+      t.check(forAcme.registered && forAcme.sets.length === 1 &&
+              forAcme.sets[0].keys.length === 1,
+              'the bound client gets its registration and the key set');
+      t.check(forOther.registered && forOther.sets.length === 0,
+              'ANY OTHER CLIENT gets nothing from it: a key set is never a ' +
+              'pool');
+      const grant = require('../oauth-oidc/assertion_grant');
+      const read = grant.keysForParty({ oauthClientId: acme }, 'application');
+      const readOther = grant.keysForParty(
+        { oauthClientId: acme + '-other' }, 'application');
+      t.check(read.keys.some(function (one) {
+        return one.source === 'truststore:' + bound;
+      }) && !readOther.keys.length,
+              'keysForParty() finds the bound key for that client only',
+              JSON.stringify(read.keys.map(function (one) {
+                return one.source;
+              })));
+      t.check(truststores.assign('default', 'client-jws', [bound]).ok &&
+              !truststores.keySources('client-jws',
+                { kind: 'client', id: acme }, 'default').registered,
+              'a list without registered-keys leaves the registration out');
+      t.check(truststores.setKeys('default', bound,
+        { jwksUri: 'https://keys.example.net/jwks' }).ok &&
+              truststores.keySources('client-jws',
+                { kind: 'client', id: acme }, 'default').sets[0].uri ===
+              'https://keys.example.net/jwks',
+              'the keys are replaced by a jwks_uri; the party stays');
+      t.check(truststores.assign('default', 'client-jws', []).ok &&
+              truststores.remove('default', bound).ok &&
+              truststores.remove('default', certs).ok,
+              'unassigned, both are deleted');
+      t.check(truststores.keySources('client-jws',
+        { kind: 'client', id: acme }, 'default').registered,
+              'unassigned, client-jws is the registration again');
+
       // F. THE SLOT.
       t.log.info('F. the slot');
       t.check(truststores.setDirectory({ listStores: function () {
@@ -376,6 +483,11 @@ module.exports = {
                 'the default realm keeps its default');
         t.check(got.inUse === 'STS-PKI-0307' && got.cleared && got.removed &&
                 got.after === 0, 'the directory clears and deletes');
+        t.check(got.keyMade && got.keyParty === 'client:acme' &&
+                got.keyUri === 'https://keys.example.net/jwks' &&
+                got.keyKind === 'jwks' && got.keyGone,
+                'the directory keeps a key set\'s party and jwks_uri (#2149)',
+                JSON.stringify(got));
       }
     } finally {
       overrides.forEach(function (key) {

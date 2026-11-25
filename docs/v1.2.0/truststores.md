@@ -115,6 +115,10 @@ unassigned and its default list holds no anchor.
 | `spiffe-attestation-azure` | An Azure IMDS attested document's signer | realm | x509 | `setting:spiffe.azureImdsTrustBundle`, `cloud-attestation`, `signers` |  |
 | `spiffe-svid` | An X509-SVID, against the bundle of its trust domain | realm | spiffe | `spiffe:*` |  |
 | `spiffe-jwt-svid` | A JWT-SVID, against the bundle of its trust domain | realm | spiffe | `spiffe:*` |  |
+| `client-jws` | A JWT or signature a client made: private_key_jwt, an RFC 7523 assertion, a request object, an HTTP message signature | realm | jwks | `registered-keys` |  |
+| `federation-jwt` | A token a federation partner signed: its ID Token, logout token or signed response | realm | jwks | `registered-keys` |  |
+| `ssf-set` | A Security Event Token an SSF transmitter partner signed | realm | jwks | `registered-keys` |  |
+| `claims-provider-jwt` | Aggregated or distributed claims a claims provider signed | realm | jwks | `registered-keys` |  |
 | `revocation-signer` | A CRL issuer outside the path of the certificate checked | service | x509 | `setting:pki.revocationCrlIssuersFile` |  |
 | `cell-peer` | Another cell of this deployment | service | fixed | `service-root` |  |
 | `ca-import` | A certificate authority imported into this service's hierarchy | realm | admission | — |  |

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6114** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6116** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 202
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 294
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 296
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -1161,6 +1161,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0305` | A new truststore's name is not 1 to 63 lower-case letters, digits and hyphens, is a built-in name, or is taken in the realm (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0306` | A named truststore is full: 64 per realm, 32 anchors or 64 intermediates per truststore, or the directory itself (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0307` | A named truststore a use case of the realm still trusts was asked to be deleted (#2118); the assignment is changed first. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0308` | A key-set truststore was refused its party or its keys (#2149): the party is not client:, federation: or claims-provider:<id>; the key set is not JSON, holds no key, more than 32, a key without kty, or a private or symmetric key; or neither or both of pasted keys and a jwks_uri were given. Also recorded where a stored key set no longer reads, at a verification. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0309` | A key set and a certificate truststore were confused (#2149): a key-set use case was assigned a certificate truststore, another use case a key set, a certificate was added to a key set, or keys were set on a certificate truststore. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 

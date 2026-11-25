@@ -56,11 +56,20 @@ model SignerTrustAnchor {
 @domain(#{
   area: "PKI",
   entry: "truststore",
-  what: "A named truststore: certificate authorities a use case is assigned to trust (#2118)."
+  what: "A named truststore: certificate authorities a use case is assigned to trust (#2118), or a key set bound to one party (#2149)."
 })
 model Truststore {
   @fromAttr(#{attr: "stsTruststoreKind", transform: "first"})
   kind?: string;
+
+  @fromAttr(#{attr: "stsTruststoreParty", transform: "first"})
+  party?: string;
+
+  @fromAttr(#{attr: "stsTruststoreJwks", transform: "first"})
+  jwks?: string;
+
+  @fromAttr(#{attr: "stsTruststoreJwksUri", transform: "first"})
+  jwksUri?: string;
 
   @fromAttr(#{attr: "stsTrustAnchorAddedBy", transform: "first"})
   addedBy?: string;

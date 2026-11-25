@@ -110,6 +110,20 @@ const VIEWS: Json = {
 
 // How each legacy setting holds its certificates, where that is not "PEM text
 // or the path of a PEM file".
+// KEY SETS (#2149, rcbj 2026-11-25). `registered-keys` is what every key-set
+// use case read before: each party's own registered `jwks` / `jwks_uri`. A
+// named key-set truststore is BOUND TO ONE PARTY, `<kind>:<id>`, because a
+// JWK names no owner and a pool would let one party's key sign as another.
+const KEYSET_VIEWS: Json = {
+  'registered-keys': 'Each party\'s own registered key set: a client\'s ' +
+    'jwks or jwks_uri, a federation relationship\'s fedJwks or fedJwksUri, ' +
+    'a claims provider\'s jwksUri. Changed where each party is registered.'
+};
+const PARTY = /^(client|federation|claims-provider):[^\s]{1,255}$/;
+const MAX_KEYS = 32;
+// A JWK member that makes it a private or a symmetric key.
+const SECRET_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k'];
+
 const SETTING_FORMATS: Json = {
   'saml2.metadataTrustAnchors': 'der-csv',
   'tls.trustIssuedClientCertificates': 'service-root-when-true'
@@ -538,16 +552,18 @@ class Truststores {
         { kind: 'setting', realmId: realmId } : null;
     } else if (name.indexOf('spiffe:') === 0) {
       found = { kind: 'spiffe', realmId: realmId };
+    } else if (Object.prototype.hasOwnProperty.call(KEYSET_VIEWS, name)) {
+      found = { kind: 'keyset-view', realmId: realmId, storeKind: 'jwks' };
     } else {
-      const here = this.namedStores(realmId).some(function (row: Json) {
+      const byName = function (row: Json): boolean {
         return row.name === name;
-      });
-      const shared = !here && realmId !== realms.DEFAULT_ID &&
-        this.namedStores(realms.DEFAULT_ID).some(function (row: Json) {
-          return row.name === name;
-        });
-      found = here ? { kind: 'named', realmId: realmId } :
-        shared ? { kind: 'named', realmId: realms.DEFAULT_ID } : null;
+      };
+      const here = this.namedStores(realmId).filter(byName)[0];
+      const shared = !here && realmId !== realms.DEFAULT_ID ?
+        this.namedStores(realms.DEFAULT_ID).filter(byName)[0] : null;
+      const row = here || shared;
+      found = row ? { kind: 'named', realmId: here ? realmId :
+        realms.DEFAULT_ID, storeKind: row.kind || 'x509', row: row } : null;
     }
     log.debug("Leaving Truststores.locate(). " +
               (found ? found.kind : 'none'));
@@ -569,6 +585,11 @@ class Truststores {
       return out;
     }
     let pems: string[] = [];
+    if (where.storeKind === 'jwks') {
+      // A key set holds no certificate (#2149); `keySources()` reads it.
+      log.debug("Leaving Truststores.holdings(). A key set.");
+      return out;
+    }
     if (where.kind === 'built-in') {
       const built = this.builtInPems(where.realmId, name, context);
       pems = built.pems;
@@ -890,6 +911,16 @@ class Truststores {
           '"' + name + '" is a SPIFFE bundle truststore, which only a ' +
           'SPIFFE use case may name' };
       }
+      // A key-set use case names key sets only, and nothing else names one
+      // (#2149): a certificate is not a key, nor a key a certificate.
+      if ((useCase.kind === 'jwks') !== (where.storeKind === 'jwks')) {
+        log.debug("Leaving Truststores.assignmentProblem(). Key set.");
+        return { code: 'STS-PKI-0309', why: useCase.kind === 'jwks' ?
+          '"' + useCaseId + '" verifies a JSON Web Signature and may name ' +
+          'only key sets (registered-keys, or a key-set truststore)' :
+          '"' + name + '" is a key set, which only a key-set use case may ' +
+          'name' };
+      }
       if (useCase.scope === 'service' && where.kind === 'named' &&
           where.realmId !== self.deps.realms.DEFAULT_ID &&
           !(UseCases.overridable(useCase) && where.realmId === realmId2)) {
@@ -983,6 +1014,11 @@ class Truststores {
         scope: name === 'client-certificates' ? 'service' : 'realm',
         readOnly: true, description: VIEWS[name] }, count(name)));
     });
+    Object.keys(KEYSET_VIEWS).forEach(function (name) {
+      out.push({ name: name, kind: 'view', storeKind: 'jwks', scope: 'realm',
+        readOnly: true, description: KEYSET_VIEWS[name], anchors: 0,
+        intermediates: 0, problem: '' });
+    });
     UseCases.legacySettings().forEach(function (key) {
       const name = 'setting:' + key;
       out.push(Object.assign({ name: name, kind: 'setting', scope: 'realm',
@@ -1012,6 +1048,16 @@ class Truststores {
       });
     }
     named.forEach(function (row: Json) {
+      if (row.kind === 'jwks') {
+        const read = Truststores.keysOfText(String(row.jwks || ''));
+        out.push({ name: row.name, kind: 'named', storeKind: 'jwks',
+          scope: row.realmId === realms.DEFAULT_ID ? 'service' : 'realm',
+          readOnly: row.realmId !== id, description: row.description || '',
+          addedBy: row.addedBy || '', party: row.party || '',
+          keys: read.keys.length, jwksUri: row.jwksUri || '',
+          anchors: 0, intermediates: 0, problem: read.why });
+        return;
+      }
       const rows = self.namedRows(row.realmId, row.name);
       out.push({ name: row.name, kind: 'named',
         scope: row.realmId === realms.DEFAULT_ID ? 'service' : 'realm',
@@ -1157,7 +1203,8 @@ class Truststores {
                           'in this process');
     }
     if (!NAME.test(name) || Object.prototype.hasOwnProperty.call(BUILT_INS,
-          name) || Object.prototype.hasOwnProperty.call(VIEWS, name)) {
+          name) || Object.prototype.hasOwnProperty.call(VIEWS, name) ||
+        Object.prototype.hasOwnProperty.call(KEYSET_VIEWS, name)) {
       log.debug("Leaving Truststores.create(). Name.");
       return this.refused('STS-PKI-0305', 'a truststore name is 1 to 63 ' +
         'lower-case letters, digits and hyphens, starting with a letter or ' +
@@ -1176,10 +1223,27 @@ class Truststores {
       return this.refused('STS-PKI-0306', 'this realm already holds ' +
                           MAX_STORES + ' named truststores');
     }
-    const written = this.directory.putStore(id, {
-      name: name, description: String((spec && spec.description) || ''),
+    const kind = String((spec && spec.kind) || 'x509');
+    const keySet: Json = { party: '', jwks: '', jwksUri: '' };
+    if (kind === 'jwks') {
+      const problem = Truststores.keySetProblem(spec, true);
+      if (problem) {
+        log.debug("Leaving Truststores.create(). Key set.");
+        return this.refused('STS-PKI-0308', problem);
+      }
+      keySet.party = String(spec.party).trim();
+      keySet.jwks = String(spec.jwks || '').trim();
+      keySet.jwksUri = String(spec.jwksUri || '').trim();
+    } else if (kind !== 'x509') {
+      log.debug("Leaving Truststores.create(). Kind.");
+      return this.refused('STS-PKI-0308', 'a truststore holds x509 ' +
+                          'certificates or a jwks key set');
+    }
+    const written = this.directory.putStore(id, Object.assign({
+      name: name, kind: kind,
+      description: String((spec && spec.description) || ''),
       addedBy: String((spec && spec.addedBy) || '')
-    }) !== false;
+    }, keySet)) !== false;
     log.debug("Leaving Truststores.create(). " + written);
     return written ? { ok: true, code: '', why: '' } :
       this.refused('STS-PKI-0306', 'the directory is full');
@@ -1268,6 +1332,16 @@ class Truststores {
                               'is changed where it is kept' });
       log.debug("Leaving Truststores.addCertificates(). No store.");
       return errorCodes.mark(out, 'STS-PKI-0301');
+    }
+    if (this.namedStores(id).some(function (row: Json) {
+      return row.name === name && row.kind === 'jwks';
+    })) {
+      out.refused.push({ subject: '', code: 'STS-PKI-0309',
+                         why: '"' + name + '" is a key set: its keys are ' +
+                              'changed with set-keys, and it holds no ' +
+                              'certificate' });
+      log.debug("Leaving Truststores.addCertificates(). A key set.");
+      return errorCodes.mark(out, 'STS-PKI-0309');
     }
     const self = this;
     // Self-issued first, so an intermediate in the same bundle as its anchor
@@ -1402,6 +1476,195 @@ class Truststores {
     return out;
   }
 
+  // ----- Key sets (#2149) ------------------------------------------------
+
+  /**
+   * A JSON Web Key Set's public keys, or why there are none: at most
+   * MAX_KEYS, each with a `kty`, none private or symmetric.
+   *
+   * @param text - the key set as JSON
+   * @returns `{ keys, why }`; `why` is '' when the set is usable
+   */
+  static keysOfText(text: string): Json {
+    helpers.log.debug("Entering Truststores.keysOfText().");
+    if (!text) {
+      helpers.log.debug("Leaving Truststores.keysOfText(). Empty.");
+      return { keys: [], why: '' };
+    }
+    let parsed: Json = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      helpers.log.debug("Caught in Truststores.keysOfText(): " +
+                        ((e && (e as Json).message) || e));
+      helpers.log.debug("Leaving Truststores.keysOfText(). Not JSON.");
+      return { keys: [], why: 'the key set is not JSON' };
+    }
+    const keys = parsed && Array.isArray(parsed.keys) ? parsed.keys : null;
+    let why = '';
+    if (!keys || !keys.length) {
+      why = 'a key set is a JSON object whose "keys" array holds at least ' +
+        'one key';
+    } else if (keys.length > MAX_KEYS) {
+      why = 'a key set holds at most ' + MAX_KEYS + ' keys';
+    } else if (keys.some(function (one: Json) {
+      return !one || typeof one !== 'object' || !one.kty;
+    })) {
+      why = 'every key names its kty';
+    } else if (keys.some(function (one: Json) {
+      return SECRET_MEMBERS.some(function (member) {
+        return Object.prototype.hasOwnProperty.call(one, member);
+      });
+    })) {
+      why = 'a key set holds public keys only: a private or a symmetric ' +
+        'key is never stored here';
+    }
+    helpers.log.debug("Leaving Truststores.keysOfText(). " + (why || 'ok'));
+    return { keys: why ? [] : keys, why: why };
+  }
+
+  /**
+   * What is wrong with a key set's party and contents, or ''. Exactly one of
+   * a pasted `jwks` and a `jwksUri` (an http or https URL, fetched under the
+   * outbound policy, which decides whether http may be dialled).
+   *
+   * @param spec - `{ party, jwks, jwksUri }`
+   * @param withParty - whether the party is checked (only at creation)
+   * @returns the reason, or ''
+   */
+  static keySetProblem(spec: Json, withParty: boolean): string {
+    helpers.log.debug("Entering Truststores.keySetProblem().");
+    const party = String((spec && spec.party) || '').trim();
+    const jwks = String((spec && spec.jwks) || '').trim();
+    const uri = String((spec && spec.jwksUri) || '').trim();
+    let why = '';
+    if (withParty && !PARTY.test(party)) {
+      why = 'a key set names the one party it speaks for: client:<client_id>' +
+        ', federation:<relationship id> or claims-provider:<provider id>';
+    } else if (!!jwks === !!uri) {
+      why = 'a key set is either pasted keys or a jwks_uri, not both and ' +
+        'not neither';
+    } else if (jwks) {
+      why = Truststores.keysOfText(jwks).why;
+    } else {
+      let url: URL | null = null;
+      try {
+        url = new URL(uri);
+      } catch (e) {
+        helpers.log.debug("Caught in Truststores.keySetProblem(): " +
+                          ((e && (e as Json).message) || e));
+        url = null;
+      }
+      if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:')) {
+        why = 'a jwks_uri is an https URL';
+      }
+    }
+    helpers.log.debug("Leaving Truststores.keySetProblem(). " +
+                      (why || 'none'));
+    return why;
+  }
+
+  /**
+   * Replaces a key-set truststore's keys: a pasted set or a jwks_uri. Its
+   * party is fixed when it is created and never changes.
+   *
+   * @param realmId - the realm; the ambient one where omitted
+   * @param name - the key-set truststore
+   * @param spec - `{ jwks }` or `{ jwksUri }`
+   * @returns `{ ok, code, why }`
+   */
+  setKeys(realmId: string | undefined, name: string, spec: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering Truststores.setKeys(). " + name);
+    const id = this.realmIdOf(realmId);
+    if (!this.directory) {
+      log.debug("Leaving Truststores.setKeys(). No directory.");
+      return this.refused('STS-PKI-0300', 'the directory is not installed ' +
+                          'in this process');
+    }
+    const row = this.namedStores(id).filter(function (one: Json) {
+      return one.name === name;
+    })[0];
+    if (!row) {
+      log.debug("Leaving Truststores.setKeys(). None.");
+      return this.refused('STS-PKI-0301', 'this realm holds no named ' +
+                          'truststore "' + name + '"');
+    }
+    if (row.kind !== 'jwks') {
+      log.debug("Leaving Truststores.setKeys(). Certificates.");
+      return this.refused('STS-PKI-0309', '"' + name + '" holds ' +
+                          'certificates, not a key set');
+    }
+    const problem = Truststores.keySetProblem(spec, false);
+    if (problem) {
+      log.debug("Leaving Truststores.setKeys(). Refused.");
+      return this.refused('STS-PKI-0308', problem);
+    }
+    const written = this.directory.putStore(id, {
+      name: row.name, kind: 'jwks', description: row.description || '',
+      addedBy: row.addedBy || '', party: row.party,
+      jwks: String(spec.jwks || '').trim(),
+      jwksUri: String(spec.jwksUri || '').trim()
+    }) !== false;
+    log.debug("Leaving Truststores.setKeys(). " + written);
+    return written ? { ok: true, code: '', why: '' } :
+      this.refused('STS-PKI-0306', 'the directory is full');
+  }
+
+  /**
+   * WHERE A PARTY'S KEYS COME FROM for a key-set use case (#2149): whether
+   * its own registration counts (`registered-keys` in the use case's list),
+   * and the key-set truststores the list names that are BOUND TO IT. A store
+   * bound to anybody else contributes nothing, whatever the list says. The
+   * caller reads the registration and fetches a `jwksUri` the way it always
+   * has; this answers only which sources are in.
+   *
+   * @param useCaseId - a `jwks` use case
+   * @param party - `{ kind: 'client' | 'federation' | 'claims-provider', id }`
+   * @param realmId - the realm; the ambient one where omitted
+   * @returns `{ registered, sets: [{ name, keys } | { name, uri }],
+   *   names, assigned, problems }`
+   */
+  keySources(useCaseId: string, party: Json, realmId?: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Truststores.keySources(). " + useCaseId);
+    const useCase = UseCases.get(useCaseId);
+    if (!useCase || useCase.kind !== 'jwks') {
+      log.debug("Leaving Truststores.keySources(). Not a key-set use case.");
+      return { registered: true, sets: [], names: [], assigned: false,
+               problems: [] };
+    }
+    const self = this;
+    const chosen = this.namesFor(useCaseId, realmId);
+    const here = this.resolvingRealm(useCase, realmId);
+    const wanted = String((party && party.kind) || '') + ':' +
+      String((party && party.id) || '');
+    const sets: Json[] = [];
+    const problems: Json[] = [];
+    (chosen.names as string[]).forEach(function (name: string) {
+      const where = self.locate(here, name);
+      if (!where || where.kind !== 'named' || where.storeKind !== 'jwks' ||
+          where.row.party !== wanted) {
+        return;
+      }
+      if (where.row.jwksUri) {
+        sets.push({ name: name, uri: String(where.row.jwksUri) });
+        return;
+      }
+      const read = Truststores.keysOfText(String(where.row.jwks || ''));
+      if (read.why) {
+        problems.push({ code: 'STS-PKI-0308', store: name, why: read.why });
+        return;
+      }
+      sets.push({ name: name, keys: read.keys });
+    });
+    const registered = chosen.names.indexOf('registered-keys') >= 0;
+    log.debug("Leaving Truststores.keySources(). registered=" + registered +
+              ", " + sets.length + " bound set(s).");
+    return { registered: registered, sets: sets, names: chosen.names,
+             assigned: chosen.assigned, problems: problems };
+  }
+
   /**
    * The store's limits, for the page.
    *
@@ -1453,5 +1716,10 @@ export = {
   addCertificates: slot.forward('addCertificates'),
   removeCertificate: slot.forward('removeCertificate'),
   useCases: slot.forward('useCases'),
+  // Key sets (#2149).
+  setKeys: slot.forward('setKeys'),
+  keySources: slot.forward('keySources'),
+  keysOfText: Truststores.keysOfText,
+  keySetProblem: Truststores.keySetProblem,
   limits: slot.forward('limits')
 };

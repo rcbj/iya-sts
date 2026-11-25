@@ -26629,6 +26629,10 @@ function truststoreRows() {
       name: (a.cn || [])[0] || '',
       description: (a.description || [])[0] || '',
       kind: (a.ststruststorekind || [])[0] || 'x509',
+      // A key-set truststore's (#2149): its party and its keys.
+      party: (a.ststruststoreparty || [])[0] || '',
+      jwks: (a.ststruststorejwks || [])[0] || '',
+      jwksUri: (a.ststruststorejwksuri || [])[0] || '',
       addedBy: (a.ststrustanchoraddedby || [])[0] || '',
       addedAt: stored.createdAt || ''
     };
@@ -26658,6 +26662,14 @@ function writeTruststore(row) {
   if (row.description) {
     attributes.description = String(row.description);
   }
+  // A key-set truststore (#2149): written whole each time, so a changed key
+  // set or jwks_uri replaces the old one rather than accumulating beside it.
+  ['party', 'jwks', 'jwksUri'].forEach(function (name) {
+    if (row[name]) {
+      attributes['stsTruststore' + name.charAt(0).toUpperCase() +
+                 name.slice(1)] = String(row[name]);
+    }
+  });
   putEntry(dn, attributes, { origin: 'truststore' });
   log.debug("Leaving writeTruststore().");
   return true;

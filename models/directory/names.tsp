@@ -426,6 +426,9 @@ namespace IyaSts.Directory;
   // certificates the signer class above, and one entry of assignments.
   "stsTruststore", "stsTruststoreKind", "stsTruststoreAssignments",
   "stsTruststoreAssignment",
+  // A key-set truststore's three (#2149): the one party it speaks for, and a
+  // pasted key set or the jwks_uri it is fetched from.
+  "stsTruststoreParty", "stsTruststoreJwks", "stsTruststoreJwksUri",
 
   // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
   // above and it is the SECOND of them that can be read back and used — a set
