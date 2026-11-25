@@ -29,7 +29,13 @@
 //   4. `select.js` maps names (scoped too) to workspaces, always adds
 //      node-vault, and refuses an unknown name or a version the lockfile does
 //      not hold;
-//   5. .dockerignore lets sdk/ into the build context.
+//   5. .dockerignore lets sdk/ into the build context;
+//   6. (#2159) tests/tools/dependency-windows.js audits sdk/package-lock.json
+//      as well as the root's, names the lockfile on every finding, reads the
+//      workspaces' pins as direct dependencies, and every `overrides` entry
+//      of sdk/package.json is the version the lockfile holds (npm's
+//      `--package-lock-only` leaves an existing entry as it was, so an
+//      override added without `npm update <name>` would not take).
 // ===========================================================================
 
 const fs = require('fs');
@@ -202,6 +208,41 @@ function run(t) {
     t.equal(ignored.join(', '), '',
             'and .dockerignore names no rule that would leave it out');
   }
+
+  t.log.info('=== 6. the advisory windows cover sdk/ (#2159) ===');
+  const windows = require(path.join(ROOT, 'tests', 'tools',
+                                    'dependency-windows.js'));
+  t.equal(JSON.stringify(windows.LOCKFILES.map(function (one) {
+    return one.name;
+  })), JSON.stringify(['package-lock.json', 'sdk/package-lock.json']),
+  'dependency-windows audits the root lockfile and sdk/\'s');
+  const findings = windows.auditFindings({ vulnerabilities: { tar: { via: [
+    { name: 'tar', severity: 'high',
+      url: 'https://github.com/advisories/GHSA-34x7-hfp2-rc4v' }, 'node-gyp'
+  ] } } }, 'sdk/package-lock.json');
+  t.equal(JSON.stringify(findings),
+          JSON.stringify([{ id: 'GHSA-34x7-hfp2-rc4v', severity: 'high',
+                            package: 'tar',
+                            lockfile: 'sdk/package-lock.json' }]),
+          'a finding names the lockfile it came from');
+  const pins = workspaces.map(function (dir) {
+    return Object.keys(readJson('sdk/packages/' + dir + '/package.json')
+      .dependencies || {})[0];
+  }).sort();
+  t.equal(JSON.stringify(windows.directDependencies(SDK)),
+          JSON.stringify(pins),
+          'the 90-day review reads every workspace\'s pin as a direct ' +
+          'dependency (' + pins.length + ')');
+  const overrides = root.overrides || {};
+  const unheld = Object.keys(overrides).filter(function (name) {
+    const held = (lock.packages || {})['node_modules/' + name] || {};
+    return held.version !== overrides[name];
+  });
+  t.equal(unheld.join(', '), '',
+          'each of sdk/package.json\'s ' + Object.keys(overrides).length +
+          ' overrides is the version the lockfile holds');
+  t.check(!(lock.packages || {})['node_modules/request'],
+          'and the lockfile holds no `request` (node-gyp 7\'s, #2159)');
   log.debug("Leaving run().");
 }
 
