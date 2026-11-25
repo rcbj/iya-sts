@@ -42,6 +42,8 @@
     - { title: Field-level access, url: /field-access.html }
     - { title: Communication inventory, url: /communications.html }
     - { title: File uploads, url: /file-uploads.html }
+    - { title: Risky third-party components, url: /risky-components.html }
+    - { title: Dangerous functionality, url: /dangerous-functionality.html }
     - { title: Authentication pathways, url: /authentication-pathways.html }
     - { title: Availability and resource limits, url: /availability.html }
     - { title: Conformance suites, url: /conformance.html }

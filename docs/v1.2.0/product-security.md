@@ -411,6 +411,12 @@ pin, or a version it does not hold, fails. The advisory check that runs on every
 CI run audits `sdk/package-lock.json` under the same windows as the root
 lockfile. The base images are named by version tag, not by digest.
 
+[Risky third-party components](risky-components.md) lists the components that
+carry more risk than the rest, and how the service contains each one.
+[Dangerous functionality](dangerous-functionality.md) lists the parts of the
+service that parse hostile input, fetch, take files or run code, and their
+controls.
+
 The image holds a CycloneDX inventory of its npm dependencies at
 `/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at
 `/usr/src/sts/sbom-sdks.cdx.json`, and a list of its operating-system packages
@@ -433,5 +439,7 @@ stack uses OpenBao for both. See [Key management](key-management.md).
 
 * [What is not checked](what-is-not-checked.md), in development mode
 * [Input validation](validation.md)
+* [Risky third-party components](risky-components.md)
+* [Dangerous functionality](dangerous-functionality.md)
 * [Departures from the specifications](spec-departures.md)
 * [Security profiles](oauth-security.md)
