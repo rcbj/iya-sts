@@ -58,6 +58,8 @@ const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
+// A password the person holds as their own (#2160).
+const ownPassword = require("./own_password.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -154,14 +156,26 @@ async function setUp() {
   await set("risk.assessSignIns", false);
   await set("authn.multipleAccounts", true);
   await set("logout.anyUser", false);
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): typed by an administrator it
+  // is temporary where the realm is in product, so each is created with a
+  // temporary one and chooses PASSWORD (`own_password.js`).
   for (const who of [ALICE, BOB]) {
+    const temporary = ownPassword.temporaryFor(PASSWORD);
     await apiPost(realmUrl("/admin-api/users/create"), {
       username: who, invent: false, credential: "password",
-      password: PASSWORD,
+      password: temporary,
       attributes: { cn: "Tabs " + who, givenName: "Tabs", sn: who,
                     displayName: "Tabs " + who,
                     mail: who + "@tabs.example.test" } },
       "created " + who);
+    await ownPassword.chooseOwn(realmUrl(""), who, temporary, PASSWORD,
+      function (person, value) {
+        log.debug("Entering setPassword().");
+        log.debug("Leaving setPassword().");
+        return apiPost(realmUrl("/admin-api/users/set-password"),
+                       { user: person, password: value },
+                       "set " + person + "'s password");
+      });
   }
   log.debug("Leaving setUp().");
 }
