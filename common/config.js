@@ -5359,6 +5359,55 @@ const SETTINGS = [
     description: 'The Azure Key Vault URL or the HashiCorp Vault endpoint ' +
                  'the previous key is read from. It has no fallback.' },
 
+  // THE PREVIOUS CELL KEY (#2220): the cell key rotated as the service key
+  // is, by re-wrapping this cell's data keys (`common/keystore.js`).
+  { key: 'keys.previousCellKekProvider', group: 'Key material',
+    label: 'Where the previous cell key-encryption key is read from',
+    env: 'STS_PREVIOUS_CELL_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault', 'pkcs11'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'To rotate this cell\'s key-encryption key: point ' +
+                 'keys.cellKek* at the NEW key and this at the OLD one, ' +
+                 'and start. Every data encryption key of this cell still ' +
+                 'wrapped under the old key is re-wrapped under the new one ' +
+                 'and written back; once every node of the cell has ' +
+                 'started that way, set this back to none. Refused without ' +
+                 'a cell key.' },
+
+  { key: 'keys.previousCellKekRef', group: 'Key material',
+    label: 'The previous cell key-encryption key\'s location',
+    env: 'STS_PREVIOUS_CELL_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the previous cell key is, in the provider ' +
+                 'keys.previousCellKekProvider names: a path, an ARN, a ' +
+                 'resource or a Vault read path. It has no fallback.' },
+
+  { key: 'keys.previousCellKekField', group: 'Key material',
+    label: 'The field the previous cell key is in',
+    env: 'STS_PREVIOUS_CELL_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the previous cell ' +
+                 'key. Empty takes the value whole.' },
+
+  { key: 'keys.previousCellKekRegion', group: 'Key material',
+    label: 'AWS region of the previous cell key',
+    env: 'STS_PREVIOUS_CELL_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the previous cell key is read from. Empty ' +
+                 'uses the SDK\'s own resolution.' },
+
+  { key: 'keys.previousCellKekVault', group: 'Key material',
+    label: 'Key Vault URL of the previous cell key',
+    env: 'STS_PREVIOUS_CELL_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL or the HashiCorp Vault endpoint ' +
+                 'the previous cell key is read from. It has no fallback.' },
+
   // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.
   //
@@ -7378,6 +7427,33 @@ const SETTINGS = [
                  'refused (STS-REG-0208); remove one first. Expired secrets ' +
                  'count until the daily job oauth2.client-secret-expiry ' +
                  'removes them.' },
+  // AUTOMATIC ROTATION, OPT-IN PER CLIENT (#2220): `common/applications.js`,
+  // *AUTOMATIC ROTATION, OPT-IN PER CLIENT*, argues delivery.
+  { key: 'oauth2.clientSecretAutoRotate', group: 'OAuth 2.0 / OIDC',
+    label: 'Rotate these clients\' secrets automatically',
+    env: 'STS_OAUTH2_CLIENT_SECRET_AUTO_ROTATE', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The applications whose client secret the daily ' +
+                 'oauth2.client-secret-expiry job ROTATES before it ' +
+                 'expires, comma-separated. Each entry is a `client_id`, ' +
+                 'or `client_id=destination/secret-name` to push the new ' +
+                 'secret to that secret destination (Directory → Secret ' +
+                 'destinations) before it is committed; a push that fails ' +
+                 'rotates nothing and is tried again the next day. Without ' +
+                 'a destination the client reads its new secret from its ' +
+                 'RFC 7592 client configuration endpoint. The old secret ' +
+                 'still authenticates for oauth2.clientSecretOverlapS. ' +
+                 'sts-api-client is never rotated here. Empty: no client ' +
+                 'is rotated, and each is warned about ahead of expiry.' },
+
+  { key: 'oauth2.clientSecretAutoRotateDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Rotate a listed client\'s secret this many days ahead',
+    env: 'STS_OAUTH2_CLIENT_SECRET_AUTO_ROTATE_DAYS', type: 'int',
+    dflt: 30, min: 1, max: 365, runtime: true,
+    description: 'How long before its primary client secret expires an ' +
+                 'application listed in oauth2.clientSecretAutoRotate is ' +
+                 'rotated. A secret that never expires is never rotated.' },
+
   { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
     label: 'Warn about an expiring client secret this many days ahead',
     env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
@@ -21543,6 +21619,24 @@ const SETTINGS = [
                  'SDK\'s VAULT_TOKEN. Ignored where a client certificate is ' +
                  'configured, exactly as the key\'s token is.' },
 
+  // READ AGAIN WHILE RUNNING (#2220): `persistence/persistence.js`,
+  // *THE DATABASE PASSWORD, READ AGAIN WHILE THE SERVICE RUNS*.
+  { key: 'persistence.databasePasswordRefreshS', group: 'Persistence',
+    label: 'Read the database password again every (seconds)',
+    env: 'STS_DATABASE_PASSWORD_REFRESH_S', type: 'int', dflt: 3600,
+    min: 0, max: 86400, runtime: true, perProcess: true,
+    description: 'How often each process reads the database password ' +
+                 'again from the secret store ' +
+                 '`persistence.databasePasswordProvider` names (the ' +
+                 'persistence.database-password-refresh job). A changed ' +
+                 'password is used for every connection made after it, ' +
+                 'without a restart; open connections keep working. It is ' +
+                 'also read again at once when the database refuses a ' +
+                 'login. Rotating the password at the database is the ' +
+                 'secret store\'s or the operator\'s job, and the old one ' +
+                 'must stay valid there for at least this long. 0 reads it ' +
+                 'only at start and after a refused login.' },
+
   // ---------------------------------------------------------------------
   // TLS TO THE DATABASE, and the one knob that is about TRUST rather than
   // about encryption.
@@ -21965,6 +22059,39 @@ const SETTINGS = [
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
                  'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // THE SHARED SECRETS' ROTATION (#2220): `cluster/cluster_secrets.ts`'s
+  // header argues the two steps and the identifiers that never rotate.
+  // -------------------------------------------------------------------------
+  { key: 'cluster.secretRotationDays', group: 'Cluster',
+    label: 'Rotate the shared secrets every (days)',
+    env: 'STS_CLUSTER_SECRET_ROTATION_DAYS', type: 'int', dflt: 90,
+    min: 0, max: 3650, runtime: true, perProcess: true,
+    description: 'How often the cluster.secret-rotate job replaces each ' +
+                 'shared secret that is a key: the CSRF key, the ACME ' +
+                 'nonce key, the Shared Signals receiver secret, the ' +
+                 'OpenID Federation page key, the sign-out result key and ' +
+                 'the DBSC key. A new value is published first and made ' +
+                 'current ten minutes later, once every process has read ' +
+                 'it, and the old one is still accepted for ' +
+                 '`cluster.secretOverlapS`. The pairwise subject secret ' +
+                 'and the bootstrap name secret are identifiers and never ' +
+                 'rotate, and a value set by an environment variable is ' +
+                 'the operator\'s to change. 0 turns the rotation off. A ' +
+                 'secret stored by an earlier release is dated at the ' +
+                 'job\'s first run and first rotated this many days ' +
+                 'later, never at the upgrade.' },
+
+  { key: 'cluster.secretOverlapS', group: 'Cluster',
+    label: 'Accept a rotated shared secret for (seconds)',
+    env: 'STS_CLUSTER_SECRET_OVERLAP_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true, perProcess: true,
+    description: 'How long a shared secret a rotation replaced is still ' +
+                 'accepted beside the new one, so a form, a nonce, a page ' +
+                 'pointer or a bound cookie made just before the rotation ' +
+                 'still works after it. Nothing new is made with it. A ' +
+                 'day by default.' },
 
   // -------------------------------------------------------------------------
   // CELLS (#98, 2026-09-28): one logical service deployed as several CELLS,
@@ -22639,6 +22766,37 @@ const SETTINGS = [
     label: 'The DKIM private key\'s field',
     env: 'STS_MAIL_DKIM_KEY_FIELD', type: 'string', dflt: '', runtime: true,
     description: 'The member of a JSON value to take. Empty means `dkimKey`.' },
+  // THE SELECTOR SWITCH (#2220): `common/mail_transports.ts`, *A DKIM
+  // SELECTOR SWITCH, WITH AN OVERLAP*.
+  { key: 'mail.dkimNextSelector', group: 'Mail',
+    label: 'The next DKIM selector',
+    env: 'STS_MAIL_DKIM_NEXT_SELECTOR', type: 'string', dflt: '',
+    runtime: true,
+    description: 'To rotate the DKIM key: the selector of the NEW key, ' +
+                 'whose record is published at ' +
+                 '<selector>._domainkey.<domain> before signing moves to ' +
+                 'it. The record to publish is logged when the transport ' +
+                 'is built. Empty: no rotation is under way.' },
+  { key: 'mail.dkimNextKeyField', group: 'Mail',
+    label: 'The next DKIM private key\'s field',
+    env: 'STS_MAIL_DKIM_NEXT_KEY_FIELD', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The member of the DKIM key\'s secret (the one ' +
+                 'mail.dkimKeyProvider and mail.dkimKeyRef name) that ' +
+                 'holds the next selector\'s PEM private key. Empty means ' +
+                 '`dkimNextKey`.' },
+  { key: 'mail.dkimSwitchAt', group: 'Mail',
+    label: 'Sign with the next DKIM selector from',
+    env: 'STS_MAIL_DKIM_SWITCH_AT', type: 'string', dflt: '',
+    runtime: true,
+    description: 'When messages start to be signed with ' +
+                 'mail.dkimNextSelector, as an ISO 8601 time ' +
+                 '(2026-12-01T00:00:00Z) — and only once DNS answers the ' +
+                 'next selector\'s name with its key; until then the ' +
+                 'current selector signs, with a warning. Keep the old ' +
+                 'selector\'s record published for a week after the switch, ' +
+                 'then make the next selector mail.dkimSelector and clear ' +
+                 'these three. Empty: never switch.' },
 
   { key: 'mail.sesRegion', group: 'Mail', label: 'Amazon SES region',
     env: 'STS_MAIL_SES_REGION', type: 'string', dflt: '', runtime: true,

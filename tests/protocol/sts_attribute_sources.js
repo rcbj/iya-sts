@@ -43,6 +43,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
@@ -744,12 +745,18 @@ async function test() {
              { client: CLIENT, scope: one }, "consented " + one);
   }
   // The realm's attribute policy (#396) requires givenName, sn and mail of
-  // every person in product mode.
+  // every person in product mode. Temporary, then the person's own
+  // (#2160, `own_password.js`): the sign-ins below use PASSWORD.
   await ok(realmApi + "/users/create", { username: ALICE, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Attr " + ALICE, givenName: "Attr", sn: "Source",
                   mail: ALICE + "@attr-source.test" } },
     "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   await ok(realmApi + "/claims/add-attribute-claim", { set: "access_token",
     name: "cost_center", attribute: "costCenter" },
     "added the cost_center attribute claim");

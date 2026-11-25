@@ -51,6 +51,7 @@ const ssfRoles = require("./ssf_roles.js");
 const facts = require("./service_facts.js");
 const nodeCrypto = require("crypto");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -563,11 +564,20 @@ async function test() {
       events_requested: [CAEP + "credential-change"] }) });
   assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
   const streamId = created.body.stream_id;
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product and every password-only door refuses it, so each person is made
+  // with a temporary one and chooses PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
   for (const who of [ALICE, BOB, CAROL]) {
     await ok(realmApi + "/users/create", { username: who, invent: false,
-      credential: "password", password: PASSWORD,
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "SFD " + who, givenName: "SFD", sn: who,
                     mail: who + "@sfd101.test" } }, "created " + who);
+    await ownPassword.ownPassword(realmBase, who, PASSWORD,
+      function (one, value) {
+        return postJson(realmApi + "/users/set-password",
+                        { user: one, password: value });
+      });
   }
 
   // -------------------------------------------------------------------------

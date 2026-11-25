@@ -47,6 +47,7 @@ const zlib = require("zlib");
 const nodeCrypto = require("crypto");
 const ldapjs = require("ldapjs");
 const est = require("./est_client.js");
+const ownPassword = require("./own_password");
 const K = require("./oauth_wire_kit.js").kit(
   "sts_user_activity_every_mechanism");
 const log = K.log;
@@ -192,13 +193,27 @@ async function expect(realm, mechanism, who, want) {
   log.debug("Leaving expect().");
 }
 
-async function person(realm, tag) {
+// `own`: THE PASSWORD IS MADE THE PERSON'S OWN (#2160). A typed one is
+// temporary in a product realm, where the screen asks for a new one, so the
+// person is made with a temporary one and chooses PW there
+// (`own_password.js`). Only for a product-realm person who signs in with
+// PW: that choice is itself a sign-in on the person's page, which would
+// answer for a mechanism that records none.
+async function person(realm, tag, own) {
   log.debug("Entering person(). " + tag);
   const who = "uam-" + tag + "-" + K.STAMP;
   await K.ok(K.rb(realm) + "/admin-api/users/create", { username: who,
-    invent: false, credential: "password", password: PW,
+    invent: false, credential: "password",
+    password: own ? ownPassword.temporaryFor(PW) : PW,
     attributes: { cn: who, givenName: who, sn: who,
                   mail: who + "@uam.example.test" } }, "created " + who);
+  if (own) {
+    await ownPassword.ownPassword(K.rb(realm), who, PW,
+      function (one, value) {
+        return K.send(K.rb(realm) + "/admin-api/users/set-password",
+                      { json: { user: one, password: value } });
+      });
+  }
   log.debug("Leaving person().");
   return who;
 }
@@ -505,7 +520,7 @@ async function productRealm() {
              "built the CA");
   const clientId = await client(realm, true);
 
-  let who = await person(realm, "pw");
+  let who = await person(realm, "pw", true);
   await codeFlow(realm, clientId, who);
   await expect(realm, "password screen + code flow", who,
                { session: true, tokens: 2 });

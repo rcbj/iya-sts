@@ -13257,7 +13257,11 @@ const CLIENT_SECRET_SWEEP_SLICE = 50;
 async function sweepClientSecretsInSlices(nowMs) {
   log.debug("Entering sweepClientSecretsInSlices().");
   const at = clientSecretSweepClock(nowMs);
-  const out = { expiring: [], expired: [], cleared: [] };
+  // THE AUTOMATIC ROTATIONS FIRST (#2220), so an application that has just
+  // been given a new secret is not then warned about the old one.
+  const rotation = await autoRotateClientSecrets(at.nowS);
+  const out = { expiring: [], expired: [], cleared: [],
+                rotated: rotation.rotated, rotationFailed: rotation.failed };
   await loopSlices.eachInSlices(list(), function (row) {
     sweepClientSecretOf(row, at, out);
   }, CLIENT_SECRET_SWEEP_SLICE);
@@ -13266,6 +13270,165 @@ async function sweepClientSecretsInSlices(nowMs) {
     expiring: out.expiring.length, expired: out.expired.length,
     cleared: out.cleared.length }));
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// AUTOMATIC ROTATION, OPT-IN PER CLIENT (#2220).
+//
+// A secret that expires and is never replaced leaves the client to notice,
+// and the daily job's warning was all this service did. Now an application
+// named in `oauth2.clientSecretAutoRotate` (a realm setting: each entry is
+// `client_id`, or `client_id=destination/secret-name`) is ROTATED by that
+// job once its primary secret expires within
+// `oauth2.clientSecretAutoRotateDays`: a new secret is added and the old one
+// goes on authenticating for `oauth2.clientSecretOverlapS` (never past its
+// own expiry), exactly as Rotate secret on the console does.
+//
+// **DELIVERY NEEDS THE CLIENT, AND THERE ARE TWO WAYS IT COOPERATES.**
+//
+//   * A SECRET DESTINATION (#221 P3, `common/secret_destinations.ts`): the
+//     new secret is PUSHED to the named secret in the operator's secrets
+//     manager BEFORE it is committed here — the service accounts' rule — so
+//     a push that fails rotates nothing, is audited (STS-REG-0375), and is
+//     tried again at the next run while the old secret still works; the
+//     client reads its secret from that store.
+//   * RFC 7592 CLIENT CONFIGURATION: without a destination the new secret
+//     is the `client_secret` a read of the client's configuration endpoint
+//     returns (with its registration access token), so a client that reads
+//     its configuration inside the overlap picks it up.
+//
+// A client that does neither is not rotated unless it is listed: opt-in,
+// because rotating a secret a client cannot fetch is an outage made on a
+// schedule. Everybody else keeps the existing warning ahead of expiry.
+// `sts-api-client` is never rotated here: its secret is pinned by
+// `adminApi.clientSecret`, which only the operator can change.
+// ---------------------------------------------------------------------------
+/**
+ * Reads `oauth2.clientSecretAutoRotate` in the ambient realm: which
+ * applications are rotated automatically, and the secret destination and
+ * secret name each one's new secret is pushed to, if any.
+ *
+ * @returns a Map from identifier to `{ destination, secretName }`
+ */
+function clientSecretAutoRotation() {
+  log.debug("Entering clientSecretAutoRotation().");
+  const out = new Map();
+  const raw = config.value('oauth2.clientSecretAutoRotate');
+  (Array.isArray(raw) ? raw : String(raw || '').split(',')).forEach(
+    function (entry) {
+      const text = String(entry || '').trim();
+      if (!text) {
+        return;
+      }
+      const eq = text.indexOf('=');
+      const id = (eq < 0 ? text : text.slice(0, eq)).trim();
+      const where = eq < 0 ? '' : text.slice(eq + 1).trim();
+      const slash = where.indexOf('/');
+      out.set(id, {
+        destination: slash < 0 ? where : where.slice(0, slash).trim(),
+        secretName: slash < 0 ? '' : where.slice(slash + 1).trim()
+      });
+    });
+  log.debug("Leaving clientSecretAutoRotation(). " + out.size + ".");
+  return out;
+}
+
+/**
+ * Rotates, in the ambient realm, every listed application whose primary
+ * client secret expires within `oauth2.clientSecretAutoRotateDays`, pushing
+ * the new secret to its destination first where one is named.
+ *
+ * @param nowS - the moment, in seconds
+ * @returns a promise of `{ rotated, failed }`, two lists of identifiers
+ */
+async function autoRotateClientSecrets(nowS) {
+  log.debug("Entering autoRotateClientSecrets().");
+  const out = { rotated: [], failed: [] };
+  const listed = clientSecretAutoRotation();
+  if (!listed.size) {
+    log.debug("Leaving autoRotateClientSecrets(). None listed.");
+    return out;
+  }
+  const days = Number(config.value('oauth2.clientSecretAutoRotateDays'));
+  const leadS = (isFinite(days) && days > 0 ? Math.floor(days) : 30) * 86400;
+  for (const entry of listed) {
+    const identifier = entry[0];
+    const where = entry[1];
+    const loaded = load(identifier);
+    if (!loaded.known || pinnedSecretOf(identifier)) {
+      continue;
+    }
+    const primary = primaryClientSecretOf(loaded.record.fields, nowS);
+    if (!primary || !(primary.expiresAt > 0) ||
+        primary.expiresAt - nowS > leadS) {
+      continue;
+    }
+    const secret = mintClientSecret();
+    if (where.destination) {
+      const pushed = await pushRotatedClientSecret(identifier, where, secret);
+      if (!pushed.ok) {
+        out.failed.push(identifier);
+        continue;
+      }
+    }
+    const done = rotateClientSecret(identifier,
+      { actor: 'scheduler', secret: secret });
+    if (done && done.ok) {
+      out.rotated.push(identifier);
+      audit.audit({ action: 'application.secret-rotated', actor: 'scheduler',
+        protocol: 'console', channel: 'internal', target: String(identifier),
+        summary: 'Application "' + identifier + '": its client secret was ' +
+                 'rotated before it expired' + (where.destination
+                   ? ', and the new one pushed to ' + where.destination
+                   : '; the client reads it from its RFC 7592 configuration'),
+        detail: { identifier: String(identifier), mode: 'auto',
+                  destination: where.destination || '',
+                  overlapUntil: done.overlapUntil || 0 } });
+    } else {
+      out.failed.push(identifier);
+      log.warn(errorCodes.tag('STS-REG-0375') + 'applications: the client ' +
+               'secret of "' + identifier + '" was not rotated: ' +
+               ((done && done.errors) || []).join(' '));
+    }
+  }
+  log.debug("Leaving autoRotateClientSecrets(). " + out.rotated.length +
+            " rotated, " + out.failed.length + " failed.");
+  return out;
+}
+
+// The push before the commit (#2220): never throws; `{ ok }`. The module is
+// required LAZILY, because it requires this one.
+async function pushRotatedClientSecret(identifier, where, secret) {
+  log.debug("Entering pushRotatedClientSecret().");
+  let answer = null;
+  try {
+    answer = await require('./secret_destinations').push(where.destination,
+      where.secretName || identifier,
+      { username: String(identifier), password: secret,
+        realm: realms.currentId(), rotatedAt: new Date().toISOString() });
+  } catch (e) {
+    log.debug("Caught in pushRotatedClientSecret(): " +
+              ((e && e.message) || e));
+    answer = { ok: false, error: String((e && e.message) || e) };
+  }
+  if (!answer || !answer.ok) {
+    log.warn(errorCodes.tag('STS-REG-0375') + 'applications: the new client ' +
+             'secret of "' + identifier + '" could not be pushed to ' +
+             where.destination + ', so it was not rotated; the old one ' +
+             'still authenticates. ' + String((answer && answer.error) || ''));
+    audit.audit({ action: 'application.secret-rotated', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(identifier),
+      outcome: 'failure', errorCode: 'STS-REG-0375',
+      summary: 'Application "' + identifier + '": the automatic rotation ' +
+               'did not happen, because the new secret could not be pushed ' +
+               'to ' + where.destination,
+      detail: { identifier: String(identifier), mode: 'auto',
+                destination: where.destination } });
+    log.debug("Leaving pushRotatedClientSecret(). Not pushed.");
+    return { ok: false };
+  }
+  log.debug("Leaving pushRotatedClientSecret(). Pushed.");
+  return { ok: true };
 }
 
 // The sweep's clock and warning window, read once per sweep in its realm.
@@ -13697,7 +13860,13 @@ function regenerateClientSecret(identifier, options) {
     log.debug("Leaving regenerateClientSecret(). No such application.");
     return unknownApplication(identifier);
   }
-  if (pinnedSecretOf(identifier)) {
+  // A ROTATION OF THE PINNED SECRET IS ALLOWED (#2220): it adds the new
+  // secret and keeps the pinned one for oauth2.clientSecretOverlapS, which is
+  // the time an operator has to put the new one in adminApi.clientSecret. A
+  // REGENERATION is still refused: it would remove the secret every token
+  // for /admin-api is minted with, at once.
+  const pinned = pinnedSecretOf(identifier);
+  if (pinned && !opts.keepPrevious) {
     log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
     return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
                              '"sts-api-client" is pinned by the ' +
@@ -13738,7 +13907,10 @@ function regenerateClientSecret(identifier, options) {
       'regenerate, which replaces them all.'] }, 'STS-REG-0208');
   }
   const replaced = held.length > 0;
-  const secret = mintClientSecret();
+  // A SECRET MINTED AHEAD (#2220): the automatic rotation pushes the new
+  // secret to its destination BEFORE it is committed here, so it mints it
+  // first and hands it in.
+  const secret = opts.secret ? String(opts.secret) : mintClientSecret();
   const added = newClientSecretRecord(secret);
   try {
     writeClientSecretRecords(record, [added].concat(kept));
@@ -13768,7 +13940,87 @@ function regenerateClientSecret(identifier, options) {
              : replaced
              ? 'A new client secret replaced every secret the application ' +
                'held, which stop authenticating at the token endpoint now.'
-             : 'A client secret was generated.') + mintedSentence(written) };
+             : 'A client secret was generated.') + mintedSentence(written) +
+             (pinned
+               ? ' This client\'s secret is pinned by adminApi.clientSecret ' +
+                 '(ADMIN_API_CLIENT_SECRET): set it to the new secret and ' +
+                 'restart every node before ' + (keeps
+                   ? new Date(overlapUntil).toISOString()
+                   : 'the next token is minted') + ', when the old one ' +
+                 'stops authenticating.'
+               : '') };
+}
+
+// ---------------------------------------------------------------------------
+// THE PINNED SECRET, ADOPTED AT START (#2220).
+//
+// Seeding writes `adminApi.clientSecret` onto a FRESH `sts-api-client` and
+// never over an existing one, so until #2220 a changed setting reached the
+// entry only in a store that kept nothing: on postgres the entry kept the
+// old secret, the new setting authenticated nothing, and "change the setting
+// and restart" locked the management API out. Now every start of the
+// default realm ADOPTS the setting's value where the entry does not hold it:
+// it is added as a new secret, with `oauth2.clientSecretLifetimeDays`, and
+// every other live secret is kept for `oauth2.clientSecretOverlapS` — a
+// rotation, made by the setting. A value the entry already holds (the
+// secret a console rotation minted, copied into the setting) changes
+// nothing, so this is idempotent and safe on every node at once.
+// ---------------------------------------------------------------------------
+/**
+ * Adds the `adminApi.clientSecret` value to `sts-api-client` in the default
+ * realm when the entry does not hold it, keeping its other live secrets for
+ * `oauth2.clientSecretOverlapS`.
+ *
+ * @returns whether the entry changed
+ */
+function adoptPinnedSecret() {
+  log.debug("Entering adoptPinnedSecret().");
+  const pinned = pinnedSecretOf('sts-api-client');
+  if (!pinned) {
+    log.debug("Leaving adoptPinnedSecret(). Nothing pinned.");
+    return false;
+  }
+  const loaded = load('sts-api-client');
+  if (!loaded.known) {
+    log.debug("Leaving adoptPinnedSecret(). No entry.");
+    return false;
+  }
+  const record = loaded.record;
+  const held = clientSecretRecordsOf(record.fields);
+  if (held.some(function (one) { return one.secret === pinned; })) {
+    log.debug("Leaving adoptPinnedSecret(). Already held.");
+    return false;
+  }
+  const at = nowSec();
+  const overlapS = Math.max(0,
+    Math.floor(Number(config.value('oauth2.clientSecretOverlapS')) || 0));
+  const kept = held.filter(function (one) {
+    return !clientSecretExpired(one, at) && overlapS > 0;
+  }).map(function (one) {
+    const until = at + overlapS;
+    return Object.assign({}, one, {
+      expiresAt: one.expiresAt > 0 ? Math.min(one.expiresAt, until) : until });
+  }).slice(0, Math.max(0, clientSecretsMax() - 1));
+  const added = newClientSecretRecord(pinned,
+    { description: 'adminApi.clientSecret' });
+  try {
+    writeClientSecretRecords(record, [added].concat(kept));
+  } catch (e) {
+    log.debug("Caught in adoptPinnedSecret(): " + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-REG-0213') + 'applications: the ' +
+              'adminApi.clientSecret value could not be written to ' +
+              '"sts-api-client": ' + e.message);
+    log.debug("Leaving adoptPinnedSecret(). It would not seal.");
+    return false;
+  }
+  finishClientSecretWrite('sts-api-client', record, { actor: 'startup' },
+    { mode: 'adopt-pinned', secretId: added.id,
+      overlapUntil: kept.length ? (at + overlapS) * 1000 : 0 },
+    'the adminApi.clientSecret value was adopted as a new client secret' +
+    (kept.length ? ', and the ' + kept.length + ' it replaces go on ' +
+                   'authenticating for oauth2.clientSecretOverlapS' : ''));
+  log.debug("Leaving adoptPinnedSecret(). Adopted.");
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -18350,7 +18602,13 @@ function internalApplications() {
         client_secret: (realms.isDefault() &&
                         String(config.value('adminApi.clientSecret') || '')) ||
                        randomId(24),
-        client_secret_expires_at: 0,
+        // A LIFETIME, AS EVERY OTHER SECRET HAS (#2220): it expires
+        // oauth2.clientSecretLifetimeDays after it is seeded (0 means
+        // never), the daily client-secret job warns before then, and a
+        // rotation — the console's, or a new adminApi.clientSecret
+        // adopted at start — replaces it. An entry seeded before #2220
+        // keeps the 0 it was written with.
+        client_secret_expires_at: defaultClientSecretExpiry(issued),
         registration_access_token: randomId(24),
         registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
                                  '/oauth2/register/sts-api-client',
@@ -18776,6 +19034,8 @@ function seedInternalApplications(options) {
   // #1717: the debugger's api is no longer an application of its own.
   if (wanted === 'default') {
     retireDebuggerApiApplication();
+    // #2220: a changed adminApi.clientSecret, adopted as a rotation.
+    adoptPinnedSecret();
   }
   // #825: an entry that already existed is left alone by the seed above.
   // Fill only the bound attributes that are absent, and never a number
@@ -19379,6 +19639,9 @@ module.exports = {
   removeClientSecret: removeClientSecret,
   sweepClientSecrets: sweepClientSecrets,
   sweepClientSecretsInSlices: sweepClientSecretsInSlices,
+  autoRotateClientSecrets: autoRotateClientSecrets,
+  clientSecretAutoRotation: clientSecretAutoRotation,
+  adoptPinnedSecret: adoptPinnedSecret,
   secretExpiryOf: secretExpiryOf,
   clientSecretRecordsOf: clientSecretRecordsOf,
   registrationAccessTokenOf: registrationAccessTokenOf,

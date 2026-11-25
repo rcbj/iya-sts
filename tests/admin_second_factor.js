@@ -25,6 +25,8 @@
 //   E. Somebody who is not an administrator is never offered one.
 //   F. AT ELEVATED RISK (#226's console, never locked out): the offer is
 //      made, recorded as STS-RISK-0039, and Ignore reaches the console.
+//   G. A TRUST REALM (#2236): the administrator is found on the roster of
+//      the realm signed in to, not the default realm's.
 //
 // In a child process, because it loads the whole stack and changes settings
 // and policies the rest of the in-process suite must not see.
@@ -338,6 +340,39 @@ function childMain() {
            atRisk: atRisk.length,
            at: String((riskyDone.headers || {}).location || '').slice(0, 80),
            page: String(riskyPage.text).slice(0, 120) }));
+
+    // --- G. a trust realm's own roster (#2236) ------------------------------
+    // Who is an administrator for the offer is asked of the roster of the
+    // realm signed in to. Until #2236 the default realm's was read, so a
+    // trust realm's own administrators were never offered one and a person
+    // named like a default-realm administrator (asf-alice) was.
+    const realms = require(ROOT + '/common/realms');
+    const G_RUN = require('crypto').randomBytes(3).toString('hex');
+    const trust = realms.create({ id: 'asf' + G_RUN, name: 'asf ' + G_RUN });
+    note(trust.ok, 'precondition: a trust realm',
+         JSON.stringify(trust.errors || []));
+    if (trust.ok) {
+      try {
+        await realms.run(trust.realm, async function () {
+          const RADMIN = 'asf-radmin-' + G_RUN;
+          ['asf-alice', RADMIN].forEach(function (name) {
+            ldap.createUser(name, { invent: false });
+          });
+          adminRbac.grant(RADMIN, 'write', { via: 'test', actor: 'test',
+                                             realm: trust.realm.id });
+          const twin = credentials.mfaRequirementFor('asf-alice');
+          const own = credentials.mfaRequirementFor(RADMIN);
+          note(!twin.offered && !twin.required && own.offered &&
+               !own.required,
+               'G1. in a trust realm, its own roster member is offered a ' +
+               'second factor, and a person named like a default-realm ' +
+               'administrator is not',
+               JSON.stringify({ twin: twin, own: own }));
+        });
+      } finally {
+        realms.remove(trust.realm.id);
+      }
+    }
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

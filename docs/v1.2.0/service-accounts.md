@@ -31,6 +31,10 @@ You can set the flag in three ways:
   `POST /admin-api/users/set-service-account` with `user`, `owners`,
   `destination` and `secretName`. `POST /admin-api/users/create` accepts
   the same fields with `serviceAccount: true`.
+  `set-service-account` also clears a pending password change (`pwdReset`):
+  a password an administrator typed for an ordinary person is temporary in
+  product mode, and a program has no sign-in screen to choose a new one at.
+  The audit row records `passwordResetCleared` when it does.
 - Over LDAP, an administrator with Admin Write can modify the entry. The same
   rules apply, and the directory adds or removes the auxiliary class with the
   flag.

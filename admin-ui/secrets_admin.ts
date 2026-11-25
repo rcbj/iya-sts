@@ -181,9 +181,14 @@ const SECRET_NOTES = {
              'store, and <code>persistence.start()</code> is the one place ' +
              'in this repository where a failure to open something stops the ' +
              'process.',
-    rotating: 'Rotating it is ordinary: change it in the store and in ' +
-              'PostgreSQL, and restart. Nothing this service has written ' +
-              'depends on its value.'
+    rotating: 'Rotating it is the database\u2019s and the secret ' +
+              'store\u2019s job (OpenBao\u2019s database engine does both). ' +
+              'This service reads it again every ' +
+              '<code>persistence.databasePasswordRefreshS</code> and when ' +
+              'the database refuses a login, and dials new connections with ' +
+              'the new password without a restart; open connections keep ' +
+              'working. Keep the old password valid at the database until ' +
+              'every node has read the new one.'
   },
   // THE CELLS' TWO (#98). Neither is asked for without `cells.id`.
   'global-database-password': {
@@ -212,10 +217,24 @@ const SECRET_NOTES = {
              'is no fallback to the service key: that would put the ' +
              'people of every jurisdiction under one key. In development ' +
              'mode, and in single-cell mode, it is never asked for.',
-    rotating: 'Written once and never replaced, for the same reason as the ' +
-              'service key: this service has no re-sealing pass. A person ' +
-              're-homed to another cell is sealed again under THAT cell\'s ' +
-              'key as they move.'
+    rotating: 'Rotated as the service key is, by RE-WRAPPING this ' +
+              'cell\u2019s data keys: put the new key in ' +
+              '<code>keys.cellKek*</code> and the old one in ' +
+              '<code>keys.previousCellKek*</code>, and start every node of ' +
+              'the cell. A person re-homed to another cell is sealed again ' +
+              'under THAT cell\'s key as they move.'
+  },
+  'previous-cell-kek': {
+    heading: 'The previous cell key-encryption key',
+    what: 'Read only while this cell\u2019s key-encryption key is being ' +
+          'ROTATED (#2220): the old cell key, beside the new one in ' +
+          '<code>keys.cellKek*</code>. A data encryption key of this cell ' +
+          'that unwraps only under the old key is re-wrapped under the new ' +
+          'one at start and written back.',
+    without: '<code>none</code>, the default, is the ordinary state. It is ' +
+             'refused where no cell key is configured.',
+    rotating: 'Set it back to <code>none</code> once every node of the cell ' +
+              'has started with the new key.'
   },
   'previous-kek': {
     heading: 'The previous key-encryption key',
@@ -245,8 +264,8 @@ const SECRET_NOTES = {
              '(STS-MAIL-0002); otherwise each message is a failed attempt ' +
              'and, in the end, a dead letter on Monitoring &rarr; Mail.',
     rotating: 'Change it in the store and at the relay. It is read again ' +
-              'the next time the transport is built — after any Mail ' +
-              'setting changes, or a restart.'
+              'when the transport is rebuilt: within an hour (#2220), after ' +
+              'any Mail setting changes, or at a restart.'
   },
   'mail-dkim-key': {
     heading: 'The DKIM private key',
@@ -256,10 +275,15 @@ const SECRET_NOTES = {
     without: 'Nothing, until <code>mail.dkimDomain</code> is set. Then the ' +
              'SMTP transport cannot be built, because a message that should ' +
              'carry a signature and does not fails DMARC at the receiver.',
-    rotating: 'Publish the new public key under a NEW selector, point ' +
-              '<code>mail.dkimSelector</code> and this secret at it, and ' +
-              'withdraw the old record only after mail signed with it has ' +
-              'been delivered.'
+    rotating: 'With an overlap (#2220): put the new key in the same ' +
+              'secret under <code>mail.dkimNextKeyField</code>, publish its ' +
+              'public key under <code>mail.dkimNextSelector</code> (the ' +
+              'record is logged when the transport is built), and set ' +
+              '<code>mail.dkimSwitchAt</code>. Messages are signed with the ' +
+              'new selector from that moment, and only once DNS answers ' +
+              'with its key. Keep the old selector\u2019s record published ' +
+              'for a week after the switch, then make the new selector the ' +
+              'current one.'
   },
   'mail-acs-connection-string': {
     heading: 'The Azure Communication Services connection string',

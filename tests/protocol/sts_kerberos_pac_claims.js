@@ -47,6 +47,7 @@ const path = require("path");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 const wire = require("./krb5_wire.js");
 
 var appconfig;
@@ -240,10 +241,17 @@ async function test() {
              "password!");
   await ok(realmApi + "/users/create",
            { username: USER, invent: false, credential: "password",
-             password: PASSWORD,
+             password: ownPassword.temporaryFor(PASSWORD),
              attributes: { cn: "pac " + USER, givenName: "pac", sn: USER,
                            displayName: "pac " + USER, mail: MAIL } },
            "created " + USER + " in " + RID);
+  // Temporary, then the person's own (#2160, `own_password.js`): the KDC
+  // refuses a password that has to be changed first (STS-KRB-0257).
+  await ownPassword.ownPassword(base + "/realm/" + RID, USER, PASSWORD,
+    function (one, value) {
+      return call("POST", realmApi + "/users/set-password",
+                  { user: one, password: value });
+    });
   // A multi-valued `ou` and a `title` on the entry, for the ticked
   // catalogue (#498).
   await ok(realmApi + "/users/set-attribute",

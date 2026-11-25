@@ -51,6 +51,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const nodeCrypto = require("crypto");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -250,15 +251,23 @@ function browser(name) {
   return self;
 }
 
+// Temporary, then the person's own (#2160, `own_password.js`): every
+// sign-in here uses PASSWORD.
 async function person(who) {
   log.debug("Entering person().");
+  const temporary = ownPassword.temporaryFor(PASSWORD);
   await ok(realmBase() + "/admin-api/users/create",
            { username: who, invent: false,
              attributes: { mail: who + "@" + DOMAIN, givenName: "Emf",
                            sn: who, cn: "Emf " + who },
-             credential: "password", password: PASSWORD,
-             passwordConfirm: PASSWORD },
+             credential: "password", password: temporary,
+             passwordConfirm: temporary },
            "created " + who);
+  await ownPassword.ownPassword(realmBase(), who, PASSWORD,
+    function (one, value) {
+      return call("POST", realmBase() + "/admin-api/users/set-password",
+                  { user: one, password: value });
+    });
   log.debug("Leaving person().");
   return who + "@" + DOMAIN;
 }

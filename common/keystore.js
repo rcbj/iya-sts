@@ -1554,6 +1554,22 @@ async function startOnce() {
   } else {
     cellKek = null;
   }
+  // THE PREVIOUS CELL KEY (#2220), only where one is configured, for the
+  // reason the line above gives about an `await`. Without a cell key it has
+  // nothing to be the previous one of, and is refused.
+  previousCellKek = null;
+  if (secrets.configuredFor(secrets.PREVIOUS_CELL_KEK)) {
+    if (!cellKek) {
+      throw new Error(errorCodes.tag('STS-CELL-0213') + 'keys.' +
+                      'previousCellKekProvider is set and no cell key is ' +
+                      '(keys.cellKekProvider is none). The previous cell ' +
+                      'key is read only to re-wrap under a new cell key.');
+    }
+    previousCellKek = await secrets.readPreviousCellKek();
+    if (!isRemote(previousCellKek)) {
+      crypto.kekBytes(previousCellKek);
+    }
+  }
   // THE SIGNING KEYS' TOKEN (#1955 P8), opened in this process BEFORE a key
   // set is read: a realm's signing keys in the HSM are stored as references,
   // and a reference is resolved synchronously through a token already held
@@ -4273,6 +4289,27 @@ function unionDekRows(current, mine) {
 // re-wraps it and changes nothing it made), never rotated, never superseded
 // and never destroyed. Where data keys are derived per run, nothing a digest
 // names outlives the process and the KEK-derived key is kept.
+//
+// **WHY IT IS NOT ROTATED (#2220, ASVS 5.0.0 13.3.4).** It is a BLIND-INDEX
+// key, not a key that protects a value: every digest it makes is STORED and
+// later LOOKED UP by recomputing it — the cell routing index, each sealed
+// directory value's lookup column (`persistence/directory_codec.js`), the
+// session index's subject, username and parent keys (`authn/`), the minted
+// store's row keys, the shared claims' keys (`cluster/cluster_claims.js`)
+// and the cluster's settings fingerprint. A rotation would ORPHAN every one:
+// a lookup under the new key finds nothing stored under the old, so a person
+// would vanish from the routing index, a session from its index and a claim
+// from its table, and nothing about the old key could be verified "with an
+// overlap", because a lookup is not a verification — it would have to be
+// made under every key ever used, at every lookup, for ever. A rotation that
+// worked would have to RE-INDEX every stored digest from its plaintext,
+// which for a claim or a settings fingerprint no longer exists. So, as the
+// pairwise subject secret is (`cluster/cluster_secrets.ts`), it is an
+// identifier's key and is kept: what protects it is the key-encryption key
+// it is wrapped under, which DOES rotate and re-wraps it without changing
+// it. What it costs to lose is bounded: a stolen digest key and a copy of
+// the store let a guessable lookup value (a username) be confirmed, never a
+// sealed value be read.
 // ---------------------------------------------------------------------------
 const DIGEST_CLASS = 'keyed-digest';
 
@@ -4566,6 +4603,11 @@ function dataKeys() {
 //     the previous key is no longer needed.
 // ---------------------------------------------------------------------------
 let previousKek = null;
+// THE PREVIOUS CELL KEY (#2220), read beside the cell key while it is being
+// rotated: a data key of this cell's scope that unwraps only under it is
+// re-wrapped under `cellKek`, exactly as `previousKek` does for the service
+// scope. Null everywhere else.
+let previousCellKek = null;
 let rewrapped = 0;
 
 // ---------------------------------------------------------------------------
@@ -4660,12 +4702,16 @@ async function unwrapWithRotation(rec, wk) {
     log.debug("Leaving unwrapWithRotation(). Under the current key.");
     return key;
   } catch (e) {
-    if (!previousKek || rec.scope !== 'service') {
+    // THE SCOPE'S OWN PREVIOUS KEY: the service key's for the service
+    // scope, the cell key's (#2220) for this cell's.
+    const previous = rec.scope === 'service' ? previousKek
+      : rec.scope === ownCellScope() ? previousCellKek : null;
+    if (!previous) {
       throw e;
     }
     log.debug("Caught in unwrapWithRotation(): " + ((e && e.message) || e) +
-              "; trying the previous key-encryption key.");
-    const key = await unwrapUnder(previousKek, rec.wrapped, rec);
+              "; trying the scope's previous key-encryption key.");
+    const key = await unwrapUnder(previous, rec.wrapped, rec);
     rec.rewrap = true;
     log.debug("Leaving unwrapWithRotation(). Under the previous key.");
     return key;
@@ -4723,7 +4769,9 @@ function rewrapRotated() {
              ' data encryption key(s) were wrapped under the PREVIOUS ' +
              'key-encryption key and have been re-wrapped under the current ' +
              'one. Once every node has started with the current key, ' +
-             'keys.previousKekProvider can be set back to none.');
+             'keys.previousKekProvider can be set back to none' +
+             (previousCellKek ? ', and keys.previousCellKekProvider once ' +
+                                'every node of this cell has' : '') + '.');
   }
   if (count > previous) {
     log.info('keystore: ' + (count - previous) + ' data encryption key(s) ' +
@@ -6964,6 +7012,7 @@ function reset() {
   dekReloading = null;
   durableKek = false;
   previousKek = null;
+  previousCellKek = null;
   kek = null;
   cellKek = null;
   derivedDigestKeys.clear();

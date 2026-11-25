@@ -24,7 +24,9 @@
 //      history would refuse the person choosing a value the administrator
 //      had just set);
 //   2. the person signs in at the screen with it, over `/authn-api`, the
-//      way `sts_admin_bootstrap.js` drives the forced change;
+//      way `sts_admin_bootstrap.js` drives the forced change. The sign-in
+//      is the sign-out page's (`GET /logout` with no session), which needs
+//      no OAuth client and so no redirect URI registered (#2236);
 //   3. where the screen asks for a new one (product), the person chooses
 //      `password`. Where the service did not make the temporary password
 //      temporary (development, or a service account), its answer does not
@@ -63,34 +65,36 @@ function temporaryFor(password) {
 }
 
 /**
- * A sign-in screen waiting for somebody: the console's authorization
- * request, which every realm has a client for.
+ * A sign-in screen waiting for somebody, started by `GET /logout` with no
+ * session (#2236): the sign-out page sends a browser nobody is signed in
+ * to to the screen, returning to `/logout`, with no OAuth client at all.
+ *
+ * IT WAS THE CONSOLE'S AUTHORIZATION REQUEST until #2236, `sts-admin-console`
+ * with `base + "/admin/callback"`. That redirect URI is registered for a
+ * realm's console client only where the realm's public base is (a realm in
+ * product mode inside a development stack has none registered), so
+ * `/oauth2/authorize` answered 400 and every job that gave a person their
+ * own password failed before it began. The screen, the change step and the
+ * session are the sign-in service's whatever started the sign-in; only the
+ * return address differs, and this helper never follows it.
  *
  * @param {string} base - the realm's base URL
  * @returns {Promise<string>} the screen's address
  */
 async function pendingSignIn(base) {
   log.debug("Entering pendingSignIn().");
-  await fetch(base + "/admin?realm=default", { redirect: "manual" });
-  const verifier = crypto.randomBytes(32).toString("base64url");
-  const r = await fetch(base + "/oauth2/authorize?" +
-    new URLSearchParams({ response_type: "code",
-      client_id: "sts-admin-console",
-      redirect_uri: base + "/admin/callback",
-      scope: "openid", state: crypto.randomBytes(8).toString("hex"),
-      code_challenge: crypto.createHash("sha256").update(verifier)
-        .digest("base64url"),
-      code_challenge_method: "S256",
-      nonce: crypto.randomBytes(8).toString("hex"),
-      resource: base + "/admin-api" }).toString(),
-    { redirect: "manual" });
+  const b = String(base).replace(/\/+$/, "");
+  // `text/html`: the logout endpoint answers a program asking for JSON
+  // 401 rather than sending it to sign in (`Logout.wantsJson()`).
+  const r = await fetch(b + "/logout",
+    { redirect: "manual", headers: { accept: "text/html" } });
   const where = r.headers.get("location") || "";
   const said = /[?&#]authn=/.test(where) ? "" : await r.text();
-  assert.ok(/[?&#]authn=/.test(where), "own_password: the authorization " +
-    "request should send the browser to the sign-in screen; it answered " +
-    r.status + " " + where + " " + said.slice(0, 300));
+  assert.ok(/[?&#]authn=/.test(where), "own_password: GET /logout with " +
+    "no session should send the browser to the sign-in screen; it " +
+    "answered " + r.status + " " + where + " " + said.slice(0, 300));
   log.debug("Leaving pendingSignIn().");
-  return new URL(where, base).toString();
+  return new URL(where, b + "/").toString();
 }
 
 // The JSON a door answered, whichever shape the job's helper hands back:

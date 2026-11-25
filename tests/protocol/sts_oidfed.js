@@ -54,6 +54,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -730,11 +731,19 @@ async function test() {
   const PASSWORD = "Oidfed-Passw0rd!-" + String(Date.now()).slice(-6);
   await ok(root + "/admin-api/users/create", {
     username: PERSON, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Oidfed " + PERSON, givenName: "Oidfed", sn: PERSON,
                   displayName: "Oidfed " + PERSON,
                   mail: PERSON + "@oidfed.example.net" } },
     "created a person at the OP");
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the OP's sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(root, PERSON, PASSWORD,
+    function (who, value) {
+      return hop("POST", root + "/admin-api/users/set-password",
+                 { json: { user: who, password: value } });
+    });
   await ok(base + "/admin-api/federation/create", { id: REL,
     role: "service-provider", protocol: "oidc", peer: anchorId },
     "created the relationship");

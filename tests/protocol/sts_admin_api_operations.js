@@ -2763,8 +2763,10 @@ async function mintPermissionToken(client, wanted) {
       attributes: { cn: "Operations " + username, givenName: "Operations",
                     sn: username,
                     mail: username + "@admin-api-operations.test" },
-      credential: "password", password: MINT_PASSWORD
+      credential: "password",
+      password: ownPassword.temporaryFor(MINT_PASSWORD)
     }, "created " + username + " before a permission token is minted");
+    await mintPasswordIsTheirs(username, false);
     mintedParties["realm:user:" + username] = true;
   }
   const granted = await registry.authorizationCode(base + "/realm/" + REALM, {
@@ -3713,6 +3715,22 @@ const MINT_PASSWORD = names.passwordFor();
 const MINT_CLIENT_SECRET = "admin-api-operations-client-secret-" + REALM;
 const mintedParties = {};
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): MINT_PASSWORD typed by this
+// administrator is temporary in product, and the sign-in that mints a token
+// would stop at the change step. Every person a token is minted for is
+// created with a temporary password and chooses MINT_PASSWORD
+// (`own_password.js`; in development it is simply set). The set-password
+// writes are read back by the `/users` reads that follow each create.
+async function mintPasswordIsTheirs(username, root) {
+  log.debug("Entering mintPasswordIsTheirs(). " + username);
+  await ownPassword.ownPassword(root ? base : base + "/realm/" + REALM,
+    username, MINT_PASSWORD, function (one, value) {
+      return post("/users/set-password", { user: one, password: value },
+                  root);
+    });
+  log.debug("Leaving mintPasswordIsTheirs().");
+}
+
 async function ensureTokenParties(username, client, root) {
   log.debug("Entering ensureTokenParties(). username=" + username +
             ", client=" + client);
@@ -3723,8 +3741,10 @@ async function ensureTokenParties(username, client, root) {
       attributes: { cn: "Operations " + username, givenName: "Operations",
                     sn: username, displayName: "Operations " + username,
                     mail: username + "@admin-api-operations.test" },
-      credential: "password", password: MINT_PASSWORD
+      credential: "password",
+      password: ownPassword.temporaryFor(MINT_PASSWORD)
     }, "created " + username + " before a token is minted for them", root);
+    await mintPasswordIsTheirs(username, root);
     const back = await get("/users?user=" + encodeURIComponent(username), root);
     assert.strictEqual(back.status, 200,
       "GET /users?user=" + username + " should read the person just created; " +
@@ -3919,8 +3939,10 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     attributes: { cn: "Operations " + username, givenName: "Operations",
                   sn: username, displayName: "Operations " + username,
                   mail: username + "@admin-api-operations.test" },
-    credential: "password", password: MINT_PASSWORD
+    credential: "password",
+    password: ownPassword.temporaryFor(MINT_PASSWORD)
   }, "created a person in the directory");
+  await mintPasswordIsTheirs(username, false);
   mintedParties["realm:user:" + username] = true;
   assert.ok(String(created.dn || "").indexOf("dc=" + REALM + ",") > 0,
     "the entry should land in THIS realm's ou=users; its DN is " + created.dn);
@@ -4084,8 +4106,10 @@ async function thePersonDeleteRoundTrip() {
     attributes: { cn: "Deleted " + username, givenName: "Deleted",
                   sn: username, displayName: "Deleted " + username,
                   mail: username + "@admin-api-operations.test" },
-    credential: "password", password: MINT_PASSWORD
+    credential: "password",
+    password: ownPassword.temporaryFor(MINT_PASSWORD)
   }, "created the person to delete");
+  await mintPasswordIsTheirs(username, false);
   // Made here, so ensureTokenParties() must not make them again (it would
   // be refused, one entry per person): the arrangement of
   // theDirectoryAndSignOutDoorsRoundTrip(), which this one lacked.

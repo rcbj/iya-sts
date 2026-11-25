@@ -4829,9 +4829,14 @@ class Logout {
       return { why: Sentence.say('refusals.logout.resultNotOne') };
     }
     const packed = text.slice(0, dot);
-    const expected = crypto.hmac('sha256', clusterSecrets.get(RESULT_SECRET),
-                                 RESULT_LABEL + '.' + packed, 'base64url');
-    if (!crypto.constantTimeEquals(text.slice(dot + 1), expected)) {
+    // UNDER ANY KEY A VERIFIER ACCEPTS (#2220): a sign-out answered just
+    // before a rotation draws its result after it.
+    const presented = text.slice(dot + 1);
+    const ours = clusterSecrets.keys(RESULT_SECRET).some(function (key) {
+      return crypto.constantTimeEquals(presented,
+        crypto.hmac('sha256', key, RESULT_LABEL + '.' + packed, 'base64url'));
+    });
+    if (!ours) {
       log.debug("Leaving Logout.openResult(). The MAC.");
       return { why: Sentence.say('refusals.logout.resultNotOurs') };
     }

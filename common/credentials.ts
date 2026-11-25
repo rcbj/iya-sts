@@ -947,7 +947,15 @@ class Credentials {
         let held = { read: false, write: false };
         try {
           const rbac = require('../admin-ui/admin_rbac');
-          const roles = rbac.rolesOf(username) || {};
+          // THE ROSTER OF THE REALM THE PERSON SIGNS IN TO, named (#2236).
+          // `mfaRequirementFor()` asks it of a person of the ambient realm,
+          // under that realm's own `requireSecondFactorForAdministrators`;
+          // unnamed, `rolesOf()` read the DEFAULT realm's roster, so a trust
+          // realm's own administrators were never asked for one, and a
+          // person of the same name on the default roster was. Not the
+          // service roster on purpose: a default-realm administrator signs
+          // in through the default realm, which is the realm named here then.
+          const roles = rbac.rolesOf(username, realms.currentId()) || {};
           // MEMBERSHIP OF THE ROSTER'S GROUPS, not `read`/`write`: those are
           // also true for EVERYBODY while the roster is empty (the console's
           // open-console rule), and nobody is an administrator for #246 by

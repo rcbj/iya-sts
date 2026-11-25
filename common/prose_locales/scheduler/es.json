@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "Elimina las ventanas de límite de tasa ya transcurridas de la tabla que comparten todos los nodos."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Actualización de los secretos compartidos"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Vuelve a leer los secretos compartidos del almacén en este proceso, de modo que una rotación hecha en cualquier nodo se use aquí."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotación de los secretos compartidos"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Rota cada secreto compartido que es una clave (las claves de CSRF, nonce de ACME, receptor de Shared Signals, página de OpenID Federation, resultado de cierre de sesión y DBSC) cada cluster.secretRotationDays: se publica un valor siguiente, se hace vigente diez minutos después, y el antiguo se sigue aceptando durante cluster.secretOverlapS. Los secretos de sujeto pairwise y de nombre de arranque son identificadores y nunca rotan."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "Nueva comprobación de atestación de Android"
@@ -292,8 +308,8 @@
     "text": "Caducidad de secretos de cliente"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Comprueba cada secreto de cliente de cada aplicación: una fila de auditoría para una aplicación que tenga uno que caduque dentro de oauth2.clientSecretExpiryWarningDays, y para una cuyos secretos hayan caducado todos; y quita los secretos caducados de una aplicación que tenga al lado uno sin caducar — nunca el último, que permanece y se rechaza en producto."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Comprueba cada secreto de cliente de cada aplicación: una fila de auditoría para una aplicación que tenga uno que caduque dentro de oauth2.clientSecretExpiryWarningDays, y para una cuyos secretos hayan caducado todos; y quita los secretos caducados de una aplicación que tenga al lado uno sin caducar — nunca el último, que permanece y se rechaza en producto. Primero rota el secreto de cada aplicación listada en oauth2.clientSecretAutoRotate que caduque dentro de oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",

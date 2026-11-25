@@ -75,6 +75,7 @@ const portalSignin = require("./portal_signin.js");
 // THE SIGN-OUT PAGE (#577): a static surface over /authn-api/logout, which
 // `authn_signin.js`'s `signOut()` walks as the page does.
 const authnSignin = require("./authn_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -291,12 +292,18 @@ async function ensurePerson(who) {
   }
   const r = await post("/users/create", {
     username: who, invent: false, attributes: personAttributes(who),
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   });
   assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
     "POST /admin-api/users/create should create " + who + " with a password " +
     "before they sign in; it answered " + r.status + " " +
     String(r.raw).slice(0, 300));
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+    return post("/users/set-password", { user: one, password: value });
+  });
   createdPeople[who] = true;
   log.debug("Leaving ensurePerson(). Created " + who + ".");
 }

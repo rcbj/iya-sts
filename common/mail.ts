@@ -178,13 +178,23 @@ const TRANSPORT_KEYS = [
   'mail.smtpPasswordRef', 'mail.smtpPasswordField',
   'mail.smtpClientCertFile', 'mail.smtpClientKeyFile', 'mail.dkimDomain',
   'mail.dkimSelector', 'mail.dkimAlgorithm', 'mail.dkimKeyProvider',
-  'mail.dkimKeyRef', 'mail.dkimKeyField', 'mail.sesRegion',
+  'mail.dkimKeyRef', 'mail.dkimKeyField', 'mail.dkimNextSelector',
+  'mail.dkimNextKeyField', 'mail.dkimSwitchAt', 'mail.sesRegion',
   'mail.sesConfigurationSet', 'mail.acsEndpoint', 'mail.acsAuth',
   'mail.acsConnectionStringProvider', 'mail.acsConnectionStringRef',
   'mail.acsConnectionStringField', 'mail.gmailSender',
   'mail.gmailKeyProvider', 'mail.gmailKeyRef', 'mail.gmailKeyField',
   'mail.timeoutMs'
 ];
+
+// A BUILT TRANSPORT IS REBUILT AFTER THIS LONG (#2220), so the secrets it
+// was built from — the relay password, the DKIM keys, a connection string, a
+// service account key — are read again from the operator's secret store: a
+// credential rotated there reaches the transport within the hour, without a
+// setting changing or a restart. A check at the send, not a timer. A
+// constant: an hour is far inside any rotation's overlap, and one read of
+// each secret an hour per process is nothing to a secret store.
+const REBUILD_AFTER_MS = 60 * 60 * 1000;
 
 // The known relays `mail.smtpPreset` names.
 const PRESETS = {
@@ -567,13 +577,25 @@ class Mail {
    * @param cfg - the resolved configuration
    * @returns the fingerprint
    */
+  dkimSwitchDue(cfg: Json): boolean {
+    const { log, now } = this.deps;
+    log.debug("Entering Mail.dkimSwitchDue().");
+    const at = Date.parse(String(cfg.dkimSwitchAt || ''));
+    const clock = typeof now === 'function' ? now() : Date.now();
+    log.debug("Leaving Mail.dkimSwitchDue().");
+    return !!cfg.dkimNextSelector && isFinite(at) && clock >= at;
+  }
+
   fingerprint(cfg: Json): string {
     const { log } = this.deps;
     log.debug("Entering Mail.fingerprint().");
     const digest = stsCrypto.digest('sha256',
       JSON.stringify(TRANSPORT_KEYS.map(function (key) {
         return cfg[key.replace(/^mail\./, '')];
-      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort])),
+      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort,
+                 // #2220: the moment a DKIM selector switch is due is a
+                 // change of what the transport signs with.
+                 this.dkimSwitchDue(cfg)])),
       'base64url');
     log.debug("Leaving Mail.fingerprint().");
     return digest;
@@ -604,7 +626,10 @@ class Mail {
     }
     const print = this.fingerprint(cfg);
     const held = this.built.get(realmId);
-    if (held && held.print === print) {
+    const builtAgo = (typeof this.deps.now === 'function' ? this.deps.now()
+                                                          : Date.now()) -
+                     Number((held && held.builtAt) || 0);
+    if (held && held.print === print && builtAgo < REBUILD_AFTER_MS) {
       log.debug("Leaving Mail.transport(). Cached.");
       return held.transport;
     }
@@ -614,7 +639,9 @@ class Mail {
           'function') {
         held.transport.close();
       }
-      this.built.set(realmId, { print: print, transport: made });
+      this.built.set(realmId, { print: print, transport: made,
+                                builtAt: typeof this.deps.now === 'function'
+                                  ? this.deps.now() : Date.now() });
       this.buildProblems.delete(realmId);
       log.debug("Leaving Mail.transport(). Built " + made.name + ".");
       return made;

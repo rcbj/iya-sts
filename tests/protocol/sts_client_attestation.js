@@ -58,6 +58,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const forge = require("node-forge");
@@ -391,11 +392,18 @@ async function test() {
   await ok(realmApi + "/config/set", { key: "oauth2.openRegistration",
                                        value: true },
            "opened dynamic registration in the realm");
+  // Temporary, then the person's own (#2160, `own_password.js`): the
+  // sign-ins below use PASSWORD.
   await ok(realmApi + "/users/create", {
     username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Attest " + ALICE, givenName: "Attest", sn: ALICE,
                   mail: ALICE + "@attest.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(base + R, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   const attester = attesterOf("attest root " + STAMP);
   const stranger = attesterOf("stranger root " + STAMP);
   const k1 = instanceKey();
