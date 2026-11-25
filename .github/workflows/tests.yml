@@ -34,7 +34,7 @@
 #   openid-conformance, openid-conformance-oidcc
 #                  the OpenID Foundation plans, split by lane, --no-build.
 #   openapi-breaking  pull requests only: the published APIs did not break.
-#   dependency-windows  SECURITY.md's windows over the lockfile.
+#   dependency-windows  SECURITY.md's windows over both lockfiles (root, sdk/).
 #   coverage       ./run-coverage.sh --no-build, nightly and by hand only:
 #                  130-170 instrumented minutes is not a merge gate.
 #
@@ -177,7 +177,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # THE ADVISORY WINDOWS OF SECURITY.md (#1458). No install: `npm audit` reads
-  # the lockfile. The published image's half is dependency-windows.yml's.
+  # the lockfiles, the root's and sdk/'s (#2159). The published image's half is dependency-windows.yml's.
   # ---------------------------------------------------------------------------
   dependency-windows:
     runs-on: ubuntu-latest

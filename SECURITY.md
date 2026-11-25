@@ -28,7 +28,8 @@ every third-party component this service ships, directly or transitively.
 
 `tests/tools/dependency-windows.js` runs on every CI run and fails the build
 when an advisory is past its window. A daily workflow runs it too, against the
-published image as well as the lockfile, so that the operating system's packages,
+published image as well as the lockfiles (the root's and `sdk/`'s, which pins
+the optional SDKs an image installs), so that the operating system's packages,
 the Node runtime and everything else shipped are covered and an advisory cannot
 pass its window between merges. A finding with no fixed version yet is listed
 and cannot fail the check.
