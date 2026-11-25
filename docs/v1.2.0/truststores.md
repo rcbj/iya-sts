@@ -52,6 +52,16 @@ connection this service makes, the database. It may name only service-wide
 truststores, built-ins and views (`STS-PKI-0302`). A **realm** use case may
 name its own realm's truststores and the service-wide ones.
 
+**A realm may override an outbound service-wide use case** (#2148): the
+connections this service makes from that realm, to a partner, a mail relay,
+a SCIM target and the like, can trust a list of that realm's own, naming its
+own truststores and the service-wide ones. A realm with no override trusts
+the default realm's list, and clearing the override returns it there. The
+override changes nothing for the default realm or any other realm. A
+handshake (`tls-client`) and the fixed infrastructure use cases are still
+assigned from the default realm only (`STS-PKI-0302`), because nothing
+there says which realm is asking.
+
 A SPIFFE use case names only SPIFFE bundle truststores, and nothing else
 names one (`STS-PKI-0304`). Assigning `spiffe-svid` or `spiffe-jwt-svid` a
 list narrows which federated trust domains are accepted; `spiffe:*`, the
@@ -140,8 +150,10 @@ On `/admin/pki/trust`:
   (`STS-PKI-0307`).
 * **Use cases** lists every use case, what it trusts now and its default.
   Assign a use case a list, or clear its assignment to return it to its
-  default. A service-wide use case is assigned from the default realm only
-  (`STS-PKI-0302`): it trusts the same truststores in every realm.
+  default. A service-wide inbound use case is assigned from the default
+  realm only (`STS-PKI-0302`): it trusts the same truststores in every
+  realm. In any other realm, an outbound one may be given that realm's own
+  list, shown as *this realm's own list*.
 * **System truststore** lists node's default store.
 
 The management API:

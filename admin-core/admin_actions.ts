@@ -12463,7 +12463,10 @@ class AdminActions {
       return refusal(truststores.assignmentProblem(useCase, ['system'],
                                                    realmId), 'STS-PKI-0303');
     }
-    if (row.scope === 'service' && realmId !== realms.DEFAULT_ID) {
+    // #2148: an outbound use case may be overridden by a realm, for its own
+    // dials; every other service-wide one is the default realm's.
+    if (row.scope === 'service' && !UseCases.overridable(row) &&
+        realmId !== realms.DEFAULT_ID) {
       log.debug("Leaving AdminActions.namedTruststoresAction(). A " +
                 "service-wide use case from a realm.");
       return this.refused('STS-PKI-0302', { ok: false, errors: [

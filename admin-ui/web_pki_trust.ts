@@ -330,7 +330,8 @@ class PkiTrustPage {
           : row.kind === 'admission'
             ? t.html('consolePkiTrust.notAssignableAdmission')
             : t.html('consolePkiTrust.notAssignableFixed')) + '</span>';
-    } else if (row.scope === 'service' && realm !== 'default') {
+    } else if (row.scope === 'service' && realm !== 'default' &&
+               !row.overridable) {
       control = '<span class="sub">' +
         t.html('consolePkiTrust.assignedFromDefault') + '</span>';
     } else if (ctx.write) {
@@ -363,8 +364,9 @@ class PkiTrustPage {
       (row.scope === 'service' ? t.html('consolePkiTrust.scopeService')
                                : t.html('consolePkiTrust.scopeRealm')) +
       '</td><td>' + (names(row.names) || '—') + '<div class="sub">' +
-      (row.assigned ? t.html('consolePkiTrust.assigned')
-                    : t.html('consolePkiTrust.byDefault')) + '</div></td><td>' +
+      (row.realmOverride ? t.html('consolePkiTrust.realmOverride')
+        : row.assigned ? t.html('consolePkiTrust.assigned')
+          : t.html('consolePkiTrust.byDefault')) + '</div></td><td>' +
       (names(row.defaults) || '—') +
       ((row.fallback || []).length
         ? '<div class="sub">' + t.html('consolePkiTrust.fallback') + ' ' +

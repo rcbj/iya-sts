@@ -6607,6 +6607,8 @@ Scope: `admin:read`.
 | `useCases[].kind` | string | yes | `x509`, `spiffe` (names SPIFFE bundles only), `pins` (trusts what each entry registers), `fixed` (this service's own hierarchy) or `admission`. |
 | `useCases[].names` | list | yes | What it trusts now, in order: its assignment, or its default. |
 | `useCases[].names[]` | string |  |  |
+| `useCases[].overridable` | boolean | yes | Whether a realm other than the default may give it a list of its own, for that realm's own outbound connections (#2148). |
+| `useCases[].realmOverride` | boolean | yes | Whether this realm has given it a list of its own; false in the default realm. |
 | `useCases[].scope` | string | yes | `service` (decided with no realm in hand, so it names only the default realm's truststores) or `realm`. |
 | `useCases[].sites` | list | yes | Where it is decided, by source file. |
 | `useCases[].sites[]` | string |  |  |

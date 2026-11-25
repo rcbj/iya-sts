@@ -91,6 +91,7 @@
   "outbound": "saliente",
   "assigned": "asignado",
   "byDefault": "su predeterminado",
+  "realmOverride": "la lista propia de este dominio",
   "fallback": "Si eso no da ningún ancla:",
   "assignHint": "Almacenes de confianza, en orden, separados por comas",
   "assignButton": "Asignar",

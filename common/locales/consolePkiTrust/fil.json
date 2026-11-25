@@ -91,6 +91,7 @@
   "outbound": "palabas",
   "assigned": "itinalaga",
   "byDefault": "ang default nito",
+  "realmOverride": "sariling listahan ng realm na ito",
   "fallback": "Kapag walang anchor na naibigay iyon:",
   "assignHint": "Mga truststore, ayon sa pagkakasunod, pinaghihiwalay ng kuwit",
   "assignButton": "Italaga",

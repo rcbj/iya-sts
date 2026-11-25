@@ -91,6 +91,7 @@
   "outbound": "ausgehend",
   "assigned": "zugewiesen",
   "byDefault": "sein Standard",
+  "realmOverride": "die eigene Liste dieses Realms",
   "fallback": "Wenn das keinen Anker ergibt:",
   "assignHint": "Truststores, in Reihenfolge, durch Kommas getrennt",
   "assignButton": "Zuweisen",
