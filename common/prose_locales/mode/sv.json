@@ -119,6 +119,18 @@
     "en": "01bf0ea288cde1c4",
     "text": "Utfärdandepolicyns regel protocol-not-declared avvisar ett utfärdande via en protokollfamilj som applikationen inte är deklarerad för (STS-XACML-0084): en ID Token till en applikation som bara är deklarerad för OAuth 2.0, ett SAML-intyg till en som är deklarerad för OpenID Connect. En applikation som inte är deklarerad för något avvisas inte."
   },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "En åtkomsttyps JSON Schema hålls till en delmängd, och vart och ett av dess mönster till en gräns"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "En definition som skrivs via konsolen eller hanterings-API:t håller sitt schema till de nyckelord ett gränsschema får använda, och varje mönster till gränsen för ett reguljärt uttryck; allt annat avvisas (STS-REG-0374). En som sparades före den regeln används fortfarande som den sparades, och den här raden rapporterar ASVS 5.0.0 1.3.12 som inte uppfyllt för den."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "Detsamma."
+  },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
     "text": "En GNAP-åtkomsträttighet beviljas bara av en typ som katalogen över åtkomsttyper deklarerar"

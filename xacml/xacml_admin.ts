@@ -561,7 +561,12 @@ class XacmlAdmin {
                        withheld.indexOf(String(row.name).toLowerCase()) < 0,
                      problems: [] };
       try {
-        view.problems = validate.problemsIn(store.parseDocument(row.document));
+        // And a regexp-match pattern a save would refuse today (#2220):
+        // a policy stored before the rule still loads and decides, and its
+        // listing is where an administrator learns it goes Indeterminate.
+        const parsedPolicy = store.parseDocument(row.document);
+        view.problems = validate.problemsIn(parsedPolicy)
+          .concat(validate.patternProblemsIn(parsedPolicy));
       } catch (error) {
         log.debug('Caught in XacmlAdmin.policiesJson(): ' +
                   ((error && error.message) || error));

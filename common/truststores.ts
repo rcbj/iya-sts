@@ -605,7 +605,14 @@ class Truststores {
   }
 
   // What one store holds, as `{ anchors, intermediates, problem }`.
-  private holdings(realmId: string, name: string, context: Json): Json {
+  // `askingRealm` is the realm the caller is in. A `setting:` view is read
+  // THERE, whatever realm the use case's names resolve in: a setting is per
+  // realm, and a service-wide use case that resolved its view in the default
+  // realm ignored a realm's own federation.outboundCaFile (found by full run
+  // 45539627756, the #2118/#2148 regression). Named stores, built-ins and the
+  // other views resolve where they did.
+  private holdings(realmId: string, name: string, context: Json,
+                   askingRealm?: string): Json {
     const { log } = this.deps;
     log.debug("Entering Truststores.holdings(). " + name);
     const self = this;
@@ -632,7 +639,8 @@ class Truststores {
     } else if (where.kind === 'view') {
       pems = this.viewPems(where.realmId, name, context).pems;
     } else if (where.kind === 'setting') {
-      const read = this.settingPems(where.realmId, name.slice(8));
+      const read = this.settingPems(askingRealm || where.realmId,
+                                    name.slice(8));
       pems = read.pems;
       out.problem = read.problem;
     } else if (where.kind === 'spiffe') {
@@ -753,6 +761,8 @@ class Truststores {
     const opts = options || {};
     const useCase = UseCases.get(useCaseId);
     const realmId = this.resolvingRealm(useCase, opts.realmId);
+    // Where a `setting:` view is read: the caller's realm (see holdings()).
+    const asking = this.realmIdOf(opts.realmId);
     const chosen = this.namesFor(useCaseId, realmId);
     const gather = function (names: string[]): Json {
       const acc: Json = { system: false, anchors: [], intermediates: [],
@@ -768,7 +778,7 @@ class Truststores {
             return;
           }
         }
-        const held = self.holdings(realmId, name, opts.context);
+        const held = self.holdings(realmId, name, opts.context, asking);
         held.anchors.forEach(function (pem: string) {
           if (acc.anchors.indexOf(pem) === -1) {
             acc.anchors.push(pem);
@@ -829,14 +839,16 @@ class Truststores {
     const chosen = this.namesFor(useCaseId, id);
     const self = this;
     let out: string[] = [];
+    // The caller's realm, where a `setting:` view is read (see holdings()).
+    const asking = this.realmIdOf(realmId);
     if (chosen.assigned) {
-      const resolved = this.resolve(useCaseId, { realmId: id });
+      const resolved = this.resolve(useCaseId, { realmId: asking });
       out = resolved.anchors.concat(resolved.intermediates);
     } else {
       chosen.names.filter(function (name: string) {
         return name.indexOf('setting:') === 0;
       }).forEach(function (name: string) {
-        const held = self.holdings(id, name, {});
+        const held = self.holdings(id, name, {}, asking);
         out = out.concat(held.anchors, held.intermediates);
       });
     }

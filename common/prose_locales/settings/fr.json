@@ -8239,6 +8239,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "La limite de temps côté serveur d’une recherche, en secondes, qui est ce qui produit LDAP_TIME_LIMIT_EXCEEDED ; le timeLimit propre d’un client l’emporte lorsqu’il est plus court. Les entrées envoyées avant elle sont la réponse, marquée incomplète."
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Plus grand message d’un client lié (octets)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Le plus grand message LDAP qu’un client lié peut envoyer, en octets, compté d’après la longueur que déclare son en-tête BER : une connexion dont le message suivant déclare davantage est fermée avant qu’on en lise quoi que ce soit (STS-LDAP-0227). Les résultats de recherche sont envoyés par le serveur et ne comptent pas. 5 Mio par défaut, la limite de tout corps HTTP ici."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Plus grand message avant une liaison (octets)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Le plus grand message LDAP qu’un client peut envoyer avant de s’être lié, en octets : une liaison, StartTLS ou une recherche du DSE racine. Au-delà, la connexion est fermée avant qu’on lise quoi que ce soit du message (STS-LDAP-0227). 128 Kio par défaut, le double du plus grand jeton Kerberos qu’une liaison SASL peut porter. Jamais plus que ldap.maxMessageBytes en pratique."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "Écouteur LDAP en clair"
