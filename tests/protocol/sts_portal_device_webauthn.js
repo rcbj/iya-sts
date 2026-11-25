@@ -909,6 +909,20 @@ async function theBrowserLogIsClean(driver) {
     return !(/\/(portal|account-api)\/devices/.test(message) &&
              /status of 400/.test(message));
   }).filter(function (message) {
+    // THE STEP-UP'S CHALLENGE (#2168, #2189; #2258). The portal signs in
+    // with read scopes only, so the first write a page sends — the link
+    // begin at `/account-api/devices`, the enrolment at
+    // `/account-api/keys` — is answered 403 with RFC 6750's
+    // `insufficient_scope` challenge naming `account:manage`, and the
+    // runtime gets that scope through a second authorization and sends the
+    // write once more (`common/web_spa_client.ts`, the read scopes and the
+    // second authorization). The browser logs the 403 as a failed load
+    // whatever the page does with it, and each section drives a page of its
+    // own, so each steps up again. That the write then went through is what
+    // the sections above assert, the half this log cannot show.
+    return !(/\/account-api\/(devices|keys)\b/.test(message) &&
+             /status of 403/.test(message));
+  }).filter(function (message) {
     // And the autofill's (`signIn()`, THE SCREEN SETTLES FIRST): with
     // usernameless sign-in on, the screen arms a conditional passkey
     // request, the virtual authenticator answers it with nobody choosing,

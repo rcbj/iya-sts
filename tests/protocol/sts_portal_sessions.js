@@ -512,6 +512,11 @@ async function portalAuthorize(b) {
 async function theConsoleSignInCreatesASession() {
   log.debug("Entering theConsoleSignInCreatesASession().");
   log.info("=== the admin console: sign in, and the session is listed ===");
+  // THE PERSON EXISTS BEFORE THE COUNT (#2258): giving them their own
+  // password (#2160, `own_password.js`) signs them in once at the screen in
+  // product, and that sign-on session is live in a jar nobody keeps. Counted
+  // after it, the one this sign-in makes is the only one added.
+  await ensurePerson(OPERATOR);
   const before = (await liveSessions(OPERATOR)).length;
   const b = await signInToConsole(OPERATOR);
   const id = signOnIdOf(b);
@@ -651,6 +656,8 @@ async function theConsoleSignOutEndsIt(b, who) {
 async function thePortalSignInCreatesASession() {
   log.debug("Entering thePortalSignInCreatesASession().");
   log.info("=== the user portal: sign in, and the session is listed ===");
+  // Created first, for the console's reason above (#2258).
+  await ensurePerson(OWNER);
   const before = (await liveSessions(OWNER)).length;
   const b = await signInToPortal(OWNER);
   const id = signOnIdOf(b);

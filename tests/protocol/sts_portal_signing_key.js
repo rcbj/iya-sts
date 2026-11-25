@@ -432,7 +432,7 @@ async function test() {
       credential: "password", password: ownPassword.temporaryFor(PASSWORD) });
   const madeOther = await apiPost("/users/create",
     { username: OTHER, invent: false, attributes: personAttributes(OTHER),
-      credential: "password", password: PASSWORD });
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD) });
   check("both people are created through the management API, with their " +
         "attributes and a password, and nothing invented", function () {
     assert.strictEqual(made.status, 200,
@@ -447,11 +447,16 @@ async function test() {
   });
   // THE PASSWORD IS THE OWNER'S OWN (#2160): a typed one is temporary in
   // product, so OWNER chooses PASSWORD at the sign-in screen
-  // (`own_password.js`; in development it is simply set). OTHER never signs
-  // in, so theirs stays as typed.
-  await ownPassword.ownPassword(base, OWNER, PASSWORD, function (who, value) {
-    return apiPost("/users/set-password", { user: who, password: value });
-  });
+  // (`own_password.js`; in development it is simply set). OTHER chooses
+  // theirs too: section 7 signs them in to the portal to try revoking
+  // OWNER's key, and with the typed password still temporary the screen
+  // asked them for a new one and the authorization endpoint answered that
+  // step's 200 rather than a code (#2258).
+  for (const who of [OWNER, OTHER]) {
+    await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+      return apiPost("/users/set-password", { user: one, password: value });
+    });
+  }
 
   // -------------------------------------------------------------------------
   // 1. THE PAGE BEFORE ANYTHING IS ISSUED.
