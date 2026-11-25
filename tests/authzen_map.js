@@ -42,7 +42,7 @@
 //      `authzen_map.rs`) and which tuples the OAuth token-exchange binding
 //      answers, with the binding on and off (S5, against
 //      `authzen_binding.rs`): what the service answers by the fixed rules,
-//      the edge answers 501.
+//      the edge answers 403 (#2208).
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;

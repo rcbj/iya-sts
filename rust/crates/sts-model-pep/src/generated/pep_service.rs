@@ -79,8 +79,8 @@ pub mod components {
         #[serde(rename = "obligationsProfile")]
         pub obligations_profile: bool,
         /// The realm's authzen.tokenExchange, as pulled. Before a pull, and when
-        /// the catalogue did not send it, on: the binding's tuples are answered
-        /// 501.
+        /// the catalogue did not send it, on: the binding's tuples are answered 403
+        /// (a PEP failure).
         #[serde(rename = "tokenExchange")]
         pub token_exchange: bool,
         /// The declared authorization_details types, as pulled; null before a pull,

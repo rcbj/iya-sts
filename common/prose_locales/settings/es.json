@@ -8844,8 +8844,8 @@
     "text": "AuthZEN habilitado"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "Si está activado, la AuthZEN Authorization API responde bajo /access/v1. Desactivado, sus rutas siguen REGISTRADAS y responden 501, como las de XACML: la función está desactivada, la URL no es incorrecta. Decide con el motor XACML, así que también responde 501 mientras xacml.enabled está desactivado. Un llamante sigue necesitando el rol AUTHZEN_PEPS (roles.authzenPepGroup) y un alcance de aplicación antes de que se le diga nada."
+    "en": "ab2a36497d9bc637",
+    "text": "Si está activado, la AuthZEN Authorization API responde bajo /access/v1. Desactivado, sus rutas siguen REGISTRADAS y responden 403: la función está desactivada, la URL no es incorrecta. Decide con el motor XACML, así que también responde 403 mientras xacml.enabled está desactivado. Un llamante sigue necesitando el rol AUTHZEN_PEPS (roles.authzenPepGroup) y un alcance de aplicación antes de que se le diga nada."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8868,8 @@
     "text": "Evaluaciones por lotes activadas"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "Activada, POST /access/v1/evaluations responde varias evaluaciones de acceso en una sola solicitud (sección 7) y el documento de metadatos lo nombra. Desactivada, la ruta responde 501 y los metadatos lo omiten; /access/v1/evaluation no se ve afectado."
+    "en": "30f1730e7cc2e19f",
+    "text": "Activada, POST /access/v1/evaluations responde varias evaluaciones de acceso en una sola solicitud (sección 7) y el documento de metadatos lo nombra. Desactivada, la ruta responde 403 y los metadatos lo omiten; /access/v1/evaluation no se ve afectado."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8916,8 @@
     "text": "Search APIs activadas"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "Activado, las tres búsquedas de AuthZEN responden bajo /access/v1/search (sujeto, recurso, acción) y los metadatos las nombran. Una búsqueda decide cada candidato que este servicio puede nombrar con la política raíz del dominio y responde los permitidos: los sujetos son las personas del directorio del dominio, los recursos sus aplicaciones, API y relaciones de delegación, y las acciones los nombres con los que la política compara action-id. Desactivado, las rutas responden 501."
+    "en": "058f0be9c553b3f0",
+    "text": "Activado, las tres búsquedas de AuthZEN responden bajo /access/v1/search (sujeto, recurso, acción) y los metadatos las nombran. Una búsqueda decide cada candidato que este servicio puede nombrar con la política raíz del dominio y responde los permitidos: los sujetos son las personas del directorio del dominio, los recursos sus aplicaciones, API y relaciones de delegación, y las acciones los nombres con los que la política compara action-id. Desactivado, las rutas responden 403."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8948,8 @@
     "text": "Solicitudes de acceso y aprobaciones"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "El perfil AuthZEN Access Request and Approval (un borrador), con su complemento de callback. Cuando está activado, un Deny cuya respuesta XACML lleva el advice urn:sts:xacml:advice:access-request responde false con context.access_request; un PEP lo envía a POST /access/v1/access-requests, un aprobador nombrado por el advice lo decide en el portal o la consola, y una aprobación presentada en la siguiente evaluación llega a la política raíz como hechos de confianza. Los metadatos nombran el endpoint y la capacidad. Una denegación sin el advice nunca se puede solicitar. Desactivado, las rutas responden 501 y ninguna denegación se puede solicitar."
+    "en": "2851b5ede62f62db",
+    "text": "El perfil AuthZEN Access Request and Approval (un borrador), con su complemento de callback. Cuando está activado, un Deny cuya respuesta XACML lleva el advice urn:sts:xacml:advice:access-request responde false con context.access_request; un PEP lo envía a POST /access/v1/access-requests, un aprobador nombrado por el advice lo decide en el portal o la consola, y una aprobación presentada en la siguiente evaluación llega a la política raíz como hechos de confianza. Los metadatos nombran el endpoint y la capacidad. Una denegación sin el advice nunca se puede solicitar. Desactivado, las rutas responden 403 y ninguna denegación se puede solicitar."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9028,8 @@
     "text": "Catálogos para solicitudes de acceso"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 501."
+    "en": "5809e31e9afa317e",
+    "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 403."
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",

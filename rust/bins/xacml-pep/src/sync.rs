@@ -116,11 +116,11 @@ pub struct AuthzenSettings {
     /// The realm's `authzen.tokenExchange` (#1181, #1205), which decides how
     /// the service classifies a request's tuples: on, its gate, scope and
     /// detail tuples are the binding's and answered by its fixed rules (so
-    /// this edge answers them 501, STS-XPEP-0140); off, every tuple is an
+    /// this edge answers them 403, STS-XPEP-0140); off, every tuple is an
     /// ordinary evaluation. ABSENT IS ON: an older service that does not
     /// send it may have the binding on, and evaluating one of its tuples
     /// here as ordinary could answer true where the service answers a fixed
-    /// false (a lone scope, STS-AUTHZEN-0105). A 501 decides nothing.
+    /// false (a lone scope, STS-AUTHZEN-0105). That 403 decides nothing.
     pub token_exchange: bool,
     /// The `authorization_details` types the realm's applications declare,
     /// which make a tuple beside a token-exchange gate one of the binding's
@@ -251,8 +251,8 @@ pub struct PulledCaller {
 #[derive(Debug, Clone, Default)]
 pub struct Callers {
     /// A list was pulled at least once. Until then `PEP_AUTHZEN_CALLERS`,
-    /// when it is set, decides alone, and when it is not the edge answers
-    /// 503.
+    /// when it is set, decides alone, and when it is not the edge admits
+    /// nobody (403, a PEP failure, #2208).
     pub loaded: bool,
     pub sync_token: String,
     /// The realm's `authzen.callerAuthentication`: only `mtls` admits a
@@ -283,12 +283,13 @@ pub struct ProxyHolding {
 }
 
 /// THE PROXY BEFORE ITS FIRST CONFIGURATION (rcbj, 2026-11-15): every
-/// request is answered 503 with `Retry-After`, and the log carries the state
+/// request is refused 403 with `Retry-After` (#2208: it was 503), and the
+/// log carries the state
 /// change and a summary at most once per [`WAITING_SUMMARY_EVERY`], never a
 /// line per request (`STS-XPEP-0118`).
 #[derive(Debug, Clone, Default)]
 struct ProxyWaiting {
-    /// Answered 503 since the start.
+    /// Refused (403, STS-XPEP-0118) since the start.
     refused: u64,
     /// Of those, since the last line about them.
     unreported: u64,
@@ -511,7 +512,7 @@ struct State {
     proxy: ProxyHolding,
     last_proxy_kept_why: String,
     proxy_counters: ProxyCounters,
-    /// The requests the proxy answered 503 because no configuration has
+    /// The requests the proxy refused (403) because no configuration has
     /// been received since this process started (`STS-XPEP-0118`).
     proxy_waiting: ProxyWaiting,
     /// (relying parties, CAEP/RISC receivers) the proxy holds, as of its
@@ -1576,8 +1577,9 @@ impl Sync {
             )
         } else {
             format!(
-                "{} NO CATALOGUE IS HELD, so the AuthZEN endpoints answer \
-                 503: a request cannot be mapped as the service maps it.",
+                "{} NO CATALOGUE IS HELD, so the AuthZEN endpoints refuse \
+                 every request (403): a request cannot be mapped as the \
+                 service maps it.",
                 why
             )
         };
@@ -1720,7 +1722,7 @@ impl Sync {
         } else {
             format!(
                 "{} NO CALLER LIST IS HELD and PEP_AUTHZEN_CALLERS is not \
-                 set, so the AuthZEN endpoints answer 503.",
+                 set, so the AuthZEN endpoints refuse every caller (403).",
                 why
             )
         };
@@ -1851,7 +1853,7 @@ impl Sync {
             let line = format!(
                 "xacml-pep: the reverse proxy received its first \
                  configuration since it started; {} request(s) were \
-                 answered 503 (STS-XPEP-0118) while it waited.",
+                 refused (403, STS-XPEP-0118) while it waited.",
                 state.proxy_waiting.refused
             );
             tracing::info!("{}", line);
@@ -1883,7 +1885,7 @@ impl Sync {
         } else {
             format!(
                 "{} NO CONFIGURATION HAS BEEN RECEIVED since the start, so \
-                 the proxy answers 503 with Retry-After to everything.",
+                 the proxy refuses everything (403) with Retry-After.",
                 why
             )
         };
@@ -1905,14 +1907,14 @@ impl Sync {
     /// The configuration in force now, and whether ANY configuration
     /// answer has been loaded since this process started — read under one
     /// lock, so a pull landing between the two cannot be half seen. Not
-    /// received yet is the 503 of `STS-XPEP-0118`; received and empty or
+    /// received yet is the 403 of `STS-XPEP-0118`; received and empty or
     /// switched off is the 404 of `STS-XPEP-0065`.
     pub fn proxy_received(&self) -> (Arc<Pulled>, bool) {
         let state = self.lock();
         (state.proxy.pulled.clone(), state.proxy.loaded)
     }
 
-    /// One request answered 503 before the first configuration. Logged
+    /// One request refused (403) before the first configuration. Logged
     /// when the state is first met, then as a count at most once per
     /// [`WAITING_SUMMARY_EVERY`] — a browser retrying, a health probe of
     /// the application or a crawler would otherwise write a line each.
@@ -1935,8 +1937,8 @@ impl Sync {
         let line = if first {
             format!(
                 "{}xacml-pep: the reverse proxy has received no \
-                 configuration since it started, so it answers 503 with \
-                 Retry-After to every request until the first pull \
+                 configuration since it started, so it refuses every \
+                 request (403) with Retry-After until the first pull \
                  succeeds. A count follows at most once a minute. The \
                  last pull: {}",
                 tag("STS-XPEP-0118"),
@@ -1945,7 +1947,7 @@ impl Sync {
         } else {
             format!(
                 "{}xacml-pep: the reverse proxy is still waiting for its \
-                 first configuration: {} request(s) answered 503 in the \
+                 first configuration: {} request(s) refused (403) in the \
                  last {}s, {} since the start. The last pull: {}",
                 tag("STS-XPEP-0118"),
                 w.unreported,

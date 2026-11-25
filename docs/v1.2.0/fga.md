@@ -219,7 +219,8 @@ catalogue; and instead of deciding from the root policy it holds, it
 over mutual TLS with its own certificate. This service decides it against the
 application's policy and the edge PDP returns that answer. An error here
 (a policy that cannot be used is `500`), a refusal of the PEP or no answer
-is an error at the edge PDP, never `false`. For this to work, the remote
+is an error at the edge PDP, never `false`: a `403` there, as every PEP
+failure is. For this to work, the remote
 PEP's own directory entry must hold `AUTHZEN_PEPS` and have the application
 in its scope — the requirements below, applied to the PEP; a policy then
 sees the PEP as `urn:sts:xacml:authzen:caller`. **Enforcing the application

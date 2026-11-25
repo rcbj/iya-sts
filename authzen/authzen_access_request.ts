@@ -1152,9 +1152,11 @@ class AccessRequests {
     // A 415 (#936) is titled for what it is: `about:blank`'s title is the
     // status's phrase (RFC 9457 section 4.2.1), and "Bad request" would
     // tell the caller the body was wrong when it was never read.
+    // A 403 — the profile switched off (#2208) — is "Forbidden".
     const untitled = status >= 500 ? 'Server error'
       : status === 415 ? 'Unsupported media type'
-        : status === 404 ? 'Not found' : 'Bad request';
+        : status === 404 ? 'Not found'
+          : status === 403 ? 'Forbidden' : 'Bad request';
     const body: Json = {
       type: named ? named.uri : 'about:blank',
       title: named ? named.title : untitled,
@@ -2676,7 +2678,8 @@ class AccessRequests {
     const { log, denials } = this.deps;
     log.debug("Entering AccessRequests.catalogDenial().");
     if (!self.catalogsOn()) {
-      self.problem(res, 501, '', 'STS-AUTHZEN-0153', 'The access request ' +
+      // 403 while off (#2208): the Catalog Profile prescribes no status.
+      self.problem(res, 403, '', 'STS-AUTHZEN-0153', 'The access request ' +
                    'catalogs are turned off in this realm ' +
                    '(authzen.accessRequestCatalogs).');
       log.debug("Leaving AccessRequests.catalogDenial(). Off.");

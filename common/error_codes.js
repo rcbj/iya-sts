@@ -26271,11 +26271,13 @@ const CODES = [
     summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
       'it had pulled both the policies and the AuthZEN catalogue, so it ' +
       'cannot map a request as the service does (#1179).',
-    spec: 'HTTP 503, an error message' },
+    spec: 'HTTP 403, an error message (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0044',
     summary: 'An AuthZEN request reached a remote PEP whose edge PDP is ' +
-      'turned off (PEP_AUTHZEN=false) (#1179).',
-    spec: 'HTTP 501, an error message' },
+      'turned off (PEP_AUTHZEN=false) (#1179). AuthZEN 1.0 prescribes no ' +
+      'status for a switched-off API, so the edge answers 403 (#2208; ' +
+      '501 before).',
+    spec: 'HTTP 403, an error message' },
   { code: 'STS-XPEP-0045',
     summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
       'identifier to name (no identifier set, and plain HTTP or no usable ' +
@@ -26310,7 +26312,7 @@ const CODES = [
     summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
       'it had pulled the callers from the PDP, and no PEP_AUTHZEN_CALLERS ' +
       'is configured to decide meanwhile (#1189).',
-    spec: 'HTTP 503, an error message' },
+    spec: 'HTTP 403, an error message (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0051',
     summary: 'The client certificate an AuthZEN caller presented to the ' +
       'remote PEP\'s edge PDP verified, and its SHA-256 is not one the ' +
@@ -26338,26 +26340,31 @@ const CODES = [
       'authorization to the service: the service could not be reached, ' +
       'or did not answer within PEP_AUTHZEN_FORWARD_TIMEOUT_MS (#564). ' +
       'The evaluation is an error, never false.',
-    spec: 'HTTP 502 (504 on a timeout), or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0056',
     summary: 'The service refused the remote PEP itself when its edge PDP ' +
       'forwarded an AuthZEN evaluation about an application that ' +
       'enforces fine-grained authorization (401 or 403): the PEP\'s ' +
       'directory entry must hold AUTHZEN_PEPS and have the application ' +
       'in its stsAuthzenApplication scope (#564).',
-    spec: 'HTTP 502, or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0057',
     summary: 'The service answered an error to an AuthZEN evaluation the ' +
       'remote PEP\'s edge PDP forwarded (an application that enforces ' +
-      'fine-grained authorization): its status and message are passed to ' +
-      'the caller, never turned into false (#564).',
-    spec: 'the service\'s own status and message, or a batch item\'s ' +
-      'context.error' },
+      'fine-grained authorization), never turned into false (#564): a ' +
+      '400 or 413 is passed to the caller with the service\'s message, ' +
+      'and any other status — a 5xx included — is a PEP failure, 403 with ' +
+      'the service\'s status and message (#2208).',
+    spec: 'HTTP 400 or 413 as the service answered, otherwise HTTP 403; or ' +
+      'a batch item\'s context.error' },
   { code: 'STS-XPEP-0058',
     summary: 'The service answered 200 to an AuthZEN evaluation the remote ' +
       'PEP\'s edge PDP forwarded, with something that is not an AuthZEN ' +
       'decision (no boolean decision) (#564).',
-    spec: 'HTTP 502, or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0059',
     summary: 'The AuthZEN catalogue the remote PEP pulled carried an ' +
       'fgaApplications member that is not an array of application ' +
@@ -26453,7 +26460,7 @@ const CODES = [
       'liveness, or the token endpoint): unreachable, a status that is not ' +
       'an answer, or no endpoint named in the pull. The request is refused, ' +
       'never admitted (#1760).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0076',
     summary: 'The reverse proxy refused an EncryptedAssertion presented as a ' +
       'SAML credential: neither the proxy nor the service holds a service ' +
@@ -26508,7 +26515,7 @@ const CODES = [
       'PEP_PROXY_MAX_SESSIONS live sessions are held (none is evicted, ' +
       'which would sign somebody else out), or no random value could be ' +
       'drawn (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0086',
     summary: 'The reverse proxy\'s decision refused the request: the policy ' +
       'this PEP holds, under its bias and obligation rule, did not permit ' +
@@ -26537,17 +26544,18 @@ const CODES = [
       'redirect URI that is not https or loopback, a public client), or the ' +
       'service\'s discovery document could not be read, so nobody can be ' +
       'signed in there (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0091',
     summary: 'The upstream URL the reverse proxy built for a request would ' +
       'not stay on the configured upstream\'s origin and path, so the ' +
       'request is not sent (#1760).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0092',
     summary: 'PEP_PROXY_UPSTREAM_CA could not be read or would not load, so ' +
       'an https upstream is verified against the system\'s anchors alone; ' +
       'or the client to the upstream would not build (#1760).',
-    spec: 'HTTP 502 when the client would not build; otherwise none' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208) when the ' +
+      'client would not build; otherwise none' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-XPEP-0093',
     summary: 'The reverse proxy refused a request on a route whose ' +
@@ -26571,25 +26579,29 @@ const CODES = [
       'notOnOrAfter), could not be reached, or the pull named no such ' +
       'endpoint. The request is refused, NEVER forwarded without the ' +
       'identity (#1760, D11).',
-    spec: 'HTTP 403 when the service said 403, otherwise HTTP 502' },
+    spec: 'HTTP 403, access_denied: the policy\'s refusal when the ' +
+      'service said 403, otherwise a PEP failure (#2208)' },
   { code: 'STS-XPEP-0096',
     summary: 'A value the reverse proxy would have sent as identity was ' +
       'refused: a claim holding CR, LF or NUL, a list member holding the ' +
       'route\'s separator, an object, or a token or cookie that is not a ' +
       'header value (#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0097',
     summary: 'The reverse proxy could not establish the application\'s ' +
       'session for a saml-mode route: the ACS the service named is not an ' +
       'absolute http(s) URL, could not be reached, answered 400 or more, or ' +
-      'set no cookie (#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+      'set no cookie (#1760, D11). The application\'s own failure — its ACS ' +
+      'unreachable or answering 5xx — is a gateway error; anything else is ' +
+      'a PEP failure (#2208).',
+    spec: 'HTTP 502, bad_gateway, when the ACS cannot be reached or ' +
+      'answers 5xx; otherwise HTTP 403, access_denied' },
   { code: 'STS-XPEP-0098',
     summary: 'The reverse proxy had no evidence to ask the identity ' +
       'endpoint with: a Basic answer that carried no ticket, or a proxy ' +
       'session whose relying party or access token could not be had ' +
       '(#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0099',
     summary: 'The CAEP/RISC stream of a session route\'s relying party ' +
       'has not answered a poll within PEP_PROXY_SIGNALS_STALE_MS (the ' +
@@ -26656,8 +26668,10 @@ const CODES = [
   { code: 'STS-XPEP-0110',
     summary: 'A remote PEP proxy account page was asked for something it ' +
       'does not answer: no such page, or an add whose return path is not ' +
-      'on a session route with multipleAccounts (#1760).',
-    spec: 'HTTP 404' },
+      'on a session route with multipleAccounts (#1760); or, unreachable ' +
+      'in practice, an add whose sign-in established someone instead of ' +
+      'starting, a PEP failure (#2208).',
+    spec: 'HTTP 404; HTTP 403 for the PEP failure' },
   { code: 'STS-XPEP-0111',
     summary: 'A remote PEP proxy account act named an account the ' +
       'browser\'s set does not hold (#1760).',
@@ -26705,8 +26719,8 @@ const CODES = [
       'most once a minute, and once more when the first configuration ' +
       'arrives; a configuration received empty or switched off is ' +
       'STS-XPEP-0065 (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable, with Retry-After (the poll ' +
-      'interval in seconds, at least 1)' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208; it was 503), ' +
+      'with Retry-After (the poll interval in seconds, at least 1)' },
   { code: 'STS-XPEP-0119',
     summary: 'A remote PEP could not apply one part of a listener\'s ' +
       'tuning. A TLS knob the library refused keeps the acceptor already ' +
@@ -26852,24 +26866,29 @@ const CODES = [
     summary: 'A caller asked this edge PDP for one of the AuthZEN Search ' +
       'APIs (POST /access/v1/search/subject, resource or action). Those ' +
       'are answered by the service, which holds the directory and the ' +
-      'resource and action catalogues. This edge answers 501, before ' +
+      'resource and action catalogues. This edge answers 403 (#2208; 501 ' +
+      'before: AuthZEN 1.0 prescribes no status for an API a PDP does ' +
+      'not serve, only that it is absent from the metadata), before ' +
       'admission and without reading the body, and does not advertise ' +
       'the paths. The code is logged and not sent. A turned-off edge, or ' +
       'one that has not pulled, answers that condition first ' +
       '(STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, ' +
       'STS-AUTHZEN-0014). HEAD stays 404.',
-    spec: 'AuthZEN Authorization API 1.0 section 8; HTTP 501' },
+    spec: 'AuthZEN Authorization API 1.0 sections 8 and 9.1.1; HTTP 403' },
   { code: 'STS-XPEP-0139',
     summary: 'A caller asked this edge PDP for the Access Request and ' +
       'Approval Profile (POST /access/v1/access-requests, GET of its ' +
       'schema or of a task, POST or DELETE of a task\'s cancel). The ' +
-      'service holds the approval store. This edge answers 501 with the ' +
+      'service holds the approval store. This edge does not support the ' +
+      'profile, publishes no access_request_endpoint, and answers 403 ' +
+      '(#2208; 501 before: the profile prescribes no status for a PDP ' +
+      'that does not support it) with the ' +
       'evaluation error object, not problem+json, before admission and ' +
       'without reading the body, and does not advertise the paths. A ' +
       'POST to the task path without /cancel stays 404. The code is ' +
       'logged and not sent. context.approval on an evaluation is not ' +
       'this refusal: it is recognized and not used (STS-AUTHZEN-0084).',
-    spec: 'AuthZEN Access Request and Approval Profile; HTTP 501' },
+    spec: 'AuthZEN Access Request and Approval Profile; HTTP 403' },
   { code: 'STS-XPEP-0140',
     summary: 'An access evaluation was one of the OAuth token-exchange ' +
       'binding\'s tuples while the realm\'s authzen.tokenExchange is on ' +
@@ -26881,7 +26900,8 @@ const CODES = [
       'request that also carries a token-exchange gate ' +
       '(issue:<registered token type>:token_exchange). The service ' +
       'answers those by the binding\'s fixed rules, which need delegation ' +
-      'and the directory. This edge answers 501 for that item — the whole ' +
+      'and the directory. This edge answers 403 for that item (a PEP ' +
+      'failure: it cannot decide it; 501 before #2208) — the whole ' +
       'response when the request was one evaluation, and context.error ' +
       'on a batch item — does not forward it, and records it to the ' +
       'service\'s audit log (authzen.remote.decision). The code is logged ' +
@@ -26889,7 +26909,7 @@ const CODES = [
       'ordinary evaluation, as at the service; either way a context ' +
       'member the binding reads, on a tuple that is not the binding\'s, ' +
       'is 400 STS-AUTHZEN-0101.',
-    spec: 'AuthZEN OAuth token-exchange binding; HTTP 501' },
+    spec: 'AuthZEN OAuth token-exchange binding; HTTP 403' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -26958,12 +26978,13 @@ const CODES = [
   { code: 'STS-AUTHZEN-0013',
     summary: 'An AuthZEN request reached a realm where authzen.enabled, or ' +
       'xacml.enabled whose engine it decides with, is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208: AuthZEN 1.0 prescribes ' +
+      'no status for a switched-off API; 501 before)' },
   { code: 'STS-AUTHZEN-0014',
     summary: 'An AuthZEN request reached a realm that has no sts-authzen-api ' +
       'application, the API\'s resource object; an operator who removes it ' +
       'turns the API off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0015',
     summary: 'An AuthZEN caller presented no client certificate, where ' +
       'authzen.callerAuthentication is mtls or mtls+bearer.',
@@ -27077,7 +27098,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0039',
     summary: 'An AuthZEN access evaluations request reached a realm where ' +
       'authzen.batchEnabled is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0040',
     summary: 'The AuthZEN metadata document could not be signed for its ' +
       'signed_metadata, which was left out; the plain document was served.',
@@ -27100,7 +27121,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0044',
     summary: 'An AuthZEN search reached a realm where authzen.searchEnabled ' +
       'is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0045',
     summary: 'An AuthZEN search named more candidates than ' +
       'authzen.searchMaxCandidates; only the first were decided and the ' +
@@ -27136,7 +27157,7 @@ const CODES = [
     summary: 'An AuthZEN access request, task status or cancellation reached ' +
       'a realm where authzen.accessRequests (the Access Request and ' +
       'Approval Profile, #1180) is off.',
-    spec: 'HTTP 501, application/problem+json' },
+    spec: 'HTTP 403, application/problem+json (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0071',
     summary: 'An AuthZEN access request was not a JSON object with subject, ' +
       'resource and action objects, carried a member the profile does ' +
@@ -27583,7 +27604,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0153',
     summary: 'The access request catalogs were called while ' +
       'authzen.accessRequestCatalogs (or the profile) is off (#1204).',
-    spec: 'none — 501 problem+json' },
+    spec: 'none — 403 problem+json (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0154',
     summary: 'An access request\'s client.actor named a chain the caller\'s ' +
       'own credential does not authorize: neither one link that is the ' +

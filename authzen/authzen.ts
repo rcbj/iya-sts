@@ -263,16 +263,20 @@ class AuthzenSurface {
     return found;
   }
 
-  // THE ROUTES STAY REGISTERED AND ANSWER 501 when the API is off, as
-  // XACML's do: the feature being off and the URL being wrong are different
-  // sentences to a PEP.
+  // THE ROUTES STAY REGISTERED AND ANSWER 403 when the API is off: the
+  // feature being off and the URL being wrong are different sentences to a
+  // PEP. 403, not the 501 XACML answers (#2208, rcbj: "Follow the spec, but
+  // return 403 otherwise"): AuthZEN 1.0 prescribes no status for an API a
+  // PDP has switched off — section 10.1.2 defines 400, 401, 403 and 500,
+  // and section 9.1.1 says only that an endpoint absent from the metadata
+  // is one the PDP "is not capable" of.
   private offCheck(res: Res): boolean {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug("Entering AuthzenSurface.offCheck().");
     if (!self.enabled()) {
       errorCodes.mark(res, 'STS-AUTHZEN-0013');
-      callers.send(res, 501, 'The AuthZEN API is turned off in this realm ' +
+      callers.send(res, 403, 'The AuthZEN API is turned off in this realm ' +
                    '(authzen.enabled, or xacml.enabled, whose engine it ' +
                    'decides with).');
       log.debug("Leaving AuthzenSurface.offCheck(). Off.");
@@ -280,7 +284,7 @@ class AuthzenSurface {
     }
     if (!self.apiObject()) {
       errorCodes.mark(res, 'STS-AUTHZEN-0014');
-      callers.send(res, 501, 'This realm has no ' + API_OBJECT + ' ' +
+      callers.send(res, 403, 'This realm has no ' + API_OBJECT + ' ' +
                    'application, the AuthZEN API\'s resource object, so the ' +
                    'API is off here.');
       log.debug("Leaving AuthzenSurface.offCheck(). No object.");
@@ -1387,7 +1391,7 @@ class AuthzenSurface {
     }
   }
 
-  // Answers the metadata in the realm the request is in, or 501 while the
+  // Answers the metadata in the realm the request is in, or 403 while the
   // API is off there (the document would advertise an endpoint that does
   // not answer).
   // Signed off the event loop for an HSM key (#1955 P8 follow-up), so the
@@ -1690,7 +1694,9 @@ class AuthzenSurface {
       }
       if (!self.batchEnabled()) {
         errorCodes.mark(res, 'STS-AUTHZEN-0039');
-        callers.send(res, 501, 'The batch endpoint is turned off in this ' +
+        // 403, as every switched-off part of this API (#2208): the
+        // metadata leaves the endpoint out, which is all the spec says.
+        callers.send(res, 403, 'The batch endpoint is turned off in this ' +
                      'realm (authzen.batchEnabled); ' + EVALUATION_PATH +
                      ' still answers.');
         log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Batch off.');
@@ -1726,7 +1732,7 @@ class AuthzenSurface {
         }
         if (!self.searchEnabled()) {
           errorCodes.mark(res, 'STS-AUTHZEN-0044');
-          callers.send(res, 501, 'The search endpoints are turned off in ' +
+          callers.send(res, 403, 'The search endpoints are turned off in ' +
                        'this realm (authzen.searchEnabled).');
           log.debug('Leaving POST ' + path + '. Search off.');
           return;
@@ -1776,7 +1782,10 @@ class AuthzenSurface {
         return null;
       }
       if (!ar.enabled()) {
-        ar.problem(res, 501, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
+        // 403 (#2208): the profile prescribes no status for a PDP that
+        // does not support it, and publishes no access_request_endpoint
+        // while it is off.
+        ar.problem(res, 403, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
                    'and Approval Profile is turned off in this realm ' +
                    '(authzen.accessRequests).');
         log.debug('Leaving requestsOpen(). The profile is off.');
@@ -1816,7 +1825,7 @@ class AuthzenSurface {
     // does not read "schema" as a task id. Public, as the metadata is:
     // the document names no secret, and an autonomous PEP checks that
     // its origin is the access request endpoint's before fetching (the
-    // profile's section 11.2). It answers 501 while the API or the
+    // profile's section 11.2). It answers 403 while the API or the
     // profile is off, rather than describing an endpoint that does not
     // answer. It is not held to the AuthZEN model: it is a JSON Schema.
     app.get(accessRequests.SCHEMA_PATH, function (req, res) {
@@ -1827,7 +1836,7 @@ class AuthzenSurface {
         return;
       }
       if (!ar.enabled()) {
-        ar.problem(res, 501, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
+        ar.problem(res, 403, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
                    'and Approval Profile is turned off in this realm ' +
                    '(authzen.accessRequests).');
         log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH +

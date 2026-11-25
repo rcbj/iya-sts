@@ -617,7 +617,7 @@
           },
           "tokenExchange": {
             "type": "boolean",
-            "description": "The realm's authzen.tokenExchange, as pulled. Before a pull, and when the catalogue did not send it, on: the binding's tuples are answered 501."
+            "description": "The realm's authzen.tokenExchange, as pulled. Before a pull, and when the catalogue did not send it, on: the binding's tuples are answered 403 (a PEP failure)."
           },
           "tokenExchangeDetailTypes": {
             "anyOf": [

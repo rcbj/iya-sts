@@ -8844,8 +8844,8 @@
     "text": "启用 AuthZEN"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "开启时，AuthZEN Authorization API 在 /access/v1 下应答。关闭时，其路由仍保持注册状态并应答 501，与 XACML 的路由一样：功能已关闭，而不是 URL 有误。它使用 XACML 引擎作出决策，因此在 xacml.enabled 关闭时也会应答 501。调用方仍需拥有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）和应用范围，才会得到任何答复。"
+    "en": "ab2a36497d9bc637",
+    "text": "开启时，AuthZEN Authorization API 在 /access/v1 下应答。关闭时，其路由仍保持注册状态并应答 403：功能已关闭，而不是 URL 有误。它使用 XACML 引擎作出决策，因此在 xacml.enabled 关闭时也会应答 403。调用方仍需拥有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）和应用范围，才会得到任何答复。"
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8868,8 @@
     "text": "启用批量评估"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "开启时，POST /access/v1/evaluations 在一个请求中应答多个访问评估（第 7 节），元数据文档也会列出它。关闭时该路由应答 501，元数据不列出它；/access/v1/evaluation 不受影响。"
+    "en": "30f1730e7cc2e19f",
+    "text": "开启时，POST /access/v1/evaluations 在一个请求中应答多个访问评估（第 7 节），元数据文档也会列出它。关闭时该路由应答 403，元数据不列出它；/access/v1/evaluation 不受影响。"
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8916,8 @@
     "text": "启用 Search APIs"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "开启时，三种 AuthZEN 搜索在 /access/v1/search 下应答（主体、资源、操作），元数据会列出它们。一次搜索用领域的根策略对本服务能列出的每个候选作出决定，并应答被允许的那些：主体是领域目录中的人员，资源是其应用、API 和委托关系，操作是策略用来与 action-id 比较的名称。关闭时，这些路由应答 501。"
+    "en": "058f0be9c553b3f0",
+    "text": "开启时，三种 AuthZEN 搜索在 /access/v1/search 下应答（主体、资源、操作），元数据会列出它们。一次搜索用领域的根策略对本服务能列出的每个候选作出决定，并应答被允许的那些：主体是领域目录中的人员，资源是其应用、API 和委托关系，操作是策略用来与 action-id 比较的名称。关闭时，这些路由应答 403。"
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8948,8 @@
     "text": "访问请求与审批"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "AuthZEN 访问请求与审批配置文件（草案）及其回调配套规范。开启时，XACML 应答中携带 advice urn:sts:xacml:advice:access-request 的 Deny 会应答 false 并附带 context.access_request；PEP 将其提交到 POST /access/v1/access-requests，由该 advice 指定的审批人在门户或控制台中作出决定，下一次评估时出示的批准会作为可信事实到达根策略。元数据会写明该端点和该能力。不带该 advice 的拒绝永远不可请求。关闭时，这些路由应答 501，任何拒绝都不可请求。"
+    "en": "2851b5ede62f62db",
+    "text": "AuthZEN 访问请求与审批配置文件（草案）及其回调配套规范。开启时，XACML 应答中携带 advice urn:sts:xacml:advice:access-request 的 Deny 会应答 false 并附带 context.access_request；PEP 将其提交到 POST /access/v1/access-requests，由该 advice 指定的审批人在门户或控制台中作出决定，下一次评估时出示的批准会作为可信事实到达根策略。元数据会写明该端点和该能力。不带该 advice 的拒绝永远不可请求。关闭时，这些路由应答 403，任何拒绝都不可请求。"
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9028,8 @@
     "text": "访问申请的目录"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "AuthZEN Access Request Catalog 配置文件（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已记录可申请拒绝携带 request_catalogs_url，其 Catalogs Document 和 Catalog Endpoint 只答复该拒绝所答复的调用方，提交必须在 requested_access.entitlement 中选择其中一项权限，批准会将其作为可信事实带给策略。关闭时忽略 advice 的权限，两个端点返回 501。"
+    "en": "5809e31e9afa317e",
+    "text": "AuthZEN Access Request Catalog 配置文件（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已记录可申请拒绝携带 request_catalogs_url，其 Catalogs Document 和 Catalog Endpoint 只答复该拒绝所答复的调用方，提交必须在 requested_access.entitlement 中选择其中一项权限，批准会将其作为可信事实带给策略。关闭时忽略 advice 的权限，两个端点返回 403。"
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",

@@ -31,7 +31,7 @@
 //      out of the group (403).
 //   W. THE METADATA (#1163): both forms, the identifier the URL was built
 //      from, every advertised URL a registered route, nothing unimplemented
-//      advertised, 404 for a path naming no realm, 501 while off.
+//      advertised, 404 for a path naming no realm, 403 while off (#2208).
 //   E. THE BATCH (#1164): every semantic, an item's failure in its own
 //      context.error, the defaults overridden per item, no items as one
 //      evaluation, both bounds, the switch, and the batch id on each row.
@@ -56,7 +56,7 @@
 //      five pulls, a refusal and two validation doors, each real answer held
 //      to xacml-pep/openapi/pep-control-plane.json (tests/tools/
 //      pep_model.js), whose objects are closed.
-//   O. OFF: authzen.enabled off answers 501.
+//   O. OFF: authzen.enabled off answers 403 (#2208; 501 before).
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -716,8 +716,8 @@ async function childBody() {
   inRealm(function () {
     config.setOverride('authzen.searchEnabled', true);
   });
-  t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0044'),
-          'S11. authzen.searchEnabled off answers 501', brief(r));
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0044'),
+          'S11. authzen.searchEnabled off answers 403', brief(r));
   // A resource type this service has no objects of (#936): the candidates
   // are the resource ids the policy names, each decided as that type.
   r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
@@ -977,8 +977,8 @@ async function childBody() {
   inRealm(function () {
     config.setOverride('authzen.enabled', true);
   });
-  t.check(r.status === 501, 'W6. with the API off the document answers ' +
-          '501 rather than advertising an endpoint that does not', brief(r));
+  t.check(r.status === 403, 'W6. with the API off the document answers ' +
+          '403 rather than advertising an endpoint that does not', brief(r));
 
   // -------------------------------------------------------------------------
   // E. THE BATCH (#1164)
@@ -1085,10 +1085,10 @@ async function childBody() {
   });
   t.check(withBatch.access_evaluations_endpoint === own +
             '/access/v1/evaluations' &&
-          off.status === 501 && markedSince(since, 'STS-AUTHZEN-0039') &&
+          off.status === 403 && markedSince(since, 'STS-AUTHZEN-0039') &&
           without.json && !without.json.access_evaluations_endpoint,
           'E9. the metadata names the batch endpoint while it is on, and ' +
-          'with authzen.batchEnabled off the route answers 501 and the ' +
+          'with authzen.batchEnabled off the route answers 403 and the ' +
           'metadata leaves it out', JSON.stringify([withBatch, off.status,
                                                     without.json]));
 
@@ -1656,8 +1656,10 @@ async function childBody() {
   inRealm(function () {
     config.setOverride('authzen.enabled', true);
   });
-  t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0013'),
-          'O1. authzen.enabled off is 501 (STS-AUTHZEN-0013), the route ' +
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0013') &&
+          !/STS-/.test(String(r.text || '')),
+          'O1. authzen.enabled off is 403 (STS-AUTHZEN-0013, never sent), ' +
+          'the route ' +
           'still registered', brief(r));
   r = await request(port, 'POST', '/access/v1/evaluation', pepCred, asked());
   t.check(r.status === 401 || r.status === 403,

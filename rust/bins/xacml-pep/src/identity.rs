@@ -6,8 +6,8 @@
 //! is handed, and the cookie jar the `saml` mode keeps. `proxy.rs` asks the
 //! service (`POST /xacml/pep/identity`) and applies what this file holds.
 //!
-//! **A header carries no proof**, so a value is refused (502,
-//! `STS-XPEP-0096`) rather than forwarded when it holds CR, LF or NUL, or
+//! **A header carries no proof**, so a value is refused (403, a PEP
+//! failure, `STS-XPEP-0096`) rather than forwarded when it holds CR, LF or NUL, or
 //! when a member of a list holds the separator that joins it — a value an
 //! application might split differently from how it was meant.
 //!

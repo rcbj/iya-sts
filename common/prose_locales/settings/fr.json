@@ -8844,8 +8844,8 @@
     "text": "AuthZEN activé"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "Activé, l’AuthZEN Authorization API répond sous /access/v1. Désactivé, ses routes restent ENREGISTRÉES et répondent 501, comme celles de XACML : la fonctionnalité est désactivée, l’URL n’est pas erronée. Il décide avec le moteur XACML, il répond donc aussi 501 tant que xacml.enabled est désactivé. Un appelant a toujours besoin du rôle AUTHZEN_PEPS (roles.authzenPepGroup) et d’une portée d’application avant qu’on lui dise quoi que ce soit."
+    "en": "ab2a36497d9bc637",
+    "text": "Activé, l’AuthZEN Authorization API répond sous /access/v1. Désactivé, ses routes restent ENREGISTRÉES et répondent 403 : la fonctionnalité est désactivée, l’URL n’est pas erronée. Il décide avec le moteur XACML, il répond donc aussi 403 tant que xacml.enabled est désactivé. Un appelant a toujours besoin du rôle AUTHZEN_PEPS (roles.authzenPepGroup) et d’une portée d’application avant qu’on lui dise quoi que ce soit."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8868,8 @@
     "text": "Évaluations par lot activées"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "Activé, POST /access/v1/evaluations répond à plusieurs évaluations d'accès dans une seule requête (section 7) et le document de métadonnées le nomme. Désactivé, la route répond 501 et les métadonnées l'omettent ; /access/v1/evaluation n'est pas concerné."
+    "en": "30f1730e7cc2e19f",
+    "text": "Activé, POST /access/v1/evaluations répond à plusieurs évaluations d'accès dans une seule requête (section 7) et le document de métadonnées le nomme. Désactivé, la route répond 403 et les métadonnées l'omettent ; /access/v1/evaluation n'est pas concerné."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8916,8 @@
     "text": "Search APIs activées"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "Activé, les trois recherches AuthZEN répondent sous /access/v1/search (sujet, ressource, action), et les métadonnées les nomment. Une recherche décide chaque candidat que ce service peut nommer selon la politique racine du domaine et répond par ceux qui sont permis : les sujets sont les personnes de l'annuaire du domaine, les ressources ses applications, API et relations de délégation, les actions les noms auxquels la politique compare action-id. Désactivé, les routes répondent 501."
+    "en": "058f0be9c553b3f0",
+    "text": "Activé, les trois recherches AuthZEN répondent sous /access/v1/search (sujet, ressource, action), et les métadonnées les nomment. Une recherche décide chaque candidat que ce service peut nommer selon la politique racine du domaine et répond par ceux qui sont permis : les sujets sont les personnes de l'annuaire du domaine, les ressources ses applications, API et relations de délégation, les actions les noms auxquels la politique compare action-id. Désactivé, les routes répondent 403."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8948,8 @@
     "text": "Demandes d’accès et approbations"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "Le profil AuthZEN Access Request and Approval (un brouillon), avec son complément de rappel (callback). Lorsqu’il est activé, un Deny dont la réponse XACML porte l’advice urn:sts:xacml:advice:access-request répond false avec context.access_request ; un PEP le soumet à POST /access/v1/access-requests, un approbateur nommé par l’advice le décide dans le portail ou la console, et une approbation présentée à l’évaluation suivante parvient à la politique racine sous forme de faits de confiance. Les métadonnées nomment le point de terminaison et la capacité. Un refus sans l’advice n’est jamais demandable. Désactivé, les routes répondent 501 et aucun refus n’est demandable."
+    "en": "2851b5ede62f62db",
+    "text": "Le profil AuthZEN Access Request and Approval (un brouillon), avec son complément de rappel (callback). Lorsqu’il est activé, un Deny dont la réponse XACML porte l’advice urn:sts:xacml:advice:access-request répond false avec context.access_request ; un PEP le soumet à POST /access/v1/access-requests, un approbateur nommé par l’advice le décide dans le portail ou la console, et une approbation présentée à l’évaluation suivante parvient à la politique racine sous forme de faits de confiance. Les métadonnées nomment le point de terminaison et la capacité. Un refus sans l’advice n’est jamais demandable. Désactivé, les routes répondent 403 et aucun refus n’est demandable."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9028,8 @@
     "text": "Catalogues des demandes d’accès"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "Le profil AuthZEN Access Request Catalog (#1204) : un refus demandable enregistré dont l’advice énumère des valeurs urn:sts:xacml:advice:access-request:entitlement porte request_catalogs_url, son Catalogs Document et son Catalog Endpoint répondent à l’appelant à qui le refus a été répondu, une soumission doit choisir l’un des droits dans requested_access.entitlement, et l’approbation le transmet à la politique comme fait de confiance. Désactivé, les droits de l’advice sont ignorés et les deux points de terminaison répondent 501."
+    "en": "5809e31e9afa317e",
+    "text": "Le profil AuthZEN Access Request Catalog (#1204) : un refus demandable enregistré dont l’advice énumère des valeurs urn:sts:xacml:advice:access-request:entitlement porte request_catalogs_url, son Catalogs Document et son Catalog Endpoint répondent à l’appelant à qui le refus a été répondu, une soumission doit choisir l’un des droits dans requested_access.entitlement, et l’approbation le transmet à la politique comme fait de confiance. Désactivé, les droits de l’advice sont ignorés et les deux points de terminaison répondent 403."
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",

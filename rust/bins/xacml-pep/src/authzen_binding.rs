@@ -16,7 +16,7 @@
 //!   an `authorization_details` type, when the request also carries a
 //!   token-exchange gate (`issue:<registered token type>:token_exchange`).
 //!   This edge holds neither delegation nor the directory, so it answers
-//!   each 501 (`STS-XPEP-0140`). A lone scope in particular is a fixed
+//!   each 403 (`STS-XPEP-0140`, a PEP failure; 501 before #2208). A lone scope in particular is a fixed
 //!   false at the service (`STS-AUTHZEN-0105`); evaluated here as ordinary
 //!   it could be true.
 //! * **The binding OFF**: no tuple is the binding's, and each is evaluated
@@ -26,7 +26,7 @@
 //!   service's sentence.
 //! * **A catalogue that does not say** (an older service) is read CLOSED:
 //!   the binding on, every other resource type beside a gate a detail, and
-//!   every well-formed token type a token-exchange gate's. A 501 decides
+//!   every well-formed token type a token-exchange gate's. That 403 decides
 //!   nothing; an ordinary evaluation of a tuple the service keeps could
 //!   widen.
 //!
@@ -50,7 +50,7 @@ const GRANT: &str = "token_exchange";
 /// What one tuple is, for this edge.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Classified {
-    /// One of the binding's tuples, and why: 501 (`STS-XPEP-0140`).
+    /// One of the binding's tuples, and why: 403 (`STS-XPEP-0140`).
     Binding(&'static str),
     /// Not the binding's, but naming a context member it reads: 400
     /// (`STS-AUTHZEN-0101`), with this sentence.
@@ -212,7 +212,7 @@ pub(crate) fn classify(
         .collect()
 }
 
-/// The 501's message for a binding tuple.
+/// The 403's message for a binding tuple.
 pub(crate) fn binding_message(why: &str) -> String {
     format!(
         "The OAuth token-exchange binding is answered by the service, which \

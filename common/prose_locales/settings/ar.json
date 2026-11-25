@@ -8844,8 +8844,8 @@
     "text": "AuthZEN مُفعّل"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "عند التشغيل، تجيب واجهة تفويض AuthZEN تحت /access/v1. عند الإيقاف تبقى مساراته مُسجَّلة وتجيب بـ 501، كما يفعل XACML: الميزة متوقفة، والمسار ليس خطأً. يقرّر بمحرك XACML، فيجيب بـ 501 ما دام xacml.enabled متوقفًا أيضًا. ما زال المتصل يحتاج دور AUTHZEN_PEPS ‏(roles.authzenPepGroup) ونطاق تطبيق قبل أن يُخبَر بأي شيء."
+    "en": "ab2a36497d9bc637",
+    "text": "عند التشغيل، تجيب واجهة تفويض AuthZEN تحت /access/v1. عند الإيقاف تبقى مساراته مُسجَّلة وتجيب بـ 403: الميزة متوقفة، والمسار ليس خطأً. يقرّر بمحرك XACML، فيجيب بـ 403 ما دام xacml.enabled متوقفًا أيضًا. ما زال المتصل يحتاج دور AUTHZEN_PEPS ‏(roles.authzenPepGroup) ونطاق تطبيق قبل أن يُخبَر بأي شيء."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8868,8 @@
     "text": "تقييمات الدفعة مُفعّلة"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "عند التشغيل، يجيب POST /access/v1/evaluations عدة تقييمات وصول في طلب واحد (section 7)، وتُسمّيها وثيقة بيانات التعريف. عند الإيقاف يجيب المسار بـ 501 وتُغفلها بيانات التعريف؛ ولا يتأثر /access/v1/evaluation."
+    "en": "30f1730e7cc2e19f",
+    "text": "عند التشغيل، يجيب POST /access/v1/evaluations عدة تقييمات وصول في طلب واحد (section 7)، وتُسمّيها وثيقة بيانات التعريف. عند الإيقاف يجيب المسار بـ 403 وتُغفلها بيانات التعريف؛ ولا يتأثر /access/v1/evaluation."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8916,8 @@
     "text": "واجهات البحث مُفعّلة"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "عند التشغيل، تجيب عمليات بحث AuthZEN الثلاث تحت /access/v1/search (الفاعل، المورد، الفعل)، وتُسمّيها بيانات التعريف. يقرّر البحث كل مرشّح تستطيع هذه الخدمة تسميته بسياسة نطاق الثقة الجذر ويجيب بالمسموح منها: الفاعلون هم أشخاص دليل نطاق الثقة، والموارد تطبيقاته وواجهاته وعلاقات تفويضه، والأفعال الأسماء التي تقارن السياسة action-id بها. عند الإيقاف تجيب المسارات بـ 501."
+    "en": "058f0be9c553b3f0",
+    "text": "عند التشغيل، تجيب عمليات بحث AuthZEN الثلاث تحت /access/v1/search (الفاعل، المورد، الفعل)، وتُسمّيها بيانات التعريف. يقرّر البحث كل مرشّح تستطيع هذه الخدمة تسميته بسياسة نطاق الثقة الجذر ويجيب بالمسموح منها: الفاعلون هم أشخاص دليل نطاق الثقة، والموارد تطبيقاته وواجهاته وعلاقات تفويضه، والأفعال الأسماء التي تقارن السياسة action-id بها. عند الإيقاف تجيب المسارات بـ 403."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8948,8 @@
     "text": "طلبات الوصول والاعتمادات"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "ملف طلب الوصول والاعتماد في AuthZEN (AuthZEN Access Request and Approval Profile، مسودة)، مع رفيق رد النداء. عند التشغيل، يجيب Deny الذي يحمل جواب XACML فيه المشورة urn:sts:xacml:advice:access-request بـ false مع context.access_request؛ وتقدّمه PEP إلى POST /access/v1/access-requests، ويبتّ فيه معتمِد تُسمّيه المشورة في البوابة أو وحدة التحكم، ويبلغ الاعتماد المُقدَّم في التقييم التالي السياسة الجذر وقائع موثوقة. تُسمّي بيانات التعريف النقطة والقدرة. الرفض بلا المشورة لا يمكن طلبه أبدًا. عند الإيقاف تجيب المسارات بـ 501 ولا يمكن طلب أي رفض."
+    "en": "2851b5ede62f62db",
+    "text": "ملف طلب الوصول والاعتماد في AuthZEN (AuthZEN Access Request and Approval Profile، مسودة)، مع رفيق رد النداء. عند التشغيل، يجيب Deny الذي يحمل جواب XACML فيه المشورة urn:sts:xacml:advice:access-request بـ false مع context.access_request؛ وتقدّمه PEP إلى POST /access/v1/access-requests، ويبتّ فيه معتمِد تُسمّيه المشورة في البوابة أو وحدة التحكم، ويبلغ الاعتماد المُقدَّم في التقييم التالي السياسة الجذر وقائع موثوقة. تُسمّي بيانات التعريف النقطة والقدرة. الرفض بلا المشورة لا يمكن طلبه أبدًا. عند الإيقاف تجيب المسارات بـ 403 ولا يمكن طلب أي رفض."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9028,8 @@
     "text": "فهارس طلبات الوصول"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "ملف AuthZEN Access Request Catalog (#1204): يحمل الرفض القابل للطلب المسجَّل الذي يسرد الـ advice فيه قيم urn:sts:xacml:advice:access-request:entitlement الحقل request_catalogs_url، ويجيب Catalogs Document وCatalog Endpoint الخاصان به المستدعي الذي أُجيب بالرفض، ويجب أن يختار الطلب أحد الاستحقاقات في requested_access.entitlement، وتحمله الموافقة إلى السياسة حقيقةً موثوقة. عند الإيقاف تُتجاهل استحقاقات الـ advice ويجيب نقطتا النهاية بـ 501."
+    "en": "5809e31e9afa317e",
+    "text": "ملف AuthZEN Access Request Catalog (#1204): يحمل الرفض القابل للطلب المسجَّل الذي يسرد الـ advice فيه قيم urn:sts:xacml:advice:access-request:entitlement الحقل request_catalogs_url، ويجيب Catalogs Document وCatalog Endpoint الخاصان به المستدعي الذي أُجيب بالرفض، ويجب أن يختار الطلب أحد الاستحقاقات في requested_access.entitlement، وتحمله الموافقة إلى السياسة حقيقةً موثوقة. عند الإيقاف تُتجاهل استحقاقات الـ advice ويجيب نقطتا النهاية بـ 403."
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",
