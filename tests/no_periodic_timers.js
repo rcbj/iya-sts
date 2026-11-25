@@ -131,6 +131,31 @@ const ALLOWED = {
     'asking for a broadcast announcement, in the browser (#1086)' }
 };
 
+// ---------------------------------------------------------------------------
+// THE RETRY DELAYS THE DETECTOR DOES NOT SEE, RECORDED ALL THE SAME (#2220).
+// Two timers re-arm themselves from somewhere other than their own body, so
+// the shapes above do not find them, and the ASVS 5.0.0 L3 dependency review
+// (docs/v1.2.0/dependencies.md) asked whether each should be a scheduler
+// job. Each is a retry delay inside one operation, which the directive
+// leaves where it is, and the reason is kept here beside the others. The
+// check below holds that each function still arms a `setTimeout`, so an
+// entry cannot outlive its timer.
+// ---------------------------------------------------------------------------
+const RETRY_DELAYS = {
+  'persistence/persistence.js|retryAfterFailure': {
+    permanent: 'the retry of ONE failed write-behind flush: armed only ' +
+      'while a write is failing, disarmed by the first success, 1 s ' +
+      'doubling to 30 s. What it writes is this process\'s own dirty ' +
+      'state, which no other process (and so no cluster job) can reach, and ' +
+      'a per-process job would be periodic work that exists when nothing ' +
+      'has failed (#351)' },
+  'oauth-oidc/outbound_delivery.ts|later': {
+    permanent: 'the retry of ONE delivery at its own due time, armed by the ' +
+      'attempt that failed. The kind\'s sweep, already a scheduler job, is ' +
+      'the net for a process that stops; the timer only makes the retry ' +
+      'land on time rather than up to a sweep interval late' }
+};
+
 function walk(dir, out) {
   log.debug('Entering walk().');
   fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
@@ -379,6 +404,23 @@ function run(t) {
     const row = ALLOWED[key];
     return !!(row.permanent || row.becomes) && !(row.permanent && row.becomes);
   }), 'each exception says either the job it becomes or why it is permanent');
+  // THE RETRY DELAYS (#2220): each named function still arms its timer.
+  Object.keys(RETRY_DELAYS).forEach(function (key) {
+    const parts = key.split('|');
+    const src = blank(fs.readFileSync(path.join(ROOT, parts[0]), 'utf8'));
+    // Found by its declaration — a function or a static method, whose
+    // parameter types the general reader above does not parse — and its
+    // body by matching braces.
+    const at = new RegExp('(?:function|static)\\s+' + parts[1] +
+                          '\\s*\\(').exec(src);
+    const open = at ? src.indexOf('{', at.index) : -1;
+    const body = open < 0 ? '' : src.slice(open, matching(src, open, '{',
+                                                          '}'));
+    t.check(/\bsetTimeout\s*\(/.test(body) &&
+            !!RETRY_DELAYS[key].permanent,
+            key + ' is a recorded retry delay inside one operation, and ' +
+            'still arms its timer');
+  });
   // THE TWO THAT MOVED IN P1 ARE NOT ON THE LIST, AND NOT IN THE SOURCE.
   ['authn/authn.ts', 'common/pki_revocation.js'].forEach(function (rel) {
     const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
