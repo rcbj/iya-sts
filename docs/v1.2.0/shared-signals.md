@@ -262,6 +262,11 @@ username.
     application itself, a device or a workload with no `user` — an
     application's own credential changes, GNAP's subject for a token nobody
     approved, and the embedded PEP's `pep-policies-changed`.
+  * **An event about the application itself reaches its stream whatever
+    the subject list says.** A receiver that adds the people signed in to
+    it still hears `pep-policies-changed` and its own credential changes.
+    It may also add itself, `{ "format": "opaque", "id": "<its
+    identifier>" }`, which is accepted: that names no person.
   * **Add Subject** naming a person with no active session on the
     application answers `403 access_denied`; one with a session is accepted
     and stays on the list, and its events stop when the session ends. Remove

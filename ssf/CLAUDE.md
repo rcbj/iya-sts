@@ -1563,6 +1563,21 @@ this directory needs:
   name; a pre-#336 person's `urn:uuid:` `createdBy`); a GNAP resource
   server's stream (#432's `rsCovers()` is its rule); and everything while
   `ssf.applicationStreamScope` is `all`.
+* **AN EVENT ABOUT THE STREAM'S OWN APPLICATION IS COVERED WHATEVER THE
+  SUBJECT LIST SAYS** — `ssf_streams.ts`'s `namesOwnApplication()`, BUILT IN
+  this time, because it ADDS an event a list would take away, which no scope
+  can. Found by a live run of the WS-Federation library: a receiver that
+  adds its signed-in people narrows its stream to them, and stopped hearing
+  `pep-policies-changed` (subject: the application). A subject naming no
+  person — a complex subject's `application` member with no `user`, or a bare
+  `opaque` — whose id is the stream's `createdBy` or one of its registry
+  entry's names goes to the stream, after #336's check and the scopes, ahead
+  of the list and `ssf.defaultSubjects`. The libraries also Add Subject
+  `{ "format": "opaque", "id": <the application> }` when the receiver starts
+  and never remove it: that names no person, so the scope has no opinion and
+  the add is ACCEPTED. A person's session on the application (`user` and
+  `application`) is still the person's to judge; another application's
+  events still follow the list.
 * **FAILS CLOSED**: a session store that cannot be read (`sessionsHeldUnder()`
   answers null) or a scope that throws withholds the event from that stream
   and logs STS-SSF-0165.
@@ -1578,15 +1593,19 @@ this directory needs:
   session) is not an active session here.
 
 `tests/ssf_application_sessions.js` holds the scope through the real
-`streamCoversSubject()` in a child (31 assertions). Ten mutants, each run
+`streamCoversSubject()` in a child (36 assertions). Ten mutants, each run
 against the compiled module, all caught: the SAML 2.0 list not read (3 red),
 the ended record not consulted for the person (2), the session-id check
 removed (1), a complex subject with no `user` read as a person — the
 pep-policies-changed case (2), the setting ignored (1), the per-turn memo
 never emptied (2), the GNAP grant ignored (1), an expired session counted
 live (2), the two notes of one session not merged (1), and an arrival
-session's id counted (1). `tests/protocol/sts_ssf_application_sessions.js`
+session's id counted (1); and three on `ssf_streams.ts`'s own-application
+rule, all caught: the rule removed (1), a subject with a `user` taken as the
+application (1), any application taken as the owner (1). `tests/protocol/sts_ssf_application_sessions.js`
 is the wire: two applications and three people, Add Subject's 200 and 403,
+A's own credential change reaching it with alice on its list, its own
+opaque id added (200) and the change still reaching it,
 a verification event, a sign-out's session-revoked reaching only its
 application, a disable's session-revoked AND account-disabled reaching only
 alice's application, a person signed in nowhere reaching neither, `all` in

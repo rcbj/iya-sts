@@ -26,6 +26,9 @@
 //   e. carol, signed in nowhere, is disabled: neither stream hears of it;
 //   f. with ssf.applicationStreamScope `all` in this realm, bob (signed in
 //      nowhere now) disabled reaches A's stream, the behaviour before #2234;
+//   a2. with alice on A's list, A's own secret rotated reaches A (the
+//      application's subject, nobody named it); A adds its own application
+//      as `{ format: opaque, id }` (200), and a second rotation reaches A;
 //   g. A's own client secret rotated: the credential-change about the
 //      APPLICATION (no person, nobody signed in) reaches A's stream — the
 //      scope is about people, and an event about the application itself
@@ -364,6 +367,34 @@ function issSub(sub) {
   return { format: "iss_sub", iss: realmBase, sub: sub };
 }
 
+// A credential-change about application A itself: the subject the embedded
+// PEP's pep-policies-changed carries too (the application's complex
+// subject, no `user`).
+function ownChange(set) {
+  log.debug("Entering ownChange().");
+  const change = eventOf(set, CAEP + "credential-change");
+  const s = set && set.sub_id;
+  log.debug("Leaving ownChange().");
+  return !!change && !!s && s.format === "complex" && !s.user &&
+         !!s.application && String(s.application.id) === APPS.A.id;
+}
+
+// Rotates A's secret and checks one more credential-change about A arrives.
+async function rotateAndExpect(when) {
+  log.debug("Entering rotateAndExpect().");
+  const before = SEEN.A.filter(ownChange).length;
+  await ok(realmApi + "/applications/rotate-secret",
+           { application: APPS.A.id }, "rotated " + APPS.A.id + "'s secret");
+  await waitFor("A", function () {
+    return SEEN.A.filter(ownChange).length > before;
+  });
+  check("A's own credential-change reaches A's stream " + when, function () {
+    assert.ok(SEEN.A.filter(ownChange).length > before,
+              JSON.stringify(SEEN.A).slice(-1500));
+  });
+  log.debug("Leaving rotateAndExpect().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + ", two applications, " +
@@ -397,8 +428,25 @@ async function test() {
       assert.strictEqual(r.status, 403, r.raw.slice(0, 300));
       assert.strictEqual(r.body && r.body.err, "access_denied", r.raw);
     });
+
+  log.info("=== a2. A's own events, with people on its list ===");
+  // What a client library does since #2234: it names the people signed in
+  // to it, which narrows the stream to them, and an event about the
+  // APPLICATION (pep-policies-changed, its own credential change) must
+  // still reach it, with or without the application's own opaque id added.
+  await rotateAndExpect("with alice on the list and NOT the application");
+  r = await subjects(APPS.A, "add", { format: "opaque", id: APPS.A.id });
+  check("A may add its own application as an opaque subject (200): it is " +
+        "the stream's owner, not a person", function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+  });
+  await rotateAndExpect("with alice and the application on the list");
   r = await subjects(APPS.A, "remove", issSub(alice.sub));
   check("and removing alice again answers 204", function () {
+    assert.strictEqual(r.status, 204, r.raw.slice(0, 300));
+  });
+  r = await subjects(APPS.A, "remove", { format: "opaque", id: APPS.A.id });
+  check("and the application too", function () {
     assert.strictEqual(r.status, 204, r.raw.slice(0, 300));
   });
 
@@ -489,18 +537,7 @@ async function test() {
   }
 
   log.info("=== g. an event about the application itself ===");
-  await ok(realmApi + "/applications/rotate-secret",
-           { application: APPS.A.id }, "rotated " + APPS.A.id + "'s secret");
-  const own = await waitFor("A", function (set) {
-    const change = eventOf(set, CAEP + "credential-change");
-    const s = set && set.sub_id;
-    return !!change && !!s && s.format === "complex" && !s.user &&
-           !!s.application && String(s.application.id) === APPS.A.id;
-  });
-  check("A's own credential-change, about the application and nobody, " +
-        "reaches A's stream with no person signed in", function () {
-    assert.ok(own, JSON.stringify(SEEN.A).slice(-1500));
-  });
+  await rotateAndExpect("with an empty list and no person signed in");
 
   log.info("Test completed successfully. " + checks + " check(s) passed.");
   log.debug("Leaving test().");

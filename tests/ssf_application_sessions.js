@@ -59,6 +59,7 @@ function child() {
     const realms = require(ROOT + '/common/realms');
     config.setOverride('ssf.enabled', 'true');
     const streams = require(ROOT + '/ssf/ssf_streams');
+    const subjects = require(ROOT + '/ssf/ssf_subjects');
     const mod = require(ROOT + '/ssf/application_sessions');
 
     const people = {
@@ -299,6 +300,28 @@ function child() {
            'an event about the application itself — pep-policies-changed\'s ' +
            'subject (#2028), its own credential change — reaches its stream ' +
            'with nobody signed in');
+      // A RECEIVER THAT NAMES ITS PEOPLE still hears about itself: the
+      // libraries add the person at sign-in and, since #2234, the
+      // application's own opaque id, which names no person (so the scope has
+      // no opinion and Add Subject accepts it).
+      const named = stream('oidc-a', { subjects: [
+        { key: subjects.subjectKey(issSub(people.bob)),
+          subject: issSub(people.bob) }] });
+      const otherApp = { format: 'complex',
+        application: { format: 'opaque', id: 'app-b' } };
+      note(covers(named, appSubject) === true &&
+           covers(named, otherApp) === false,
+           'with people on its list and NOT the application, an event about ' +
+           'the stream\'s own application still reaches it, and another ' +
+           'application\'s does not');
+      const ownId = { format: 'opaque', id: 'oidc-a' };
+      note(scopeOf.scope(named, ownId) === undefined,
+           'Add Subject of the application\'s own opaque id is not refused ' +
+           'by the scope');
+      named.subjects.push({ key: subjects.subjectKey(ownId), subject: ownId });
+      note(covers(named, appSubject) === true &&
+           covers(named, ownId) === true,
+           'and with it added, the application\'s events still reach it');
       note(covers(A, { format: 'complex',
                        device: { format: 'opaque', id: 'd1' } }) === true &&
            covers(A, { format: 'opaque', id: 'whatever' }) === true,
@@ -309,6 +332,8 @@ function child() {
                          username: 'bob' } });
       note(scopeOf.scope(personal, issSub(people.bob)) === undefined,
            'a person\'s own stream (#336) is left to its own rule');
+      note(covers(personal, appSubject) === false,
+           'a person\'s stream is not sent an event about an application');
       note(scopeOf.scope(stream('internal', { internalSurface: 'console' }),
                          issSub(people.bob)) === undefined,
            'this service\'s own receivers are not scoped');
@@ -328,6 +353,14 @@ function child() {
       note(covers(A, issSub(people.bob)) === true &&
            scopeOf.scope(A, issSub(people.bob)) === undefined,
            'ssf.applicationStreamScope all restores the old behaviour');
+      const onlyBob = stream('oidc-a', { subjects: [
+        { key: subjects.subjectKey(issSub(people.bob)),
+          subject: issSub(people.bob) }] });
+      note(covers(onlyBob, { format: 'complex', user: issSub(people.alice),
+                             application: { format: 'opaque',
+                                            id: 'oidc-a' } }) === false,
+           'a PERSON\'s session on the application is judged as the ' +
+           'person, not as the application (with all, by the list)');
       setting = 'active-sessions';
       // The sessions are asked once per person per turn of the event loop;
       // the next turn asks again.
