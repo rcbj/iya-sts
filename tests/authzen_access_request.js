@@ -81,7 +81,7 @@
 //      a Task Handle names links.ticket, the ticket shows only the subject,
 //      the page lists their requests and draws a real submit button, and
 //      off it is refused 0148.
-//   V. THE CATALOGS (#1204): none by default (501); on, a denial whose
+//   V. THE CATALOGS (#1204): none by default (403); on, a denial whose
 //      advice lists entitlements names request_catalogs_url, the Catalogs
 //      Document and the Catalog Endpoint answer only its caller, search,
 //      page and refuse a foreign cursor, the schema describes the member,
@@ -96,7 +96,7 @@
 //      approved and one denied is partial with a result only on the
 //      approved one, whose approval permits only its own tuple, and
 //      cancellation is 409 once all finished, else cancels the pending.
-//   O. OFF: authzen.accessRequests off answers 501, the schema too, and
+//   O. OFF: authzen.accessRequests off answers 403, the schema too, and
 //      no denial is requestable.
 // ---------------------------------------------------------------------------
 
@@ -1921,9 +1921,10 @@ async function childBody() {
   t.check(r.status === 200 && plainShare.decision === false &&
           !((plainShare.context || {}).access_request || {})
             .request_catalogs_url &&
-          offCat.status === 501 && problemOf(offCat) === 'about:blank',
+          offCat.status === 403 && problemOf(offCat) === 'about:blank' &&
+          offCat.json && offCat.json.title === 'Forbidden',
           'V1. by default no denial names request_catalogs_url and the ' +
-          'catalogs answer 501', brief(r) + ' / ' + brief(offCat));
+          'catalogs answer 403', brief(r) + ' / ' + brief(offCat));
   inRealm(function () {
     config.setOverride('authzen.accessRequestCatalogs', true);
   });
@@ -2261,15 +2262,15 @@ async function childBody() {
   inRealm(function () {
     config.setOverride('authzen.accessRequests', true);
   });
-  t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0070') &&
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0070') &&
           offDenial.json && offDenial.json.decision === false &&
           !(offDenial.json.context && offDenial.json.context.access_request),
-          'O1. off, the endpoint answers 501 and no denial is requestable',
+          'O1. off, the endpoint answers 403 and no denial is requestable',
           brief(r) + ' / ' + brief(offDenial));
-  t.check(offSchema.status === 501 &&
+  t.check(offSchema.status === 403 &&
           markedSince(since, 'STS-AUTHZEN-0070') &&
           /problem\+json/.test(String(offSchema.headers['content-type'] || '')),
-          'O2. off, the submission schema answers 501', brief(offSchema));
+          'O2. off, the submission schema answers 403', brief(offSchema));
 
   await new Promise(function (ok) {
     listener.close(ok);

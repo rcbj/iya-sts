@@ -26727,12 +26727,13 @@ const CODES = [
   { code: 'STS-AUTHZEN-0013',
     summary: 'An AuthZEN request reached a realm where authzen.enabled, or ' +
       'xacml.enabled whose engine it decides with, is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208: AuthZEN 1.0 prescribes ' +
+      'no status for a switched-off API; 501 before)' },
   { code: 'STS-AUTHZEN-0014',
     summary: 'An AuthZEN request reached a realm that has no sts-authzen-api ' +
       'application, the API\'s resource object; an operator who removes it ' +
       'turns the API off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0015',
     summary: 'An AuthZEN caller presented no client certificate, where ' +
       'authzen.callerAuthentication is mtls or mtls+bearer.',
@@ -26846,7 +26847,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0039',
     summary: 'An AuthZEN access evaluations request reached a realm where ' +
       'authzen.batchEnabled is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0040',
     summary: 'The AuthZEN metadata document could not be signed for its ' +
       'signed_metadata, which was left out; the plain document was served.',
@@ -26869,7 +26870,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0044',
     summary: 'An AuthZEN search reached a realm where authzen.searchEnabled ' +
       'is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0045',
     summary: 'An AuthZEN search named more candidates than ' +
       'authzen.searchMaxCandidates; only the first were decided and the ' +
@@ -26905,7 +26906,7 @@ const CODES = [
     summary: 'An AuthZEN access request, task status or cancellation reached ' +
       'a realm where authzen.accessRequests (the Access Request and ' +
       'Approval Profile, #1180) is off.',
-    spec: 'HTTP 501, application/problem+json' },
+    spec: 'HTTP 403, application/problem+json (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0071',
     summary: 'An AuthZEN access request was not a JSON object with subject, ' +
       'resource and action objects, carried a member the profile does ' +
@@ -27352,7 +27353,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0153',
     summary: 'The access request catalogs were called while ' +
       'authzen.accessRequestCatalogs (or the profile) is off (#1204).',
-    spec: 'none — 501 problem+json' },
+    spec: 'none — 403 problem+json (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0154',
     summary: 'An access request\'s client.actor named a chain the caller\'s ' +
       'own credential does not authorize: neither one link that is the ' +

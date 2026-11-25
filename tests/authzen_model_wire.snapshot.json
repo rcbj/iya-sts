@@ -2612,7 +2612,7 @@
    "step": "batch, off",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluations",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -2626,7 +2626,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The batch endpoint is turned off in this realm (authzen.batchEnabled); /access/v1/evaluation still answers."
     }
    }
@@ -3318,7 +3318,7 @@
    "step": "search, off",
    "method": "POST",
    "path": "/realm/azwire/access/v1/search/subject",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -3332,7 +3332,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The search endpoints are turned off in this realm (authzen.searchEnabled)."
     }
    }
@@ -4767,7 +4767,7 @@
    "step": "submission, off",
    "method": "POST",
    "path": "/realm/azwire/access/v1/access-requests",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -4781,8 +4781,8 @@
    },
    "body": {
     "type": "about:blank",
-    "title": "Server error",
-    "status": 501,
+    "title": "Forbidden",
+    "status": 403,
     "detail": "The Access Request and Approval Profile is turned off in this realm (authzen.accessRequests)."
    }
   },
@@ -4791,7 +4791,7 @@
    "step": "status, off",
    "method": "GET",
    "path": "/realm/azwire/access/v1/access-requests/<arq>",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -4805,8 +4805,8 @@
    },
    "body": {
     "type": "about:blank",
-    "title": "Server error",
-    "status": 501,
+    "title": "Forbidden",
+    "status": 403,
     "detail": "The Access Request and Approval Profile is turned off in this realm (authzen.accessRequests)."
    }
   },
@@ -4886,7 +4886,7 @@
    "step": "evaluation, off",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluation",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -4900,7 +4900,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The AuthZEN API is turned off in this realm (authzen.enabled, or xacml.enabled, whose engine it decides with)."
     }
    }
@@ -4910,7 +4910,7 @@
    "step": "metadata, off",
    "method": "GET",
    "path": "/.well-known/authzen-configuration/realm/azwire",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -4924,7 +4924,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The AuthZEN API is turned off in this realm (authzen.enabled, or xacml.enabled, whose engine it decides with)."
     }
    }
@@ -7633,7 +7633,7 @@
    "step": "batch, off",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluations",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7648,7 +7648,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The batch endpoint is turned off in this realm (authzen.batchEnabled); /access/v1/evaluation still answers."
     }
    }
@@ -8359,7 +8359,7 @@
    "step": "search, off",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/search/subject",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -8374,7 +8374,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The search endpoints are turned off in this realm (authzen.searchEnabled)."
     }
    }
@@ -9847,7 +9847,7 @@
    "step": "submission, off",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/access-requests",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -9862,8 +9862,8 @@
    },
    "body": {
     "type": "about:blank",
-    "title": "Server error",
-    "status": 501,
+    "title": "Forbidden",
+    "status": 403,
     "detail": "The Access Request and Approval Profile is turned off in this realm (authzen.accessRequests)."
    }
   },
@@ -9872,7 +9872,7 @@
    "step": "status, off",
    "method": "GET",
    "path": "/realm/azwirep/access/v1/access-requests/<arq>",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -9887,8 +9887,8 @@
    },
    "body": {
     "type": "about:blank",
-    "title": "Server error",
-    "status": 501,
+    "title": "Forbidden",
+    "status": 403,
     "detail": "The Access Request and Approval Profile is turned off in this realm (authzen.accessRequests)."
    }
   },
@@ -9966,7 +9966,7 @@
    "step": "evaluation, off",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluation",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -9981,7 +9981,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The AuthZEN API is turned off in this realm (authzen.enabled, or xacml.enabled, whose engine it decides with)."
     }
    }
@@ -9991,7 +9991,7 @@
    "step": "metadata, off",
    "method": "GET",
    "path": "/.well-known/authzen-configuration/realm/azwirep",
-   "status": 501,
+   "status": 403,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -10005,7 +10005,7 @@
    },
    "body": {
     "error": {
-     "status": 501,
+     "status": 403,
      "message": "The AuthZEN API is turned off in this realm (authzen.enabled, or xacml.enabled, whose engine it decides with)."
     }
    }

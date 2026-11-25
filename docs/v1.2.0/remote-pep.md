@@ -1361,8 +1361,8 @@ or has switched off (section 10.1.2 defines `400`, `401`, `403` and `500`);
 it says only that an endpoint absent from the metadata is one the PDP "is
 not capable" of (section 9.1.1). So the edge's metadata names
 `access_evaluations_endpoint` only while the batch is on, and never a
-search or access-request endpoint. The service itself still answers `501`
-in these cases.
+search or access-request endpoint. The service answers `403` in these
+cases too ([AuthZEN](authzen.md)).
 
 **The OAuth token-exchange binding is classified as the service classifies
 it**, from the realm's `authzen.tokenExchange` and the lists the pull

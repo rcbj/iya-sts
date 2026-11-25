@@ -8568,8 +8568,8 @@
     "text": "AuthZEN सक्षम"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "चालू होने पर AuthZEN Authorization API /access/v1 के अंतर्गत उत्तर देता है। बंद होने पर इसके मार्ग पंजीकृत रहते हैं और 501 उत्तर देते हैं, जैसे XACML के करते हैं: सुविधा बंद है, URL गलत नहीं है। यह XACML इंजन से निर्णय करता है, इसलिए xacml.enabled बंद होने पर भी 501 उत्तर देता है। कुछ भी बताए जाने से पहले कॉलर को अभी भी AUTHZEN_PEPS भूमिका (roles.authzenPepGroup) और एक अनुप्रयोग स्कोप चाहिए।"
+    "en": "ab2a36497d9bc637",
+    "text": "चालू होने पर AuthZEN Authorization API /access/v1 के अंतर्गत उत्तर देता है। बंद होने पर इसके मार्ग पंजीकृत रहते हैं और 403 उत्तर देते हैं: सुविधा बंद है, URL गलत नहीं है। यह XACML इंजन से निर्णय करता है, इसलिए xacml.enabled बंद होने पर भी 403 उत्तर देता है। कुछ भी बताए जाने से पहले कॉलर को अभी भी AUTHZEN_PEPS भूमिका (roles.authzenPepGroup) और एक अनुप्रयोग स्कोप चाहिए।"
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8592,8 +8592,8 @@
     "text": "बैच मूल्यांकन सक्षम"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "चालू होने पर POST /access/v1/evaluations एक अनुरोध में कई पहुँच मूल्यांकन उत्तर देता है (section 7), और मेटाडेटा दस्तावेज़ इसका नाम लेता है। बंद होने पर मार्ग 501 उत्तर देता है और मेटाडेटा इसे छोड़ देता है; /access/v1/evaluation अप्रभावित रहता है।"
+    "en": "30f1730e7cc2e19f",
+    "text": "चालू होने पर POST /access/v1/evaluations एक अनुरोध में कई पहुँच मूल्यांकन उत्तर देता है (section 7), और मेटाडेटा दस्तावेज़ इसका नाम लेता है। बंद होने पर मार्ग 403 उत्तर देता है और मेटाडेटा इसे छोड़ देता है; /access/v1/evaluation अप्रभावित रहता है।"
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8640,8 +8640,8 @@
     "text": "खोज API सक्षम"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "चालू होने पर तीन AuthZEN खोजें /access/v1/search के अंतर्गत उत्तर देती हैं (subject, resource, action), और मेटाडेटा उनका नाम लेता है। खोज प्रत्येक उम्मीदवार का निर्णय करती है जिसे यह सेवा विश्वास क्षेत्र की मूल नीति से नाम दे सकती है, और अनुमत लोगों का उत्तर देती है: विषय विश्वास क्षेत्र की निर्देशिका के लोग हैं, संसाधन उसके अनुप्रयोग, API और प्रत्यायोजन संबंध हैं, क्रियाएँ वे नाम हैं जिनसे नीति action-id की तुलना करती है। बंद होने पर मार्ग 501 उत्तर देते हैं।"
+    "en": "058f0be9c553b3f0",
+    "text": "चालू होने पर तीन AuthZEN खोजें /access/v1/search के अंतर्गत उत्तर देती हैं (subject, resource, action), और मेटाडेटा उनका नाम लेता है। खोज प्रत्येक उम्मीदवार का निर्णय करती है जिसे यह सेवा विश्वास क्षेत्र की मूल नीति से नाम दे सकती है, और अनुमत लोगों का उत्तर देती है: विषय विश्वास क्षेत्र की निर्देशिका के लोग हैं, संसाधन उसके अनुप्रयोग, API और प्रत्यायोजन संबंध हैं, क्रियाएँ वे नाम हैं जिनसे नीति action-id की तुलना करती है। बंद होने पर मार्ग 403 उत्तर देते हैं।"
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8672,8 +8672,8 @@
     "text": "पहुँच अनुरोध और अनुमोदन"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "The AuthZEN Access Request and Approval Profile (एक मसौदा), उसके कॉलबैक साथी सहित। चालू होने पर, वह Deny जिसका XACML उत्तर सलाह urn:sts:xacml:advice:access-request ले जाता हो, context.access_request के साथ false उत्तर देता है; PEP इसे POST /access/v1/access-requests पर प्रस्तुत करता है, सलाह द्वारा नामित अनुमोदक पोर्टल या कंसोल में इसका निर्णय करता है, और अगले मूल्यांकन पर प्रस्तुत अनुमोदन मूल नीति तक विश्वसनीय तथ्यों के रूप में पहुँचता है। मेटाडेटा अंतबिंदु और क्षमता का नाम लेता है। सलाह रहित अस्वीकृति कभी अनुरोध योग्य नहीं होती। बंद होने पर मार्ग 501 उत्तर देते हैं और कोई अस्वीकृति अनुरोध योग्य नहीं होती।"
+    "en": "2851b5ede62f62db",
+    "text": "The AuthZEN Access Request and Approval Profile (एक मसौदा), उसके कॉलबैक साथी सहित। चालू होने पर, वह Deny जिसका XACML उत्तर सलाह urn:sts:xacml:advice:access-request ले जाता हो, context.access_request के साथ false उत्तर देता है; PEP इसे POST /access/v1/access-requests पर प्रस्तुत करता है, सलाह द्वारा नामित अनुमोदक पोर्टल या कंसोल में इसका निर्णय करता है, और अगले मूल्यांकन पर प्रस्तुत अनुमोदन मूल नीति तक विश्वसनीय तथ्यों के रूप में पहुँचता है। मेटाडेटा अंतबिंदु और क्षमता का नाम लेता है। सलाह रहित अस्वीकृति कभी अनुरोध योग्य नहीं होती। बंद होने पर मार्ग 403 उत्तर देते हैं और कोई अस्वीकृति अनुरोध योग्य नहीं होती।"
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -8752,8 +8752,8 @@
     "text": "एक्सेस अनुरोधों के लिए कैटलॉग"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "AuthZEN Access Request Catalog प्रोफ़ाइल (#1204): दर्ज अनुरोध-योग्य अस्वीकृति, जिसका advice urn:sts:xacml:advice:access-request:entitlement मान सूचीबद्ध करता है, request_catalogs_url रखती है, उसका Catalogs Document और Catalog Endpoint उसी कॉलर को उत्तर देते हैं जिसे अस्वीकृति दी गई थी, सबमिशन को requested_access.entitlement में किसी एक अधिकार को चुनना होता है, और अनुमोदन उसे विश्वसनीय तथ्य के रूप में नीति तक ले जाता है। बंद होने पर advice के अधिकार अनदेखे होते हैं और दोनों endpoint 501 देते हैं।"
+    "en": "5809e31e9afa317e",
+    "text": "AuthZEN Access Request Catalog प्रोफ़ाइल (#1204): दर्ज अनुरोध-योग्य अस्वीकृति, जिसका advice urn:sts:xacml:advice:access-request:entitlement मान सूचीबद्ध करता है, request_catalogs_url रखती है, उसका Catalogs Document और Catalog Endpoint उसी कॉलर को उत्तर देते हैं जिसे अस्वीकृति दी गई थी, सबमिशन को requested_access.entitlement में किसी एक अधिकार को चुनना होता है, और अनुमोदन उसे विश्वसनीय तथ्य के रूप में नीति तक ले जाता है। बंद होने पर advice के अधिकार अनदेखे होते हैं और दोनों endpoint 403 देते हैं।"
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",

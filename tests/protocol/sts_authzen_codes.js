@@ -381,9 +381,7 @@ async function evaluation() {
   await coded("STS-AUTHZEN-0013", "E15. a realm whose AuthZEN API is off " +
               "refuses", function () {
     return pep("POST", EV, caller, question());
-  }, function (one) {
-    assert.ok(one.status >= 400, one.text);
-  });
+  }, status(403));
   await K.unset(realm, "authzen.enabled");
   log.debug("Leaving evaluation().");
 }
@@ -432,9 +430,7 @@ async function batch() {
               function () {
     return pep("POST", EVS, caller, Object.assign({ evaluations: items(1) },
                                                   shared));
-  }, function (one) {
-    assert.ok(one.status >= 400, one.text);
-  });
+  }, status(403));
   await K.unset(realm, "authzen.batchEnabled");
   const c = await K.coded(null, "STS-AUTHZEN-0035", function () {
     return K.send(K.base + "/.well-known/authzen-configuration/realm/" +
@@ -550,9 +546,7 @@ async function accessRequests() {
               "an access request", function () {
     return pep("POST", AR, caller, Object.assign({}, asked,
                                                  { denial: denial }));
-  }, function (r) {
-    assert.ok(r.status >= 400, r.text);
-  });
+  }, status(403));
   await K.unset(realm, "authzen.accessRequests");
   log.debug("Leaving accessRequests().");
 }

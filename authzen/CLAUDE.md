@@ -344,8 +344,24 @@ identifier, signed by `oauth2.ts`'s `signPublishedDocument()` under the
 per fetch from the very object it is served beside, and switched by
 `authzen.signedMetadata`. A failure to sign leaves it out (`0040`) rather
 than failing the document: the plain members are the metadata.
-While the API is off the document answers 501 rather than advertising an
+While the API is off the document answers 403 rather than advertising an
 endpoint that does not.
+
+**EVERY SWITCHED-OFF PART OF THE API IS A 403 (#2208, 2026-11-25).** rcbj:
+"Follow the spec, but return 403 otherwise", and then, for this service,
+"Go ahead and make those 403s as well under the same conditions".
+AuthZEN 1.0 (Final) prescribes no status for an API a PDP does not serve
+or has switched off: section 10.1.2's Table 2 defines 400, 401, 403 and
+500, and section 9.1.1 says only that "the absence of any of these
+parameters is sufficient for the PEP to determine that the PDP is not
+capable and therefore will not return a result for the associated API".
+The Access Request profiles say nothing of a PDP that does not support
+them. So the API off (`0013`, `0014`), the batch off (`0039`), search off
+(`0044`), the Access Request profile off (`0070`, the schema too) and the
+catalogs off (`0153`) answer 403 — they were 501, as XACML's still are —
+and the metadata goes on leaving out what is off, which the spec does
+govern. The code is marked on the response for the log and the audit row,
+never sent. An `about:blank` problem at 403 is titled "Forbidden".
 
 ## The Obligations Profile (#1177)
 
@@ -394,7 +410,7 @@ same audit row and monitor count per item — with section 7's additions:
   `deny_on_first_deny` an error counts as a deny.
 * **The batch id** is `X-Request-ID` or one made here, and each item's audit
   row carries it with the item's position (`<id>#<n>`), decision 9.
-* `authzen.batchEnabled` off answers 501 (`0039`) and takes the endpoint out
+* `authzen.batchEnabled` off answers 403 (`0039`) and takes the endpoint out
   of the metadata; the single endpoint is unaffected.
 
 ## The searches (#1175)
@@ -716,7 +732,7 @@ or the two drift with both suites green.
   `parse()`, so a reserved row cannot reach a request there either.
 * **The codes are shared where the condition is the contract's**: a request
   refused there carries the `STS-AUTHZEN-*` code it carries here, and the
-  `501`s for a realm with the API off are `0013` and `0014`. Its own
+  `403`s for a realm with the API off are `0013` and `0014`. Its own
   conditions — the client CA, the catalogue and caller pulls, admission by
   the pulled list and the local narrowing — are `STS-XPEP-*`.
 * **Who may ask is this service's answer, pulled** (#1189, below):
@@ -846,7 +862,7 @@ header argues each. What a maintainer needs quickly:
   required on an ordinary submission, and emergency requires the
   justification. It is public, names no secret, and is not read when
   a submission arrives — the reader stays the enforcer. While the
-  API or the profile is off it answers 501. `form_url` is omitted:
+  API or the profile is off it answers 403. `form_url` is omitted:
   this service hosts no requester-facing form, and a URL that is not
   one would be a lie.
 * **AN APPROVAL NEVER PERMITS BY ITSELF.** `verify()` (same caller, same

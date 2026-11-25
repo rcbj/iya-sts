@@ -8568,8 +8568,8 @@
     "text": "Naka-enable ang AuthZEN"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "Kapag naka-on, sumasagot ang AuthZEN Authorization API sa ilalim ng /access/v1. Kapag naka-off, nananatiling NAKA-REGISTER ang mga route nito at sumasagot ng 501, gaya ng sa XACML: naka-off ang feature, hindi mali ang URL. Nagpapasya ito gamit ang XACML engine, kaya sumasagot din ito ng 501 habang naka-off ang xacml.enabled. Kailangan pa rin ng caller ang AUTHZEN_PEPS role (roles.authzenPepGroup) at isang application scope bago ito sabihan ng anuman."
+    "en": "ab2a36497d9bc637",
+    "text": "Kapag naka-on, sumasagot ang AuthZEN Authorization API sa ilalim ng /access/v1. Kapag naka-off, nananatiling NAKA-REGISTER ang mga route nito at sumasagot ng 403: naka-off ang feature, hindi mali ang URL. Nagpapasya ito gamit ang XACML engine, kaya sumasagot din ito ng 403 habang naka-off ang xacml.enabled. Kailangan pa rin ng caller ang AUTHZEN_PEPS role (roles.authzenPepGroup) at isang application scope bago ito sabihan ng anuman."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8592,8 +8592,8 @@
     "text": "Naka-on ang mga batch na pagsusuri"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "Kapag naka-on, sumasagot ang POST /access/v1/evaluations ng maraming pagsusuri ng access sa isang request (seksyon 7), at pinapangalanan ito ng dokumento ng metadata. Kapag naka-off, sumasagot ng 501 ang route at hindi ito isinasama ng metadata; hindi apektado ang /access/v1/evaluation."
+    "en": "30f1730e7cc2e19f",
+    "text": "Kapag naka-on, sumasagot ang POST /access/v1/evaluations ng maraming pagsusuri ng access sa isang request (seksyon 7), at pinapangalanan ito ng dokumento ng metadata. Kapag naka-off, sumasagot ng 403 ang route at hindi ito isinasama ng metadata; hindi apektado ang /access/v1/evaluation."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8640,8 +8640,8 @@
     "text": "Naka-on ang Search APIs"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "Kapag naka-on, sumasagot ang tatlong AuthZEN search sa ilalim ng /access/v1/search (subject, resource, action), at pinangangalanan sila ng metadata. Pinagpapasyahan ng isang search ang bawat kandidatong kayang pangalanan ng serbisyong ito gamit ang root policy ng realm at sinasagot ang mga pinahihintulutan: ang mga subject ay ang mga tao sa directory ng realm, ang mga resource ay ang mga application, API at ugnayang delegation nito, at ang mga action ay ang mga pangalang ikinukumpara ng policy sa action-id. Kapag naka-off, sumasagot ng 501 ang mga ruta."
+    "en": "058f0be9c553b3f0",
+    "text": "Kapag naka-on, sumasagot ang tatlong AuthZEN search sa ilalim ng /access/v1/search (subject, resource, action), at pinangangalanan sila ng metadata. Pinagpapasyahan ng isang search ang bawat kandidatong kayang pangalanan ng serbisyong ito gamit ang root policy ng realm at sinasagot ang mga pinahihintulutan: ang mga subject ay ang mga tao sa directory ng realm, ang mga resource ay ang mga application, API at ugnayang delegation nito, at ang mga action ay ang mga pangalang ikinukumpara ng policy sa action-id. Kapag naka-off, sumasagot ng 403 ang mga ruta."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8672,8 +8672,8 @@
     "text": "Mga access request at approval"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "Ang AuthZEN Access Request and Approval Profile (isang draft), kasama ang callback companion nito. Kapag naka-on, ang Deny na ang XACML na sagot ay may advice na urn:sts:xacml:advice:access-request ay sinasagot ng false na may context.access_request; isinusumite ito ng isang PEP sa POST /access/v1/access-requests, ang approver na pinangalanan ng advice ang nagpapasya nito sa portal o sa console, at ang approval na iprinisenta sa susunod na evaluation ay umaabot sa root policy bilang trusted facts. Pinangangalanan ng metadata ang endpoint at ang capability. Ang denial na walang advice ay hindi kailanman maaaring hilingin. Kapag naka-off, 501 ang sagot ng mga route at walang denial na maaaring hilingin."
+    "en": "2851b5ede62f62db",
+    "text": "Ang AuthZEN Access Request and Approval Profile (isang draft), kasama ang callback companion nito. Kapag naka-on, ang Deny na ang XACML na sagot ay may advice na urn:sts:xacml:advice:access-request ay sinasagot ng false na may context.access_request; isinusumite ito ng isang PEP sa POST /access/v1/access-requests, ang approver na pinangalanan ng advice ang nagpapasya nito sa portal o sa console, at ang approval na iprinisenta sa susunod na evaluation ay umaabot sa root policy bilang trusted facts. Pinangangalanan ng metadata ang endpoint at ang capability. Ang denial na walang advice ay hindi kailanman maaaring hilingin. Kapag naka-off, 403 ang sagot ng mga route at walang denial na maaaring hilingin."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -8752,8 +8752,8 @@
     "text": "Mga catalog para sa mga kahilingan sa access"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "Ang AuthZEN Access Request Catalog Profile (#1204): ang isang naitalang pagtangging maaaring hilingin na ang advice ay naglilista ng mga halagang urn:sts:xacml:advice:access-request:entitlement ay may request_catalogs_url, sumasagot ang Catalogs Document at Catalog Endpoint nito sa tumawag na sinagot ng pagtanggi, kailangang pumili ang isang pagsusumite ng isa sa mga entitlement sa requested_access.entitlement, at dinadala ito ng pag-apruba sa patakaran bilang pinagkakatiwalaang katotohanan. Kapag naka-off, binabalewala ang mga entitlement ng advice at sumasagot ng 501 ang dalawang endpoint."
+    "en": "5809e31e9afa317e",
+    "text": "Ang AuthZEN Access Request Catalog Profile (#1204): ang isang naitalang pagtangging maaaring hilingin na ang advice ay naglilista ng mga halagang urn:sts:xacml:advice:access-request:entitlement ay may request_catalogs_url, sumasagot ang Catalogs Document at Catalog Endpoint nito sa tumawag na sinagot ng pagtanggi, kailangang pumili ang isang pagsusumite ng isa sa mga entitlement sa requested_access.entitlement, at dinadala ito ng pag-apruba sa patakaran bilang pinagkakatiwalaang katotohanan. Kapag naka-off, binabalewala ang mga entitlement ng advice at sumasagot ng 403 ang dalawang endpoint."
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",

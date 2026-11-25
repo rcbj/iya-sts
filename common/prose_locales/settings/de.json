@@ -8568,8 +8568,8 @@
     "text": "AuthZEN aktiviert"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "Wenn eingeschaltet, antwortet die AuthZEN Authorization API unter /access/v1. Aus bleiben ihre Routen REGISTRIERT und antworten mit 501, wie die von XACML: Die Funktion ist aus, die URL ist nicht falsch. Sie entscheidet mit der XACML-Engine, daher antwortet sie auch mit 501, solange xacml.enabled aus ist. Ein Aufrufer braucht weiterhin die Rolle AUTHZEN_PEPS (roles.authzenPepGroup) und einen Scope für die Anwendung, bevor ihm irgendetwas gesagt wird."
+    "en": "ab2a36497d9bc637",
+    "text": "Wenn eingeschaltet, antwortet die AuthZEN Authorization API unter /access/v1. Aus bleiben ihre Routen REGISTRIERT und antworten mit 403: Die Funktion ist aus, die URL ist nicht falsch. Sie entscheidet mit der XACML-Engine, daher antwortet sie auch mit 403, solange xacml.enabled aus ist. Ein Aufrufer braucht weiterhin die Rolle AUTHZEN_PEPS (roles.authzenPepGroup) und einen Scope für die Anwendung, bevor ihm irgendetwas gesagt wird."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8592,8 +8592,8 @@
     "text": "Stapelauswertungen aktiviert"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "Wenn eingeschaltet, beantwortet POST /access/v1/evaluations mehrere Zugriffsauswertungen in einer Anfrage (section 7), und das Metadatendokument nennt das. Aus antwortet die Route mit 501, und die Metadaten lassen es weg; /access/v1/evaluation bleibt unberührt."
+    "en": "30f1730e7cc2e19f",
+    "text": "Wenn eingeschaltet, beantwortet POST /access/v1/evaluations mehrere Zugriffsauswertungen in einer Anfrage (section 7), und das Metadatendokument nennt das. Aus antwortet die Route mit 403, und die Metadaten lassen es weg; /access/v1/evaluation bleibt unberührt."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8640,8 +8640,8 @@
     "text": "Such-APIs aktiviert"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "Wenn eingeschaltet, antworten die drei Suchen von AuthZEN unter /access/v1/search (subject, resource, action), und die Metadaten nennen sie. Eine Suche entscheidet jeden Kandidaten, den dieser Dienst nennen kann, mit der Wurzelrichtlinie des Vertrauensbereichs und antwortet mit den erlaubten: Subjekte sind die Personen im Verzeichnis des Vertrauensbereichs, Ressourcen seine Anwendungen, APIs und Delegationsbeziehungen, Aktionen die Namen, mit denen die Richtlinie action-id vergleicht. Aus antworten die Routen mit 501."
+    "en": "058f0be9c553b3f0",
+    "text": "Wenn eingeschaltet, antworten die drei Suchen von AuthZEN unter /access/v1/search (subject, resource, action), und die Metadaten nennen sie. Eine Suche entscheidet jeden Kandidaten, den dieser Dienst nennen kann, mit der Wurzelrichtlinie des Vertrauensbereichs und antwortet mit den erlaubten: Subjekte sind die Personen im Verzeichnis des Vertrauensbereichs, Ressourcen seine Anwendungen, APIs und Delegationsbeziehungen, Aktionen die Namen, mit denen die Richtlinie action-id vergleicht. Aus antworten die Routen mit 403."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8672,8 +8672,8 @@
     "text": "Zugriffsanfragen und Genehmigungen"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "Das AuthZEN Access Request and Approval Profile (ein Entwurf) samt seinem Callback-Begleiter. Wenn eingeschaltet, antwortet ein Deny, dessen XACML-Antwort den Advice urn:sts:xacml:advice:access-request trägt, mit false und context.access_request; ein PEP reicht das bei POST /access/v1/access-requests ein, ein vom Advice genannter Genehmiger entscheidet es im Portal oder in der Konsole, und eine bei der nächsten Auswertung vorgelegte Genehmigung erreicht die Wurzelrichtlinie als vertrauenswürdige Fakten. Die Metadaten nennen den Endpunkt und die Fähigkeit. Eine Ablehnung ohne den Advice ist nie beantragbar. Aus antworten die Routen mit 501, und keine Ablehnung ist beantragbar."
+    "en": "2851b5ede62f62db",
+    "text": "Das AuthZEN Access Request and Approval Profile (ein Entwurf) samt seinem Callback-Begleiter. Wenn eingeschaltet, antwortet ein Deny, dessen XACML-Antwort den Advice urn:sts:xacml:advice:access-request trägt, mit false und context.access_request; ein PEP reicht das bei POST /access/v1/access-requests ein, ein vom Advice genannter Genehmiger entscheidet es im Portal oder in der Konsole, und eine bei der nächsten Auswertung vorgelegte Genehmigung erreicht die Wurzelrichtlinie als vertrauenswürdige Fakten. Die Metadaten nennen den Endpunkt und die Fähigkeit. Eine Ablehnung ohne den Advice ist nie beantragbar. Aus antworten die Routen mit 403, und keine Ablehnung ist beantragbar."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -8752,8 +8752,8 @@
     "text": "Kataloge für Zugriffsanfragen"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "Das AuthZEN Access Request Catalog Profile (#1204): Eine aufgezeichnete anforderbare Ablehnung, deren Advice Werte urn:sts:xacml:advice:access-request:entitlement aufführt, trägt request_catalogs_url, ihr Catalogs Document und ihr Catalog Endpoint antworten dem Aufrufer, dem die Ablehnung geantwortet wurde, eine Einreichung muss eine der Berechtigungen in requested_access.entitlement wählen, und die Genehmigung bringt sie als vertrauenswürdige Tatsache zur Richtlinie. Aus: Die Berechtigungen des Advice werden ignoriert und die beiden Endpunkte antworten 501."
+    "en": "5809e31e9afa317e",
+    "text": "Das AuthZEN Access Request Catalog Profile (#1204): Eine aufgezeichnete anforderbare Ablehnung, deren Advice Werte urn:sts:xacml:advice:access-request:entitlement aufführt, trägt request_catalogs_url, ihr Catalogs Document und ihr Catalog Endpoint antworten dem Aufrufer, dem die Ablehnung geantwortet wurde, eine Einreichung muss eine der Berechtigungen in requested_access.entitlement wählen, und die Genehmigung bringt sie als vertrauenswürdige Tatsache zur Richtlinie. Aus: Die Berechtigungen des Advice werden ignoriert und die beiden Endpunkte antworten 403."
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",

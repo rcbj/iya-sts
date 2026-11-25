@@ -8568,8 +8568,8 @@
     "text": "啟用 AuthZEN"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "開啟時，AuthZEN Authorization API 會在 /access/v1 下回應。關閉時，其路由仍保持「已註冊」並回應 501，與 XACML 的路由相同：功能已關閉，URL 並沒有錯。它以 XACML 引擎做決定，因此在 xacml.enabled 關閉時也會回應 501。呼叫端仍須持有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）與應用程式範圍，才會得到任何回覆。"
+    "en": "ab2a36497d9bc637",
+    "text": "開啟時，AuthZEN Authorization API 會在 /access/v1 下回應。關閉時，其路由仍保持「已註冊」並回應 403：功能已關閉，URL 並沒有錯。它以 XACML 引擎做決定，因此在 xacml.enabled 關閉時也會回應 403。呼叫端仍須持有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）與應用程式範圍，才會得到任何回覆。"
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8592,8 +8592,8 @@
     "text": "啟用批次評估"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "開啟時，POST /access/v1/evaluations 在一個請求中回應多個存取評估（第 7 節），中繼資料文件也會列出它。關閉時該路由回應 501，中繼資料不列出它；/access/v1/evaluation 不受影響。"
+    "en": "30f1730e7cc2e19f",
+    "text": "開啟時，POST /access/v1/evaluations 在一個請求中回應多個存取評估（第 7 節），中繼資料文件也會列出它。關閉時該路由回應 403，中繼資料不列出它；/access/v1/evaluation 不受影響。"
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8640,8 +8640,8 @@
     "text": "啟用 Search APIs"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "開啟時，三種 AuthZEN 搜尋在 /access/v1/search 下回應（主體、資源、動作），中繼資料會列出它們。一次搜尋以領域的根原則對本服務能列出的每個候選作出決定，並回應被允許者：主體是領域目錄中的人員，資源是其應用程式、API 與委派關係，動作是原則用來與 action-id 比較的名稱。關閉時，這些路由回應 501。"
+    "en": "058f0be9c553b3f0",
+    "text": "開啟時，三種 AuthZEN 搜尋在 /access/v1/search 下回應（主體、資源、動作），中繼資料會列出它們。一次搜尋以領域的根原則對本服務能列出的每個候選作出決定，並回應被允許者：主體是領域目錄中的人員，資源是其應用程式、API 與委派關係，動作是原則用來與 action-id 比較的名稱。關閉時，這些路由回應 403。"
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8672,8 +8672,8 @@
     "text": "存取請求與核准"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "AuthZEN 存取請求與核准設定檔（草案）及其回呼配套規範。開啟時，XACML 回應中攜帶 advice urn:sts:xacml:advice:access-request 的 Deny 會回應 false 並附帶 context.access_request；PEP 將其提交到 POST /access/v1/access-requests，由該 advice 指名的核准者在入口網站或主控台中作出決定，下一次評估時出示的核准會作為可信事實到達根原則。中繼資料會寫明該端點與該能力。不帶該 advice 的拒絕永遠不可請求。關閉時，這些路由回應 501，任何拒絕都不可請求。"
+    "en": "2851b5ede62f62db",
+    "text": "AuthZEN 存取請求與核准設定檔（草案）及其回呼配套規範。開啟時，XACML 回應中攜帶 advice urn:sts:xacml:advice:access-request 的 Deny 會回應 false 並附帶 context.access_request；PEP 將其提交到 POST /access/v1/access-requests，由該 advice 指名的核准者在入口網站或主控台中作出決定，下一次評估時出示的核准會作為可信事實到達根原則。中繼資料會寫明該端點與該能力。不帶該 advice 的拒絕永遠不可請求。關閉時，這些路由回應 403，任何拒絕都不可請求。"
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -8752,8 +8752,8 @@
     "text": "存取申請的目錄"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "AuthZEN Access Request Catalog 設定檔（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已記錄可申請拒絕帶有 request_catalogs_url，其 Catalogs Document 與 Catalog Endpoint 只回應該拒絕所回應的呼叫端，提交必須在 requested_access.entitlement 中選擇其中一項權限，核准會將其作為可信事實帶給政策。關閉時忽略 advice 的權限，兩個端點回應 501。"
+    "en": "5809e31e9afa317e",
+    "text": "AuthZEN Access Request Catalog 設定檔（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已記錄可申請拒絕帶有 request_catalogs_url，其 Catalogs Document 與 Catalog Endpoint 只回應該拒絕所回應的呼叫端，提交必須在 requested_access.entitlement 中選擇其中一項權限，核准會將其作為可信事實帶給政策。關閉時忽略 advice 的權限，兩個端點回應 403。"
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",

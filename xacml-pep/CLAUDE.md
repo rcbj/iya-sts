@@ -1258,8 +1258,8 @@ Request paths (`0139`) are 403 — they were 501 — and what the spec does
 govern is kept: the metadata names `access_evaluations_endpoint` only while
 the batch is on, and no search or access-request endpoint ever
 (`service.rs`'s `a_switched_off_api_is_403_and_the_metadata_names_only_what_answers`).
-The service's own `/access/v1` still answers 501 in those cases; that is
-the service's to decide, not this container's.
+The service's own `/access/v1` answers 403 in those cases too, by rcbj's
+second decision on #2208 (`authzen/CLAUDE.md`).
 
 ```
 PEP_PROXY_PORT        9180   plain HTTP, only with PEP_PROXY_HTTP=true
