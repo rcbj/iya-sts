@@ -429,6 +429,8 @@ namespace IyaSts.Directory;
   // A key-set truststore's three (#2149): the one party it speaks for, and a
   // pasted key set or the jwks_uri it is fetched from.
   "stsTruststoreParty", "stsTruststoreJwks", "stsTruststoreJwksUri",
+  // An SSH CA truststore's keys (#2151).
+  "stsTruststoreSshKeys",
 
   // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
   // above and it is the SECOND of them that can be read back and used — a set

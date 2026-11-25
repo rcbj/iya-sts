@@ -16,6 +16,15 @@ management](key-management.md#rotation-schedule) now has a rotation schedule
 for every key and secret (ASVS 5.0.0 13.1.4). Both pages end with the gaps
 they found.
 
+### New: SSH certificate authorities as truststores
+
+A truststore may now hold SSH certificate authority public keys (#2151).
+The new use case `spiffe-sshpop`, which the SPIFFE sshpop node attestor
+checks host certificates against, defaults to the setting
+`spiffe.sshpopCertAuthorities`, so nothing changes until an administrator
+assigns a truststore. `POST /admin-api/truststores/create` and `set-keys`
+take `sshKeys`.
+
 ### New: OpenID Federation Trust Anchors from truststores
 
 A realm's OpenID Federation Trust Anchors may now come from key-set

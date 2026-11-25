@@ -26633,6 +26633,8 @@ function truststoreRows() {
       party: (a.ststruststoreparty || [])[0] || '',
       jwks: (a.ststruststorejwks || [])[0] || '',
       jwksUri: (a.ststruststorejwksuri || [])[0] || '',
+      // An SSH CA truststore's (#2151): its keys, one per line.
+      sshKeys: (a.ststruststoresshkeys || [])[0] || '',
       addedBy: (a.ststrustanchoraddedby || [])[0] || '',
       addedAt: stored.createdAt || ''
     };
@@ -26664,7 +26666,7 @@ function writeTruststore(row) {
   }
   // A key-set truststore (#2149): written whole each time, so a changed key
   // set or jwks_uri replaces the old one rather than accumulating beside it.
-  ['party', 'jwks', 'jwksUri'].forEach(function (name) {
+  ['party', 'jwks', 'jwksUri', 'sshKeys'].forEach(function (name) {
     if (row[name]) {
       attributes['stsTruststore' + name.charAt(0).toUpperCase() +
                  name.slice(1)] = String(row[name]);

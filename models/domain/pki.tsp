@@ -71,6 +71,9 @@ model Truststore {
   @fromAttr(#{attr: "stsTruststoreJwksUri", transform: "first"})
   jwksUri?: string;
 
+  @fromAttr(#{attr: "stsTruststoreSshKeys", transform: "first"})
+  sshKeys?: string;
+
   @fromAttr(#{attr: "stsTrustAnchorAddedBy", transform: "first"})
   addedBy?: string;
 

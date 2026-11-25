@@ -194,13 +194,19 @@ class SshpopAttestor {
     log.debug("Entering SshpopAttestor.attest().");
     const call = context.call;
     const status = rpc.status;
-    const authorities = String(config.value('spiffe.sshpopCertAuthorities') ||
-                               '').split('\n').map(function (line) {
+    // WHAT THE spiffe-sshpop USE CASE TRUSTS (#2151): by default the
+    // setting spiffe.sshpopCertAuthorities, exactly as before; an SSH CA
+    // truststore assigned in its place or beside it.
+    const trusted: any = require('../common/truststores')
+      .sshAuthorities('spiffe-sshpop');
+    const authorities = (trusted.keys as string[]).map(function (line) {
       return pki.parseSshAuthorizedKey(line);
     }).filter(Boolean);
     let template = null;
     let problem = authorities.length ? ''
-      : 'spiffe.sshpopCertAuthorities holds no SSH public key';
+      : (trusted.assigned ? 'the spiffe-sshpop truststores hold'
+                          : 'spiffe.sshpopCertAuthorities holds') +
+        ' no SSH public key';
     if (!problem) {
       try {
         template = new agentPath.AgentPathTemplate(

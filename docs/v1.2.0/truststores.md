@@ -79,6 +79,18 @@ keys, never a `jwks_uri`. Trust Mark issuers are not configured here: a
 Trust Mark is verified with its issuer's keys as established through the
 issuer's own chain to an anchor.
 
+## SSH certificate authorities
+
+An **SSH CA truststore** (#2151) holds SSH certificate authority public
+keys in `authorized_keys` form, one per line, at most 32. An SSH CA vouches
+for many hosts and its certificate names the principals it is for, so an
+SSH CA truststore is shared like a certificate truststore, not bound to one
+party. The use case `spiffe-sshpop` is what the SPIFFE sshpop node attestor
+checks a host certificate against; it defaults to the setting
+`spiffe.sshpopCertAuthorities`, so nothing changes until you assign a
+truststore. SSH CA keys and certificates never stand in for each other
+(`STS-PKI-0309`).
+
 ## Scope: service-wide and per realm
 
 Truststores you create in the **default realm** are service-wide. A
@@ -155,6 +167,7 @@ unassigned and its default list holds no anchor.
 | `ssf-set` | A Security Event Token an SSF transmitter partner signed | realm | jwks | `registered-keys` |  |
 | `claims-provider-jwt` | Aggregated or distributed claims a claims provider signed | realm | jwks | `registered-keys` |  |
 | `oidfed-anchor` | A Trust Anchor an OpenID Federation trust chain ends at, and its keys | realm | jwks | `registered-keys` |  |
+| `spiffe-sshpop` | An SSH host certificate a SPIFFE sshpop agent presents | realm | ssh | `setting:spiffe.sshpopCertAuthorities` |  |
 | `revocation-signer` | A CRL issuer outside the path of the certificate checked | service | x509 | `setting:pki.revocationCrlIssuersFile` |  |
 | `cell-peer` | Another cell of this deployment | service | fixed | `service-root` |  |
 | `ca-import` | A certificate authority imported into this service's hierarchy | realm | admission | — |  |
