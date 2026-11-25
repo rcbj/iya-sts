@@ -16,6 +16,35 @@ so nothing changes until an administrator sets one. `GET
 /admin-api/truststores` reports `overridable` and `realmOverride` for every
 use case.
 
+### New: an option to accept `authorization_details` only in a pushed request
+
+`oauth2.authorizationDetailsRequirePar`, **off by default**. On, the
+authorization endpoint refuses a request that carries RFC 9396
+`authorization_details` and did not come through `/oauth2/par`, so a rich
+authorization request never travels in the browser's address (ASVS 5.0.0
+10.4.15). Requests without `authorization_details` are unaffected;
+`oauth2.requirePushedAuthorizationRequests` still makes every request
+pushed (10.4.13). New refusal: `STS-OAUTH-1015`.
+
+### New: an option to issue only sender-constrained access tokens
+
+`oauth2.accessTokenRequireSenderConstraint`, **off by default**. On, the token
+endpoint issues an access token only to a request that binds it, by a DPoP
+proof or the connection's client certificate (ASVS 5.0.0 10.3.5 and
+10.4.14), and the authorization endpoint refuses a `token` response type. It
+is for a realm whose every client can bind its tokens; most cannot. New
+refusals: `STS-OAUTH-1013`, `1014`.
+
+### New: cross-origin isolation headers on every response
+
+Every response now carries `Cross-Origin-Resource-Policy` (`same-site`;
+profile photos and the sign-in logo stay `cross-origin`), and every HTML page
+carries `Cross-Origin-Opener-Policy: same-origin` (ASVS 5.0.0 3.4.8 and
+3.5.8). The pages a relying party may open in a popup (the authorization
+endpoint and the sign-in, consent, SAML, WS-Federation, GNAP, federation and
+sign-out pages) carry no COOP, as before, so popup sign-ins keep working. See
+[The other response headers](oauth-security.md#the-other-response-headers).
+
 ### Behaviour change: client secrets expire after a year by default
 
 `oauth2.clientSecretLifetimeDays` now defaults to **365** (it was 0, never),

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6105** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6108** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 462
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 763
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
@@ -2641,6 +2641,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1010` | An access-token status index handed out without waiting for its own commit (#884's review: a block already proven durable, this process's origin claim fresh) was found, at the response's commit, not to have been written: its block claim's fence was gone, or the write failed. The response carrying the token is refused (STS-CLUSTER-0166), and the block is handed out from no more. | none (recorded; the response is the 503 STS-CLUSTER-0166 names) |
 | `STS-OAUTH-1011` *(retired)* | An assertion's x5c leaf, issued by this realm, names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. RETIRED before release (#1827, rcbj 2026-11-16): the assertion grant follows WS-Trust and authenticates the person whichever spelling names them. | — |
 | `STS-OAUTH-1012` | A token request through sts-remote-pep, the public client a remote PEP presents its RFC 7523 self-assertion through, carried no DPoP proof: every token issued to that client is DPoP-bound (RFC 9449) to the PEP's assertion key (#1827's follow-up). | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-1013` | The token endpoint refused to issue an access token that nothing would bind: oauth2.accessTokenRequireSenderConstraint is on and the request carried neither a DPoP proof nor a client certificate (#2183, ASVS 5.0.0 10.3.5, 10.4.14). | RFC 9449 section 7.1: HTTP 400 invalid_dpop_proof |
+| `STS-OAUTH-1014` | The authorization endpoint refused a response_type that would mint an access token in the browser, which could never be bound, while oauth2.accessTokenRequireSenderConstraint is on (#2183). | RFC 6749 section 4.1.2.1: the redirect carries unsupported_response_type |
+| `STS-OAUTH-1015` | The authorization endpoint refused a request that carried RFC 9396 authorization_details and was not pushed, while oauth2.authorizationDetailsRequirePar is on (#2185, ASVS 5.0.0 10.4.15). | RFC 9126 section 4: HTTP 400 invalid_request, answered on this server |
 
 ## STS-SAML
 

@@ -167,6 +167,7 @@ var config = {
     httpSignatureResponseAlg: "ES256",             // Signed response algorithm
     accessTokenRequireDpop: false,                 // Require DPoP for every access token
     accessTokenRequireMtls: false,                 // Require mutual TLS for every access token
+    accessTokenRequireSenderConstraint: false,     // Issue only sender-constrained access tokens
     openRegistration: false,                       // Open dynamic client registration (product mode)
     softwareStatementRequireTrustedIssuer: true,   // Refuse a software statement from an undeclared issuer
     softwareStatementOpensRegistration: true,      // A trusted software statement opens a closed registration endpoint
@@ -262,6 +263,7 @@ var config = {
     requestObjectEncryptionCurve: "P-256",         // Request object encryption: EC curve
     pushedAuthorizationRequests: true,             // Pushed authorization requests (RFC 9126)
     requirePushedAuthorizationRequests: false,     // Require pushed authorization requests
+    authorizationDetailsRequirePar: false,         // Accept authorization_details only in a pushed request
     parRequestUriLifetimeS: 60,                    // Pushed request_uri lifetime (seconds)
     parMaxRequests: 10000,                         // Pushed requests held at once
     parMaxBodyBytes: 65536,                        // Largest pushed authorization request (bytes)

@@ -9690,6 +9690,20 @@ class OAuth2Server {
       ? self.adminApiBindingRefusal(query.client_id, audiencePlan.audiences,
                                     req, base, false)
       : null;
+    // #2183: and no token in the browser at all where the realm issues only
+    // sender-constrained ones.
+    const unboundBrowser = types.indexOf('token') >= 0 ?
+      senderConstraints.browserAccessTokenRefusal() : null;
+    if (unboundBrowser) {
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A token " +
+                "in the browser could not be sender-constrained.");
+      errorCodes.mark(res, unboundBrowser.errorCode);
+      return self.redirectBack(res, base, redirectUri, query.state,
+        { error: unboundBrowser.error,
+          error_description: unboundBrowser.description },
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
+    }
     if (browserToken) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). An " +
                 "/admin-api token for a certificate client, in the browser.");
@@ -12066,6 +12080,29 @@ class OAuth2Server {
           'parameters to ' + self.asBaseOf(req) +
           '/oauth2/par first and send the ' +
           'request_uri it answers with.' }, 'STS-OAUTH-0419');
+    }
+    // ASVS 5.0.0 10.4.15 (#2185): rich authorization details only in a
+    // pushed request, where the realm says so.
+    // `req.query` is the EFFECTIVE request here: a request object passed by
+    // value (RFC 9101) has already replaced it (authorizeWithClient()), and
+    // there `authorization_details` is a JSON array rather than a string.
+    const details = (req.query || {}).authorization_details;
+    const carriesDetails = details !== undefined && details !== null &&
+      (typeof details === 'string' ? details.trim() !== '' : true);
+    if (!pushed && config.value('oauth2.authorizationDetailsRequirePar') &&
+        carriesDetails) {
+      oauthMonitor.record(clientId, 'par.required_refused',
+                        { error: 'invalid_request' });
+      log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). " +
+                "authorization_details, not pushed.");
+      return errorCodes.mark({ error: 'invalid_request',
+        description: 'this authorization request carries ' +
+          'authorization_details and was not pushed, and ' +
+          'oauth2.authorizationDetailsRequirePar says rich authorization ' +
+          'requests are accepted only through pushed authorization requests ' +
+          '(RFC 9126, RFC 9396). POST the parameters to ' +
+          self.asBaseOf(req) + '/oauth2/par first and send the request_uri ' +
+          'it answers with.' }, 'STS-OAUTH-1015');
     }
     if (pushed && !jar.alg &&
         requestObject.signedRequired(client,
@@ -16584,6 +16621,17 @@ class OAuth2Server {
         log.debug("Leaving issue(). The admin console, as a public client, " +
                   "sent no DPoP proof.");
         throw new SenderConstraintRefused(log, consoleProblem);
+      }
+      // #2183: an access token nothing binds is not minted, where the realm
+      // says so. Every grant mints through this closure.
+      const unbound = senderConstraints.accessTokenIssuanceRefusal({
+        grant: grant,
+        dpopJkt: dpopJkt,
+        certificateBound: !!mtls.presentedThumbprint(req)
+      });
+      if (unbound) {
+        log.debug("Leaving issue(). The access token would be unbound.");
+        throw new SenderConstraintRefused(log, unbound);
       }
       if (opts.withRefresh !== false) {
         const constraint = senderConstraints.refreshIssuanceRefusal({

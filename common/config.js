@@ -7049,6 +7049,24 @@ const SETTINGS = [
                  'to the same rule: the binding it carries is checked even ' +
                  'though the token itself cannot be verified.' },
 
+  { key: 'oauth2.accessTokenRequireSenderConstraint',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Issue only sender-constrained access tokens',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_REQUIRE_SENDER_CONSTRAINT', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT, and meant to stay off unless every ' +
+                 'client of the realm can bind its tokens (ASVS 5.0.0 ' +
+                 '10.3.5 and 10.4.14, #2183). On, the token endpoint issues ' +
+                 'an access token only to a request that binds it: a DPoP ' +
+                 'proof (RFC 9449) or the client certificate of the ' +
+                 'connection (RFC 8705), either one, for every grant. The ' +
+                 'authorization endpoint refuses a response_type that would ' +
+                 'mint a token in the browser (implicit and hybrid `token`), ' +
+                 'which could never be bound. A client that sends neither ' +
+                 'is refused with invalid_dpop_proof naming this setting. ' +
+                 'The two rows above refuse an unbound token at the ' +
+                 'resources; this one refuses to mint it.' },
+
   { key: 'oauth2.openRegistration', group: 'OAuth 2.0 / OIDC',
     label: 'Open dynamic client registration (product mode)',
     env: 'STS_OAUTH2_OPEN_REGISTRATION', type: 'bool', dflt: false,
@@ -10358,6 +10376,22 @@ const SETTINGS = [
                  '(require_pushed_authorization_requests at registration), ' +
                  'and a named authorization server\'s profile can publish ' +
                  'it.' },
+
+  { key: 'oauth2.authorizationDetailsRequirePar',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Accept authorization_details only in a pushed request',
+    env: 'STS_OAUTH2_AUTHORIZATION_DETAILS_REQUIRE_PAR', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT (ASVS 5.0.0 10.4.15, #2185). On, the ' +
+                 'authorization endpoint refuses, with invalid_request and a ' +
+                 '400 on this server, a request that carries RFC 9396 ' +
+                 'authorization_details and did not come through a ' +
+                 'request_uri issued at /oauth2/par, so a rich ' +
+                 'authorization request never travels in the browser\'s ' +
+                 'address. A signed request object passed by value is ' +
+                 'refused too: it travels in the browser as well. A request ' +
+                 'with no authorization_details is not affected; the row ' +
+                 'above makes every request pushed.' },
 
   { key: 'oauth2.parRequestUriLifetimeS', group: 'OAuth 2.0 / OIDC',
     label: 'Pushed request_uri lifetime (seconds)',

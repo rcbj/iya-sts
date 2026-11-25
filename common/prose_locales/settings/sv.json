@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "RFC 8705-halvan av raden ovan, vid samma ytor: en uppvisad åtkomsttoken måste bära `cnf[\"x5t#S256\"]` och anslutningen måste bära det certifikatet. **Det kräver att huvudporten är bunden som HTTPS** (global.https), och felsökarens lyssnare började BE OM ett klientcertifikat 2026-09-15 så att en bunden token över huvud taget kan visas upp där — det efterfrågas, krävs aldrig. En token som tjänsten inte utfärdat hålls till samma regel: bindningen den bär kontrolleras även om själva token inte kan verifieras."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Utfärda endast avsändarbundna åtkomsttoken"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "AV SOM STANDARD, och tänkt att förbli av om inte varje klient i realmen kan binda sina token (ASVS 5.0.0 10.3.5 och 10.4.14, #2183). På utfärdar tokenslutpunkten en åtkomsttoken endast till en begäran som binder den: ett DPoP-bevis (RFC 9449) eller anslutningens klientcertifikat (RFC 8705), vilket som helst, för varje grant. Auktoriseringsslutpunkten avvisar en response_type som skulle utfärda en token i webbläsaren (implicit och hybrid `token`), som aldrig skulle kunna bindas. En klient som skickar ingetdera avvisas med invalid_dpop_proof som namnger denna inställning. De två raderna ovan avvisar en obunden token vid resurserna; denna vägrar att utfärda den."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Öppen dynamisk klientregistrering (produktionsläge)"
@@ -5110,6 +5118,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 avsnitt 4:s globala policy: auktoriseringsslutpunkten avvisar, med invalid_request och 400 på den här servern, varje begäran som inte bär en request_uri som den här tjänsten utfärdat vid /oauth2/par. Publiceras som require_pushed_authorization_requests. AVSTÄNGT som standard, eftersom varje klient som skickar en vanlig auktoriseringsbegäran skulle avvisas. En klient kan begära samma sak av sig själv med oauthRequirePushedAuthorizationRequests på sin post (require_pushed_authorization_requests vid registreringen), och en namngiven auktoriseringsservers profil kan publicera det."
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "Acceptera authorization_details endast i en pushad begäran"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "AV SOM STANDARD (ASVS 5.0.0 10.4.15, #2185). På avvisar auktoriseringsslutpunkten, med invalid_request och en 400 på denna server, en begäran som bär RFC 9396 authorization_details och inte kom via en request_uri utfärdad vid /oauth2/par, så att en rik auktoriseringsbegäran aldrig färdas i webbläsarens adress. Ett signerat begäranobjekt som skickas som värde avvisas också: det färdas också i webbläsaren. En begäran utan authorization_details påverkas inte; raden ovan gör varje begäran pushad."
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",

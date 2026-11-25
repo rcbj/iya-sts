@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Le volet RFC 8705 de la ligne ci-dessus, sur les mêmes surfaces : un jeton d’accès présenté doit porter `cnf[\"x5t#S256\"]` et la connexion doit porter ce certificat. **Il exige que le port principal soit lié en HTTPS** (global.https), et l’écouteur du débogueur a commencé à DEMANDER un certificat client le 2026-09-15 pour qu’un jeton lié puisse seulement y être présenté — il est demandé, jamais exigé. Un jeton que ce service n’a pas émis est soumis à la même règle : la liaison qu’il porte est vérifiée même si le jeton lui-même ne peut pas l’être."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Émettre uniquement des jetons d’accès contraints à l’expéditeur"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "DÉSACTIVÉ PAR DÉFAUT, et à laisser désactivé sauf si chaque client du domaine peut lier ses jetons (ASVS 5.0.0 10.3.5 et 10.4.14, #2183). Activé, le point de terminaison de jeton n’émet un jeton d’accès qu’à une requête qui le lie : une preuve DPoP (RFC 9449) ou le certificat client de la connexion (RFC 8705), l’un ou l’autre, pour chaque type d’autorisation. Le point de terminaison d’autorisation refuse un response_type qui émettrait un jeton dans le navigateur (`token` implicite et hybride), qui ne pourrait jamais être lié. Un client qui n’envoie ni l’un ni l’autre est refusé avec invalid_dpop_proof nommant ce réglage. Les deux lignes ci-dessus refusent un jeton non lié aux ressources ; celle-ci refuse de l’émettre."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Enregistrement dynamique de clients ouvert (mode produit)"
@@ -5110,6 +5118,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "La politique globale de la RFC 9126 section 4 : le point de terminaison d’autorisation refuse, avec invalid_request et un 400 sur ce serveur, toute requête qui ne porte pas une request_uri émise par ce service sur /oauth2/par. Publié en tant que require_pushed_authorization_requests. DÉSACTIVÉ par défaut, car chaque client envoyant une requête d’autorisation simple serait refusé. Un client peut exiger la même chose de lui-même avec oauthRequirePushedAuthorizationRequests sur son entrée (require_pushed_authorization_requests à l’enregistrement), et le profil d’un serveur d’autorisation nommé peut le publier."
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "N’accepter authorization_details que dans une requête poussée"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "DÉSACTIVÉ PAR DÉFAUT (ASVS 5.0.0 10.4.15, #2185). Activé, le point de terminaison d’autorisation refuse, avec invalid_request et une 400 sur ce serveur, une requête qui porte des authorization_details RFC 9396 et n’est pas passée par un request_uri émis à /oauth2/par, afin qu’une requête d’autorisation enrichie ne transite jamais par l’adresse du navigateur. Un objet de requête signé passé par valeur est refusé aussi : il transite lui aussi par le navigateur. Une requête sans authorization_details n’est pas concernée ; la ligne ci-dessus rend toute requête poussée."
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",

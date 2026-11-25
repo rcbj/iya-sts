@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "上一行的 RFC 8705 部分，作用于同样的界面：出示的访问令牌必须携带 `cnf[\"x5t#S256\"]`，连接必须携带该证书。**它需要主端口以 HTTPS 绑定**（global.https），而调试器的监听器自 2026-09-15 起开始请求客户端证书，使绑定的令牌能够在那里出示——只是请求，从不强制要求。本服务未签发的令牌也受同样规则约束：即使令牌本身无法验证，也会检查其携带的绑定。"
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "仅签发发送方约束的访问令牌"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "默认关闭，除非该域的每个客户端都能绑定其令牌，否则应保持关闭（ASVS 5.0.0 10.3.5 和 10.4.14，#2183）。开启后，令牌端点只向能绑定令牌的请求签发访问令牌：DPoP 证明（RFC 9449）或连接的客户端证书（RFC 8705），二者任一，适用于每种授权类型。授权端点拒绝会在浏览器中签发令牌的 response_type（隐式和混合 `token`），因为这种令牌永远无法绑定。两者都不发送的客户端会被以 invalid_dpop_proof 拒绝，并指明此设置。上面两行在资源处拒绝未绑定的令牌；这一行拒绝签发它。"
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "开放动态客户端注册（产品模式）"
@@ -5110,6 +5118,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 第 4 节的全局策略：授权端点会拒绝任何未携带本服务在 /oauth2/par 上签发的 request_uri 的请求，在本服务器上答复 invalid_request 和 400。发布为 require_pushed_authorization_requests。默认关闭，因为每个发送普通授权请求的客户端都会被拒绝。客户端可以通过其条目上的 oauthRequirePushedAuthorizationRequests（注册时的 require_pushed_authorization_requests）对自己提出同样的要求，命名授权服务器的配置也可以发布它。"
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "仅在推送的请求中接受 authorization_details"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "默认关闭（ASVS 5.0.0 10.4.15，#2185）。开启后，授权端点会在本服务器上以 invalid_request 和 400 拒绝携带 RFC 9396 authorization_details 且未通过 /oauth2/par 签发的 request_uri 送达的请求，使富授权请求永远不会出现在浏览器的地址中。按值传递的已签名请求对象也会被拒绝：它同样经过浏览器。不含 authorization_details 的请求不受影响；上面一行使每个请求都必须推送。"
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",

@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Die Hälfte nach RFC 8705 der Zeile darüber, an denselben Oberflächen: Ein vorgelegtes Zugriffstoken muss `cnf[\"x5t#S256\"]` tragen, und die Verbindung muss dieses Zertifikat tragen. **Der Hauptport muss als HTTPS gebunden sein** (global.https), und der Listener des Debuggers hat am 2026-09-15 begonnen, ein Client-Zertifikat ANZUFORDERN, damit ein gebundenes Token dort überhaupt vorgelegt werden kann — angefordert, niemals verlangt. Ein Token, das dieser Dienst nicht ausgestellt hat, unterliegt derselben Regel: Die Bindung, die es trägt, wird geprüft, auch wenn das Token selbst nicht verifiziert werden kann."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Nur absendergebundene Zugriffstoken ausstellen"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "STANDARDMÄSSIG AUS, und so gedacht, sofern nicht jeder Client des Realms seine Token binden kann (ASVS 5.0.0 10.3.5 und 10.4.14, #2183). Eingeschaltet stellt der Token-Endpunkt ein Zugriffstoken nur einer Anfrage aus, die es bindet: ein DPoP-Nachweis (RFC 9449) oder das Client-Zertifikat der Verbindung (RFC 8705), eines von beiden, für jeden Grant. Der Autorisierungsendpunkt lehnt einen response_type ab, der ein Token im Browser ausstellen würde (implizites und hybrides `token`), das nie gebunden werden könnte. Ein Client, der keines von beiden sendet, wird mit invalid_dpop_proof unter Nennung dieser Einstellung abgelehnt. Die beiden Zeilen oben lehnen ein ungebundenes Token an den Ressourcen ab; diese lehnt es ab, es auszustellen."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Offene dynamische Client-Registrierung (Produktmodus)"
@@ -5110,6 +5118,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "Die globale Richtlinie aus RFC 9126 Abschnitt 4: der Autorisierungsendpunkt lehnt auf diesem Server mit invalid_request und 400 jede Anfrage ab, die keine request_uri trägt, die dieser Dienst unter /oauth2/par ausgestellt hat. Veröffentlicht als require_pushed_authorization_requests. AUS als Vorgabe, weil jeder Client, der eine einfache Autorisierungsanfrage sendet, abgelehnt würde. Ein Client kann dasselbe für sich selbst mit oauthRequirePushedAuthorizationRequests auf seinem Eintrag verlangen (require_pushed_authorization_requests bei der Registrierung), und das Profil eines benannten Autorisierungsservers kann es veröffentlichen."
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "authorization_details nur in einer übertragenen Anfrage annehmen"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "STANDARDMÄSSIG AUS (ASVS 5.0.0 10.4.15, #2185). Eingeschaltet lehnt der Autorisierungsendpunkt mit invalid_request und einem 400 auf diesem Server eine Anfrage ab, die RFC-9396-authorization_details trägt und nicht über eine bei /oauth2/par ausgegebene request_uri kam, damit eine Rich-Authorization-Anfrage nie in der Adresse des Browsers reist. Auch ein als Wert übergebenes signiertes Anfrageobjekt wird abgelehnt: Es reist ebenfalls im Browser. Eine Anfrage ohne authorization_details ist nicht betroffen; die Zeile darüber macht jede Anfrage zu einer übertragenen."
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",

@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Ang kalahating RFC 8705 ng row sa itaas, sa parehong mga surface: ang ipinakitang access token ay dapat may dalang `cnf[\"x5t#S256\"]` at dapat may dalang certificate na iyon ang connection. **Kailangan nitong naka-bind bilang HTTPS ang main port** (global.https), at nagsimulang HUMINGI ng client certificate ang listener ng debugger noong 2026-09-15 para maipakita man lang doon ang naka-bind na token — hinihingi ito, hindi kailanman sapilitan. Ang token na hindi in-issue ng serbisyong ito ay sinusukat sa parehong patakaran: sinusuri ang binding na dala nito kahit hindi mave-verify ang token mismo."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Mag-issue lamang ng sender-constrained na access token"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "NAKA-OFF BILANG DEFAULT, at dapat manatiling naka-off maliban kung kayang i-bind ng bawat client ng realm ang mga token nito (ASVS 5.0.0 10.3.5 at 10.4.14, #2183). Kapag naka-on, ang token endpoint ay mag-iissue lamang ng access token sa request na nagbi-bind dito: isang DPoP proof (RFC 9449) o ang client certificate ng koneksyon (RFC 8705), alinman, para sa bawat grant. Tinatanggihan ng authorization endpoint ang response_type na mag-iissue ng token sa browser (implicit at hybrid `token`), na hindi kailanman maibi-bind. Ang client na walang ipinapadala sa dalawa ay tinatanggihan ng invalid_dpop_proof na pinangangalanan ang setting na ito. Tinatanggihan ng dalawang row sa itaas ang hindi naka-bind na token sa mga resource; ang isang ito ay tumatangging i-issue ito."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Bukas na dynamic client registration (product mode)"
@@ -5110,6 +5118,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "Ang global policy ng RFC 9126 section 4: tinatanggihan ng authorization endpoint, ng invalid_request at 400 sa server na ito, ang anumang request na walang dalang request_uri na iniisyu ng serbisyong ito sa /oauth2/par. Inilalathala bilang require_pushed_authorization_requests. NAKA-OFF bilang default, dahil tatanggihan ang bawat client na nagpapadala ng plain authorization request. Puwedeng hilingin ng isang client ang pareho para sa sarili nito gamit ang oauthRequirePushedAuthorizationRequests sa entry nito (require_pushed_authorization_requests sa registration), at puwede itong ilathala ng profile ng isang pinangalanang authorization server."
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "Tanggapin lamang ang authorization_details sa isang pushed request"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "NAKA-OFF BILANG DEFAULT (ASVS 5.0.0 10.4.15, #2185). Kapag naka-on, tinatanggihan ng authorization endpoint, na may invalid_request at 400 sa server na ito, ang request na may RFC 9396 authorization_details at hindi dumaan sa request_uri na inisyu sa /oauth2/par, para hindi kailanman maglakbay ang isang rich authorization request sa address ng browser. Tinatanggihan din ang signed request object na ipinasa bilang value: naglalakbay din ito sa browser. Hindi apektado ang request na walang authorization_details; ginagawang pushed ng row sa itaas ang bawat request."
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
