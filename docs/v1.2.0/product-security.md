@@ -243,6 +243,10 @@ screens is drawn through one renderer. It removes scripts, event handlers and
 unsafe addresses from the markup before it reaches the page, on top of each
 page's Content Security Policy.
 
+[Browser requirements](browser-requirements.md) lists the browser features
+those pages need and what a person sees when one is missing (ASVS 5.0.0
+3.1.1).
+
 An unexpected failure is answered without its internal error text: at the
 management API, the OAuth and OpenID Connect endpoints (the sign-out page
 included), WS-Trust and the wallet sign-in. The text is in the log, under the
@@ -327,6 +331,10 @@ session cookie) needs Admin Read to read and Admin Write to write.
 
 ## Algorithms
 
+* **Post-quantum.** [Post-quantum migration plan](post-quantum-migration.md)
+  sets out, surface by surface, what is post-quantum today, what the
+  ecosystem still prevents and the order a realm moves in (ASVS 5.0.0
+  11.1.4).
 * **Kerberos** uses enctypes 19 and 20 (RFC 8009).
 * **RSA keys** this service generates are 3072 bits by default: RSA signing
   keys, certificate authorities, the self-signed listener certificate and the
