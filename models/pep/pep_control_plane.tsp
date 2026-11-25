@@ -91,6 +91,14 @@ namespace IyaSts.Pep.ControlPlane {
   `description`?: string;
   @js(#{`description`:"Sent only when the PEP knows it: a lower-case DNS name of at most 253 characters, not an IP address; anything else is 400 STS-XACML-0261.",`maxLength`:253})
   `hostname`?: string | null;
+  @js(#{`description`:"container (the xacml-pep image) or embedded (a PEP inside an authentication library, #2026). Absent is container, so an older PEP is one. Anything else is 400 STS-XACML-0344."})
+  `kind`?: "container" | "embedded";
+  @js(#{`description`:"An embedded PEP's application: its identifier in the realm's registry. It must be the application the PEP's entry is bound to (stsPepApplication): bound to none is 403 STS-XACML-0340, another or none named 403 STS-XACML-0341. Ignored for a container."})
+  `application`?: string;
+  @js(#{`description`:"An embedded PEP's mode: central (every decision asked of POST /access/v1/evaluation) or local (the bound application's policies pulled and decided in process). Required for an embedded PEP (400 STS-XACML-0344 otherwise); with a container it is 400 STS-XACML-0343."})
+  `mode`?: "central" | "local";
+  @js(#{`description`:"The PEP protocol version the PEP's package speaks. The service supports 1; any other, or none from an embedded PEP, is 400 STS-XACML-0342."})
+  `protocolVersion`?: int32;
 }
 
 @component model `RegisterNotify` {
@@ -122,9 +130,9 @@ namespace IyaSts.Pep.ControlPlane {
   `responses`:#{
     `200`:#{`description`:"Registered again.",`content`:#{`application/json`:#{`schema`:null}}},
     `201`:#{`description`:"Registered for the first time.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No usable name (STS-XACML-0019), a bad hostname (0261), an unknown kind or an embedded PEP's mode that is neither central nor local (0344), mode with a container (0343) or an unsupported protocolVersion (0342): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client; or the token door refused the credential (see the dpop scheme), with a DPoP challenge.",`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate; or an embedded registration whose entry is bound to no application (STS-XACML-0340) or to another than it names (0341): access_denied.",`content`:#{`application/json`:#{`schema`:null}}},
     `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -282,6 +290,16 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `settings`?: `SettingsReport` | null;
   `signals`?: `PepSignals` | null;
   `listeners`?: `ListenersReport` | null;
+  @js(#{`description`:"container (the xacml-pep image) or embedded (a PEP inside an authentication library, #2026). Absent keeps the registered kind. Anything else is 400 STS-XACML-0344."})
+  `kind`?: "container" | "embedded";
+  @js(#{`description`:"An embedded PEP's application: its identifier in the realm's registry. It must be the application the PEP's entry is bound to (stsPepApplication): bound to none is 403 STS-XACML-0340, another or none named 403 STS-XACML-0341. Ignored for a container."})
+  `application`?: string;
+  @js(#{`description`:"An embedded PEP's mode: central (every decision asked of POST /access/v1/evaluation) or local (the bound application's policies pulled and decided in process). Required for an embedded PEP (400 STS-XACML-0344 otherwise); with a container it is 400 STS-XACML-0343."})
+  `mode`?: "central" | "local";
+  @js(#{`description`:"The PEP protocol version the PEP's package speaks. The service supports 1; any other, or none from an embedded PEP, is 400 STS-XACML-0342."})
+  `protocolVersion`?: int32;
+  @js(#{`description`:"An embedded PEP's report (D4 of #1206): whether the stream of the application it is embedded in can carry pep-policies-changed. none: the host has no signal stream and the PEP polls; requested: the stream asks for it; excluded: the application's ssfEvents leaves it out; down: the stream is not running or not healthy. Anything else is 400 STS-XACML-0344."})
+  `policyEvents`?: "none" | "requested" | "excluded" | "down";
 }
 
 @component model `HeartbeatAnswer` {
@@ -300,9 +318,9 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Acknowledged.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No name (STS-XACML-0020), a bad hostname (0261) or a value the service cannot hold (0303; see HeartbeatRequest). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No name (STS-XACML-0020), a bad hostname (0261), a value the service cannot hold (0303; see HeartbeatRequest), or the identity's refusals as at register (0342, 0343, 0344). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate; or an embedded PEP whose entry is no longer bound to its application (STS-XACML-0340, 0341): access_denied.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},
     `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -339,10 +357,17 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
 }
 
 @component model `PolicySet` {
+  @js(#{`description`:"The token of what this answer sends: the repository's, or with scope=bound-application the scope's own, which a change outside the application's policies does not move."})
   `syncToken`: string;
+  @js(#{`description`:"Present with scope=bound-application (#2027): the scope answered."})
+  `scope`?: "bound-application";
+  @js(#{`description`:"With scope=bound-application: the application the PEP is bound to."})
+  `application`?: string;
+  @js(#{`description`:"With scope=bound-application: where the root row came from. application: the application's own policy (it enforces fine-grained authorization); root: the realm root; none: neither, so the set is empty."})
+  `source`?: "application" | "root" | "none";
   @js(#{`description`:"The root policy's name. Not read by the PEP, which uses isRoot."}) `root`: string | null;
   @js(#{`description`:"Only when root is null."}) `rootNote`?: string;
-  @js(#{`description`:"Every enabled policy but those withheld."}) `policies`: `PolicyRow`[];
+  @js(#{`description`:"Every enabled policy but those withheld; with scope=bound-application, the application's own policy (or the realm root) marked isRoot, and its reference closure."}) `policies`: `PolicyRow`[];
   @js(#{`description`:"Names withheld from PEPs: the access and issuance policies and every policy an application owns."})
   `withheld`: string[];
   `note`: string;
@@ -355,14 +380,15 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`description`:"The token held; equal to the current one answers 304.",`schema`:#{`type`:"string"}},
     #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}},
+    #{`name`:"scope",`in`:"query",`required`:false,`description`:"repository (the default): every enabled policy but those withheld. bound-application (#2027): a registered embedded PEP in local mode, bound to the application it registered for, is sent that application's own policy (when it enforces fine-grained authorization; otherwise the realm root) and the reference closure, with a token of its own; anybody else is 403 STS-XACML-0345. Any other value is 400 STS-XACML-0346.",`schema`:#{`type`:"string",`enum`:#["repository","bound-application"]}},
     #{`name`:"pep",`in`:"query",`required`:false,`description`:"The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The policies. ETag: \"<syncToken>\".",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
-    `400`:#{`description`:"A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"An unknown scope (STS-XACML-0346): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate; or scope=bound-application from a caller that is not a registered, bound, local embedded PEP (STS-XACML-0345): access_denied.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }

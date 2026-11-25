@@ -809,15 +809,24 @@ class XacmlStore {
    * Builds the map a `PolicyIdReference` is resolved against: every enabled
    * policy that parses, keyed by its PolicyId. A policy that does not parse
    * is left out and logged, and so is every policy an application owns.
+   * @param withhold - policy NAMES (compared without case) left out as
+   *   well: an embedded PEP's closure leaves out the access and issuance
+   *   policies (#2027), and AuthZEN's decision about an application that
+   *   enforces fine-grained authorization resolves against the same set,
+   *   so the two modes answer alike (#1206)
    * @returns PolicyId to parsed policy model
    */
-  repository(): Record<string, any> {
+  repository(withhold?: string[]): Record<string, any> {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug('Entering XacmlStore.repository().');
+    const left = (withhold || []).map(function (one) {
+      return String(one).toLowerCase();
+    });
     const map = {};
     this.all().forEach(function (row) {
-      if (!row.enabled || !row.id || XacmlStore.owned(row)) {
+      if (!row.enabled || !row.id || XacmlStore.owned(row) ||
+          left.indexOf(String(row.name).toLowerCase()) >= 0) {
         return;
       }
       try {

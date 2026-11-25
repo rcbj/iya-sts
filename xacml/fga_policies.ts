@@ -471,6 +471,7 @@ class FgaPolicies {
     // grants a holder that joined the group since. Their failures are
     // answered and never fail the switch, which is already on.
     const peps = this.grantPeps(id, options);
+    FgaPolicies.notePeps('fine-grained authorization was enabled on ' + id);
     log.debug("Leaving FgaPolicies.enable().");
     return { ok: true, policy: ensured.policy, enforced: true,
              changed: !!set.changed, peps: peps };
@@ -566,8 +567,24 @@ class FgaPolicies {
                           (set.errors || []).join(' ') ||
                           'The application would not take the switch.');
     }
+    FgaPolicies.notePeps('fine-grained authorization was disabled on ' + id);
     log.debug("Leaving FgaPolicies.disable().");
     return { ok: true, enforced: false, changed: !!set.changed };
+  }
+
+  // AN EMBEDDED PEP IS TOLD (#2028): this change can move what a PEP bound
+  // to an application pulls, so the XACML surface checks, after the commit,
+  // and sends `pep-policies-changed` where it did. Lazily, and never thrown
+  // into the change: the event is a hint.
+  private static notePeps(what: string): void {
+    log.debug("Entering FgaPolicies.notePeps().");
+    try {
+      require('./xacml').notePepPolicies(what);
+    } catch (e) {
+      log.debug("Caught in FgaPolicies.notePeps(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving FgaPolicies.notePeps().");
   }
 
   // -------------------------------------------------------------------------

@@ -1283,6 +1283,10 @@
     "en": "a254d6c56c6f82ac",
     "text": "Ein eingebetteter entfernter PEP wurde an seine Anwendung gebunden oder davon gelöst"
   },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "Ein Remote-PEP hat begonnen, einen anderen Richtlinienumfang zu laden"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "Ein entfernter PEP hat den PIP nach den Attributen eines Subjekts gefragt"

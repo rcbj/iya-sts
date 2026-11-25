@@ -1264,7 +1264,13 @@ class XacmlPage {
     const self = this;
 
     const rows = json.peps.map(function (row) {
-      const proxy = row.proxy
+      // AN EMBEDDED PEP (#2026) has no listener and no reverse proxy: it
+      // runs inside its application, so both cells say so rather than
+      // "not configured", which would read as something to configure.
+      const embedded = row.kind === 'embedded';
+      const notHere = '<span class="sub">' +
+        t.html('consoleXacml.pep.notEmbedded') + '</span>';
+      const proxy = embedded ? notHere : row.proxy
         ? t.html('consoleXacml.pepPage.proxySummary',
                  { n: row.proxy.routes.length }) +
           (row.proxy.enabled ? ''
@@ -1290,13 +1296,17 @@ class XacmlPage {
         (row.version
           ? '<div class="sub">' + esc(row.version) + '</div>'
           : '') +
+        (embedded
+          ? '<div class="sub">' + self.pepEmbeddedSummary(t, row) + '</div>'
+          : '') +
         '</td><td>' + self.pepClustered(t, row) + '</td><td>' +
         self.pepWho(t, row) + '</td><td>' +
         self.pepState(t, row) + '</td><td>' +
         esc(row.bias || t.text('consoleXacml.pep.notReported')) +
         '</td><td>' + self.pepCounts(t, row) +
         '</td><td>' + self.pepNotify(t, row) + '</td><td>' +
-        self.pepListener(ctx, row) + '</td><td>' + proxy +
+        (embedded ? notHere : self.pepListener(ctx, row)) + '</td><td>' +
+        proxy +
         '</td><td>' + self.pepActions(ctx, row) + '</td></tr>';
     }).join('') ||
       '<tr><td colspan="10">' + self.noPepsHere(json.elsewhere, t) +
@@ -4144,6 +4154,51 @@ class XacmlPage {
   }
 
   /**
+   * An embedded PEP's line under its name in the list (#2026): the
+   * application it is embedded in and its mode.
+   *
+   * @param t - the translator
+   * @param row - one row of `GET /admin-api/xacml/peps`
+   * @returns the line as HTML
+   */
+  static pepEmbeddedSummary(t: Json, row: Json): string {
+    return t.html('consoleXacml.pep.embeddedSummary', {
+      application: String(row.application || row.registeredApplication || ''),
+      mode: String(row.mode || '') });
+  }
+
+  /**
+   * Whether an embedded PEP's application stream can carry
+   * `pep-policies-changed`, as it last reported (#2026); `excluded` and
+   * `down` are marked, because a local PEP then learns of a change only on
+   * its fallback poll.
+   *
+   * @param t - the translator
+   * @param row - one row of `GET /admin-api/xacml/peps`
+   * @returns the cell as HTML
+   */
+  static pepPolicyEvents(t: Json, row: Json): string {
+    const said = String(row.policyEvents || '');
+    if (!said) {
+      return '<span class="sub">' + t.html('consoleXacml.pep.notReported') +
+        '</span>';
+    }
+    // Each key named whole, so a reader of the catalog finds its use.
+    const keys: Json = {
+      none: 'consoleXacml.pepPage.policyEvents.none',
+      requested: 'consoleXacml.pepPage.policyEvents.requested',
+      excluded: 'consoleXacml.pepPage.policyEvents.excluded',
+      down: 'consoleXacml.pepPage.policyEvents.down'
+    };
+    if (!keys[said]) {
+      return '<code>' + esc(said) + '</code>';
+    }
+    const text = t.html(keys[said]);
+    return said === 'excluded' || said === 'down'
+      ? '<span class="xacml-alert">' + text + '</span>' : text;
+  }
+
+  /**
    * The binding's two forms (#2025): bind the PEP's entry to an application,
    * and, where it is bound, remove the binding.
    *
@@ -4701,13 +4756,48 @@ class XacmlPage {
       line(t.html('consoleXacml.pepPage.th.application'),
            self.pepApplication(t, row),
            'consoleXacml.tip.overview.application') +
+      // WHAT KIND OF PEP REGISTERED, AND AN EMBEDDED ONE'S MODE, PROTOCOL
+      // VERSION AND STREAM (#2026).
+      line(t.html('consoleXacml.pepPage.th.kind'),
+           t.html(row.kind === 'embedded'
+             ? 'consoleXacml.pepPage.kind.embedded'
+             : 'consoleXacml.pepPage.kind.container'),
+           'consoleXacml.tip.overview.kind') +
+      (row.kind === 'embedded'
+        ? line(t.html('consoleXacml.pepPage.th.mode'),
+               row.mode === 'central'
+                 ? t.html('consoleXacml.pepPage.mode.central')
+                 : row.mode === 'local'
+                 ? t.html('consoleXacml.pepPage.mode.local') : code(''),
+               'consoleXacml.tip.overview.mode') +
+          line(t.html('consoleXacml.pepPage.th.policyEvents'),
+               self.pepPolicyEvents(t, row),
+               'consoleXacml.tip.overview.policyEvents')
+        : '') +
+      line(t.html('consoleXacml.pepPage.th.protocolVersion'),
+           code(row.protocolVersion),
+           'consoleXacml.tip.overview.protocolVersion') +
+      // WHAT IT PULLS (#2027): the repository, or its application's scope.
+      line(t.html('consoleXacml.pepPage.th.pullScope'),
+           row.pullScope === 'bound-application'
+             ? t.html('consoleXacml.pepPage.pullScope.boundApplication')
+             : row.pullScope === 'repository'
+             ? t.html('consoleXacml.pepPage.pullScope.repository')
+             : code(''),
+           'consoleXacml.tip.overview.pullScope') +
       line(t.html('consoleXacml.pepPage.th.syncToken'),
            code(row.syncToken), 'consoleXacml.tip.overview.syncToken') +
       line(t.html('consoleXacml.th.notify'), self.pepNotify(t, row),
            'consoleXacml.tip.peps.notify') +
       line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row),
            'consoleXacml.tip.peps.actions') +
-      '</table>')) + kit.frame(self.pepClusterPart(ctx, row)) +
+      '</table>')) +
+      // AN EMBEDDED PEP IS IN NO CLUSTER (#2026): a cluster shares a proxy,
+      // settings and listeners, and an embedded PEP has none of them.
+      (row.kind === 'embedded'
+        ? kit.note('<p>' + t.html('consoleXacml.pepPage.embeddedNote') +
+                   '</p>')
+        : kit.frame(self.pepClusterPart(ctx, row))) +
       (ctx.write
         ? kit.frame(self.fieldGroup(t, 'consoleXacml.credential.legend',
             self.credentialForm(t, String((row.identityAccount &&
@@ -4747,9 +4837,17 @@ class XacmlPage {
         Object.assign({}, shown, { json: json }), row),
       'xacml-pep-tab-signals': kit.frame(self.signalsPanel(t, row.signals))
     };
+    // AN EMBEDDED PEP'S PAGE IS ITS OVERVIEW AND ITS DECISIONS (#2026): it
+    // pulls no settings, binds no listener, runs no reverse proxy, no
+    // AuthZEN edge (the Settings tab's) and no CAEP/RISC receivers of its
+    // own, so those tabs would be forms for things that do not exist.
+    const embedded = row.kind === 'embedded';
     return (member ? self.memberBanner(ctx, json, row) : '') +
       self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
-      self.pepTabs(t).map(function (one: Json) {
+      self.pepTabs(t).filter(function (one: Json) {
+        return !embedded || one.id === 'xacml-pep-tab-overview' ||
+          one.id === 'xacml-pep-tab-decisions';
+      }).map(function (one: Json) {
         return Object.assign({}, one, { html: html[one.id] });
       }))) + back;
   }

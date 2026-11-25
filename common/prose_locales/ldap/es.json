@@ -2151,6 +2151,30 @@
     "en": "b2a987046bb7d733",
     "text": "Lo que el PEP remoto informó por última vez, en un latido, sobre cada una de sus escuchas (#1760), las cuatro de su entorno y las definidas: un documento JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, con cuándo llegó. El estado es uno de listening, waiting, failed y off y el motivo uno de un conjunto cerrado, nunca el texto del sistema operativo; el certificado es el sujeto, el emisor, el número de serie, el subjectAltName, la validez y la huella del que sirve. Cualquier otro miembro se descarta. Un latido sin él lo conserva, uno con null lo borra y un registro lo elimina. Ausente en un PEP anterior a las escuchas, lo que la consola muestra como no informado."
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Qué tipo de PEP remoto se registró (#2026, parte de #1206): container, la imagen xacml-pep, o embedded, un PEP dentro de una biblioteca de autenticación mediante un paquete iya-pep. Un registro que no indica ninguno es container, así que un PEP más antiguo se lee como siempre. Un PEP integrado no tiene proxy inverso, ni escuchas, ni borde AuthZEN."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "La aplicación en la que un PEP remoto integrado dijo estar integrado al registrarse (#2026). Se acepta solo si es la aplicación a la que está vinculada su entrada (stsPepApplication, fijada por un administrador), así que solo puede diferir de la vinculación hasta el siguiente latido del PEP, que se rechaza en cuanto no coinciden. Vacío para un contenedor."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "El modo de un PEP remoto integrado (#2026): central, en el que cada decisión se consulta al punto de evaluación AuthZEN de este servicio, o local, en el que descarga las políticas de su aplicación y decide en el proceso. Vacío para un contenedor, que no puede enviarlo."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "La versión del protocolo PEP que habla el paquete del PEP remoto, según lo indicó en su registro o en su último latido (#2026). Este servicio admite la versión 1 y rechaza cualquier otra, de modo que una biblioteca rezagada se ve en lugar de fallar en silencio. Vacío para un PEP que no envía ninguna (el contenedor)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Si el flujo de la aplicación en la que está integrado un PEP remoto puede transportar el evento pep-policies-changed, según lo informó el PEP en su último latido (#2026): none (el host no tiene flujo de señales, así que el PEP consulta periódicamente), requested, excluded (el ssfEvents de la aplicación lo excluye) o down. Vacío hasta que se informe."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Lo que el PEP remoto descargó por última vez de GET /xacml/pep/policies (#2027): repository, todas las políticas habilitadas salvo las retenidas (la descarga del contenedor), o bound-application, la de un PEP integrado en modo local: la política propia de su aplicación, o la raíz del dominio, y el cierre de sus referencias. Se conserva al volver a registrarse; un cambio se audita como xacml.pep.scope. Vacío hasta que descarga."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Lo que el PEP dijo de sí mismo cuando se registró."

@@ -6908,6 +6908,7 @@ Scope: `admin:read`.
 | `peps[].identityAccount.owners[].name` | string |  |  |
 | `peps[].identityAccount.serviceAccount` | boolean |  |  |
 | `peps[].identityAccount.username` | string |  |  |
+| `peps[].kind` | one of `container`, `embedded` |  | What kind of remote PEP registered (#2026): container (the xacml-pep image; every PEP that sends no kind) or embedded (a PEP inside an authentication library). |
 | `peps[].lastNotify` | string |  |  |
 | `peps[].lastSeen` | string |  |  |
 | `peps[].listenerCertificate` | object |  |  |
@@ -7115,10 +7116,13 @@ Scope: `admin:read`.
 | `peps[].listenersInUse.paths[].path` | string | yes |  |
 | `peps[].listenersInUse.paths[].refused` | integer | yes |  |
 | `peps[].listenersProblem` | string, or null |  |  |
+| `peps[].mode` | one of empty, `central`, `local` |  | An embedded PEP's mode (#2026): central (it asks POST /access/v1/evaluation for every decision) or local (it pulls its application's policies and decides in process); empty for a container. |
 | `peps[].name` | string |  |  |
 | `peps[].notifyProblem` | string, or null |  |  |
 | `peps[].notifyUrl` | string |  |  |
 | `peps[].policyCount` | number, or null |  |  |
+| `peps[].policyEvents` | one of empty, `none`, `requested`, `excluded`, `down` |  | An embedded PEP's report on its heartbeat (#2026, D4 of #1206): whether its application's stream can carry pep-policies-changed. none, requested, excluded or down; empty until reported, and for a container. |
+| `peps[].protocolVersion` | number, or null |  | The PEP protocol version its package speaks (#2026); null when it sent none. |
 | `peps[].proxy` | object |  |  |
 | `peps[].proxy.enabled` | boolean |  |  |
 | `peps[].proxy.maxBodyBytes` | integer |  |  |
@@ -7164,7 +7168,9 @@ Scope: `admin:read`.
 | `peps[].proxyRoutes[].route` | string |  |  |
 | `peps[].proxyRoutes[].usable` | boolean |  |  |
 | `peps[].proxyRoutes[].why` | string, or null |  |  |
+| `peps[].pullScope` | one of empty, `repository`, `bound-application` |  | What the PEP last pulled from GET /xacml/pep/policies (#2027): repository (every enabled policy but those withheld) or bound-application (a local embedded PEP's: its application's own policy, or the realm root, and the reference closure); empty until it pulled. |
 | `peps[].refused` | number, or null |  |  |
+| `peps[].registeredApplication` | string |  | The application an embedded PEP registered as embedded in (#2026), which had to be its binding (`application`); empty for a container. |
 | `peps[].registeredAt` | string |  |  |
 | `peps[].resource` | string |  |  |
 | `peps[].settings` | object |  |  |

@@ -138,6 +138,13 @@ interface FgaPepDeps {
   loadXacml(): { decidePolicy(policy: any, request: any, options?: any): any;
                  enforce(answer: any, bias?: string): any };
   loadMonitor(): { record(id: string, outcome?: any): void };
+  // The PolicyIdReference map an AuthZEN decision about an enforcing
+  // application resolves against (#1206): every enabled policy nobody owns,
+  // less the access and issuance policies. That is exactly the set a
+  // `local` embedded PEP's scoped pull draws the reference closure from
+  // (`xacml_pep_registry.ts`'s `boundPull()`), so a reference resolves the
+  // same in both modes. Optional: absent, nothing resolves, as before.
+  pepRepository?(): Record<string, any>;
 }
 
 /**
@@ -173,6 +180,18 @@ class FgaPep {
       policies: require('./fga_policies'),
       map: require('./fga_map'),
       gate: require('../common/fga_gate'),
+      pepRepository: function (): Record<string, any> {
+        log.debug("Entering pepRepository().");
+        const config: typeof import('../common/config') =
+          require('../common/config');
+        const store: typeof import('./xacml_store') =
+          require('./xacml_store');
+        const map = store.repository([
+          String(config.value('xacml.accessPolicy') || 'access-control'),
+          String(config.value('xacml.issuancePolicy') || 'role-issuance')]);
+        log.debug("Leaving pepRepository().");
+        return map;
+      },
       sha256Hex: function (text: string): string {
         return crypto.digest('sha256', text, 'hex');
       },
@@ -490,8 +509,14 @@ class FgaPep {
         return { ok: false, code: found.code, why: found.why,
                  policy: found.policy };
       }
+      // THE REFERENCES RESOLVE (#1206): against the set a `local` embedded
+      // PEP is sent, so an evaluation about this application answers the
+      // same here as in that PEP. With `repository: null` a reference was
+      // Indeterminate here (STS-AUTHZEN-0028, a 500) and decided there.
+      const repository = typeof this.deps.pepRepository === 'function'
+        ? this.deps.pepRepository() : null;
       const answer = this.deps.loadXacml().decidePolicy(found.parsed,
-        request, { repository: null,
+        request, { repository: repository,
                    resolve: !(options && options.resolve === false) });
       log.debug("Leaving FgaPep.decideAccess(). " +
                 String((answer && answer.decision) || ''));
