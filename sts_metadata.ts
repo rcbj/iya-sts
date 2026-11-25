@@ -580,6 +580,21 @@ const SPECS: Spec[] = [
               'the trust\'s boundary before it is re-signed — device info ' +
               'dropped, a claims set dropped unless the trust allows it — ' +
               'and a referral\'s PAC is signed with the inter-realm key.' },
+  // #2272: the GSS-API mechanism the acceptor and SPNEGO speak.
+  { id: 'rfc4121', name: 'The Kerberos Version 5 GSS-API Mechanism: ' +
+                         'Version 2 (RFC 4121)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4121',
+    coverage: 'partial: context establishment. The InitialContextToken ' +
+              'framing (the Kerberos mechanism OID and the two-byte token ' +
+              'ids) is read and written, the AP-REQ\'s 0x8003 ' +
+              'authenticator checksum is read by the acceptor (its flags, ' +
+              'mutual authentication and delegation) and written by the ' +
+              'client side, and an AP-REP is returned when mutual ' +
+              'authentication is asked for. MIC tokens (section 4.2.6.1) ' +
+              'sign and verify SPNEGO\'s mechListMIC, under the acceptor ' +
+              'subkey when there is one. Missing: channel bindings are ' +
+              'reported, not compared with the TLS channel, and no surface ' +
+              'exchanges Wrap tokens once the context is established.' },
   { id: 'rfc4178', name: 'SPNEGO (RFC 4178)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4178',
@@ -754,6 +769,24 @@ const SPECS: Spec[] = [
               'thrown it away), arrays as bags, obligations, advice and the ' +
               'PolicyIdentifierList. The profile defines no policy syntax, ' +
               'so policies stay XML.' },
+  // #2272: the policy language the console and /admin-api read and write.
+  { id: 'alfa', name: 'ALFA for XACML Version 1.0 (draft)',
+    where: 'OASIS (Committee Specification Draft)',
+    url: 'https://docs.oasis-open.org/xacml/alfa-for-xacml/v1.0/' +
+         'alfa-for-xacml-v1.0.html',
+    coverage: 'partial: policy sets, policies and rules with their ' +
+              'targets, conditions, obligations and advice, read and ' +
+              'written over the same model as the XACML XML, so a policy ' +
+              'decides the same whichever form it came in. Literals of the ' +
+              'other datatypes are written as casts, an attribute is ' +
+              'declared before it is used, mustbepresent and issuer are ' +
+              'given per use, and a higher-order function takes a function ' +
+              'by its short name. Imported at /admin/xacml and by ' +
+              'import-alfa on /admin-api/xacml, and every policy can be ' +
+              'shown as ALFA. What the emitter writes the parser reads and ' +
+              'decides identically. Missing: macros, advice at namespace ' +
+              'scope and imports across files are refused by name. ALFA ' +
+              'has no conformance suite.' },
   { id: 'ssf', name: 'OpenID Shared Signals Framework 1.0',
     where: 'OpenID Foundation',
     url:
@@ -2847,6 +2880,22 @@ const SPECS: Spec[] = [
               'to its minimum at registration and at sign-in. Nothing else ' +
               'of CTAP: the authenticator API, the PIN protocols, large ' +
               'blobs and credential management are the platform\'s.' },
+  // #2272: a legacy U2F key, used through WebAuthn.
+  { id: 'fido-u2f', name: 'FIDO Universal 2nd Factor (U2F) 1.2',
+    where: 'FIDO Alliance',
+    url: 'https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/' +
+         'fido-u2f-overview-v1.2-ps-20170411.html',
+    coverage: 'partial, through WebAuthn rather than as a protocol of its ' +
+              'own: the fido-u2f attestation format is verified at ' +
+              'registration (WebAuthn section 8.6), and a legacy U2F ' +
+              'credential (its key handle, P-256 public key and counter) ' +
+              'imported by an administrator onto a person\'s entry is used ' +
+              'under its AppID through the appid extension, at a ' +
+              'second-factor step only, once webauthn.u2fAppIds names that ' +
+              'AppID. Missing: the U2F JavaScript API and raw U2F ' +
+              'registration and authentication messages (a browser speaks ' +
+              'them to the key, not this service), and the AppID and Facet ' +
+              'trusted-facets list.' },
   // #725: the sign-on session bound to a key the browser holds.
   { id: 'dbsc', name: 'Device Bound Session Credentials',
     where: 'W3C WebAppSec (Editor\'s Draft)',
@@ -3766,6 +3815,19 @@ const SPECS: Spec[] = [
               'openpgp.minRsaBits are accepted; DSA, ElGamal and Brainpool ' +
               'are refused. Missing: signing, decryption, a keyring, a ' +
               'keyserver.' },
+  // #2272: the v4 keys the OpenPGP engine reads beside RFC 9580's v6.
+  { id: 'rfc4880', name: 'OpenPGP Message Format (RFC 4880)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4880',
+    coverage: 'partial, for v4 keys (RFC 9580 obsoletes it, and a v6 key ' +
+              'follows rfc9580): a transferable public key read with its ' +
+              'self-signatures, a cleartext signature by its signing key ' +
+              'verified, and a message encrypted to its encryption key, ' +
+              'through openpgp.js. Signing keys may be EdDSA on Ed25519, ' +
+              'ECDSA on P-256, P-384 and P-521, or RSA of ' +
+              'openpgp.minRsaBits; encryption keys ECDH on Curve25519 and ' +
+              'the NIST curves, or RSA. DSA, ElGamal and Brainpool are ' +
+              'refused. Missing: signing, decryption, a keyring, a ' +
+              'keyserver.' },
   { id: 'rfc9980', name: 'Post-Quantum Cryptography in OpenPGP (RFC 9980)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9980',
     coverage: 'partial: ML-DSA-65+Ed25519 and ML-DSA-87+Ed448 ' +
@@ -3792,6 +3854,36 @@ const SPECS: Spec[] = [
               'cannot encapsulate does not send the message under a ' +
               'classical algorithm. Missing: signed-data, ' +
               'AuthEnvelopedData (AES-GCM), decryption.' },
+  // #2272: what an S/MIME message to an ML-KEM certificate is made of.
+  { id: 'rfc9629', name: 'Using Key Encapsulation Mechanism (KEM) ' +
+                         'Algorithms in the Cryptographic Message Syntax ' +
+                         '(CMS) (RFC 9629)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9629',
+    coverage: 'partial, sending only: an S/MIME message to an ML-KEM ' +
+              'certificate (rfc9935) carries its content-encryption key in ' +
+              'a KEMRecipientInfo (the id-ori-kem other recipient info): ' +
+              'ML-KEM-512, ML-KEM-768 or ML-KEM-1024, HKDF with SHA-256 ' +
+              'over CMSORIforKEMOtherInfo and no salt, and AES-128 or ' +
+              'AES-256 key wrap, in AuthEnvelopedData (the default) or ' +
+              'EnvelopedData. Missing: decrypting a KEMRecipientInfo (this ' +
+              'service never receives encrypted mail), the ukm, and any ' +
+              'other KEM or key-derivation function.' },
+  // #2272: the ML-KEM keys an S/MIME certificate is issued for.
+  { id: 'rfc9935', name: 'Algorithm Identifiers for the Module-Lattice-' +
+                         'Based Key-Encapsulation Mechanism (ML-KEM) in ' +
+                         'X.509 (RFC 9935)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9935',
+    coverage: 'partial: an ML-KEM-512, ML-KEM-768 or ML-KEM-1024 public key ' +
+              'is read from a SubjectPublicKeyInfo or a certificate by its ' +
+              'id-alg-ml-kem identifier and held to absent parameters and ' +
+              'the key length FIPS 203 gives. A person\'s key is certified ' +
+              'by the realm\'s EST Issuing CA with keyEncipherment as its ' +
+              'only key usage, after a proof of possession by ' +
+              'encapsulation that only the private key can answer, and the ' +
+              'certificate is an S/MIME recipient (rfc9629). Missing: the ' +
+              'private key formats (this service never holds an ML-KEM ' +
+              'private key) and ML-KEM certificates for this service\'s ' +
+              'own keys.' },
   { id: 'wkd', name: 'OpenPGP Web Key Directory ' +
                      '(draft-koch-openpgp-webkey-service)',
     where: 'IETF (Internet-Draft)',
@@ -3802,6 +3894,68 @@ const SPECS: Spec[] = [
               'opted in, per realm and off by default. Missing: the Web Key ' +
               'Service (submission-address, the submission protocol); CORS ' +
               'is this service\'s allowlist rather than the draft\'s *.' },
+  // #2272: keys in a hardware security module.
+  { id: 'pkcs11', name: 'PKCS #11 Specification Version 3.2',
+    where: 'OASIS',
+    url: 'https://docs.oasis-open.org/pkcs11/pkcs11-spec/v3.2/' +
+         'pkcs11-spec-v3.2.html',
+    coverage: 'partial, as an application calling a module (any PKCS #11 ' +
+              'v2.40 or later; YubiHSM 2 and SoftHSM2 are the ones tried): ' +
+              'a non-extractable AES-256 key-encryption key that wraps and ' +
+              'unwraps each data key inside the token (CKM_AES_GCM, ' +
+              'CKM_AES_KEY_WRAP_PAD or CKM_YUBICO_AES_CCM_WRAP), and a ' +
+              'realm\'s signing keys generated and used there: RSA PKCS #1 ' +
+              'v1.5 and PSS, ECDSA on P-256, P-384, P-521 and secp256k1, ' +
+              'and EdDSA, with RSA-OAEP decryption and ECDH derivation by ' +
+              'the same keys. 3.2\'s CKM_ML_DSA and CKM_SLH_DSA are used ' +
+              'only when the token lists them; otherwise those signatures ' +
+              'stay in software. Sessions are per thread, and a module is ' +
+              'initialized again once after an outage. Missing: this ' +
+              'service is not a module itself, imports no key into a token ' +
+              'and exports none from it.' },
+  { id: 'rfc7512', name: 'The PKCS #11 URI Scheme (RFC 7512)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7512',
+    coverage: 'partial: a URI names the token and the key-encryption key, ' +
+              'or the token of the signing keys. The token, object, id ' +
+              '(percent-encoded bytes), serial and slot-id path attributes ' +
+              'are honoured, the other section 2.3 attributes are accepted ' +
+              'and ignored, and the module-path query attribute chooses the ' +
+              'module for that key alone. pin-value and pin-source are ' +
+              'refused: a PIN is delivered by keys.pkcs11PinProvider, never ' +
+              'in a URI. Missing: type, manufacturer, model and the library ' +
+              'attributes do not narrow the match, and module-name is not ' +
+              'read.' },
+  // #2272: the realm's OpenSSH user certificate authority.
+  { id: 'openssh-certkeys', name: 'OpenSSH certificate keys ' +
+                                  '(PROTOCOL.certkeys)',
+    where: 'OpenSSH (now the Internet-Draft draft-miller-ssh-cert)',
+    url: 'https://datatracker.ietf.org/doc/draft-miller-ssh-cert/',
+    coverage: 'partial: each realm\'s user CA issues ' +
+              '-cert-v01@openssh.com user certificates for ssh-ed25519, ' +
+              'ECDSA, RSA and the two sk- security-key types, signed with ' +
+              'ssh-ed25519, ecdsa-sha2-nistp256/384/521 or ' +
+              'rsa-sha2-256/512 in the order pki.sshUserCaAlgorithms ' +
+              'gives, with principals from the person\'s own entry, the ' +
+              'realm\'s extensions and no critical options, and a longer ' +
+              'lifetime only for verified hardware evidence. The CA key is ' +
+              'published at /pki/ssh-user-ca/{scope}. A host certificate ' +
+              'is read and checked, not issued. ssh-mldsa-65 is a key type ' +
+              'this service defines, because OpenSSH has none, and stock ' +
+              'OpenSSH cannot verify it. Missing: host certificates, and ' +
+              'certificates for DSA keys.' },
+  { id: 'openssh-krl', name: 'OpenSSH key revocation lists (PROTOCOL.krl)',
+    where: 'OpenSSH',
+    url: 'https://github.com/openssh/openssh-portable/blob/master/' +
+         'PROTOCOL.krl',
+    coverage: 'partial: each realm\'s KRL at /pki/ssh-user-krl/{scope}, ' +
+              'rebuilt by a scheduler job when a certificate is revoked or ' +
+              'a hardware token is reported lost, holds a certificates ' +
+              'section per CA key with a serial list, and the SHA-256 ' +
+              'fingerprints of revoked keys. It is read back as well as ' +
+              'written. Missing: a signature section (the KRL is unsigned, ' +
+              'which is why it is served on the main port only), and key-id ' +
+              'lists, serial ranges and bitmaps, explicit keys and SHA-1 ' +
+              'fingerprints.' },
   { id: 'rfc8463', name: 'A New Cryptographic Signature Method for DKIM ' +
                          '(RFC 8463)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8463',
@@ -4733,7 +4887,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'author would point their stack here. Ungated, because everything ' +
           'in it is already inside every certificate this service hands out.' },
   { path: '/pki/ssh-user-ca/:scope', group: 'PKI',
-    name: 'The realm OpenSSH user CA public key', specs: [],
+    name: 'The realm OpenSSH user CA public key', specs: ['openssh-certkeys'],
     what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH user CA key, ' +
           'published as an authorized-key line for SSH servers to trust. ' +
           'With `?algorithm=ssh-mldsa-65` it answers the realm\'s ML-DSA ' +
@@ -4743,7 +4897,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'anchor. The corresponding CA private key never leaves this ' +
           'service.' },
   { path: '/pki/ssh-user-krl/:scope', group: 'PKI',
-    name: 'The realm OpenSSH user key revocation list', specs: [],
+    name: 'The realm OpenSSH user key revocation list', specs: ['openssh-krl'],
     what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH KRL, updated when ' +
           'a caller revokes a certificate or reports a hardware token lost. ' +
           'Ungated and `no-store`, on the main port only: the KRL is ' +
@@ -4796,7 +4950,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'was refused rather than forgotten.' },
   { path: '/admin-api/xacml/:action', group: 'XACML',
     name: 'Change a policy, the repository or a remote PEP',
-    specs: ['xacml30'],
+    specs: ['xacml30', 'alfa'],
     what: 'The console\'s three POST endpoints as ONE action resource — a ' +
           'caller should not have to work out which page owns "enable". ' +
           'The repository\'s, the editor\'s, and the three that end -pep, ' +
@@ -6245,7 +6399,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'of a message, checked when saved. The console\'s three forms.' },
   // #1955 P6: Directory → OpenPGP keys.
   { path: '/admin-api/openpgp', group: 'Management API',
-    name: 'OpenPGP keys', specs: ['openapi', 'rfc9580', 'rfc9980', 'wkd'],
+    name: 'OpenPGP keys',
+    specs: ['openapi', 'rfc9580', 'rfc9980', 'wkd', 'rfc4880'],
     what: 'NON-SPEC (#1955). What Directory → OpenPGP keys draws: with ' +
           '?user=, that person\'s OpenPGP key, their outstanding ' +
           'registration challenge, their Web Key Directory publication, ' +
@@ -6254,7 +6409,8 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin/openpgp.' },
   { path: '/admin-api/openpgp/:action', group: 'Management API',
     name: 'OpenPGP key actions',
-    specs: ['openapi', 'rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd'],
+    specs: ['openapi', 'rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd',
+            'rfc4880', 'rfc9629', 'rfc9935'],
     effect: 'issues a challenge, registers or removes an OpenPGP key, ' +
             'publishes it, or sets a person\'s mail encryption or S/MIME ' +
             'certificate',
@@ -6312,7 +6468,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'A full collection stops the thread it runs in. The page\'s ' +
           'Collect buttons. Mirrors POST /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
-    name: 'Encryption at rest', specs: [],
+    name: 'Encryption at rest', specs: ['pkcs11', 'rfc7512'],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +
           'the key-encryption key (present, DURABLE or EPHEMERAL, and which ' +
           'of the five providers it is read from), the algorithm read out of ' +
@@ -6362,7 +6518,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'not about the route. Mirrors GET /admin/users.' },
   { path: '/admin-api/users/:action', group: 'Management API',
     name: 'User actions',
-    specs: ['rfc4511', 'rfc4519'],
+    specs: ['rfc4511', 'rfc4519', 'fido-u2f'],
     effect: 'creates an entry under ou=users in the embedded LDAP directory, ' +
             'and sets or issues the credential it is given',
     what: 'NON-SPEC path over the embedded directory. THREE URLs behind the ' +
@@ -6518,7 +6674,8 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin/ssh-user-ca.' },
   { path: '/admin-api/openpgp-settings', group: 'Management API',
     name: 'OpenPGP settings',
-    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd'],
+    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd', 'rfc4880',
+            'rfc9629', 'rfc9935'],
     what: 'NON-SPEC (#2049). Every openpgp.* setting: the Web Key ' +
           'Directory, the algorithms accepted, the smallest RSA key, the ' +
           'post-quantum rules, the challenge lifetime and the signature ' +
@@ -7454,7 +7611,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'entry first (#2071). The console\'s five acts on that page.' },
   { path: '/admin-api/hardware-tokens/ssh-certificates',
     group: 'Management API',
-    name: 'A person\'s SSH user certificates', specs: ['openapi'],
+    name: 'A person\'s SSH user certificates',
+    specs: ['openapi', 'openssh-certkeys'],
     what: 'NON-SPEC (the #1955 review). The OpenSSH user certificates ' +
           'issued to a person that have not expired, revoked ones marked: ' +
           'serial, key type and fingerprint, principals, validity and ' +
@@ -9380,7 +9538,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
     specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
-            'oidc'],
+            'oidc', 'rfc4121'],
     effect: 'answers 401 with "WWW-Authenticate: Negotiate" and, to a ' +
             'request carrying a valid service ticket, establishes the ' +
             'browser session and returns to whatever was interrupted',
@@ -9914,7 +10072,7 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#572). The step\'s challenge, RP ID, user and keys, ' +
           'and the passkey policy\'s options.' },
   { path: '/authn-api/mfa/:id/webauthn', group: 'Authentication',
-    name: 'Finish a passkey step', specs: ['webauthn', 'ctap21'],
+    name: 'Finish a passkey step', specs: ['webauthn', 'ctap21', 'fido-u2f'],
     what: 'NON-SPEC (#572). The ceremony\'s result, verified: a ' +
           'registration where the step enrols a key, an assertion ' +
           'otherwise — decided by the step.' },
@@ -11195,7 +11353,8 @@ const PROTOCOLS: Protocol[] = [
           'and per form, the person always the token\'s subject, described ' +
           'by its own OpenAPI document.' },
   { name: 'OpenPGP', groups: ['OpenPGP'],
-    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd'],
+    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd', 'rfc4880',
+            'rfc9629', 'rfc9935'],
     what: 'A person\'s OpenPGP key (#1955), registered on the portal or by ' +
           'an administrator on a proof of possession — the person signs a ' +
           'challenge with gpg --clearsign, on a YubiKey\'s OpenPGP card ' +
@@ -11242,7 +11401,7 @@ const PROTOCOLS: Protocol[] = [
              'gnap.pushCaFile — and gnap.pushSkipTlsVerification turns that ' +
              'off in development mode only (#171).' },
   { name: 'XACML', groups: ['XACML'],
-    specs: ['xacml30', 'xacmljson'],
+    specs: ['xacml30', 'xacmljson', 'alfa'],
     what: 'A Policy Decision Point, a policy repository that IS ' +
           'ou=policies in the embedded directory, a Policy Information ' +
           'Point that reads attributes off the subject\'s own entry, and an ' +
@@ -11412,7 +11571,8 @@ const PROTOCOLS: Protocol[] = [
           'socket.',
     sockets: 'The KDC itself is TCP and UDP port 88, which this page cannot ' +
              'see.' },
-  { name: 'SPNEGO', groups: ['Kerberos'], specs: ['rfc4178', 'rfc4559'],
+  { name: 'SPNEGO', groups: ['Kerberos'],
+    specs: ['rfc4178', 'rfc4559', 'rfc4121'],
     what: 'Kerberos over HTTP: /authn/spnego answers 401 ' +
           'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser ' +
           'sends back, accepts the AP-REQ inside it against the service ' +
@@ -11435,7 +11595,8 @@ const PROTOCOLS: Protocol[] = [
              'port for the Broker API. Only the bundle endpoint is on the ' +
              'router.' },
   { name: 'PKI', groups: ['PKI'],
-    specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
+    specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522', 'openssh-certkeys',
+            'openssh-krl'],
     what: 'A certificate authority for the SERVICE — ONE Root, an ' +
           'Intermediate per trust realm and per the process, and an ' +
           'Issuing CA under each per use case (2026-09-11). Was ' +
@@ -11513,7 +11674,7 @@ const PROTOCOLS: Protocol[] = [
              'port, which every row here is on. LDAPS 636 shares the ' +
              'certificate and is under LDAP.' },
   { name: 'WebAuthn / CTAP', groups: ['Authentication'],
-    specs: ['webauthn', 'ctap21'],
+    specs: ['webauthn', 'ctap21', 'fido-u2f'],
     what: 'A second factor on the sign-in screen every protocol here sends a ' +
           'person to: registration and assertion ceremonies against a real ' +
           'security key, with the attestation and the authenticator data ' +

@@ -43,6 +43,7 @@ each.
 [Configuration](configuration.md) ·
 [Configuration dump](configuration-dump.md) ·
 [Endpoints](endpoints.md) ·
+[Specifications](specifications.md) ·
 [Trust realms](trust-realms.md) ·
 [Listeners and hosted applications](listeners.md) ·
 [Words a password may not contain](password-words.md) ·
@@ -271,6 +272,9 @@ embedded directory and key material sealed in their stores. [Architecture](archi
 the diagram and a walk through each layer.
 
 ## What it speaks
+
+Every specification by name, grouped, is on [Specifications](specifications.md).
+This table is the same ground by protocol family.
 
 | Family | Where | Read |
 |---|---|---|

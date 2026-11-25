@@ -16,6 +16,11 @@
 // profiles and RFC 9440) and the README said nothing. This file is
 // `readme_ports.js`'s answer applied to that list.
 //
+// SINCE #2272 (2026-11-25) THE SAME LIST IS ON THE SITE TOO, as
+// `docs/v1.2.0/specifications.md`'s `## Every specification`, because rcbj
+// wants the breadth advertised to a reader of the documentation as well; it is
+// held to the same rule, on its own (`DOCUMENTS`).
+//
 // THE RULE, which is what the README has to follow and what a new entry has
 // to satisfy:
 //
@@ -54,7 +59,17 @@ const log = require('bunyan').createLogger({ name: 'readme_specifications',
   level: process.env.LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
-const README = path.join(ROOT, 'README.md');
+// THE TWO LISTS HELD TO `SPECS` (#2272): the README's section, and the
+// 1.2.0 documentation's page that carries the same list for a reader of the
+// site. Each is bounded at its own heading and checked on its own, so a list
+// complete in one and short in the other fails naming the short one.
+const DOCUMENTS = [
+  { label: 'README.md', file: path.join(ROOT, 'README.md'),
+    heading: '## Specifications' },
+  { label: 'docs/v1.2.0/specifications.md',
+    file: path.join(ROOT, 'docs', 'v1.2.0', 'specifications.md'),
+    heading: '## Every specification' }
+];
 
 // ---------------------------------------------------------------------------
 // The child. Everything it needs is required inside, so the function can be
@@ -115,13 +130,22 @@ function loadSpecs() {
   return { report: report, result: result };
 }
 
-// The `## Specifications` section, bounded at the next `## ` heading so that
-// the families table above it — which names RFCs this check is not about —
-// and everything below it cannot be read as part of the list.
-function specificationsSection() {
+// A document's list, bounded at the next `## ` heading after its own so
+// that anything above it — the README's families table names RFCs this check
+// is not about — and everything below it cannot be read as part of the list.
+// null when the heading is gone or the file cannot be read.
+function specificationsSection(doc) {
   log.debug("Entering specificationsSection().");
-  const text = fs.readFileSync(README, 'utf8');
-  const start = text.indexOf('\n## Specifications\n');
+  let text = null;
+  try {
+    text = fs.readFileSync(doc.file, 'utf8');
+  } catch (e) {
+    log.debug("Caught in specificationsSection(): " +
+              ((e && e.message) || e));
+    // A missing page is reported by the caller as a missing section.
+    text = null;
+  }
+  const start = text === null ? -1 : text.indexOf('\n' + doc.heading + '\n');
   if (start < 0) {
     log.debug("Leaving specificationsSection().");
     return null;
@@ -158,37 +182,24 @@ function citedRfcs(spec) {
   return Array.from(found);
 }
 
-function run(t) {
-  log.debug("Entering run().");
-  const section = specificationsSection();
-  if (!t.check(!!section, 'README.md has a `## Specifications` section',
+// One document against `SPECS`: every entry named (1), and no RFC named
+// that no entry cites (2).
+function checkDocument(t, specs, doc) {
+  log.debug("Entering checkDocument().");
+  const section = specificationsSection(doc);
+  if (!t.check(!!section, doc.label + ' has a `' + doc.heading + '` section',
                'the section this file exists to check is gone; either it was ' +
                'renamed — in which case rename it here too — or the list ' +
                'that was being kept complete has been deleted')) {
-    log.debug("Leaving run().");
+    log.debug("Leaving checkDocument().");
     return;
   }
-  const loaded = loadSpecs();
-  const report = loaded.report;
-  if (!t.check(!!report && !report.error && Array.isArray(report.specs),
-               'the child loaded SPECS from sts_metadata',
-               report && report.error ? report.error.slice(0, 800) :
-               'exit ' + loaded.result.status + ' ' +
-               String(loaded.result.stderr || '').slice(-800))) {
-    log.debug("Leaving run().");
-    // Every assertion below reads it.
-    return;
-  }
-  const specs = report.specs;
-  t.check(specs.length >= 150, 'SPECS is the table this section is about',
-          specs.length + ' entries; fewer than 150 means the child read ' +
-          'something else');
 
   // -----------------------------------------------------------------------
   // 1. EVERY ENTRY IS NAMED. One assertion per entry, so a failure says
-  //    which one, and what the README should carry for it.
+  //    which one, and what the document should carry for it.
   // -----------------------------------------------------------------------
-  t.log.info('=== every SPECS entry is named in the Specifications section ===');
+  t.log.info('=== ' + doc.label + ': every SPECS entry is named ===');
   const normalSection = normalise(section);
   const cited = new Set();
   specs.forEach(function (spec) {
@@ -201,7 +212,7 @@ function run(t) {
         return !new RegExp('RFC ' + n + '(?![0-9])').test(section);
       });
       t.check(missing.length === 0,
-              spec.id + ' is named (' + rfcs.map(function (n) {
+              doc.label + ' names ' + spec.id + ' (' + rfcs.map(function (n) {
                 return 'RFC ' + n;
               }).join(', ') + ')',
               missing.length ? 'the section lacks ' +
@@ -212,7 +223,7 @@ function run(t) {
       return;
     }
     const named = normalSection.indexOf(normalise(spec.name)) >= 0;
-    t.check(named, spec.id + ' is named ("' + spec.name + '")',
+    t.check(named, doc.label + ' names ' + spec.id + ' ("' + spec.name + '")',
             named ? undefined :
               'the section does not carry this name; add it to the row of ' +
               'its group as SPECS spells it (parentheses aside)');
@@ -222,7 +233,7 @@ function run(t) {
   // 2. AND THE SECTION CITES NO RFC THAT NO ENTRY CITES — the direction a
   //    removal or a renumbering breaks.
   // -----------------------------------------------------------------------
-  t.log.info('=== and the section names no RFC that SPECS does not ===');
+  t.log.info('=== ' + doc.label + ': no RFC that SPECS does not cite ===');
   const inSection = new Set((section.match(/RFC \d{4,5}/g) || [])
     .map(function (m) {
       return m.slice(4);
@@ -232,13 +243,36 @@ function run(t) {
   }).sort();
   t.equal(stale.map(function (n) {
     return 'RFC ' + n;
-  }).join(', '), '', 'every RFC in the Specifications section is in SPECS');
+  }).join(', '), '', 'every RFC in ' + doc.label + '\'s list is in SPECS');
+  log.debug("Leaving checkDocument().");
+}
+
+function run(t) {
+  log.debug("Entering run().");
+  const loaded = loadSpecs();
+  const report = loaded.report;
+  if (!t.check(!!report && !report.error && Array.isArray(report.specs),
+               'the child loaded SPECS from sts_metadata',
+               report && report.error ? report.error.slice(0, 800) :
+               'exit ' + loaded.result.status + ' ' +
+               String(loaded.result.stderr || '').slice(-800))) {
+    log.debug("Leaving run().");
+    // Every assertion below reads it.
+    return;
+  }
+  const specs = report.specs;
+  t.check(specs.length >= 150, 'SPECS is the table these lists are about',
+          specs.length + ' entries; fewer than 150 means the child read ' +
+          'something else');
+  DOCUMENTS.forEach(function (doc) {
+    checkDocument(t, specs, doc);
+  });
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'readme_specifications',
-  describe: "the README's Specifications section against SPECS in " +
-            'sts_metadata.ts',
+  describe: "the README's and the 1.2.0 docs' specification lists " +
+            'against SPECS in sts_metadata.ts',
   run: run
 };

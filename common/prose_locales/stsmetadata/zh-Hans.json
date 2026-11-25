@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial：每张票据都携带已签名的 PAC——登录信息（KERB_VALIDATION_INFO，NDR）、客户端信息、UPN/DNS 信息、属性以及请求方 SID。按第 2.8.2/2.8.3 节，TGT 有两个签名，服务票据有四个。客户端声明（PAC_CLIENT_CLAIMS_INFO，2.11）在 krb5.pacClaims 开启时生成（#493），从不压缩；在另一领域的 PAC 中到达的声明缓冲区会被解码（包括 XPRESS Huffman）并携带。不生成设备信息和设备声明。跨信任到达的 PAC 在重新签名前按第 4.1.2.2 节针对该信任边界的规定进行 SID 筛选——丢弃设备信息，除非信任允许，否则丢弃声明集——引荐的 PAC 以领域间密钥签名。"
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial：上下文建立。InitialContextToken 封装（Kerberos 机制 OID 和两字节令牌 ID）可读可写；AP-REQ 的 0x8003 认证器校验和由接受方读取（其标志、相互认证和委派），并由客户端一方写入；在请求相互认证时返回 AP-REP。MIC 令牌（第 4.2.6.1 节）对 SPNEGO 的 mechListMIC 进行签名和验证，存在接受方子密钥时使用该子密钥。缺失：通道绑定仅被报告，不与 TLS 通道进行比较；上下文建立后，没有任何接口交换 Wrap 令牌。"
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full：覆盖一种机制：NegTokenInit（带乐观 mechToken）和全部四种 negState 下的 NegTokenResp，双向的 mechListMIC 以及第 5 节关于何时必须使用它的规则，并能解码 [MS-SPNG] 的 NegTokenInit2。实际只提供 Kerberos——NTLM 在客户端的 mechTypes 列表中能被识别但从不被选择，因为提供本服务无法执行的机制将是客户端会据以行动的谎言。验证不通过的 mechListMIC 是 REJECT，而不是警告：它就是降级防御的全部。"
@@ -122,6 +126,10 @@
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full：覆盖请求和响应：简写类别名称、短数据类型名称、根据 JSON 类型推断数据类型（包括整数/双精度的区分，这是从源文本读取的，因为 JSON.parse 已经丢弃了它）、数组作为包、义务、建议以及 PolicyIdentifierList。该配置文件不定义策略语法，因此策略仍为 XML。"
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial：策略集、策略和规则，连同其目标、条件、义务和建议，基于与 XACML XML 相同的模型进行读写，因此无论策略以何种形式传入，其决策结果都相同。其他数据类型的字面量写为类型转换（cast），属性在使用前声明，mustbepresent 和 issuer 按每次使用分别给出，高阶函数通过短名称接收函数。可在 /admin/xacml 导入，也可通过 /admin-api/xacml 上的 import-alfa 导入，且每个策略都可以以 ALFA 形式显示。生成器写出的内容，解析器均可读取并作出相同的决策。缺失：宏、命名空间作用域的建议以及跨文件导入会被按名称拒绝。ALFA 没有一致性测试套件。"
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -543,6 +551,10 @@
     "en": "4cc6ee6c2a81e46e",
     "text": "minimal：两个扩展中依赖方的那一半，因为本服务既不是客户端也不是身份验证器：credProtect（第 12.1 节）——通行密钥策略的 credProtect 以 credentialProtectionPolicy 请求一个级别，enforceCredProtect 发送 enforceCredentialProtectionPolicy，并拒绝身份验证器数据报告较低级别的注册（未报告即级别 1），该级别记录在通行密钥上；以及 minPinLength（第 12.4 节），在通行密钥策略强制 PIN 长度时请求，并在注册和登录时以其最小值约束。CTAP 的其余部分一概不涉及：身份验证器 API、PIN 协议、大型 blob 和凭据管理都属于平台。"
   },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial，通过 WebAuthn 实现，而非作为独立协议：在注册时验证 fido-u2f 证明格式（WebAuthn 第 8.6 节）；由管理员导入到某人条目中的旧版 U2F 凭据（其密钥句柄、P-256 公钥和计数器），在 webauthn.u2fAppIds 指定该 AppID 之后，通过 appid 扩展在其 AppID 下使用，且仅用于第二因素步骤。缺失：U2F JavaScript API 以及原始 U2F 注册和认证消息（这些由浏览器与密钥交互，而非本服务），以及 AppID 与 Facet 的可信 facet 列表。"
+  },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial，每次单点登录一个限定于源的会话的服务器端：Secure-Session-Registration 提供 ES256 和 RS256，注册时的 dbsc+jwt 证明（检查其 jwk、typ、alg 和 jti 并验证签名）和刷新时的证明（用绑定密钥验证），带有一个绑定 cookie 的 JSON 会话指令，403 与 Secure-Session-Challenge 的交换，以及 Sec-Secure-Session-Id。每个质询在整个集群中只消耗一次。缺少：联合会话（provider_key、well-known 文档）、限定于站点的会话和范围规则、authorization 参数，以及读取 Secure-Session-Skipped。默认关闭（authn.deviceBoundSessions）。"
@@ -787,6 +799,10 @@
     "en": "a2930bdb8ffe747d",
     "text": "partial：读取 v6 和（RFC 4880）v4 可传输公钥，验证由其签名密钥作出的明文签名，并将消息加密至其加密密钥，经典算法通过 openpgp.js 完成。RFC 9980 复合密钥在此读取（见 rfc9980）。接受 Ed25519、Ed448、NIST 曲线上的 ECDSA 和 ECDH、X25519、X448 以及长度为 openpgp.minRsaBits 的 RSA；拒绝 DSA、ElGamal 和 Brainpool。缺少：签名、解密、密钥环、密钥服务器。"
   },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial，适用于 v4 密钥（RFC 9580 已将其废止，v6 密钥遵循 rfc9580）：通过 openpgp.js 读取带自签名的可传输公钥，验证由其签名密钥生成的明文签名，并将消息加密给其加密密钥。签名密钥可以是 Ed25519 上的 EdDSA，P-256、P-384 和 P-521 上的 ECDSA，或位数达到 openpgp.minRsaBits 的 RSA；加密密钥可以是 Curve25519 和 NIST 曲线上的 ECDH，或 RSA。DSA、ElGamal 和 Brainpool 被拒绝。缺失：签名、解密、密钥环、密钥服务器。"
+  },
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial：登记时以及使用已存储密钥时的 ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 签名，以及 ML-KEM-768+X25519 与 ML-KEM-1024+X448 加密。复合算法计为后量子。openpgp.pqcOnly 只收窄登记。签名的两部分由 common/crypto_impl/openpgp_pqc.js 核验。缺少：SLH-DSA（算法标识 32-34），且本服务不生成 RFC 9980 密钥。openpgp.js 不解析这些密钥。"
@@ -799,9 +815,33 @@
     "en": "5c1b77d839bd8cc2",
     "text": "partial：application/pkcs7-mime enveloped-data，即采用 AES-256-CBC 内容加密的 CMS EnvelopedData。经典证书使用 RSAES-OAEP（SHA-256）或 ECDH。ML-KEM 证书（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：HKDF-SHA-256 与 AES-Wrap。无法封装的运行时不会改用经典算法发送该消息。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
   },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial，仅限发送：发往 ML-KEM 证书（rfc9935）的 S/MIME 消息在 KEMRecipientInfo（id-ori-kem 其他接收者信息）中携带其内容加密密钥：ML-KEM-512、ML-KEM-768 或 ML-KEM-1024，基于 CMSORIforKEMOtherInfo、使用 SHA-256 且不加盐的 HKDF，以及 AES-128 或 AES-256 密钥封装，置于 AuthEnvelopedData（默认）或 EnvelopedData 中。缺失：解密 KEMRecipientInfo（本服务从不接收加密邮件）、ukm，以及任何其他 KEM 或密钥派生函数。"
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial：通过 id-alg-ml-kem 标识符从 SubjectPublicKeyInfo 或证书中读取 ML-KEM-512、ML-KEM-768 或 ML-KEM-1024 公钥，并要求参数缺省、密钥长度符合 FIPS 203 的规定。个人的密钥由域（realm）的 EST Issuing CA 认证，keyEncipherment 为其唯一的密钥用途，认证前须通过封装完成只有私钥才能应答的持有证明；该证书用作 S/MIME 接收者证书（rfc9629）。缺失：私钥格式（本服务从不持有 ML-KEM 私钥），以及用于本服务自身密钥的 ML-KEM 证书。"
+  },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
     "text": "partial：高级和直接两种查找方式（对小写化本地部分计算 SHA-1 并以 z-base-32 编码，l 参数）以及策略文件，仅为选择发布的人员响应，按领域设置且默认关闭。缺少：Web Key Service（submission-address、提交协议）；CORS 使用本服务的允许列表，而非草案中的 *。"
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial，作为调用模块的应用程序（任何 PKCS #11 v2.40 或更高版本；已试用 YubiHSM 2 和 SoftHSM2）：一个不可导出的 AES-256 密钥加密密钥，在令牌内部封装和解封每个数据密钥（CKM_AES_GCM、CKM_AES_KEY_WRAP_PAD 或 CKM_YUBICO_AES_CCM_WRAP）；以及在令牌中生成并使用的域签名密钥：RSA PKCS #1 v1.5 和 PSS，P-256、P-384、P-521 和 secp256k1 上的 ECDSA，以及 EdDSA，同一组密钥还用于 RSA-OAEP 解密和 ECDH 派生。3.2 版的 CKM_ML_DSA 和 CKM_SLH_DSA 仅在令牌列出它们时使用；否则这些签名仍在软件中完成。会话按线程划分，模块在中断后会重新初始化一次。缺失：本服务本身不是模块，不向令牌导入任何密钥，也不从令牌导出任何密钥。"
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial：URI 指定令牌和密钥加密密钥，或签名密钥所在的令牌。支持 token、object、id（百分号编码的字节）、serial 和 slot-id 路径属性，第 2.3 节的其他属性被接受但忽略，module-path 查询属性仅为该密钥选择模块。pin-value 和 pin-source 被拒绝：PIN 由 keys.pkcs11PinProvider 提供，绝不放在 URI 中。缺失：type、manufacturer、model 及库属性不会缩小匹配范围，且不读取 module-name。"
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial：每个域的用户 CA 为 ssh-ed25519、ECDSA、RSA 以及两种 sk- 安全密钥类型签发 -cert-v01@openssh.com 用户证书，按 pki.sshUserCaAlgorithms 给定的顺序使用 ssh-ed25519、ecdsa-sha2-nistp256/384/521 或 rsa-sha2-256/512 签名，主体名（principals）取自个人自己的条目，附带域的扩展且不含关键选项，仅在硬件证据经过验证时才给予更长的有效期。CA 密钥发布在 /pki/ssh-user-ca/{scope}。主机证书仅被读取和检查，不予签发。ssh-mldsa-65 是本服务定义的密钥类型，因为 OpenSSH 没有此类类型，标准 OpenSSH 无法验证它。缺失：主机证书，以及 DSA 密钥的证书。"
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial：每个域位于 /pki/ssh-user-krl/{scope} 的 KRL 在证书被吊销或硬件令牌被报告丢失时由调度任务重建，其中为每个 CA 密钥包含一个带序列号列表的证书段，以及已吊销密钥的 SHA-256 指纹。它既会被写入，也会被读回。缺失：签名段（KRL 未签名，因此仅在主端口上提供），以及 key-id 列表、序列号范围和位图、显式密钥和 SHA-1 指纹。"
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",

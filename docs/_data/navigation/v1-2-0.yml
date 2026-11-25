@@ -24,6 +24,7 @@
     - { title: Configuration, url: /configuration.html }
     - { title: Configuration dump, url: /configuration-dump.html }
     - { title: Endpoints, url: /endpoints.html }
+    - { title: Specifications, url: /specifications.html }
     - { title: Trust realms, url: /trust-realms.html }
     - { title: Listeners and hosted applications, url: /listeners.html }
     - { title: Malware scanning, url: /malware-scanning.html }
