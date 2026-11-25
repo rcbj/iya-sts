@@ -10284,14 +10284,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'An access token or ID Token whose groups claim would be over ' +
           'groups.claimMaxBytes carries OpenID Connect Core section 5.6.2\'s ' +
           '_claim_names and _claim_sources instead, pointing here, and this ' +
-          'answers the whole list for the presented access token\'s subject ' +
+          'answers the list for the presented access token\'s subject ' +
           'as a signed application/jwt (iss, sub, aud, iat, exp and the ' +
           'claim), as the section requires of a distributed source. The ' +
           'token is checked as UserInfo checks one — signature, issuer, ' +
           'sender constraint, typ, revocation — except its audience and the ' +
           'openid scope, because a resource server\'s token is the one whose ' +
-          'claim pointed here. A client_credentials token has no person and ' +
-          'is refused.' },
+          'claim pointed here. Only a token that itself carries the ' +
+          'reference may redeem it, and it is answered what it would have ' +
+          'carried below the cap, through its client\'s own group settings ' +
+          'and release filter, and nothing more. A client_credentials token ' +
+          'has no person and is refused.' },
   { path: '/oauth2/introspect', group: 'OAuth 2.0 / OIDC',
     name: 'Introspection ' +
       'endpoint',

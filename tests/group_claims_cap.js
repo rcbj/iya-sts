@@ -19,8 +19,12 @@
 //      `_claim_names` / `_claim_sources` instead, pointing at the realm's
 //      /oauth2/groups, and never a shorter list; UserInfo and a SAML
 //      assertion's attribute still carry the whole list.
-//   C. /oauth2/groups answers the whole list as a signed JWT for the access
-//      token's subject; no token, and a client_credentials token, are 401.
+//   C. /oauth2/groups answers the list as a signed JWT for the access
+//      token's subject, as that token would have carried it below the cap:
+//      the whole list for a client released every group, only the released
+//      ones for a client whose settings filter some; no token, a forged one,
+//      and a token with no overage reference (a small list, or a client with
+//      the claim off) are 401.
 //   D. 0 turns the cap off; a typed claim of the same name is never cut; a
 //      context with no base URL is left whole; another source's
 //      `_claim_names` is kept beside this one.
@@ -111,8 +115,11 @@ function childMain() {
       const out = [];
       for (let i = 0; i < count; i++) {
         const cn = name + '-group-' + String(i).padStart(4, '0');
+        // Every odd group names the person only through their own memberOf:
+        // a client with appGroupsClaimFromMemberOf FALSE is released the
+        // even half alone.
         out.push({ dn: 'cn=' + cn + ',ou=groups,dc=example,dc=com', cn: cn,
-                   via: ['member'] });
+                   via: i % 2 ? [] : ['member'] });
       }
       return out;
     };
@@ -131,10 +138,22 @@ function childMain() {
                 oauthAllowedScope: ['openid'],
                 oauthGrantType: ['password'],
                 oauthRedirectUri: 'https://gc-web.example/cb' } });
-    const grant = async function (who) {
+    const client = function (id, fields) {
+      applications.createApplication({ identifier: id,
+        protocols: ['oauth2', 'oidc'],
+        fields: Object.assign({ oauthClientId: id,
+                                oauthTokenEndpointAuthMethod: 'none',
+                                oauthAllowedScope: ['openid'],
+                                oauthGrantType: ['password'],
+                                oauthRedirectUri: 'https://' + id +
+                                  '.example/cb' }, fields) });
+    };
+    client('gc-filtered', { appGroupsClaimFromMemberOf: 'FALSE' });
+    client('gc-off', { appGroupsClaim: 'FALSE' });
+    const grant = async function (who, clientId) {
       const got = await request(port, 'POST', '/oauth2/token', {
         form: { grant_type: 'password', username: who, password: 'anything',
-                client_id: 'gc-web', scope: 'openid' } });
+                client_id: clientId || 'gc-web', scope: 'openid' } });
       return got.json || {};
     };
 
@@ -214,6 +233,37 @@ function childMain() {
          'verify is 401', forged.status);
     note(!/STS-[A-Z]+-\d{4}/.test(bare.text + forged.text),
          'C4. and no error code is sent');
+    const unreferenced = await request(port, 'GET', '/oauth2/groups',
+      { headers: { authorization: 'Bearer ' + small.access_token } });
+    note(unreferenced.status === 401 &&
+         /invalid_token/.test(unreferenced.text) &&
+         /no reference/.test(unreferenced.text),
+         'C5. a valid token that carries no overage reference is refused ' +
+         '(STS-OAUTH-1021)', unreferenced.status + ' ' + unreferenced.text);
+    const filtered = await grant(LARGE, 'gc-filtered');
+    const filteredAt = filtered.access_token
+      ? claimsOf(filtered.access_token) : {};
+    const filteredAnswer = await request(port, 'GET', '/oauth2/groups',
+      { headers: { authorization: 'Bearer ' + filtered.access_token } });
+    const filteredGroups = filteredAnswer.status === 200
+      ? (claimsOf(filteredAnswer.text).groups || []) : [];
+    note(/\/oauth2\/groups$/.test(reference(filteredAt)) &&
+         filteredGroups.length === 200 &&
+         filteredGroups.every(function (cn) {
+           return Number(cn.slice(-4)) % 2 === 0;
+         }),
+         'C6. a client whose settings release only some groups is answered ' +
+         'only those, as its token would have carried them',
+         filteredAnswer.status + ' ' + filteredGroups.length + ' ' +
+         JSON.stringify(filteredGroups.slice(0, 3)));
+    const off = await grant(LARGE, 'gc-off');
+    const offAt = off.access_token ? claimsOf(off.access_token) : {};
+    const offAnswer = await request(port, 'GET', '/oauth2/groups',
+      { headers: { authorization: 'Bearer ' + off.access_token } });
+    note(off.access_token && offAt.groups === undefined &&
+         offAt._claim_names === undefined && offAnswer.status === 401,
+         'C7. a client with the groups claim off carries no reference and ' +
+         'cannot use the endpoint', offAnswer.status + ' ' + offAnswer.text);
 
     // --- D. The edges -------------------------------------------------------
     const values = groupsFor('x', 400).map(function (g) {
@@ -226,8 +276,9 @@ function childMain() {
       return claims;
     };
     config.setOverride('groups.claimMaxBytes', '0');
-    const off = { groups: values };
-    note(cut(off, off).groups === values && off._claim_names === undefined,
+    const uncapped = { groups: values };
+    note(cut(uncapped, uncapped).groups === values &&
+         uncapped._claim_names === undefined,
          'D1. 0 turns the cap off');
     config.clearOverride('groups.claimMaxBytes');
     const typed = { groups: ['typed'] };

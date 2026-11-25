@@ -3588,8 +3588,8 @@
     "text": "svarar 401 med en WWW-Authenticate-utmaning när den följs utan token — det är en skyddad resurs och kräver åtkomsttokenet från ett OIDC-flöde"
   },
   "stsmetadata.endpoints./oauth2/groups.what": {
-    "en": "757f9c3e354a9b7b",
-    "text": "DEN DISTRIBUERADE KÄLLAN FÖR ETT GRUPPANSPRÅK ÖVER SIN GRÄNS (#2247). En åtkomsttoken eller ID Token vars gruppanspråk skulle överskrida groups.claimMaxBytes bär i stället _claim_names och _claim_sources från avsnitt 5.6.2 i OpenID Connect Core, som pekar hit, och denna slutpunkt svarar med hela listan för den uppvisade åtkomsttokens subjekt som en signerad application/jwt (iss, sub, aud, iat, exp och anspråket), så som avsnittet kräver av en distribuerad källa. Token kontrolleras så som UserInfo kontrollerar en — signatur, utfärdare, avsändarbindning, typ, återkallelse — utom dess målgrupp och openid-omfånget, eftersom en resursservers token är den vars anspråk pekade hit. En client_credentials-token har ingen person och avvisas."
+    "en": "8b530084c5ca07b6",
+    "text": "DEN DISTRIBUERADE KÄLLAN FÖR ETT GRUPPANSPRÅK ÖVER SIN GRÄNS (#2247). En åtkomsttoken eller ID Token vars gruppanspråk skulle överskrida groups.claimMaxBytes bär i stället _claim_names och _claim_sources från avsnitt 5.6.2 i OpenID Connect Core, som pekar hit, och denna slutpunkt svarar med listan för den uppvisade åtkomsttokens subjekt som en signerad application/jwt (iss, sub, aud, iat, exp och anspråket), så som avsnittet kräver av en distribuerad källa. Token kontrolleras så som UserInfo kontrollerar en — signatur, utfärdare, avsändarbindning, typ, återkallelse — utom dess målgrupp och openid-omfånget, eftersom en resursservers token är den vars anspråk pekade hit. Endast en token som själv bär referensen kan lösa in den, och den får det den skulle ha burit under gränsen, genom den egna klientens gruppinställningar och utlämningsfilter, och inget mer. En client_credentials-token har ingen person och avvisas."
   },
   "stsmetadata.endpoints./oauth2/groups.effect": {
     "en": "490723e4d089f6b2",

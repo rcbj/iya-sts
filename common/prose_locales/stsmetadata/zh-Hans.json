@@ -3588,8 +3588,8 @@
     "text": "不带参数访问时以 WWW-Authenticate 质询应答 401——它是受保护资源，需要来自 OIDC 流程的访问令牌"
   },
   "stsmetadata.endpoints./oauth2/groups.what": {
-    "en": "757f9c3e354a9b7b",
-    "text": "超出上限的 groups 声明的分布式来源（#2247）。groups 声明会超过 groups.claimMaxBytes 的访问令牌或 ID Token 改为携带 OpenID Connect Core 第 5.6.2 节的 _claim_names 和 _claim_sources，指向这里，此端点针对所出示访问令牌的主体以签名的 application/jwt（iss、sub、aud、iat、exp 和该声明）返回完整列表，正如该节对分布式来源的要求。令牌的检查方式与 UserInfo 相同 —— 签名、签发者、发送方约束、typ、撤销 —— 但不检查其受众和 openid 范围，因为资源服务器的令牌正是其声明指向这里的那个。client_credentials 令牌背后没有人，会被拒绝。"
+    "en": "8b530084c5ca07b6",
+    "text": "超出上限的 groups 声明的分布式来源（#2247）。groups 声明会超过 groups.claimMaxBytes 的访问令牌或 ID Token 改为携带 OpenID Connect Core 第 5.6.2 节的 _claim_names 和 _claim_sources，指向这里，此端点针对所出示访问令牌的主体以签名的 application/jwt（iss、sub、aud、iat、exp 和该声明）返回列表，正如该节对分布式来源的要求。令牌的检查方式与 UserInfo 相同 —— 签名、签发者、发送方约束、typ、撤销 —— 但不检查其受众和 openid 范围，因为资源服务器的令牌正是其声明指向这里的那个。只有自身携带该引用的令牌才能兑现它，得到的正是它在上限以下本会携带的内容，经过其自身客户端的组设置和发布过滤，仅此而已。client_credentials 令牌背后没有人，会被拒绝。"
   },
   "stsmetadata.endpoints./oauth2/groups.effect": {
     "en": "490723e4d089f6b2",

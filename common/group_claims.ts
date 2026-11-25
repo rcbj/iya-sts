@@ -122,7 +122,8 @@
 // `GROUPS_SOURCE`, whose `endpoint` is this realm's `/oauth2/groups`, which
 // answers the whole list for the presented access token's subject as a
 // signed JWT (section 5.6.2: "The endpoint URL MUST return the Claims as a
-// JWT"). No `access_token` member is sent: the section lets the relying party
+// JWT") — to a token that itself carries the reference, and as that token
+// would have carried it below the cap (`groups_uncapped`, set only there). No `access_token` member is sent: the section lets the relying party
 // present the access token it already holds, and putting one inside a token
 // would make the token bigger, which is the opposite of the point. In an
 // access token the same members tell a resource server where the list is.
@@ -201,6 +202,10 @@ interface IssuanceContext {
   // The realm's base URL the token is issued under (#2247): where the
   // distributed claim's endpoint is, past the cap.
   base_url?: unknown;
+  // Set only by `/oauth2/groups` (#2247), which answers what the token would
+  // have carried below the cap: the layers and release filter run, and the
+  // cap does not.
+  groups_uncapped?: unknown;
   username?: unknown;
   subject?: unknown;
   client_id?: unknown;
@@ -428,7 +433,8 @@ class GroupClaims {
           produced: Record<string, unknown> | null | undefined): boolean {
     const { log } = this.deps;
     log.debug("Entering GroupClaims.overage(). set=" + setId);
-    if (OVERAGE_SETS.indexOf(String(setId)) < 0 || !claims || !produced) {
+    if (OVERAGE_SETS.indexOf(String(setId)) < 0 || !claims || !produced ||
+        (context && context.groups_uncapped === true)) {
       log.debug("Leaving GroupClaims.overage(). Not a capped set.");
       return false;
     }

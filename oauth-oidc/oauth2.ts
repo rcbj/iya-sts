@@ -14303,10 +14303,13 @@ class OAuth2Server {
   // THE ACCESS TOKEN IS CHECKED AS USERINFO CHECKS ONE — signature, issuer,
   // sender constraint, `typ`, revocation — BUT NOT ITS AUDIENCE, and that is
   // the one difference: an access token for a resource server is the token
-  // whose claim pointed here, and the list answered is the one that token
-  // would have carried below the cap, for the subject it names and nobody
-  // else. No `openid` scope is required for the same reason. A token with
-  // no person behind it (client_credentials) has no groups and is refused.
+  // whose claim pointed here — and only a token that itself carries the
+  // reference may redeem it (STS-OAUTH-1021). The list answered is what
+  // that token would have carried below the cap, recomputed through the
+  // same layers and release filter for its own client, audience and
+  // subject, and nothing more. No `openid` scope is required for the same
+  // reason. A token with no person behind it (client_credentials) has no
+  // groups and is refused.
   // -------------------------------------------------------------------------
   private groupsResponse(req: Req, res: Res): void {
     const { log, baseUrlOf, nameForSubject, dpop, stats, applications,
@@ -14362,8 +14365,53 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.groupsResponse(). No person.");
       return;
     }
+    // ONLY A TOKEN THAT ITSELF CARRIES THE REFERENCE MAY REDEEM IT: its
+    // signed `_claim_names` maps a claim to `sts-groups`, and that source's
+    // endpoint is this one, in this realm. That is what makes "any
+    // audience" safe — a token issued to a client that was never given a
+    // groups claim (off for it, or released away) carries no reference and
+    // learns nothing here.
+    const endpoint = base.replace(/\/+$/, '') + '/oauth2/groups';
+    const names = (claims._claim_names && typeof claims._claim_names ===
+                   'object') ? claims._claim_names : {};
+    const sources = (claims._claim_sources && typeof claims._claim_sources ===
+                     'object') ? claims._claim_sources : {};
+    const claimName = Object.keys(names).filter(function (one: string) {
+      return names[one] === groupClaims.GROUPS_SOURCE;
+    })[0] || '';
+    const source = sources[groupClaims.GROUPS_SOURCE];
+    if (!claimName || !source || source.endpoint !== endpoint) {
+      refuse('STS-OAUTH-1021', 'This access token carries no reference to ' +
+             'this endpoint: its groups claim was not over the cap, or it ' +
+             'was issued without one. There is nothing here it did not ' +
+             'already carry.');
+      log.debug("Leaving OAuth2Server.groupsResponse(). No reference.");
+      return;
+    }
+    // EXACTLY WHAT ISSUANCE WOULD HAVE RELEASED FOR THIS TOKEN, NOW, minus
+    // the byte cap: the access-token claim set's layers and release filter
+    // for the token's own client, audience and subject (`jwtClaims()`, as
+    // `accessTokenUnsigned()` asks it), gated by the token's scope. A
+    // client whose groups were turned off or filtered since gets what the
+    // filter gives now, which may be nothing.
+    //
+    // NO `groups_ref` OR jti IS BOUND INTO THE REFERENCE, and none is
+    // needed: the reference is inside the signed token presented, and the
+    // answer is computed from THAT token's client, audience and subject.
+    // Another token for the same person redeems only if it carries a
+    // reference of its own, and then gets only what it would have carried.
+    // An RP holding an over-cap ID Token presents its access token, which
+    // for the same client and person overflows alike; where an audience's
+    // release filter differs, the access token's view is the answer, never
+    // more than the token presented would carry.
     const clientId = String(claims.client_id || '');
-    const answer = groupClaims.groupsOf(username, clientId);
+    const computed = scopeClaims.gate(
+      stats.jwtClaims('access_token', Object.assign(
+        self.customClaimContext(base, claims, { username: username }),
+        { groups_uncapped: true })),
+      claims.scope, 'groups endpoint');
+    const values = Array.isArray(computed[claimName])
+      ? computed[claimName] : null;
     const now = Math.floor(Date.now() / 1000);
     const payload: Json = {
       iss: self.issuerOf(base),
@@ -14373,8 +14421,8 @@ class OAuth2Server {
       iat: now,
       exp: now + 300
     };
-    if (answer.values.length) {
-      payload[answer.claim] = answer.values;
+    if (values && values.length) {
+      payload[claimName] = values;
     }
     const registered: Json = clientId
       ? (applications.clientConfigOf(clientId) || {}) : {};
@@ -14387,7 +14435,7 @@ class OAuth2Server {
       res.status(200).type('application/jwt')
          .set('Cache-Control', 'no-store').send(signed);
       log.debug("Leaving OAuth2Server.groupsResponse(). " +
-                answer.values.length + " group(s).");
+                (values ? values.length : 0) + " group(s).");
     }).catch(function (e: any) {
       log.debug("Caught in OAuth2Server.groupsResponse(): " +
                 ((e && e.message) || e));

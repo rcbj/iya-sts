@@ -3158,9 +3158,22 @@ Three ASVS 5.0.0 Level 3 items, each small, each argued where it sits.
   `dpop.presentedAccessToken()` as UserInfo does — signature, issuer, sender
   constraint, then `typ` and revocation (STS-OAUTH-1017, -1018) — with ONE
   difference: its `audience` option names every audience. The token whose
-  claim pointed here is as often a resource server's as this service's, and
-  what it answers is what that token would have carried below the cap, for
-  its own subject and nobody else's. No `openid` scope is asked for the same
+  claim pointed here is as often a resource server's as this service's.
+  **That is safe only because the presented token must ITSELF carry the
+  reference** — `_claim_names` mapping a claim to `sts-groups` whose
+  `_claim_sources` endpoint is this realm's `/oauth2/groups` — or it is
+  refused (STS-OAUTH-1021): a token for a client never given the claim (off
+  for it, or released away) has no reference and learns nothing. **The
+  answer is recomputed, not read off the directory**: `stats.jwtClaims(
+  'access_token', …)` over the token's own client, audience and subject,
+  with `groups_uncapped` (which only `overage()` reads) and the token's
+  scope gate, so it is exactly what the token would have carried below the
+  cap, now — a client filtered or turned off since gets what the filter
+  gives. **No `groups_ref` or jti is bound into the reference**: it lives in
+  the signed token presented, and another token for the same person redeems
+  only with a reference of its own and only for what IT would have
+  carried; an RP holding an over-cap ID Token presents its access token,
+  whose view is never wider than its own. No `openid` scope is asked for the same
   reason. A token with no `username` (client_credentials) has no person and
   is refused (STS-OAUTH-1019). The answer is `application/jwt`, because
   Core section 5.6.2 says a distributed source MUST return a JWT: `iss`,

@@ -12592,6 +12592,13 @@ const CODES = [
       'under the algorithm the client registered for its ID Tokens or the ' +
       'realm\'s default (#2247).',
     spec: 'HTTP 500 server_error' },
+  { code: 'STS-OAUTH-1021',
+    summary: 'The groups endpoint was presented an access token that carries ' +
+      'no overage reference to it (_claim_names mapping a claim to ' +
+      'sts-groups, whose _claim_sources endpoint is this realm\'s ' +
+      '/oauth2/groups): only a token issued with a groups claim over ' +
+      'groups.claimMaxBytes may redeem one (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

@@ -3588,8 +3588,8 @@
     "text": "直接開啟時以 WWW-Authenticate 挑戰回應 401——它是受保護資源，需要來自 OIDC 流程的存取權杖"
   },
   "stsmetadata.endpoints./oauth2/groups.what": {
-    "en": "757f9c3e354a9b7b",
-    "text": "超出上限的 groups 宣告的分散式來源（#2247）。groups 宣告會超過 groups.claimMaxBytes 的存取權杖或 ID Token 改為攜帶 OpenID Connect Core 第 5.6.2 節的 _claim_names 與 _claim_sources，指向這裡，此端點針對所出示存取權杖的主體以簽章的 application/jwt（iss、sub、aud、iat、exp 與該宣告）回傳完整清單，正如該節對分散式來源的要求。權杖的檢查方式與 UserInfo 相同 —— 簽章、簽發者、傳送者約束、typ、撤銷 —— 但不檢查其對象與 openid 範圍，因為資源伺服器的權杖正是其宣告指向這裡的那一個。client_credentials 權杖背後沒有人，會被拒絕。"
+    "en": "8b530084c5ca07b6",
+    "text": "超出上限的 groups 宣告的分散式來源（#2247）。groups 宣告會超過 groups.claimMaxBytes 的存取權杖或 ID Token 改為攜帶 OpenID Connect Core 第 5.6.2 節的 _claim_names 與 _claim_sources，指向這裡，此端點針對所出示存取權杖的主體以簽章的 application/jwt（iss、sub、aud、iat、exp 與該宣告）回傳清單，正如該節對分散式來源的要求。權杖的檢查方式與 UserInfo 相同 —— 簽章、簽發者、傳送者約束、typ、撤銷 —— 但不檢查其對象與 openid 範圍，因為資源伺服器的權杖正是其宣告指向這裡的那一個。只有自身攜帶該參照的權杖才能兌現它，得到的正是它在上限以下本會攜帶的內容，經過其自身用戶端的群組設定與發布篩選，僅此而已。client_credentials 權杖背後沒有人，會被拒絕。"
   },
   "stsmetadata.endpoints./oauth2/groups.effect": {
     "en": "490723e4d089f6b2",
