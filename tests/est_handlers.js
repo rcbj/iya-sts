@@ -113,6 +113,13 @@ async function childMain() {
       res.headersSent = true;
       return res;
     };
+    // The EST answers end() with their own Content-Length and no ETag
+    // (#2236, `Est.sendBytes()`).
+    res.end = function (body) {
+      res.body = body;
+      res.headersSent = true;
+      return res;
+    };
     // Set-Cookie, as express appends it (#257's nonce cookie).
     res.append = function (k, v) {
       const name = String(k).toLowerCase();
