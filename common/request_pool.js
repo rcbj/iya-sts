@@ -3896,16 +3896,24 @@ let listenerRepairTimer = null;
 function reconcileTheListener(options) {
   log.debug("Entering reconcileTheListener().");
   const repair = !!(options && options.repair);
+  // THE RENEWAL JOB'S PASS (#2220): the same one pass at a time, so a
+  // renewal and a hierarchy reconcile never put two leaves on the socket out
+  // of order, and a renewed certificate reaches every worker the same way.
+  const renew = !!(options && options.renew);
   if (listenerPass) {
-    // A pass is running; one more after it, and a repair if either asked.
+    // A pass is running; one more after it, and a repair or a renewal if
+    // either asked.
     listenerPassAgain = { repair: repair ||
                                   !!(listenerPassAgain &&
-                                     listenerPassAgain.repair) };
+                                     listenerPassAgain.repair),
+                          renew: renew ||
+                                 !!(listenerPassAgain &&
+                                    listenerPassAgain.renew) };
     log.debug("Leaving reconcileTheListener(). Queued behind the running " +
               "pass.");
     return listenerPass;
   }
-  listenerPass = runListenerPass(repair).then(function () {
+  listenerPass = runListenerPass(repair, renew).then(function () {
     listenerPass = null;
     const next = listenerPassAgain;
     listenerPassAgain = null;
@@ -3958,8 +3966,9 @@ function listenerRepairArmed() {
   return !!listenerRepairTimer;
 }
 
-function runListenerPass(repair) {
-  log.debug("Entering runListenerPass(). repair=" + repair);
+function runListenerPass(repair, renew) {
+  log.debug("Entering runListenerPass(). repair=" + repair + " renew=" +
+            !!renew);
   // **LAZILY, AND THAT IS RULE 1 RATHER THAN TASTE.** `server.js` requires this
   // module well before the protocol stack — `tls/tls_server.js` with it — so a
   // require at the top of this file would register `/tls`'s views from HERE,
@@ -3970,6 +3979,14 @@ function runListenerPass(repair) {
   return Promise.resolve()
     .then(function () {
       return tls.reconcileWithHierarchy({ buildBranch: repair });
+    })
+    .then(function (changed) {
+      if (!renew || changed) {
+        return changed;
+      }
+      return tls.renewListenerCertificate().then(function (done) {
+        return !!(done && done.renewed);
+      });
     })
     .then(function (changed) {
       armListenerRepair(!repair && tls.listenerAwaitsBranch());
@@ -3994,8 +4011,9 @@ function runListenerPass(repair) {
                    'replaced.');
         }
       });
-      log.info('request_pool: the listener certificate was re-issued under ' +
-               'the rebuilt hierarchy and handed to ' + told + ' worker(s), ' +
+      log.info('request_pool: the listener certificate was re-issued (' +
+               (renew ? 'renewed, or ' : '') + 'under the rebuilt ' +
+               'hierarchy) and handed to ' + told + ' worker(s), ' +
                'so every process pins what the socket presents.');
     })
     .catch(function (e) {

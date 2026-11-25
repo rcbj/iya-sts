@@ -2076,6 +2076,14 @@ class ProtocolStack {
     // keystore, the scheduler, the audit log — it reaches lazily.
     this.build('common/data_key_rotation', require('./data_key_rotation'),
                'DataKeyRotation');
+    // 23b-ii-c. THE RENEWALS NOTHING DID ON ITS OWN (#2220): a library that
+    // registers three scheduler jobs when built and no route — the CA
+    // certificates over the same key, the credential signers' next
+    // generation, the request-decryption keys. Beside the two rotations
+    // above, whose shape it follows; the PKI, the key set, the credential
+    // signers and the audit log are reached lazily, so the order is for a
+    // reader.
+    this.build('common/key_renewal', require('./key_renewal'), 'KeyRenewal');
     // 23b-ii-b. SERVICE-ACCOUNT PASSWORD ROTATION (#221 P4): a library that
     // registers its three scheduler jobs when built and no route, beside the
     // two rotations above. After `ssf/ssf`, whose credential-change it sends,

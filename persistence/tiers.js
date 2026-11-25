@@ -321,6 +321,10 @@ const GLOBAL_MINTED = {
   'oauth2.commandMetadata': 'what each client says it supports',
   'oidfed.registerGeneration': 'the OpenID Federation register generation',
   'signing.history': 'the signer generations every cell publishes',
+  // When each credential signer and request-decryption key was first seen
+  // (#2220): the age the scheduled rotations count, of keys every cell holds
+  // alike. A kid and an instant; nobody's data.
+  'keys.renewalClock': 'when each rotated key was first seen',
   'spiffe.authorities': 'the SPIFFE trust domain authorities',
   'spiffe.federatedBundles': 'the SPIFFE federated bundles',
   'spiffe.sigstoreTuf': 'the Sigstore TUF trust root',
@@ -574,6 +578,10 @@ const CELL_PREFIXES = ['enrollment_monitor.', 'test.'];
 const GLOBAL_JOBS = [
   'signing.rotate', 'signing.retire', 'signing.rotate-now',
   'krb5.krbtgt-rotate', 'krb5.krbtgt-rotate-now',
+  // The renewals of #2220: a CA row, a realm's key set and a service
+  // principal's entry are the global tier's, so one cell renews each.
+  'krb5.service-key-rotate', 'pki.ca-renew',
+  'keys.credential-signer-rotate', 'keys.encryption-key-rotate',
   'oidfed.key-rotate', 'oidfed.key-rotate-now', 'oidfed.collection-crawl',
   'oidfed.registrations-expire', 'federation.encryption-key-retire',
   'federation.client-certificate-renew',

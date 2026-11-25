@@ -19,7 +19,9 @@
 // itself, exactly as `common/signing_rotation.ts` does nothing to a signing
 // key.
 //
-// TWO JOBS, BOTH PER REALM, BOTH CLUSTER JOBS (run once, on the leader):
+// TWO JOBS FOR THE KRBTGT, BOTH PER REALM, BOTH CLUSTER JOBS (run once, on
+// the leader), and since #2220 a third for the service principal keys,
+// `krb5.service-key-rotate` (*SERVICE PRINCIPAL KEYS ON A SCHEDULE*, below):
 //
 //   `krb5.krbtgt-rotate`      every hour, deciding per realm from the key's
 //                             OWN age (the scheduler's rule: a job that must
@@ -81,6 +83,10 @@ const ROTATE_JOB = 'krb5.krbtgt-rotate';
  * queue.
  */
 const ROTATE_NOW_JOB = 'krb5.krbtgt-rotate-now';
+/**
+ * The id of the scheduled service principal key rotation job (#2220).
+ */
+const SERVICE_ROTATE_JOB = 'krb5.service-key-rotate';
 const CHECK_EVERY_MS = 3600000;
 const DAY_MS = 86400000;
 // The word a person types to confirm "rotate and invalidate".
@@ -124,6 +130,10 @@ class KrbtgtRotation {
    * The word that confirms "rotate and invalidate".
    */
   static readonly CONFIRM_WORD = CONFIRM_WORD;
+  /**
+   * The id of the scheduled service principal key rotation job.
+   */
+  static readonly SERVICE_ROTATE_JOB = SERVICE_ROTATE_JOB;
 
   /**
    * Builds the rotation over the given dependencies.
@@ -539,6 +549,201 @@ class KrbtgtRotation {
   }
 
   // -------------------------------------------------------------------------
+  // SERVICE PRINCIPAL KEYS ON A SCHEDULE (#2220, ASVS 5.0.0 L3;
+  // key-management.md's Known gaps).
+  //
+  // `krb5.service-key-rotate` replaces a service principal's key with a new
+  // random one at the next kvno once it is
+  // `krb5.serviceKeyRotationIntervalDays` old, through the same `rotateServicePrincipal()` the console's Rotate
+  // calls — so the key it replaces is kept (`krb5.retainedKeyVersions`, for
+  // `krb5.retainedKeyTtlS`) and a ticket issued under it a moment before
+  // still opens until it expires — and, as for krbtgt, never while the
+  // version the last rotation kept is still inside its window.
+  //
+  // **ONLY THE KEYS THIS SERVICE MADE FOR ITS OWN ACCEPTOR ARE ROTATED.** A
+  // key an operator created was handed out once, as a keytab, to a service
+  // this one cannot reach: rotating it on a timer would leave that service
+  // holding a key no new ticket is sealed under, and it would refuse every
+  // ticket until somebody installed a keytab nobody was given. So a key with
+  // a keytab outstanding is REPORTED as due — in the run's result on
+  // /admin/scheduler, beside its age on /admin/kerberos/principals — and its
+  // rotation stays the operator's act (Rotate, or
+  // `POST /admin-api/kerberos/principals/rotate-service`), which hands the
+  // new keytab, carrying the previous kvno too, to whoever asked.
+  //
+  // THE AGE IS THE KEY'S OWN: its last rotation, or its creation, so an
+  // upgrade does not rotate every realm's acceptor on its first hour. Off in
+  // development (`mode.rotatesKerberosKeys()`), with no KDC, at an interval of
+  // 0, and with `krb5.retainedKeyVersions` 0, for krbtgt's reasons.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the service key rotation interval in the ambient realm,
+   * `krb5.serviceKeyRotationIntervalDays` in milliseconds.
+   *
+   * @returns the interval, 0 for off
+   */
+  serviceIntervalMs(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering KrbtgtRotation.serviceIntervalMs().");
+    const days = Number(config.value('krb5.serviceKeyRotationIntervalDays'));
+    log.debug("Leaving KrbtgtRotation.serviceIntervalMs().");
+    return days > 0 ? days * DAY_MS : 0;
+  }
+
+  /**
+   * Says why the service key schedule is off in a realm, or ''.
+   *
+   * @param realmId - the trust realm id; the default realm when omitted
+   * @returns the reason, or the empty string when it is on
+   */
+  serviceOffReason(realmId?: string): string {
+    const self = this;
+    const { log, config, mode, principals, realms } = this.deps;
+    log.debug("Entering KrbtgtRotation.serviceOffReason(). realm=" + realmId);
+    const answer = this.inRealm(String(realmId || realms.DEFAULT_ID),
+        function (): string {
+      if (!mode().rotatesKerberosKeys()) {
+        return 'development mode, whose keys are made at every start (a ' +
+               'rotation by hand still works)';
+      }
+      const kerberos = principals().kerberosRealmOf();
+      if (!kerberos.enabled || !kerberos.active) {
+        return 'this trust realm has no KDC (' +
+               (kerberos.reason || 'krb5.enabled is off') + ')';
+      }
+      if (!(self.serviceIntervalMs() > 0)) {
+        return 'krb5.serviceKeyRotationIntervalDays is 0';
+      }
+      if (!(Number(config.value('krb5.retainedKeyVersions')) > 0)) {
+        return 'krb5.retainedKeyVersions is 0, so a rotation would keep no ' +
+               'previous version and refuse every ticket already issued';
+      }
+      return '';
+    });
+    log.debug("Leaving KrbtgtRotation.serviceOffReason(). " +
+              (answer || 'on'));
+    return answer;
+  }
+
+  /**
+   * Decides whether one stored service principal is due: its key at least
+   * `intervalMs` old, counted from its last rotation or its creation, and no
+   * previous version still in its window. Pure.
+   *
+   * @param row - a `servicesForRotation()` row
+   * @param nowMs - the time, in epoch milliseconds
+   * @param intervalMs - the rotation interval
+   * @returns `{ due, dueAt, why }`
+   */
+  serviceDecide(row: Json, nowMs: number, intervalMs: number): Json {
+    const { log } = this.deps;
+    log.debug("Entering KrbtgtRotation.serviceDecide().");
+    const r = row || {};
+    const last = Date.parse(String(r.rotatedAt || r.createdAt || ''));
+    if (!r.held || !Number.isFinite(last) || !(intervalMs > 0)) {
+      log.debug("Leaving KrbtgtRotation.serviceDecide(). Nothing to age.");
+      return { due: false, dueAt: 0,
+               why: r.held ? 'its age is not recorded' : 'no key is stored' };
+    }
+    const open = (r.retained || []).map(function (one: Json): number {
+      const until = Date.parse(String((one && one.expiresAt) || ''));
+      return Number.isFinite(until) ? until : 0;
+    }).reduce(function (a: number, b: number): number {
+      return Math.max(a, b);
+    }, 0);
+    const dueAt = Math.max(last + intervalMs, open);
+    const due = nowMs >= dueAt;
+    log.debug("Leaving KrbtgtRotation.serviceDecide(). due=" + due);
+    return { due: due, dueAt: dueAt,
+             why: due ? 'the key is ' + Math.floor((nowMs - last) / DAY_MS) +
+                        ' day(s) old'
+               : open > nowMs ? 'the version the last rotation kept is ' +
+                                'still inside its window until ' +
+                                new Date(open).toISOString()
+               : 'not due until ' + new Date(dueAt).toISOString() };
+  }
+
+  /**
+   * The scheduled run for one realm: rotates every key this service made
+   * for its own acceptor that is due, and reports the keys with a keytab
+   * outstanding that are due as well.
+   *
+   * @param realmId - the trust realm id
+   * @param ctx - the scheduler's run context
+   * @returns a promise of `{ summary, rotated, due }`; rejects, marked
+   *   STS-KRB-0263, when a due rotation failed
+   */
+  async rotateServicesDue(realmId: string, ctx?: Json): Promise<Json> {
+    const self = this;
+    const { log, keys, errorCodes } = this.deps;
+    log.debug("Entering KrbtgtRotation.rotateServicesDue(). realm=" + realmId);
+    const nowMs = ctx && ctx.nowMs ? ctx.nowMs() : this.deps.now();
+    const interval = this.serviceIntervalMs();
+    const rotated: Json[] = [];
+    const reported: Json[] = [];
+    const failed: Json[] = [];
+    const rows = this.inRealm(realmId, function (): Json[] {
+      return keys().servicesForRotation();
+    });
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const decision = self.serviceDecide(row, nowMs, interval);
+      if (!decision.due) {
+        continue;
+      }
+      if (!row.ownAcceptor) {
+        reported.push({ principal: row.principal, kvno: row.kvno,
+                        why: decision.why });
+        continue;
+      }
+      if (ctx && typeof ctx.stillOwner === 'function' && !ctx.stillOwner()) {
+        break;
+      }
+      const done = this.inRealm(realmId, function (): Json {
+        return keys().rotateServicePrincipal(row.spn,
+          { actor: '', via: 'scheduler' });
+      });
+      if (done && done.ok) {
+        rotated.push({ principal: row.principal, kvno: done.kvno,
+                       previousKvno: row.kvno });
+      } else {
+        failed.push({ principal: row.principal,
+                      why: ((done && done.errors) || []).join(' ') });
+      }
+    }
+    if (reported.length) {
+      log.info('krb5 service key rotation: ' + reported.length + ' service ' +
+               'principal key(s) of "' + (realmId || 'default') + '" with a ' +
+               'keytab outstanding are due for rotation (' +
+               reported.map(function (one: Json): string {
+                 return one.principal;
+               }).join(', ') + '); rotate each at ' +
+               '/admin/kerberos/principals and install its new keytab.');
+    }
+    if (failed.length) {
+      log.error(errorCodes.tag('STS-KRB-0263') + 'krb5 service key ' +
+                'rotation: ' + failed.length + ' key(s) of "' +
+                (realmId || 'default') + '" could not be rotated: ' +
+                failed.map(function (one: Json): string {
+                  return one.principal + ' (' + one.why + ')';
+                }).join('; ') + '. Each keeps its current key.');
+      log.debug("Leaving KrbtgtRotation.rotateServicesDue(). Failed.");
+      throw errorCodes.mark(new Error(failed.length + ' service key ' +
+        'rotation(s) failed: ' + failed.map(function (one: Json): string {
+          return one.principal;
+        }).join(', ')), 'STS-KRB-0263');
+    }
+    log.debug("Leaving KrbtgtRotation.rotateServicesDue(). " +
+              rotated.length + " rotated, " + reported.length + " due.");
+    return { summary: rotated.length + ' rotated, ' + reported.length +
+                      ' due with a keytab outstanding',
+             rotated: rotated, due: reported,
+             why: reported.length
+               ? 'a key whose keytab was handed out is rotated by its ' +
+                 'operator, who installs the new keytab' : undefined };
+  }
+
+  // -------------------------------------------------------------------------
   // EVERY PRODUCT REALM'S FIRST KEY, AT STARTUP — `server.js` awaits this
   // after the store is restored and before the request workers fork or the
   // listener binds, so a KDC has its key before its first request. One realm
@@ -651,6 +856,30 @@ class KrbtgtRotation {
         });
       }
     });
+    // THE SERVICE PRINCIPAL KEYS (#2220), on the same hourly check.
+    s.register({
+      id: SERVICE_ROTATE_JOB,
+      title: 'Kerberos service key rotation',
+      describe: 'Replaces the key this service made for its own acceptor ' +
+                'with a new random one at the next kvno once it is ' +
+                'krb5.serviceKeyRotationIntervalDays old, keeping the one ' +
+                'it replaces for the longest a ticket under it can live, ' +
+                'and never while that window is open. A key whose keytab ' +
+                'was handed out is reported as due rather than rotated: its ' +
+                'service needs the new keytab installed.',
+      owner: 'kerberos/krb5_krbtgt_rotation.ts',
+      kind: 'cluster', scope: 'realm',
+      everyMs: function (): number {
+        return CHECK_EVERY_MS;
+      },
+      off: function (realmId: string): string {
+        return self.serviceOffReason(realmId);
+      },
+      manual: true,
+      run: function (ctx: Json): Promise<Json> {
+        return self.rotateServicesDue(ctx.realm, ctx);
+      }
+    });
     log.debug("Leaving KrbtgtRotation.registerJobs().");
     return true;
   }
@@ -690,6 +919,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   ROTATE_JOB: ROTATE_JOB,
   ROTATE_NOW_JOB: ROTATE_NOW_JOB,
+  SERVICE_ROTATE_JOB: SERVICE_ROTATE_JOB,
   CONFIRM_WORD: CONFIRM_WORD,
   /**
    * Forwards to `KrbtgtRotation.offReason()` on the installed instance.
@@ -722,5 +952,18 @@ export = {
   /**
    * Forwards to `KrbtgtRotation.ensureAll()` on the installed instance.
    */
-  ensureAll: slot.forward('ensureAll')
+  ensureAll: slot.forward('ensureAll'),
+  /**
+   * Forwards to `KrbtgtRotation.serviceDecide()` on the installed instance.
+   */
+  serviceDecide: slot.forward('serviceDecide'),
+  /**
+   * Forwards to `KrbtgtRotation.serviceOffReason()` on the installed instance.
+   */
+  serviceOffReason: slot.forward('serviceOffReason'),
+  /**
+   * Forwards to `KrbtgtRotation.rotateServicesDue()` on the installed
+   * instance.
+   */
+  rotateServicesDue: slot.forward('rotateServicesDue')
 };

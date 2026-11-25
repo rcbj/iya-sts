@@ -2718,6 +2718,23 @@ nobody, so **nothing is owed to the parent project**.
 
 ---
 
+## SERVICE PRINCIPAL KEYS ON A SCHEDULE: ONLY THIS SERVICE'S OWN (#2220, 2026-11-25)
+
+`krb5.service-key-rotate` (`krb5_krbtgt_rotation.ts`, beside the krbtgt's two
+jobs, the same shape) replaces a service principal's key through
+`rotateServicePrincipal()` once it is `krb5.serviceKeyRotationIntervalDays`
+old — its age from `rotatedAt`, else `createdAt`, so an upgrade does not
+rotate every acceptor at once — and never while a retained version is still
+inside its window. **ONLY A KEY MADE FOR THIS SERVICE'S OWN ACCEPTOR
+(`generated` = `acceptor`) IS ROTATED.** Every other stored service key was
+handed out once, as a keytab, to a service this one cannot reach; rotating it
+on a timer would leave that service unable to open any new ticket until a
+keytab nobody was given was installed. Those are REPORTED as due in the run's
+result, and rotating them stays the operator's act, which hands the new
+keytab out. `servicesForRotation()` carries the `ownAcceptor` flag rather than
+`listServices()`, whose rows are an `/admin-api` answer held to a closed
+model. `tests/key_renewal.js` C holds it.
+
 ## A ROLE A SERVICE REQUIRES: ITS ENTRY BY EITHER NAME, AT THE TGS AND THE AS (#747, 2026-10-20)
 
 **Until #747 a role required on a Kerberos service's entry was not

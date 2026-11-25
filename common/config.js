@@ -4288,6 +4288,24 @@ const SETTINGS = [
                  'certificate names no issuer. Credentials already issued ' +
                  'stay verifiable either way. ldp_vc and mso_mdoc are not ' +
                  'affected.' },
+
+  // THE DEDICATED CREDENTIAL SIGNER'S SCHEDULE (#2220),
+  // `keys.credential-signer-rotate` in common/key_renewal.ts. The age is
+  // counted from when the key was first seen by the job, so an upgrade
+  // rotates nothing on its first start. Product only.
+  { key: 'keys.credentialSignerRotationIntervalDays', group: 'Key material',
+    label: 'Rotate the credential signing key every (days)',
+    env: 'STS_KEYS_CREDENTIAL_SIGNER_ROTATION_INTERVAL_DAYS', type: 'int',
+    dflt: 365, min: 0, max: 3650, runtime: true,
+    description: 'How long a dedicated credential signer\'s key ' +
+                 '(keys.credentialSigner dedicated) signs before the ' +
+                 'keys.credential-signer-rotate job makes the next key of ' +
+                 'its family, which signs from then on. The key it ' +
+                 'replaces signs nothing more and stays in the credential ' +
+                 'issuer\'s JWKS and DID document, so every credential it ' +
+                 'signed goes on verifying. Counted from when the job ' +
+                 'first saw the key. 0 switches the schedule off. Product ' +
+                 'mode only.' },
   // THE REALM'S POST-QUANTUM AND HPKE DECRYPTION KEYS (#82, 2026-09-27).
   // EMPTY BY DEFAULT, deliberately (rcbj's decision on #82): see the
   // description. `common/helpers.js`'s kemEncryptionKeysFor() makes them.
@@ -4317,6 +4335,33 @@ const SETTINGS = [
                  'realm\'s JWKS are known to cope. Removing one stops ' +
                  'publishing and accepting it; naming it again brings back ' +
                  'the same key.' },
+
+  // THE REQUEST-DECRYPTION KEYS' SCHEDULE (#2220),
+  // `keys.encryption-key-rotate` in common/key_renewal.ts and
+  // helpers.rotateEncryptionKeys(). Product only; counted from first sight.
+  { key: 'keys.encryptionKeyRotationIntervalDays', group: 'Key material',
+    label: 'Replace the request decryption keys every (days)',
+    env: 'STS_KEYS_ENCRYPTION_KEY_ROTATION_INTERVAL_DAYS', type: 'int',
+    dflt: 180, min: 0, max: 3650, runtime: true,
+    description: 'How long the request object encryption keys, the ' +
+                 'OpenID4VCI request-encryption key and the KEM ' +
+                 'decryption keys are kept before the ' +
+                 'keys.encryption-key-rotate job replaces them. The new ' +
+                 'key is published at once (/oauth2/jwks, the credential ' +
+                 'issuer metadata) and the one it replaces still decrypts ' +
+                 'for keys.encryptionKeyOverlapDays. Counted from when the ' +
+                 'job first saw the key. 0 switches the schedule off. ' +
+                 'Product mode only.' },
+
+  { key: 'keys.encryptionKeyOverlapDays', group: 'Key material',
+    label: 'A replaced request decryption key still decrypts for (days)',
+    env: 'STS_KEYS_ENCRYPTION_KEY_OVERLAP_DAYS', type: 'int', dflt: 30,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a request decryption key that ' +
+                 'keys.encryption-key-rotate replaced goes on opening what ' +
+                 'a client encrypted to it before it read the new key. ' +
+                 'It is published nowhere meanwhile, and signing.retire ' +
+                 'drops it when this has passed.' },
   // THE OTHER DIRECTION (2026-09-28, rcbj): encrypting TO a client's or a
   // wallet's key. The row above is the realm's own decryption keys; this one
   // says whether the ML-KEM and HPKE algorithms are OFFERED where this service
@@ -8828,6 +8873,44 @@ const SETTINGS = [
     description: 'How long each Issuing CA is good for when the build names ' +
                  'no lifetime. Zero is the `issuing-ca` profile\'s five ' +
                  'years. Clamped to its Intermediate\'s expiry.' },
+
+  // THE SCHEDULED RENEWAL OF A CA CERTIFICATE OVER THE SAME KEY (#2220),
+  // `pki.ca-renew` in common/key_renewal.ts, common/pki.js's
+  // renewCaCertificate(). On by default in both modes: it changes no key,
+  // so nothing it signed stops verifying, and a CA that reaches its expiry
+  // unrenewed stops every chain under it.
+  { key: 'pki.caRenewal', group: 'PKI',
+    label: 'Renew CA certificates before they expire',
+    env: 'STS_PKI_CA_RENEWAL', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the daily pki.ca-renew job renews the Root, each ' +
+                 'Intermediate and each Issuing CA inside its lead ' +
+                 '(pki.rootRenewalLeadDays, pki.caRenewalLeadDays) over ' +
+                 'the SAME key and subject, so every certificate it signed ' +
+                 'goes on verifying and a pin on its key holds. A renewed ' +
+                 'Root is published beside the one it replaced, at ' +
+                 '/pki/ca/service/root-previous.cer, until that one ' +
+                 'expires. An imported CA is never renewed. Off, nothing ' +
+                 'renews a CA and it expires as it did before 1.2.0.' },
+
+  { key: 'pki.rootRenewalLeadDays', group: 'PKI',
+    label: 'Renew the Root this long before it expires (days)',
+    env: 'STS_PKI_ROOT_RENEWAL_LEAD_DAYS', type: 'int', dflt: 1095,
+    min: 1, max: 36500, runtime: true,
+    description: 'How long before the Root CA expires pki.ca-renew renews ' +
+                 'it, at most half its lifetime. Long by default (three ' +
+                 'years), because a renewed Root is a new trust anchor ' +
+                 'certificate that every relying party should be given ' +
+                 'before the old one expires.' },
+
+  { key: 'pki.caRenewalLeadDays', group: 'PKI',
+    label: 'Renew an Intermediate or Issuing CA this long before it ' +
+           'expires (days)',
+    env: 'STS_PKI_CA_RENEWAL_LEAD_DAYS', type: 'int', dflt: 365,
+    min: 1, max: 36500, runtime: true,
+    description: 'How long before an Intermediate or Issuing CA expires ' +
+                 'pki.ca-renew renews it, at most half its lifetime. A CA ' +
+                 'cannot outlive its parent, so one whose parent expires ' +
+                 'first waits for the parent\'s renewal.' },
 
   { key: 'pki.maxStoredObjects', group: 'PKI',
     label: 'Certificates and keys the workbench store keeps, per realm',
@@ -13450,6 +13533,34 @@ const SETTINGS = [
                  'resumes on OpenSSL\'s own per-listener keys, which never ' +
                  'leave the process.' },
 
+  // THE LISTENER CERTIFICATE RENEWED WHILE THE PROCESS RUNS (#2220),
+  // `tls.server-certificate-renew` in tls/tls_server.js: per process, in
+  // every node's front process, over the same key. On by default: it does
+  // what every restart already did.
+  { key: 'tls.serverCertificateRenewal', group: 'TLS',
+    label: 'Renew the listener certificate without a restart',
+    env: 'STS_TLS_SERVER_CERTIFICATE_RENEWAL', type: 'bool', dflt: true,
+    runtime: true, perProcess: true,
+    description: 'Whether the hourly tls.server-certificate-renew job ' +
+                 'renews the certificate the main port, LDAPS and the ' +
+                 'debugger present, over the same key, once less than a ' +
+                 'third of its validity is left (or it is inside ' +
+                 'tls.serverCertificateRenewLeadDays), and puts it on ' +
+                 'every socket without a restart. Each node renews its ' +
+                 'own. Off, it is renewed only at a start and by the ' +
+                 'console\'s Renew. A certificate you supply in ' +
+                 'tls.certificateFile is yours to renew.' },
+
+  { key: 'tls.serverCertificateRenewLeadDays', group: 'TLS',
+    label: 'Renew the listener certificate this long before it expires ' +
+           '(days, 0 = at a third of its validity)',
+    env: 'STS_TLS_SERVER_CERTIFICATE_RENEW_LEAD_DAYS', type: 'int', dflt: 0,
+    min: 0, max: 3650, runtime: true, perProcess: true,
+    description: 'Renew the listener certificate this many days before it ' +
+                 'expires, where that is earlier than the point a third ' +
+                 'of its validity is left. 0, the default, keeps the ' +
+                 'third.' },
+
   // THE MAIN PORT'S CONNECTIONS, POOLED (#406, 2026-10-02). The main port
   // asks every full handshake for a client certificate, and a browser holding
   // one that matches asks its user each time: with node's 5-second keep-alive
@@ -15603,6 +15714,27 @@ const SETTINGS = [
                  'job stays off too, because a rotation that kept nothing ' +
                  'would sign every Kerberos user in the realm out ' +
                  'unannounced.' },
+
+  // SERVICE PRINCIPAL KEYS ON A SCHEDULE (#2220), `krb5.service-key-rotate`
+  // in kerberos/krb5_krbtgt_rotation.ts. Only a key this service made for
+  // its own acceptor is rotated; one whose keytab was handed out is
+  // reported as due. Product only.
+  { key: 'krb5.serviceKeyRotationIntervalDays', group: 'Kerberos',
+    label: 'Rotate this service\'s own acceptor key every (days)',
+    env: 'KRB5_SERVICE_KEY_ROTATION_INTERVAL_DAYS', type: 'int', dflt: 180,
+    min: 0, max: 3650, runtime: true,
+    description: 'How old a service principal key may get before the ' +
+                 'krb5.service-key-rotate job replaces it with a new ' +
+                 'random key at the next kvno, keeping the one it replaces ' +
+                 '(krb5.retainedKeyVersions, for krb5.retainedKeyTtlS) so ' +
+                 'tickets already issued keep working, and never while ' +
+                 'that window is open. Only the key this service made for ' +
+                 'its own acceptor is rotated: a key whose keytab was ' +
+                 'handed to another service is reported as due on ' +
+                 '/admin/scheduler, and rotating it, which hands out the ' +
+                 'new keytab, stays the operator\'s act. Counted from the ' +
+                 'key\'s last rotation or its creation. 0 switches the ' +
+                 'schedule off. Product mode only.' },
 
   // ---------------------------------------------------------------------------
   // PKINIT (#179, 2026-10-05): a certificate — a smart card's, a PIV token's —
