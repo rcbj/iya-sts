@@ -108,5 +108,19 @@
   "systemHint": "الموضوع أو المُصدِر أو البصمة",
   "systemShown": "تطابق {shown} من {n} شهادة.",
   "thIssuer": "المُصدِر",
-  "emptySystem": "لا شهادة مطابقة."
+  "emptySystem": "لا شهادة مطابقة.",
+  "whereRegistered": "يُغيَّر حيث يُسجَّل كل طرف: عميل أو علاقة اتحاد أو مزوّد مطالبات.",
+  "keySetRegistered": "المفاتيح المسجلة الخاصة بكل طرف",
+  "keySetFor": "مجموعة مفاتيح لـ {party}",
+  "keySetUri": "مُحضَرة من {uri}",
+  "keySetKeys": "{n} مفتاح ملصق",
+  "setKeysHeading": "استبدال المفاتيح",
+  "setKeysButton": "تعيين المفاتيح",
+  "kindKeySet": "مجموعة مفاتيح",
+  "createKind": "تحتوي",
+  "createKindX509": "شهادات",
+  "createKindJwks": "مجموعة مفاتيح مرتبطة بطرف واحد",
+  "createParty": "الطرف (لمجموعة المفاتيح فقط): client: أو federation: أو claims-provider:…",
+  "createJwks": "المفاتيح العامة، بصيغة JSON Web Key Set",
+  "createJwksUri": "أو jwks_uri"
 }

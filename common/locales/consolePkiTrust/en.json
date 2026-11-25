@@ -108,5 +108,19 @@
   "systemHint": "Subject, issuer or fingerprint",
   "systemShown": "{shown} of {n} certificates match.",
   "thIssuer": "Issuer",
-  "emptySystem": "No certificate matches."
+  "emptySystem": "No certificate matches.",
+  "whereRegistered": "Changed where each party is registered: a client, a federation relationship or a claims provider.",
+  "keySetRegistered": "Each party's own registered keys",
+  "keySetFor": "A key set for {party}",
+  "keySetUri": "fetched from {uri}",
+  "keySetKeys": "{n} pasted key(s)",
+  "setKeysHeading": "Replace the keys",
+  "setKeysButton": "Set keys",
+  "kindKeySet": "a key set",
+  "createKind": "Holds",
+  "createKindX509": "certificates",
+  "createKindJwks": "a key set bound to one party",
+  "createParty": "Party (a key set only): client:, federation: or claims-provider:…",
+  "createJwks": "Public keys, as a JSON Web Key Set",
+  "createJwksUri": "Or a jwks_uri"
 }

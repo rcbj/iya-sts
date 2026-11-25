@@ -1013,10 +1013,12 @@ class RequestObject {
         oauthJwks: client.jwks, oauthAssertionJwks: client.assertion_jwks,
         oauthJwksUri: client.jwks_uri
       };
-      // A registered `jwks_uri` is fetched (#120), `client_jwks.js`'s cache.
+      // A registered `jwks_uri` is fetched (#120), `client_jwks.js`'s cache,
+      // and so is that of a key set bound to this client (#2149).
       const fetched = await assertionGrant.ensurePartyKeys(party,
-        'application', header && header.kid);
-      const read = assertionGrant.keysForParty(party, 'application');
+        'application', header && header.kid, String(clientId || ''));
+      const read = assertionGrant.keysForParty(party, 'application',
+                                               String(clientId || ''));
       candidates = read.keys;
       if (!candidates.length) {
         why = 'this client holds no key a request object could be verified ' +

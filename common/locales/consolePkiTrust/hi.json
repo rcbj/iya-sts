@@ -108,5 +108,19 @@
   "systemHint": "विषय, जारीकर्ता या फ़िंगरप्रिंट",
   "systemShown": "{n} में से {shown} प्रमाणपत्र मेल खाते हैं।",
   "thIssuer": "जारीकर्ता",
-  "emptySystem": "कोई प्रमाणपत्र मेल नहीं खाता।"
+  "emptySystem": "कोई प्रमाणपत्र मेल नहीं खाता।",
+  "whereRegistered": "वहाँ बदला जाता है जहाँ प्रत्येक पक्ष पंजीकृत है: एक क्लाइंट, एक फ़ेडरेशन संबंध या एक क्लेम्स प्रदाता।",
+  "keySetRegistered": "प्रत्येक पक्ष की अपनी पंजीकृत कुंजियाँ",
+  "keySetFor": "{party} के लिए एक कुंजी सेट",
+  "keySetUri": "{uri} से प्राप्त",
+  "keySetKeys": "{n} चिपकाई गई कुंजी",
+  "setKeysHeading": "कुंजियाँ बदलें",
+  "setKeysButton": "कुंजियाँ सेट करें",
+  "kindKeySet": "एक कुंजी सेट",
+  "createKind": "रखता है",
+  "createKindX509": "प्रमाणपत्र",
+  "createKindJwks": "एक पक्ष से बंधा कुंजी सेट",
+  "createParty": "पक्ष (केवल कुंजी सेट): client:, federation: या claims-provider:…",
+  "createJwks": "सार्वजनिक कुंजियाँ, JSON Web Key Set के रूप में",
+  "createJwksUri": "या एक jwks_uri"
 }

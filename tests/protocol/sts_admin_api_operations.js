@@ -5479,6 +5479,8 @@ const NOT_DRIVEN_HERE = {
     "realms and reads every write back on GET /truststores (#2118).",
   "POST /truststores/unassign": "sts_truststores.js drives it in throwaway " +
     "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/set-keys": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2149).",
   // SIGNING KEY ROTATION (#48, 2026-09-22). Driven by `sts_key_rotation.js`,
   // end to end and in a realm of its own: a rotation is checked against the
   // JWKS, the crypto metadata document and a token signed before it, which a

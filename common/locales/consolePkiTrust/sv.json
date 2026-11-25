@@ -108,5 +108,19 @@
   "systemHint": "Subjekt, utfärdare eller fingeravtryck",
   "systemShown": "{shown} av {n} certifikat matchar.",
   "thIssuer": "Utfärdare",
-  "emptySystem": "Inget certifikat matchar."
+  "emptySystem": "Inget certifikat matchar.",
+  "whereRegistered": "Ändras där varje part är registrerad: en klient, en federationsrelation eller en anspråksleverantör.",
+  "keySetRegistered": "Varje parts egna registrerade nycklar",
+  "keySetFor": "En nyckeluppsättning för {party}",
+  "keySetUri": "hämtad från {uri}",
+  "keySetKeys": "{n} inklistrad(e) nyckel/nycklar",
+  "setKeysHeading": "Ersätt nycklarna",
+  "setKeysButton": "Ange nycklar",
+  "kindKeySet": "en nyckeluppsättning",
+  "createKind": "Innehåller",
+  "createKindX509": "certifikat",
+  "createKindJwks": "en nyckeluppsättning bunden till en part",
+  "createParty": "Part (endast nyckeluppsättning): client:, federation: eller claims-provider:…",
+  "createJwks": "Publika nycklar, som JSON Web Key Set",
+  "createJwksUri": "Eller en jwks_uri"
 }
