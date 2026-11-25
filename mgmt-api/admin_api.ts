@@ -775,18 +775,146 @@ const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
 //   * and every request the gate already classifies as a Security
 //     Administrator's change (#645, `common/security_operations.ts`).
 //
+// SINCE #2247 (ASVS 5.0.0 7.5.3, the Level 3 re-sweep, 2026-11-25) the
+// families also hold every act that changes WHO CAN AUTHENTICATE, WHAT THEY
+// CAN OBTAIN, or WHERE A TOKEN, A SECRET OR A SIGN-IN MAIL GOES. #2161 had
+// left out three of the widest — the XACML and ALFA policies, the
+// federation relationships and the applications — and the sweep of every
+// other tag found more. Each verdict, and why it is a whole tag, a route or
+// named actions:
+//
+//   WHOLE TAGS. The rule is the one `Configuration` follows: a tag is
+//   taken whole where nearly every act on it is one of these and the ones
+//   that are not share their action with ones that are, so a list of "the
+//   sensitive actions" would be one a new action could be left off. What it
+//   costs an ordinary edit is at most one sign-in per
+//   `account.recentAuthMinutes` (the window counts from the sign-in, so a
+//   fresh one covers the next fifteen minutes of every family), which the
+//   console asks in its popup and resends.
+//   * `XACML`: the access policies and ALFA, which decide every grant this
+//     service makes, the PEPs, their certificates, credentials and routes,
+//     and AuthZEN's attributes and access-request decisions. A remote PEP's
+//     decision-record push shares the tag and is a program's, never asked.
+//   * `Applications`: the secrets (rotate, add, reveal), the certificates
+//     and keys, the redirect and logout addresses (`set`, `add`), the
+//     client authentication, grant types and scopes (`set`, `update-fields`),
+//     the claims, permissions and access types an application's tokens
+//     carry, fine-grained authorization, and the RFC 9728 and LDIF imports.
+//     A description is changed by the same `set` that changes a redirect
+//     URI, so the description pays too: splitting `set` by attribute is the
+//     list this rule refuses. `generate-secret` is a form helper and writes
+//     nothing; the secret it shows is set by `create`, which is asked.
+//   * `Federation`: a relationship's partner, its certificates and keys,
+//     its provisioning switches and its signals.
+//   * `SAML 2.0`, `SAML 1.1`: a service provider's registration, signing
+//     certificates and metadata — where an assertion is sent and whose
+//     request is believed.
+//   * `Authorization servers`: the RFC 7523 issuers whose assertions are
+//     taken as a client's credential or a grant.
+//   * `OpenID Federation`: the trust anchors and subordinates a client's
+//     registration is believed through.
+//   * `SPIFFE`: registration entries (who is issued which SVID), brokers,
+//     agents and their join tokens, and the federated bundles.
+//   * `Policies`: the authentication, password, passkey, session and every
+//     other named policy, and a policy import.
+//   * `Delegation`: delegated permission grants and the global consents
+//     given on everybody's behalf. Withdrawals pay as well; they are few.
+//   * `Ownership`: owners may administer what they own.
+//   * `Groups`: a group grants nothing BY BEING A GROUP, but a role or a
+//     policy is held through one, so a member added is a role granted, and
+//     `set-policy` names how its members sign in.
+//   * `Devices`: a device's key and its compliance, which decisions read. The
+//     MDM feed shares the tag and is a program's.
+//   * `Token lifetimes`, `SAML assertions`: how long what is issued lasts.
+//   * `Custom claims`, `UserInfo claims`, `Custom SAML attributes`,
+//     `Credential claims`: what an issued token, assertion or credential
+//     says, which is what a relying party authorizes on.
+//   * `SCIM`: the outbound SCIM clients — where people's data is pushed,
+//     with which credential and certificate.
+//   * `Risk`: the datasets a sign-in's risk is scored on; an emptied or
+//     rolled-back dataset is a weaker sign-in.
+//   * `UMA`: resource servers and what an owner shares with whom.
+//   * `ACME`, `EST`, `SCEP`: who may obtain a certificate (external account
+//     bindings, challenges, the RA, the host names) and revocations.
+//
+//   ROUTES, where the tag is shared with acts that are not:
+//   * `/attribute-sources` (tag `Directory`): the databases claim values
+//     are read from, and their credentials.
+//   * `/hardware-tokens` (`Directory`): OATH and YubiKey OTP assignments,
+//     PIV enrolment, key recovery, SSH certificates, YK-VAL clients — each a
+//     way in.
+//   * `/openpgp` (`Directory`): a person's mail-encryption keys, which say
+//     who can read the mail that carries their codes and links.
+//   * `/kerberos/trusts` (`Kerberos`): a cross-realm trust's key.
+//   * `/kerberos/claims` (`Kerberos`): what a ticket's PAC says, for the
+//     claims tags' reason.
+//   * `/claim-providers` (`OAuth 2.0 / OIDC`): where aggregated claims come
+//     from, and with which credential.
+//   * `/ssf` (`Shared Signals`): a stream's status, delivery and removal —
+//     whether a receiver is told a session ended.
+//   * `/listeners` (`Service`): which listener presents which certificate
+//     and serves which application.
+//   * `/audit-export` (`Monitoring`): where the audit trail goes, and
+//     whether it goes at all.
+//
+//   ACTIONS, on a route whose other acts are not:
+//   * `/users`: an activation link (whoever holds it sets the password), MFA
+//     no longer required, a certificate added (certificate sign-in), the
+//     service-account designation, owners, push destination and rotation,
+//     who may act for whom, and an administrator answering a CIBA request.
+//     The other profile edits stay unasked, as the krbtgt argument below
+//     leaves a principal's other acts.
+//   * `/tokens` and `/logout`: RESTORING a revoked token, artifact, set or
+//     Kerberos ticket, which makes a stopped credential usable again. The
+//     revocations only take away.
+//   * `/mail`: a template saved, since it is what a sign-in mail says.
+//
+//   NOT ASKED, and why: sessions and sign-outs, token and grant revocations,
+//   CAEP, RISC, a broadcast and a cleared signal (each takes something
+//   away, or reports); GNAP's two acts (a revocation, a removal); the
+//   verifier request and verifications (a presentation asked for, not
+//   trusted); credential status publication; provider commands and
+//   deliveries; the passkey report, post-login activities, the scheduler,
+//   node health, the cells' rehome, malware scanning and the console's own
+//   language (none changes who gets in or what they get). The Kerberos
+//   principals' other acts are #2161's verdict and unchanged.
+//
 // An act marked `writesNothing` (a console form helper) is not asked. As for
 // the list above, only a token with a person behind it is asked, because a
 // program has nobody to sign in again, and the window is the same
-// `account.recentAuthMinutes`.
+// `account.recentAuthMinutes`. A held act (#2166) is asked here of its
+// requester, and its replay carries the APPROVER's sign-in, which
+// `decideHeld()` asks before the replay runs.
 // ---------------------------------------------------------------------------
 const RECENT_SIGN_IN_TAGS = ['Admin roles', 'Roles', 'Trust realms', 'PKI',
-  'Configuration'];
+  'Configuration',
+  // #2247
+  'XACML', 'Applications', 'Federation', 'SAML 2.0', 'SAML 1.1',
+  'Authorization servers', 'OpenID Federation', 'SPIFFE', 'Policies',
+  'Delegation', 'Ownership', 'Groups', 'Devices', 'Token lifetimes',
+  'SAML assertions', 'Custom claims', 'UserInfo claims',
+  'Custom SAML attributes', 'Credential claims', 'SCIM', 'Risk', 'UMA',
+  'ACME', 'EST', 'SCEP'];
 const RECENT_SIGN_IN_ROUTES = ['/keys/:action', '/encryption/:action',
-  '/tls/trust/:action', '/secret-destinations/:action'];
+  '/tls/trust/:action', '/secret-destinations/:action',
+  // #2247
+  '/attribute-sources/:action', '/hardware-tokens/:action',
+  '/openpgp/:action', '/kerberos/trusts/:action',
+  '/kerberos/claims/:action',
+  '/claim-providers/:action', '/ssf/:action', '/listeners/:action',
+  '/audit-export/:action'];
 const RECENT_SIGN_IN_ACTIONS = {
   '/kerberos/principals/:action': ['rotate-krbtgt', 'rotate-krbtgt-invalidate',
-    'reset-person-keytab']
+    'reset-person-keytab'],
+  // #2247
+  '/users/:action': ['issue-activation', 'stop-requiring-mfa',
+    'add-certificate', 'set-service-account', 'add-service-account-owner',
+    'remove-service-account-owner', 'set-service-account-destination',
+    'rotate-password', 'set-may-act', 'set-not-delegated',
+    'set-delegation-semantics', 'answer-ciba-request'],
+  '/tokens/:action': ['restore', 'restore-artifact', 'restore-set'],
+  '/logout/:action': ['restore-token', 'restore-kerberos'],
+  '/mail/:action': ['save-template']
 };
 
 class AdminApi {
@@ -1878,6 +2006,128 @@ class AdminApi {
     }
     log.debug("Leaving AdminApi.recentSignInFamilyOf(). None.");
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE WRITE BUDGET OF ONE CALLER (#2247, ASVS 5.0.0 2.4.2; #2167's
+  // follow-up). Until this every POST here was bounded only by the ceiling on
+  // one ADDRESS (`security.requestsPerAddressPerMinute`), which a stolen
+  // console token spends from wherever it likes. So every POST that writes
+  // counts, after the gate has proved who is calling and after the body and
+  // the recent sign-in are checked, in a bucket keyed by the token's realm and
+  // subject (`websecurity.subjectActShared()`, `/account-api`'s mechanism):
+  //
+  //   * A PERSON's token counts against `adminApi.writesPerSubject` in
+  //     `adminApi.writeWindowS`: 1200 in ten minutes in product, two writes
+  //     a second sustained for ten minutes. The console sends one POST per
+  //     act and none on its own, and its bulk edits are a person's clicks —
+  //     a policy built rule by rule, a group's members added one by one, a
+  //     hundred users' fields corrected — which is a few hundred at the very
+  //     busiest; 1200 leaves that room four times over and still stops a
+  //     script driving a stolen token at the rate a script runs.
+  //   * A PROGRAM — a `client_credentials` token, or a service account's
+  //     (#221: a person entry carrying `stsServiceAccount`) — is not a
+  //     person and is counted only against
+  //     `adminApi.programWritesPerSubject`, which is 0, no limit, in every
+  //     mode. A provisioning run or a migration legitimately makes thousands
+  //     of writes in minutes, and the right number is the operator's, who
+  //     knows what their programs do; a person's number would break them.
+  //
+  // A GET is not counted, nor an act that writes nothing (a console form
+  // helper), nor a held act's replay (#2166: its approval was the POST that
+  // counted). Over the budget the answer is 429 with Retry-After,
+  // `STS-API-0148`, in this API's refusal shape. 0 counts nothing, and both
+  // are off in development, as the address ceiling is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts a write against its caller's budget, and refuses one over it
+   * (#2247).
+   *
+   * @param entry - the route table's row
+   * @param action - the action the request names, '' for none
+   * @param req - the request
+   * @param res - the response
+   * @returns null when nothing is counted, otherwise a promise of true when
+   *   the request was refused
+   */
+  overWriteBudget(entry, action: string, req, res): Promise<boolean> | null {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering AdminApi.overWriteBudget().");
+    const self = this;
+    const caller = res && res.locals && res.locals.apiCaller;
+    const asked = String(action || '');
+    const declared = (entry && entry.actions || []).filter(function (one) {
+      return one.action === asked;
+    })[0];
+    if (!caller || req.__dualControlReplay ||
+        (declared && declared.writesNothing)) {
+      log.debug("Leaving AdminApi.overWriteBudget(). Not counted.");
+      return null;
+    }
+    const personMost = Number(config.value('adminApi.writesPerSubject')) || 0;
+    const programMost =
+      Number(config.value('adminApi.programWritesPerSubject')) || 0;
+    if (personMost <= 0 && programMost <= 0) {
+      log.debug("Leaving AdminApi.overWriteBudget(). No budget is set.");
+      return null;
+    }
+    const program = AdminApi.callerIsProgram(caller);
+    const most = program ? programMost : personMost;
+    if (most <= 0) {
+      log.debug("Leaving AdminApi.overWriteBudget(). No budget for this " +
+                "kind of caller.");
+      return null;
+    }
+    const who = String(caller.realm || '') + '|' +
+      (caller.kind === 'application'
+        ? 'client:' + String(caller.clientId || caller.name || '')
+        : String(caller.sub || caller.name || ''));
+    const websecurity = require('../common/websecurity');
+    log.debug("Leaving AdminApi.overWriteBudget(). Counting.");
+    return websecurity.subjectActShared(
+      program ? 'admin-program-write' : 'admin-write', req, who, most,
+      Number(config.value('adminApi.writeWindowS')), 'STS-API-0148')
+      .then(function (counted) {
+        if (counted.ok) {
+          return false;
+        }
+        const seconds = Math.max(1, Math.ceil(Number(counted.retryAfterS) ||
+                                              1));
+        res.set('Retry-After', String(seconds));
+        errorCodes.mark(res, 'STS-API-0148');
+        self.sendJson(res, 429, { ok: false, errors: [
+          'Too many changes through the management API in a short ' +
+          'while. Wait ' + seconds + ' seconds and try again.'] });
+        return true;
+      });
+  }
+
+  // Whether the caller is a program rather than a person, for the write
+  // budget above: a `client_credentials` token, or a service account's.
+  // An entry that cannot be read is a person, the stricter budget.
+  /**
+   * Says whether an API caller is a program (#2247).
+   *
+   * @param caller - the gate's `res.locals.apiCaller`
+   * @returns true for an application or a service account
+   */
+  static callerIsProgram(caller): boolean {
+    log.debug("Entering AdminApi.callerIsProgram().");
+    if (!caller || caller.kind === 'application') {
+      log.debug("Leaving AdminApi.callerIsProgram(). " + !!caller);
+      return !!caller;
+    }
+    let service = false;
+    try {
+      service = serviceAccounts.isServiceAccountName(caller.name) === true;
+    } catch (e) {
+      log.debug("Caught in AdminApi.callerIsProgram(): " +
+                ((e && e.message) || e));
+      // Unreadable: a person, the stricter reading.
+      service = false;
+    }
+    log.debug("Leaving AdminApi.callerIsProgram(). " + service);
+    return service;
   }
 
   // Whether the PERSON behind the token signed in longer ago than
@@ -13846,7 +14096,7 @@ class AdminApi {
         });
         return;
       }
-      app.post(path, function (req, res) {
+      app.post(path, function (req, res, next) {
         res.locals.proseRoute = proseRoute;
         if (queryRefused(req, res)) {
           return undefined;
@@ -13910,21 +14160,38 @@ class AdminApi {
           self.refuseStaleSignIn(req, res);
           return undefined;
         }
-        // TWO-PERSON APPROVAL (#2166): a held act is stored and answered
-        // 202 here, after the gate, the schema and the recent sign-in and
-        // before the handler, so the console's forms and a program's calls
-        // meet the one check. An approved act's replay calls its handler
-        // directly (`replayHeld()`), with the approver's sign-in time, and
-        // is never held again.
-        if (!req.__dualControlReplay &&
-            self.holdForSecondAdministrator(entry, path, req, res)) {
-          return undefined;
+        const proceed = function () {
+          // TWO-PERSON APPROVAL (#2166): a held act is stored and answered
+          // 202 here, after the gate, the schema and the recent sign-in and
+          // before the handler, so the console's forms and a program's
+          // calls meet the one check. An approved act's replay calls its
+          // handler directly (`replayHeld()`), with the approver's sign-in
+          // time, and is never held again.
+          if (!req.__dualControlReplay &&
+              self.holdForSecondAdministrator(entry, path, req, res)) {
+            return undefined;
+          }
+          // WHO IS ACTING is not put into the body: each handler hands its
+          // action `callerNameOf(res)` in the action's context (rcbj on
+          // #1579, 2026-11-11), and a caller's own `actor` is refused by
+          // the closed schema above like any member the model does not
+          // declare.
+          return entry.handler(req, res);
+        };
+        // THE WRITE BUDGET (#2247), last of the checks and before a hold,
+        // so a refused or stale request spends nothing and a held one is
+        // counted once. Synchronous while no budget is set, as before.
+        const budget = self.overWriteBudget(entry, asked, req, res);
+        if (!budget) {
+          return proceed();
         }
-        // WHO IS ACTING is not put into the body: each handler hands its
-        // action `callerNameOf(res)` in the action's context (rcbj on #1579,
-        // 2026-11-11), and a caller's own `actor` is refused by the closed
-        // schema above like any member the model does not declare.
-        return entry.handler(req, res);
+        return budget.then(function (refused) {
+          return refused ? undefined : proceed();
+        }).catch(function (e) {
+          log.debug("Caught in the management API's POST wrapper: " +
+                    ((e && e.message) || e));
+          next(e);
+        });
       });
     });
     log.debug("Leaving AdminApi.registerRoutes().");

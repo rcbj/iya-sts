@@ -11501,6 +11501,31 @@ SSF and XACML not requiring the federation module for their transport).
   `…CaFile` is read on EVERY request (no cache — a handshake costs more, and a
   rotated file is in force at once) and added BESIDE `tls.rootCertificates`;
   a file that cannot be used refuses the request, `STS-CORE-0104`.
+* **`readNamedFile(file, seams?)` (#2247, ASVS 5.0.0 15.4.2) — EVERY READER
+  OF A FILE A SETTING OR AN ADMINISTRATOR NAMES GOES THROUGH IT.** In product
+  `namedFileAllowed()` (#1481) checks the PATH against `security.fileRoots`,
+  and until #2247 each caller then opened the path again, so a link swapped
+  in between was followed out of the roots. The helper checks the path, opens
+  it ONCE (`O_NONBLOCK`, so a FIFO cannot hold the open), and checks the
+  DESCRIPTOR: `fstat` a regular file, and its real path as the kernel holds
+  it (`readlink /proc/self/fd/<fd>`; without /proc, the path resolved again
+  and accepted only when its device and inode are the descriptor's) inside a
+  root; then reads through it and closes it. **No `O_NOFOLLOW`**: a link
+  inside the roots to a file inside them is what `/etc/ssl/certs` and a
+  Kubernetes secret volume (`..data`) are, and was always followed. A
+  refusal is `namedFileRefusal()`, the one sentence, marked
+  `namedFileRefused` so a caller tells it from an fs error and keeps its own
+  code and sentence (`caFilePems()`, the SCIM client, attribute sources,
+  AuthZEN's external PDP). Readers: `caFilePems()`, the truststores' setting
+  files (`readNamedFile` dep), the mail DKIM key, the revocation CA files,
+  the SCIM client's CA file, an attribute source's CA file, AuthZEN's PDP
+  PEMs, and SPIFFE's sigstore registry auth, PSAT CA and token, kubelet
+  files and Azure token file. **`assertNamedFile()` stays only for a path
+  handed to a library that opens it**: the GCP IIT key file is now read here
+  and handed over as `credentials` when it is JSON, and by name, after the
+  path check, only when it is not (a legacy P12). The seams (`fs`,
+  `beforeOpen`, `descriptorLink`) are what `tests/named_file_descriptor.js`
+  swaps a path through; a caller with an injected `fs` passes it.
 * **`describe(family)`** — the three as they are IN FORCE, for the console and
   `/admin-api` views, where a skip stored in a product realm reads false.
 * **`checkServerIdentity(host, cert)` (#201)** — returned on every verifying
@@ -17686,7 +17711,9 @@ the decisions (D1–D5) are on the issue; what a maintainer needs:
   `trustMaterial()`) and `tuf-root` (ONE root: TUF bootstraps from the
   first). `documentsFor()` reads a setting view's files through
   `readNamedFile()`, which asks `security.fileRoots`
-  (`tests/asvs_product_limits.js` looks for the rule there). TUF's state
+  (`tests/asvs_product_limits.js` looks for the rule there) and, since
+  #2247, is `OutboundTls.readNamedFile()`: checked and read through one
+  descriptor. TUF's state
   stays keyed on the repository and the root's BYTES, so a deployment that
   keeps the setting keeps its refreshed state.
 * **THE KIND CHECK** (`assignmentProblem()`, STS-PKI-0309) compares what a

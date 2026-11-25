@@ -30098,6 +30098,14 @@ const CODES = [
       'at another operation (#1827). Refused at the gate itself, so that ' +
       'the separation does not depend on xacml.enforceAccess.',
     spec: 'HTTP 403, an error message' },
+  { code: 'STS-API-0148',
+    summary: 'A management API caller made more changes than its write ' +
+      'budget allows in an adminApi.writeWindowS window, counted by the ' +
+      'token\'s subject: adminApi.writesPerSubject for a person\'s token, ' +
+      'adminApi.programWritesPerSubject for a client_credentials or ' +
+      'service account\'s. Further changes are refused until the window ' +
+      'passes; reads go on (#2247, ASVS 5.0.0 2.4.2).',
+    spec: 'HTTP 429 {ok:false, errors} with Retry-After' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

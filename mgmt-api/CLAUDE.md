@@ -1680,6 +1680,53 @@ family, stale and fresh. `tests/protocol/console_signin.js`'s `api()` signs
 in again with `prompt=login` on the 401, as the console's popup does, so a
 console job that runs longer than the window keeps working.
 
+**#2247 (ASVS 5.0.0 7.5.3, the Level 3 re-sweep, 2026-11-25) WIDENED THE
+FAMILIES TO EVERY ACT THAT DECIDES WHO CAN SIGN IN, WHAT THEY ARE ISSUED OR
+WHERE IT GOES.** #2161 had missed the XACML/ALFA policies, the federation
+relationships and the applications; a sweep of every other tag added the
+rest. The verdict on each tag, route and action, and the ones deliberately
+NOT asked (the revocations and sign-outs, CAEP/RISC, GNAP's two acts, the
+verifier, provider commands, the scheduler and the other housekeeping), is
+the comment above `RECENT_SIGN_IN_TAGS`, which is the one copy. The rule for
+choosing: **a tag is taken whole** where nearly every act on it is sensitive
+and the rest share an action with ones that are — an application's
+description is changed by the same `set` as its redirect URIs, so splitting
+`set` by attribute would be the list a new attribute is left off; the cost
+is at most one re-sign-in per window, since the window counts from the
+sign-in. **A route** where the tag is shared (`/attribute-sources`,
+`/hardware-tokens`, `/openpgp` under `Directory`; `/kerberos/trusts`,
+`/kerberos/claims`; `/claim-providers`; `/ssf`; `/listeners`;
+`/audit-export`). **Actions** where the route's other acts are ordinary or
+only take away: `/users` (activation link, `stop-requiring-mfa`,
+`add-certificate`, the service-account acts, `set-may-act` and its
+neighbours, `answer-ciba-request`), the RESTORES on `/tokens` and `/logout`,
+and `/mail`'s `save-template`. The two-person replay is untouched: it calls
+the handler directly and `decideHeld()` asks the APPROVER's sign-in first.
+
+## THE WRITE BUDGET (#2247, ASVS 5.0.0 2.4.2)
+
+**Every POST that writes is counted by the token's realm and subject**, in
+`AdminApi.overWriteBudget()`, after the body check and the recent sign-in
+and before a hold (a held act counts once; its replay is not counted), with
+`/account-api`'s mechanism, `websecurity.subjectActShared()` (#2167). A
+person's token counts against `adminApi.writesPerSubject` (1200 in product,
+0 in development) in `adminApi.writeWindowS` (600 s): two writes a second
+for ten minutes, about four times what the busiest console session sends,
+since the console makes one POST per act. **A program — a
+`client_credentials` token, keyed by client, or a service account's
+(`stsServiceAccount`), keyed by subject — is not counted by it** and only
+against `adminApi.programWritesPerSubject`, 0 (no limit) in every mode:
+provisioning bursts are legitimate and their size is the operator's to know.
+All three rows are `perProcess`, so a realm administrator cannot lift the
+budget their own token is counted in. A form helper (`writesNothing`) is not
+counted. Over it: **429, `Retry-After`, `STS-API-0148`**, `{ ok: false,
+errors }` — English, as every refusal here is; the console draws no
+`messages`, so none are sent, and the `default` response model
+(`RefusalFailure`) already holds the answer, so no model changed. The wrapper
+stays synchronous while no budget applies. `docker-compose-run-tests.yml`
+sets `ADMIN_API_WRITES_PER_SUBJECT=0`, as it does #2167's.
+`tests/admin_api_write_budget.js` holds it.
+
 
 ## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)
 
