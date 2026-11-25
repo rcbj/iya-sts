@@ -46,6 +46,7 @@ matters is whether the browser has the feature.
 | JavaScript (ECMAScript 2022) | Required | Required | The `<noscript>` notice with scripts blocked; "This browser cannot open this page" in a browser too old to run them |
 | WebCrypto (`crypto.subtle`, `crypto.getRandomValues`) | Required | Not used | "This browser cannot open this page", and no sign-in starts |
 | A secure context (HTTPS) | Required, for WebCrypto | Recommended | As WebCrypto |
+| Strict-Transport-Security (HSTS) | Sent in product mode | Sent in product mode | A visit typed or linked as `http://` is not upgraded; the service answers no page over plain HTTP |
 | Content Security Policy | Required for protection | Required for protection | The pages still work, without that protection |
 | `SameSite` cookies | Used | Used | The session cookie is sent more widely; nothing breaks |
 | Fetch, Promises, `TextEncoder`, `URL` | Required | Required | "This browser cannot open this page", naming what is missing |
@@ -145,6 +146,56 @@ they select the text and use `document.execCommand('copy')`
 (`common/web_clipboard.ts`). If that fails too, the button says **Copy
 failed** in the person's language, and its tooltip says to select the text
 and copy it by hand.
+
+## Strict-Transport-Security (HSTS)
+
+**What the service sends.** In product mode every response that arrives over
+TLS carries
+
+```
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+```
+
+which tells a browser to use only HTTPS for this host name, every port of
+it and, with `includeSubDomains`, every subdomain, for a year (RFC 6797
+section 6.1). `includeSubDomains` is `security.hstsIncludeSubDomains`, on by
+default in product mode; with it off the header carries `max-age` alone.
+`security.hstsPreload`, off by default, adds `preload` so the domain can be
+submitted to the browsers' built-in preload list, and is sent only while
+`includeSubDomains` is. Development mode sends no header. The plain-HTTP
+revocation and SCEP listener never sends it. [TLS](tls.md#strict-transport-security)
+has the settings and [Preloading](tls.md#preloading) what preloading commits
+the domain to.
+
+**Every current browser supports HSTS.** A browser that has seen the header
+turns an `http://` address for this host into `https://` before anything is
+sent, and refuses an untrusted certificate with no way to click through.
+
+**A browser without it, or one that has not yet seen the header, is not
+protected on that visit.** That is the first visit to the host, a visit after
+the year has run out or the browser's data was cleared, and every visit from
+a browser that does not implement HSTS, unless the host is on the preload
+list the browser ships with. An `http://` request then leaves in the clear,
+and someone on the network can answer it in the service's place (RFC 6797
+section 14.6, the bootstrap problem). What the service itself does with that
+request:
+
+* **It does not redirect.** In product mode the main port speaks TLS only (a
+  process with `global.https` off does not start), so a plain-HTTP request to
+  it gets no page and no redirect: the TLS handshake fails, the connection
+  closes, the browser shows its own connection error, and the service logs
+  the failed handshake. A person reaches the service by opening its
+  `https://` address.
+* **The plain-HTTP listener serves no pages.** It answers the revocation
+  endpoints (CRLs, OCSP) and SCEP only, whose messages are signed.
+* **A redirect from port 80 is the operator's.** If a load balancer or a CDN
+  in front of the service redirects `http://` to `https://`, that first
+  request still crosses the network in the clear; only HSTS, or preloading,
+  removes it.
+
+So tell people to use the `https://` address, not to type the host name
+alone, and consider [preloading](tls.md#preloading) if the whole registrable
+domain can commit to HTTPS.
 
 ## Content Security Policy
 
