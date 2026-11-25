@@ -509,6 +509,13 @@ used for changes only, is never refreshed, and is dropped after ten minutes
 or at its expiry; reads keep the read token. A browser that blocks the
 window gets a bar with a **Continue** button.
 
+A service administrator working on another realm's pages through the realm
+switcher is asked for the write scope by the realm they signed in at, where
+their account is, not by the realm on screen; and the pages that draw their
+own write controls (Sign-out's end-session buttons, the roles page) draw
+them from the roles the person holds, as the rest of the console does, while
+the change itself still needs the scope (#2200).
+
 Two new read scopes: `account:read` (`/account-api`, GETs only) and
 `report:read` (`/report-api`, GETs only, authorized by `REPORT_USE` or
 `REPORT_ADMIN`). `/admin-api` now names the missing scope on its

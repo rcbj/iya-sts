@@ -19,6 +19,10 @@
 //      second authorization could add; a security change on an
 //      `admin:write` token names `admin:security`; a subject without the
 //      role is told no scope; an `admin:write` token writes as before;
+//   1g. THE VIEWS DRAW WHAT THE PERSON HOLDS (#2200): on a read token, an
+//      Admin Write holder's `/admin-api/logout` answers `canWrite` and
+//      `/admin-api/rbac`'s `you.write` is true, a reader's is not — and the
+//      end-session write itself is still refused `insufficient_scope`;
 //   2. `/account-api`: `account:read` reads and does not write (the
 //      challenge names `account:manage`); `account:manage` does both, as
 //      before;
@@ -179,6 +183,26 @@ function childMain() {
     note(names(r, 'admin:security'),
          '1f. a security change on an admin:write token names ' +
          'admin:security', brief(r));
+    // 1g. The views a write control is drawn from (#2200).
+    r = await call(port, 'GET', '/admin-api/logout?user=' + READER, read);
+    note(r.status === 200 && r.json && r.json.canWrite === true,
+         '1g. on a read token, an Admin Write holder\'s /admin-api/logout ' +
+         'answers canWrite: the end-session controls are drawn', brief(r));
+    r = await call(port, 'GET', '/admin-api/rbac', read);
+    note(r.status === 200 && r.json && r.json.you &&
+         r.json.you.write === true,
+         '1g. and /admin-api/rbac says the holder may write', brief(r));
+    const readerRead = await mint(CONSOLE, '/admin-api',
+                                  'openid admin:read admin:console', READER);
+    r = await call(port, 'GET', '/admin-api/logout?user=' + WRITER,
+                   readerRead);
+    note(r.status === 200 && r.json && r.json.canWrite === false,
+         '1g. a reader, who holds no Admin Write, is drawn none', brief(r));
+    r = await call(port, 'POST', '/admin-api/logout/end', read,
+                   { user: READER });
+    note(names(r, 'admin:write'),
+         '1g. and the end-session write on the read token is still ' +
+         'refused insufficient_scope naming admin:write', brief(r));
 
     // --- 2. /account-api ------------------------------------------------
     const PORTAL = 'sts-user-portal';
