@@ -893,6 +893,13 @@ const DEVICE_ATTRIBUTE = {
   // (`devices.compliantDeviceAttested`). The settings switch the rules; the
   // rules say what they mean.
   REQUIREMENT: 'urn:sts:xacml:device-requirement',
+  // A BOOLEAN (#2179): a PERSON is being issued a credential for the
+  // administrative surface — a token to the console, or one carrying an
+  // admin:* scope, at the token endpoint. A fact the gate gathers
+  // (`common/admin_device_requirement.ts`'s `isAdminSurface()`); the
+  // `device-required-admin` rule reads it while the requirement bag holds
+  // `compliant-admin`. Never true for a program.
+  ADMIN_SURFACE: 'urn:sts:xacml:device-admin-surface',
   // The obligation every device rule carries, so the PEP can tell a Deny
   // about the DEVICE from one about roles — it refuses even where the role
   // question was waived, in both modes — and its one assignment, which
@@ -1608,8 +1615,12 @@ const TEMPLATES: TemplateRow[] = [
               'while devices.requireCompliantDevice is on, OFF by default ' +
               'in both modes — anything but the subject\'s own (or an ' +
               'application\'s) compliant, uncompromised device, attested ' +
-              'too where devices.compliantDeviceAttested says so. No builds ' +
-              'the policy with no device rule at all.' },
+              'too where devices.compliantDeviceAttested says so. A third ' +
+              'rule (#2179) asks the same of a person\'s credential for the ' +
+              'administrative surface while ' +
+              'devices.requireCompliantDeviceForAdmin is in force (on in ' +
+              'product) and armed. No builds the policy with no device rule ' +
+              'at all.' },
       { name: 'decideProtocols',
         label: 'Refuse a protocol the application is not declared for',
         dflt: 'yes', type: 'string',
@@ -2228,6 +2239,33 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: B.apply(F1 + 'and', required),
           obligations: deviceObligation('not-compliant'), advice: []
+        });
+        // THE ADMINISTRATIVE SURFACE (#2179, ASVS 5.0.0 8.4.2): while the
+        // bag holds `compliant-admin` — the realm's
+        // devices.requireCompliantDeviceForAdmin in force (on in product)
+        // AND armed on first proof — a person's token to the console or
+        // carrying an admin:* scope is refused unless it came from the same
+        // compliant device the rule above asks for. `deviceExempt` does not
+        // apply: the console is exempt from the REALM-WIDE rule, for #226's
+        // reason, and this rule is the console's own, written so that it
+        // cannot lock a realm out (`common/admin_device_requirement.ts`).
+        deviceRules.push({
+          id: options.idBase + ':rule:device-required-admin',
+          effect: model.EFFECT.DENY,
+          description: 'While the realm requires it of its administrators ' +
+                       '(devices.requireCompliantDeviceForAdmin, armed), ' +
+                       'refuse a person\'s credential for the ' +
+                       'administrative surface — the console, an admin:* ' +
+                       'scope — that did not come from their own (or an ' +
+                       'application\'s) compliant, uncompromised registered ' +
+                       'device, attested as well where ' +
+                       'devices.compliantDeviceAttested says so.',
+          target: null,
+          condition: B.apply(F1 + 'and', [
+            deviceIs(DEVICE_ATTRIBUTE.REQUIREMENT, 'compliant-admin'),
+            deviceTrue(DEVICE_ATTRIBUTE.ADMIN_SURFACE),
+            not(compliantDevice)]),
+          obligations: deviceObligation('admin-not-compliant'), advice: []
         });
       }
 
@@ -3727,7 +3765,10 @@ const TEMPLATES: TemplateRow[] = [
                           'anything but the subject\'s own compliant ' +
                           'device' + (deviceExempt.length
                             ? ' (never for ' + deviceExempt.join(', ') + ')'
-                            : '') + '.'
+                            : '') + '; and, while the realm requires it of ' +
+                          'its administrators (#2179), a person\'s ' +
+                          'credential for the administrative surface from ' +
+                          'anything but a compliant device of their own.'
                         : '') +
                      (decideProtocols
                         ? ' AND ON THE PROTOCOL: in product mode, an ' +

@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "Caducidad de las aprobaciones de dos personas"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "Pasa a caducado cada acto de administración retenido para un segundo administrador (#2166) cuyo plazo ha vencido, escribiendo su fila de auditoría, elimina un acto terminado una semana después de terminar y repara la lista de los pendientes. Una lectura aplica el plazo por sí misma, así que esto es el registro y la limpieza, nunca lo que decide."
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "Fuentes de atributos: actualización programada"

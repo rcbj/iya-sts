@@ -1979,6 +1979,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "يمنح الوصول إلى وحدة تحكم المسؤول أو يلغيه"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5). ما يرسمه GET /admin/approvals: هل موافقة الشخصين (admin.dualControl، معطّلة افتراضيًا) مفعّلة وسارية في هذا النطاق، وجدول الإجراءات التي تحتجزها، وكل إجراء مسؤول محتجز بانتظار مسؤول ثانٍ، المعلّقة أولًا؛ ?id= يسمّي أحدها. يعكس GET /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166). approve وrefuse وwithdraw، مع { id, reason }. الموافقة والرفض لشخص ثانٍ مختلف يملك الصلاحية التي يحتاجها الإجراء؛ والموافقة تطلب تسجيل دخول حديثًا وتنفّذ العملية المخزّنة عبر معالجها الخاص بوصفها إجراء صاحب الطلب. والسحب لصاحب الطلب. يعكس POST /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "ينفّذ إجراء مسؤول محتجزًا أو يرفضه أو يسحبه"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "خارج المواصفة. كل جلسة تحتفظ بها هذه الخدمة الآن، عبر البروتوكولات الثلاثة التي لها واحدة، مُصفّاة بـ ?q= و?protocol= ومقسّمة الصفحات بـ ?page= و?per=. إنه مورد منفصل عن /admin-api/logout لا شكل منه: ذاك يجيب «ما الذي ما زالت alice مسجّلة الدخول إليه»، مفتاحًا على هوية واحدة عبر إحدى عشرة عائلة، وهذا يجيب «من مسجّل الدخول أصلًا»، وليس فيه مستخدم. كلاهما يقرأ logout/logout.ts، النموذج الواحد لما هي الجلسة الحيّة. يحمل كل صف المفتاح والمعرّف اللذين يأخذهما الإلغاء، وsessionId الذي يأخذه GET /admin-api/tokens?session=، وexpiryRule الذي يقول أي الحسابات الثلاث أنتجت expiresAt الخاص به — حيث 0 يعني بلا انتهاء وليس الحقبة. يطابق GET /admin/sessions."

@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "हस्ताक्षरकर्ता ट्रस्टस्टोर या एक पैरानॉयड PKI सेटिंग बदली गई"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "एक नामित ट्रस्टस्टोर या किसी उपयोग मामले का ट्रस्टस्टोर असाइनमेंट बदला गया"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "एक व्यक्ति की Kerberos कुंजियाँ उनके पासवर्ड से व्युत्पन्न की गईं"
@@ -1182,6 +1186,38 @@
   "audit.actions.authzen.access-request.denials-full.label": {
     "en": "d4a30614c3be855a",
     "text": "AuthZEN के अनुरोध-योग्य अस्वीकरणों का भंडार भर गया था"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "एक व्यवस्थापक कार्य को दूसरे व्यवस्थापक के लिए रोका गया"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "एक रोका गया व्यवस्थापक कार्य अनुमोदित हुआ और चलाया गया"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "एक रोका गया व्यवस्थापक कार्य अस्वीकार किया गया"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "एक रोका गया व्यवस्थापक कार्य उसके अनुरोधकर्ता ने वापस लिया"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "एक रोका गया व्यवस्थापक कार्य बिना निर्णय के समाप्त हुआ"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "एक रोका गया व्यवस्थापक कार्य अनुमोदित हुआ पर चलाया नहीं गया"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "किसी को रोके गए व्यवस्थापक कार्य का निर्णय लेने से मना किया गया"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "एक उच्च-जोखिम व्यवस्थापक कार्य दूसरे व्यवस्थापक के बिना चला"
   },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
@@ -2354,6 +2390,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "एक पंजीकृत डिवाइस का जोखिम स्तर सेट किया गया"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "विश्वास क्षेत्र के व्यवस्थापकों को अब एक अनुपालक पंजीकृत डिवाइस चाहिए"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

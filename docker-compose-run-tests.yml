@@ -735,6 +735,16 @@ services:
       # be reached and HIGH still refuses. MEDIUM's step-up is covered in
       # process by tests/risk_decisions.js.
       - STS_RISK_MEDIUM_SCORE_PERCENT=${STS_RISK_MEDIUM_SCORE_PERCENT:-1000}
+      # THE ADMINISTRATIVE SURFACE'S DEVICE REQUIREMENT IS OFF IN EVERY SUITE
+      # STACK (#2179, rcbj's decision of 2026-11-24): on (product's `auto`),
+      # the first console sign-in from a compliant device arms the realm,
+      # and from then on every browser-driven console job — a real browser
+      # with an ephemeral DPoP key and no registered device — is refused. ONE
+      # job turns it on in a realm of its own and holds it end to end
+      # (tests/protocol/sts_admin_device_requirement.js); the rule is held in
+      # process by tests/admin_device_requirement.js. A default and no
+      # launcher sets it, so no COMPOSE_ENV row is owed.
+      - STS_DEVICES_REQUIRE_COMPLIANT_DEVICE_FOR_ADMIN=${STS_DEVICES_REQUIRE_COMPLIANT_DEVICE_FOR_ADMIN:-off}
       # WHERE THE TWO PERSISTING MODES DIAL, and it is `sts_app` rather than
       # the owner: postgres/schema.sql builds a role with SELECT, INSERT,
       # UPDATE and DELETE on the rows and no CREATE anywhere, so this service

@@ -1067,6 +1067,12 @@ const ACTIONS = [
   // paranoid row decides what it asks of a certificate, so both are recorded.
   { action: 'admin.pki.trust.change', category: 'admin',
     label: 'The signer truststore or a paranoid PKI setting was changed' },
+  // #2118. A named truststore decides whose certificates every use case that
+  // names it believes, and an assignment decides which stores a use case
+  // trusts; the row carries the names and fingerprints, never a certificate.
+  { action: 'admin.pki.truststore.change', category: 'admin',
+    label: 'A named truststore or a use case\'s truststore assignment was ' +
+      'changed' },
 
   // STORED KERBEROS KEYS (2026-09-12). A person's keys DERIVED from a password
   // that was just set or verified is an `authentication` row, for the portal
@@ -1242,6 +1248,26 @@ const ACTIONS = [
   // and nothing new is recorded until a sweep makes room.
   { action: 'authzen.access-request.denials-full', category: 'authorization',
     label: 'The AuthZEN requestable denial store was full' },
+  // TWO-PERSON APPROVAL (#2166, `admin-core/dual_control.ts`): one row per
+  // transition of a held administrator act, one per refused attempt to
+  // decide one, and one per act that ran because nobody else could decide it.
+  { action: 'admin.dual-control.held', category: 'admin',
+    label: 'An administrator act was held for a second administrator' },
+  { action: 'admin.dual-control.approved', category: 'admin',
+    label: 'A held administrator act was approved and run' },
+  { action: 'admin.dual-control.refused', category: 'admin',
+    label: 'A held administrator act was refused' },
+  { action: 'admin.dual-control.withdrawn', category: 'admin',
+    label: 'A held administrator act was withdrawn by its requester' },
+  { action: 'admin.dual-control.expired', category: 'admin',
+    label: 'A held administrator act expired undecided' },
+  { action: 'admin.dual-control.failed', category: 'admin',
+    label: 'A held administrator act was approved and not run' },
+  { action: 'admin.dual-control.decision-refused', category: 'admin',
+    label: 'Somebody was refused the decision of a held administrator act' },
+  { action: 'admin.dual-control.proceeded', category: 'admin',
+    label: 'A high-risk administrator act ran without a second ' +
+           'administrator' },
   // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
   //
   // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since
@@ -2045,6 +2071,11 @@ const ACTIONS = [
   // common/devices.ts
   { action: 'device.risk', category: 'directory',
     label: 'A registered device\'s risk level was set' },
+  // common/admin_device_requirement.ts (#2179): the realm's administrators
+  // now need a compliant registered device — armed on first proof.
+  { action: 'device.admin-requirement-armed', category: 'admin',
+    label: 'The realm\'s administrators now need a compliant registered ' +
+           'device' },
   // federation/federation.js' recordChange()
   { action: 'federation.create', category: 'admin',
     label: 'A federation relationship was created' },

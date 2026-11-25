@@ -1404,6 +1404,13 @@ class ProtocolStack {
                require('../admin-ui/scheduler_admin'), 'SchedulerAdmin');
     this.register(app, require('../admin-ui/scheduler_admin'),
                   'admin-ui/scheduler_admin');
+    // 18i-ii. TWO-PERSON APPROVAL (#2166): a library, no route, whose
+    // expiry job is registered when it is built — so after the scheduler —
+    // and which `mgmt-api/admin_api` (19) requires in the ordinary
+    // direction. The administrator roster and the role permissions it reads
+    // are reached lazily, at a request.
+    this.build('admin-core/dual_control',
+               require('../admin-core/dual_control'), 'DualControl');
     // AND THE TWO CLUSTER JOBS THAT WERE REGISTERED ONLY ON FIRST USE
     // (2026-09-28): the tracked-token purge (`common/admin_stats.js`) and the
     // tombstone sweep (`persistence/persistence_minted.js`). Both owners

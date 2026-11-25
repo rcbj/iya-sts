@@ -3635,6 +3635,14 @@
     "en": "0199e95e9d4fd037",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA EN AMBOS MODOS (#164, decisión 3). Activado, la política de emisión rechaza todo token, aserción, ticket y sesión que no provenga del propio dispositivo registrado del sujeto (o de una aplicación), reconocido por una de sus claves, CONFORME y no comprometido (STS-DEVICE-0037). La consola y el portal — donde una persona registra un dispositivo — están exentos en la política integrada. Una vía sin evidencia de dispositivo (un ticket Kerberos, un password grant sin DPoP) se rechaza. Por dominio, como todo ajuste."
   },
+  "devices.requireCompliantDeviceForAdmin|label": {
+    "en": "accd5e669497d943",
+    "text": "Los administradores necesitan un dispositivo registrado conforme"
+  },
+  "devices.requireCompliantDeviceForAdmin|description": {
+    "en": "de625836b2a5c41f",
+    "text": "Si una PERSONA recibe una credencial para la superficie de administración — un token para la consola de administración, o uno con un alcance admin:* para /admin-api — solo desde un dispositivo registrado conforme propio (o de una aplicación), además atestiguado donde devices.compliantDeviceAttested lo exige (STS-DEVICE-0054). **`auto` está activado en modo producto y desactivado en desarrollo**; `on` y `off` lo fuerzan. Se pregunta en el endpoint de tokens, en cada concesión y cada renovación. A los programas (credenciales de cliente, cuentas de servicio) nunca se les pregunta. SIN BLOQUEO: el requisito se ACTIVA en un dominio la primera vez que un administrador de la consola recibe una credencial así desde un dispositivo conforme; hasta entonces se admite a todo administrador como antes, y una vez activado sigue activado. Registre un dispositivo en la página Dispositivos del portal de usuario, haga que lo marquen como conforme en Directorio > Dispositivos o su gestión de dispositivos, e inicie sesión con la llave de acceso o el certificado que contiene. Por dominio, como todo ajuste."
+  },
   "devices.compliantDeviceAttested|label": {
     "en": "90baceaf602a2650",
     "text": "Un dispositivo conforme también debe estar atestado"
@@ -5374,6 +5382,22 @@
   "admin.securityGroup|description": {
     "en": "296a8d5721391215",
     "text": "El cn del grupo del directorio cuyos miembros son Administradores de seguridad: solo ellos pueden cambiar una política en Directorio → Políticas, asignar una política a una aplicación, un grupo o una persona, conceder este rol o actuar sobre la cuenta de una persona que lo tiene. Admin Write por sí solo no puede. EL ROL IMPLICA ADMIN READ y nada más, de modo que puede tenerlo alguien que no sea administrador por lo demás. El grupo del dominio predeterminado son los Administradores de seguridad del servicio, en todos los dominios; el grupo propio de un dominio limita a sus miembros a ese dominio."
+  },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Aprobación de dos personas para actos de alto riesgo"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "Activado, un acto de administración de alto riesgo no se realiza cuando lo pide el primer administrador: eliminar un dominio, conceder un rol de administrador, renovar la clave de una CA o revocarla, sustituir un ancla de confianza, rotar, importar o retirar una clave de firma, rotar la clave de cifrado de claves y desactivar este ajuste. Queda retenido en Aprobaciones pendientes hasta que un segundo administrador, distinto, con la misma autoridad lo apruebe —entonces se ejecuta como acto del primero— o lo rechace. Cuando menos de dos personas podrían decidir un acto, se ejecuta de inmediato y el registro de auditoría indica que nadie lo aprobó, para que un dominio nunca quede bloqueado. Desactivado, el valor predeterminado, cada acto se ejecuta cuando su administrador lo pide."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Cuánto espera un acto retenido a un segundo administrador (horas)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Cuánto espera una decisión un acto retenido para aprobación de dos personas. Después, el acto ha caducado y nunca se ejecuta; quien lo pidió vuelve a pedirlo."
   },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",

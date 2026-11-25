@@ -55,6 +55,7 @@ import deviceEnrolment = require('../common/device_enrolment');
 import deviceRecognition = require('../common/device_recognition');
 import pki = require('../common/pki');
 import config = require('../common/config');
+import adminDeviceRequirement = require('../common/admin_device_requirement');
 import mode = require('../common/mode');
 import oauth2 = require('../oauth-oidc/oauth2');
 // The SPKI thumbprint of a certificate an MDM names a device by (#164).
@@ -796,7 +797,11 @@ class DevicesAdmin {
           config.value('devices.requireCompliantDevice') === true,
         compliantDeviceAttested:
           config.value('devices.compliantDeviceAttested') === true,
-        policy: 'role-issuance: device-compromised and device-required, ' +
+        // #2179: the administrative surface's requirement — in force, and
+        // whether this realm is armed (`admin_device_requirement.ts`).
+        adminDevice: adminDeviceRequirement.view(),
+        policy: 'role-issuance: device-compromised, device-required and ' +
+                'device-required-admin, ' +
                 'reading urn:sts:xacml:device-* and ' +
                 'urn:sts:xacml:device-requirement',
         acr: 'urn:sts:acr:compliant-device',

@@ -232,6 +232,10 @@ import certificateViews = require('../admin-core/certificate_views');
 // them in `respond()`; this file adds the same member to the GET that
 // `mirrors` that page — see the registration loop and sendJson().
 import protocolEndpoints = require('../admin-core/protocol_endpoints');
+// Two-person approval for high-risk acts (#2166). A LIBRARY in `admin-core/`,
+// built by the composition root at 18i-ii, before this file at 19, so this
+// require is a cache hit and moves nothing.
+import dualControl = require('../admin-core/dual_control');
 // 18b, required in the ORDINARY DIRECTION for the same reason as the line
 // above: `common/protocol_stack.ts` loads it, and registers
 // `/admin/encryption` through its `registerRoutes(app)`, before this file, so
@@ -1912,6 +1916,352 @@ class AdminApi {
       error: 'insufficient_user_authentication',
       errors: ['Sign in again to make this change.'] });
     log.debug("Leaving AdminApi.refuseStaleSignIn().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // TWO-PERSON APPROVAL (#2166). The table, the store and the decisions are
+  // `admin-core/dual_control.ts`'s; what is here is the transport: which
+  // operation a POST is, the 202 a held act is answered with, the decision
+  // operations' checks, and the REPLAY of an approved act through its own
+  // handler, so it is re-validated against the state as it is when it runs.
+  // ---------------------------------------------------------------------------
+  /**
+   * The operationId of the POST this route entry answers for an action.
+   *
+   * @param entry - the route table's row
+   * @param action - the `:action` the request named, or ''
+   * @returns the operationId, or '' when the entry declares none for it
+   */
+  operationIdOf(entry, action: string): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.operationIdOf(). " + action);
+    let out = '';
+    if (Array.isArray(entry && entry.actions)) {
+      const row = entry.actions.filter(function (one) {
+        return one.action === action;
+      })[0];
+      out = row ? String(row.operationId || '') : '';
+    } else if (entry && entry.operationId) {
+      out = String(entry.operationId);
+    }
+    log.debug("Leaving AdminApi.operationIdOf(). " + (out || '(none)'));
+    return out;
+  }
+
+  /**
+   * Holds a high-risk act for a second administrator when two-person
+   * approval is on: stores it and answers 202 with its id. An act that is not
+   * held, or that runs because nobody else could decide it, is left to its
+   * handler.
+   *
+   * @param entry - the route table's row
+   * @param path - the route
+   * @param req - the request, whose body the schema has passed
+   * @param res - the response
+   * @returns true when this answered
+   */
+  holdForSecondAdministrator(entry, path: string, req, res): boolean {
+    const { log, parseBody, errorCodes } = this.deps;
+    log.debug("Entering AdminApi.holdForSecondAdministrator().");
+    const action = String((req.params && req.params.action) || '');
+    const operationId = this.operationIdOf(entry, action);
+    if (!operationId || !dualControl.rowOf(operationId)) {
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Never held.");
+      return false;
+    }
+    const body = Object.assign({}, parseBody(req) || {});
+    delete body.action;
+    const row = dualControl.heldRowFor(operationId, body);
+    if (!row) {
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Not held.");
+      return false;
+    }
+    // THE AUTHORITY THE ACT NEEDED, which the approver must hold too: a
+    // security change (#645) needs SECURITY_ADMIN, every other write here
+    // Admin Write.
+    let security = null;
+    try {
+      security = this.securityChangeOf(req);
+    } catch (e) {
+      log.debug("Caught in AdminApi.holdForSecondAdministrator(): " +
+                ((e && e.message) || e));
+    }
+    const result = dualControl.hold({
+      row: row, operationId: operationId, route: path, action: action,
+      body: body, caller: res.locals && res.locals.apiCaller,
+      authority: security ? 'SECURITY_ADMIN' : 'ADMIN_WRITE' });
+    if (result.refused) {
+      errorCodes.mark(res, result.code || 'STS-ADMIN-0975');
+      this.sendJson(res, 400, { ok: false, errors: result.errors });
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Refused.");
+      return true;
+    }
+    if (!result.held) {
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Runs now.");
+      return false;
+    }
+    res.set('Location', BASE + '/approvals?id=' +
+            encodeURIComponent(result.request.id));
+    this.sendJson(res, 202, { ok: true, pending: true,
+      message: row.what + ' is waiting for a second administrator: ' +
+               'two-person approval is on in this realm. Another ' +
+               'administrator holding ' + result.request.authority +
+               ' approves or refuses it on /admin/approvals (POST ' + BASE +
+               '/approvals/approve with id ' + result.request.id + ') ' +
+               'before ' + result.request.expiresAt + '.',
+      approval: result.request });
+    log.debug("Leaving AdminApi.holdForSecondAdministrator(). Held " +
+              result.request.id + ".");
+    return true;
+  }
+
+  /**
+   * `GET /admin-api/approvals`: the control's state, the table, and every
+   * held act, or one.
+   *
+   * @param req - the request
+   * @param res - the response, whose locals name the caller
+   * @returns the view
+   */
+  approvalsView(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.approvalsView().");
+    const id = String((req.query && req.query.id) || '');
+    const out: any = {
+      state: dualControl.state(),
+      table: dualControl.table(),
+      requests: dualControl.list(),
+      you: this.callerNameOf(res)
+    };
+    if (id) {
+      const one = dualControl.get(id);
+      out.request = one ? dualControl.viewOf(one) : null;
+    }
+    log.debug("Leaving AdminApi.approvalsView(). " + out.requests.length);
+    return out;
+  }
+
+  /**
+   * `POST /admin-api/approvals/{action}`: approve, refuse or withdraw a held
+   * act. An approval asks for a recent sign-in as #1538's changes do, and
+   * answers the act's own answer as `result`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the body, with `action`
+   * @returns the answer, `{ ok, status?, errorCode?, … }`, or null when this
+   *   answered already
+   */
+  async decideHeld(req, res, body) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.decideHeld(). " + body.action);
+    const caller = (res.locals && res.locals.apiCaller) || null;
+    const id = String(body.id || '');
+    const reason = String(body.reason || '');
+    if (body.action === 'refuse') {
+      log.debug("Leaving AdminApi.decideHeld(). Refuse.");
+      return dualControl.refuse(id, caller, reason);
+    }
+    if (body.action === 'withdraw') {
+      log.debug("Leaving AdminApi.decideHeld(). Withdraw.");
+      return dualControl.withdraw(id, caller, reason);
+    }
+    if (body.action !== 'approve') {
+      log.debug("Leaving AdminApi.decideHeld(). Unknown action.");
+      return { ok: false, status: 400, errorCode: 'STS-ADMIN-0970',
+               errors: ['Unknown action "' + body.action + '". The three ' +
+                        'are: approve, refuse, withdraw.'] };
+    }
+    // THE APPROVER'S RE-AUTHENTICATION: every held act is one #2161 puts
+    // under the recent-sign-in rule, so the person who lets it run must have
+    // signed in within `account.recentAuthMinutes` (0: not asked), answered
+    // as RFC 9470 says so the console signs in again in its popup.
+    if (AdminApi.signInIsStale(caller)) {
+      self.refuseStaleSignIn(req, res);
+      log.debug("Leaving AdminApi.decideHeld(). Sign in again.");
+      return null;
+    }
+    const result = await dualControl.approve(id, caller, function (row) {
+      return self.replayHeld(row, caller);
+    });
+    if (result.approval === undefined) {
+      log.debug("Leaving AdminApi.decideHeld(). Refused.");
+      return result;
+    }
+    log.debug("Leaving AdminApi.decideHeld(). Approved, " + result.status +
+              ".");
+    return { ok: result.ok,
+             status: result.ok ? 200 : 409,
+             errorCode: result.ok ? '' : 'STS-ADMIN-0980',
+             message: result.ok
+               ? 'Approved: ' + result.approval.what + ' ran as ' +
+                 result.approval.requester + '\'s act.'
+               : 'Approved, and the act was refused when it ran.',
+             errors: result.ok ? undefined
+               : [].concat((result.body && result.body.errors) || [
+                 'The act was refused when it ran.']),
+             approval: result.approval,
+             result: result.body };
+  }
+
+  /**
+   * Runs an approved held act through its own handler, as its requester's
+   * act: the body checked against the operation's schema again, the caller
+   * the requester (with the approver's recent sign-in, which is what the
+   * approval verified), and the answer captured rather than sent.
+   *
+   * @param row - the stored request
+   * @param approver - the approver, as the gate named them
+   * @returns `{ status, body }`
+   */
+  replayHeld(row, approver): Promise<{ status: number; body: any }> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.replayHeld(). " + row.operationId);
+    const entry = (ROUTES || []).filter(function (one) {
+      return one.method === 'POST' && (one.route || one.path) === row.route;
+    })[0];
+    if (!entry) {
+      log.debug("Leaving AdminApi.replayHeld(). No such route.");
+      return Promise.resolve({ status: 404, body: { ok: false, errors: [
+        'The operation ' + row.operationId + ' is no longer served.'] } });
+    }
+    const url = String(row.route).replace(':action', row.action);
+    const req: any = {
+      method: 'POST', params: { action: row.action }, query: {},
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(row.body || {}),
+      originalUrl: url, url: url, path: url,
+      __adminApiRoute: row.route,
+      __adminApiHandlerOwnsBody: !!entry.handlerOwnsBody,
+      __dualControlReplay: true
+    };
+    const checked = self.checkRequestBody(req);
+    if (!checked.ok) {
+      log.debug("Leaving AdminApi.replayHeld(). The body no longer passes.");
+      return Promise.resolve({ status: 400,
+                               body: { ok: false, errors: checked.errors } });
+    }
+    const requester = row.requester || {};
+    const caller = {
+      kind: requester.kind || 'person', name: requester.name,
+      sub: requester.sub, clientId: requester.clientId,
+      realm: requester.realm,
+      authTime: Number(approver && approver.authTime) || 0,
+      scopes: [row.authority === 'SECURITY_ADMIN' ? 'admin:security'
+                                                  : 'admin:write'],
+      roles: [row.authority], expiresAt: null, owner: false,
+      approvedBy: approver && approver.name
+    };
+    req.adminApiCaller = caller;
+    return new Promise(function (resolve) {
+      const captured = { status: 0, text: '' };
+      let settled = false;
+      // A PER-REQUEST TIMEOUT, not periodic work: a handler that never
+      // answers is a failed act, not an approval that waits for ever.
+      let timer = null;
+      const done = function () {
+        log.debug("Entering done().");
+        if (settled) {
+          log.debug("Leaving done(). Already.");
+          return;
+        }
+        settled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        let body: any = {};
+        try {
+          body = JSON.parse(captured.text || '{}');
+        } catch (e) {
+          log.debug("Caught in done(): " + ((e && e.message) || e));
+          body = { ok: captured.status < 400 };
+        }
+        resolve({ status: captured.status || 500, body: body });
+        log.debug("Leaving done().");
+      };
+      // THE STAND-IN RESPONSE: what a handler and `sendJson()` call on a
+      // response, capturing the status and the text instead of sending.
+      const res: any = {
+        req: req,
+        locals: { apiCaller: caller, proseRoute: entry.proseRoute ||
+                  row.route },
+        headersSent: false,
+        status: function status(code) {
+          log.debug("Entering status(). " + code);
+          captured.status = code;
+          log.debug("Leaving status().");
+          return res;
+        },
+        type: function type() {
+          log.debug("Entering type().");
+          log.debug("Leaving type().");
+          return res;
+        },
+        set: function set() {
+          log.debug("Entering set().");
+          log.debug("Leaving set().");
+          return res;
+        },
+        vary: function vary() {
+          log.debug("Entering vary().");
+          log.debug("Leaving vary().");
+          return res;
+        },
+        send: function send(text) {
+          log.debug("Entering send().");
+          captured.text = typeof text === 'string' ? text
+            : JSON.stringify(text);
+          res.headersSent = true;
+          done();
+          log.debug("Leaving send().");
+          return res;
+        },
+        json: function json(value) {
+          log.debug("Entering json().");
+          captured.text = JSON.stringify(value);
+          res.headersSent = true;
+          done();
+          log.debug("Leaving json().");
+          return res;
+        },
+        end: function end() {
+          log.debug("Entering end().");
+          done();
+          log.debug("Leaving end().");
+          return res;
+        }
+      };
+      const next = function (e) {
+        log.debug("Entering next().");
+        log.debug("Caught in next(): " + ((e && e.message) || e));
+        if (!captured.status) {
+          captured.status = 500;
+          captured.text = JSON.stringify({ ok: false, errors: [
+            'The held act failed when it was run.'] });
+        }
+        done();
+        log.debug("Leaving next().");
+      };
+      timer = setTimeout(function () {
+        next(new Error('the held act did not answer within 120 seconds'));
+      }, 120000);
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref();
+      }
+      try {
+        const answered = entry.handler(req, res, next);
+        if (answered && typeof answered.then === 'function') {
+          answered.then(function () {
+            return undefined;
+          }, next);
+        }
+      } catch (e) {
+        next(e);
+      }
+      log.debug("Leaving AdminApi.replayHeld(). Running.");
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -6124,6 +6474,67 @@ class AdminApi {
           { action: 'grant', operationId: 'grantAdminRole' },
 
           { action: 'revoke', operationId: 'revokeAdminRole' }
+        ] }),
+
+      // ---------------------------------------------------------------------
+      // TWO-PERSON APPROVAL (#2166, ASVS 5.0.0 2.3.5). With
+      // `admin.dualControl` on, an act `admin-core/dual_control.ts`'s table
+      // names is HELD by the POST wrapper in `registerRoutes()` rather than
+      // run, and answered 202 with the request's id. These two are where a
+      // second administrator sees it and decides it, and the requester
+      // withdraws it: Directory → Pending approvals on the console draws the
+      // GET and posts its three buttons to the POST.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/approvals', tag: 'Admin roles',
+        operationId: 'getApprovals',
+        mirrors: 'GET /admin/approvals',
+        parameters: [
+          { name: 'id', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One held act\'s id, as a 202 answer named it.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API approvals endpoint.");
+          self.sendJson(res, 200, self.approvalsView(req, res));
+          log.debug("Leaving the management API approvals endpoint.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/approvals/:action', tag: 'Admin roles',
+        mirrors: 'POST /admin/approvals',
+        handler: function (req, res, next) {
+          log.debug("Entering the management API approvals action endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          Promise.resolve(self.decideHeld(req, res, body))
+            .then(function (result) {
+              if (!result) {
+                log.debug("Leaving the management API approvals action " +
+                          "endpoint. Answered already.");
+                return;
+              }
+              if (!result.ok) {
+                errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0970');
+              }
+              const answer = Object.assign({}, result);
+              const status = Number(answer.status) ||
+                (answer.ok ? 200 : 400);
+              delete answer.status;
+              delete answer.errorCode;
+              self.sendJson(res, status, answer);
+              log.debug("Leaving the management API approvals action " +
+                        "endpoint. " + status);
+            }).catch(function (e) {
+              log.debug("Caught in the management API approvals action " +
+                        "endpoint: " + ((e && e.message) || e));
+              next(e);
+            });
+        },
+        actions: [
+          { action: 'approve', operationId: 'approveHeldAct' },
+
+          { action: 'refuse', operationId: 'refuseHeldAct' },
+
+          { action: 'withdraw', operationId: 'withdrawHeldAct' }
         ] }),
 
       // ---------------------------------------------------------------------
@@ -13456,13 +13867,26 @@ class AdminApi {
           return undefined;
         }
         // A RECENT SIGN-IN FOR THE FAMILIES THAT NEED ONE (#2161), after
-        // the body is known to be well formed and before anything acts.
+        // the body is known to be well formed and before anything acts —
+        // before a hold too (#2166), so a held act's requester has signed
+        // in recently, and the decisions on held acts (tag `Admin roles`)
+        // are asked it as well.
         const family = AdminApi.recentSignInFamilyOf(entry, asked,
           res.locals.securityChange);
         if (family && AdminApi.signInIsStale(res.locals.apiCaller)) {
           log.debug("The management API asked for a recent sign-in before " +
                     (entry.operationId || path) + " (" + family + ").");
           self.refuseStaleSignIn(req, res);
+          return undefined;
+        }
+        // TWO-PERSON APPROVAL (#2166): a held act is stored and answered
+        // 202 here, after the gate, the schema and the recent sign-in and
+        // before the handler, so the console's forms and a program's calls
+        // meet the one check. An approved act's replay calls its handler
+        // directly (`replayHeld()`), with the approver's sign-in time, and
+        // is never held again.
+        if (!req.__dualControlReplay &&
+            self.holdForSecondAdministrator(entry, path, req, res)) {
           return undefined;
         }
         // WHO IS ACTING is not put into the body: each handler hands its
@@ -13960,6 +14384,20 @@ export = {
    * test asks it what a body sent to an operation would be refused for.
    */
   checkRequestBody: slot.forward('checkRequestBody'),
+  /**
+   * Forwards to `AdminApi.holdForSecondAdministrator()`: the POST wrapper's
+   * two-person approval step (#2166), for a test.
+   */
+  holdForSecondAdministrator: slot.forward('holdForSecondAdministrator'),
+  /**
+   * Forwards to `AdminApi.decideHeld()`: an approve, refuse or withdraw
+   * (#2166), for a test.
+   */
+  decideHeld: slot.forward('decideHeld'),
+  /**
+   * Forwards to `AdminApi.approvalsView()` (#2166).
+   */
+  approvalsView: slot.forward('approvalsView'),
   /**
    * Forwards to `AdminApi.compileAllRequestSchemas()` on the installed
    * instance: every request schema compiled now (#617), for a test.

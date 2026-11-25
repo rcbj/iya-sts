@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "Signerarnas förtroendelager eller en inställning för paranoid PKI ändrades"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Ett namngivet förtroendelager eller ett användningsfalls tilldelning av förtroendelager ändrades"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "En persons Kerberos-nycklar härleddes från deras lösenord"
@@ -1182,6 +1186,38 @@
   "audit.actions.authzen.access-request.denials-full.label": {
     "en": "d4a30614c3be855a",
     "text": "AuthZEN-lagret för avslag som kan begäras var fullt"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "En administratörsåtgärd hölls kvar för en andra administratör"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "En kvarhållen administratörsåtgärd godkändes och kördes"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "En kvarhållen administratörsåtgärd avslogs"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "En kvarhållen administratörsåtgärd drogs tillbaka av den som begärde den"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "En kvarhållen administratörsåtgärd löpte ut obeslutad"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "En kvarhållen administratörsåtgärd godkändes och kördes inte"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "Någon nekades beslutet om en kvarhållen administratörsåtgärd"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "En högriskåtgärd av en administratör kördes utan en andra administratör"
   },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
@@ -2354,6 +2390,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "Risknivån för en registrerad enhet angavs"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Sfärens administratörer behöver nu en kompatibel registrerad enhet"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

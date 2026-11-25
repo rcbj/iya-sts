@@ -195,7 +195,30 @@ class ModePage {
         return '<li id="not-yet-' + WebKit.esc(row.id) + '">' +
           WebKit.esc(row.what) + '</li>';
       }).join('') + '</ul>');
-    return tiles + about + warning + requirements + settings + notYet;
+    // TWO-PERSON APPROVAL (#2166): on or off, in force or not, and the
+    // single-administrator rule's answer, beside what the mode changes.
+    const dc = json.dualControl;
+    const dual = dc ? '<h2 data-tab="dualcontrol">' +
+      t.html('consoleMode.dualHeading') + '</h2>' +
+      WebKit.frame('<p>' + t.html('consoleMode.dualLead') + '</p>' +
+      '<p><strong>' + t.html(dc.inForce ? 'consoleMode.dualInForce'
+        : (dc.on ? 'consoleMode.dualOnNotInForce'
+                 : 'consoleMode.dualOff')) + '</strong></p>' +
+      '<p>' + WebKit.esc(dc.why || '') + '</p>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleMode.dualThAuthority') + '</th><th>' +
+      t.html('consoleMode.dualThHolders') + '</th><th>' +
+      t.html('consoleMode.dualThInForce') + '</th></tr></thead><tbody>' +
+      (dc.authorities || []).map(function (row: Json): string {
+        return '<tr><th><code>' + WebKit.esc(row.authority) +
+          '</code></th><td>' + WebKit.esc(String(row.holders)) +
+          '</td><td>' + t.html(row.inForce ? 'consoleMode.dualYes'
+                                           : 'consoleMode.dualNo') +
+          '</td></tr>';
+      }).join('') + '</tbody></table><p><a href="/admin/approvals">' +
+      t.html('consoleMode.dualLink', { n: String(dc.pending || 0) }) +
+      '</a></p>') : '';
+    return tiles + about + warning + requirements + settings + notYet + dual;
   }
 }
 

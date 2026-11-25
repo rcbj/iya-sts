@@ -117,6 +117,11 @@ class ModeAdmin {
           inForce: configDump.maskKeyed(row.key, row.inForce)
         });
       });
+    // TWO-PERSON APPROVAL (#2166): whether it is on and in force here, and
+    // the single-administrator rule's answer when it is not. A library the
+    // composition root builds at 18i-ii, before this page (18k); required
+    // here at the call, as a read that needs it only when it is drawn.
+    report.dualControl = require('../admin-core/dual_control').state();
     log.debug("Leaving ModeAdmin.modeView(). " + report.mode + ", " +
               report.requirements.length + " requirement(s).");
     return report;

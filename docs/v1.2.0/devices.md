@@ -484,10 +484,11 @@ own policy can too ([XACML](xacml.md)):
 | `urn:sts:xacml:device-attestation` | `attested` or `self-asserted` |
 | `urn:sts:xacml:device-status` | `active` or `compromised` |
 | `urn:sts:xacml:device-risk-level` | `LOW`, `MEDIUM` or `HIGH`, when assessed |
-| `urn:sts:xacml:device-requirement` | what this realm's settings require: `not-compromised`, `compliant`, `attested` |
+| `urn:sts:xacml:device-requirement` | what this realm's settings require: `not-compromised`, `compliant`, `compliant-admin`, `attested` |
+| `urn:sts:xacml:device-admin-surface` | `true` when a person is being issued a token for the administrative surface: the admin console, or a token carrying an `admin:*` scope |
 
-The built-in policy has two device rules. Settings switch them on and off,
-so no policy edit is needed:
+The built-in policy has three device rules. Settings switch them on and
+off, so no policy edit is needed:
 
 * **A compromised device is refused**, for every application. This is on by
   default in both modes (`devices.refuseCompromised`), and the refusal is
@@ -508,8 +509,65 @@ so no policy edit is needed:
   * A door that carries no device evidence is refused while the rule is on,
     for example a Kerberos ticket, or a password grant without DPoP.
 
+* **Administrators need a compliant registered device in product mode**
+  (`devices.requireCompliantDeviceForAdmin`, `auto` by default: on in
+  product, off in development). See the next section.
+
 The client is told only that authentication failed, or that a compliant
 registered device is required. The rule and the device are on the audit row.
+
+## The admin console needs a compliant device
+
+In product mode, a person gets a token for the admin console, or any token
+carrying an `admin:*` scope for `/admin-api`, only from a compliant
+registered device of their own. An application's device, such as a managed
+host, also counts. The device must also be attested where
+`devices.compliantDeviceAttested` is on. The check is made at the token
+endpoint, on every grant and every refresh, so a device marked non-compliant
+loses the console at its next refresh. A refusal is `access_denied`, and the
+audit row records `STS-DEVICE-0054`. The person is told:
+
+> The admin console requires a compliant registered device. Sign in from a
+> device registered to you and marked compliant: register one on the user
+> portal's Devices page, and ask another administrator or your device
+> management to mark it compliant.
+
+Programs are never asked. A token a client gets for itself with client
+credentials, a service account's token included, is unchanged.
+
+**The rule cannot lock a realm out, because it starts unarmed.** Until a
+console administrator has signed in from a compliant registered device,
+every administrator is admitted as before. Directory → Devices shows a
+warning saying so. The first such sign-in ARMS the realm, and from then on
+the rule holds for every administrator. To get there:
+
+1. Register the device. On the user portal's Devices page you can prove a
+   key, or link a passkey built into the device. An administrator can also
+   register the device on Directory → Devices.
+2. Have the device marked compliant: by an administrator on Directory →
+   Devices, by your device management's compliance feed, or by a CAEP
+   `device-compliance-change` from a configured transmitter. A person cannot
+   mark their own device compliant on the portal.
+3. Sign in to the console with the passkey or the certificate on that device.
+   That sign-in arms the realm.
+
+Once armed, the realm stays armed. Removing a device does not disarm it, and
+nor does turning the setting off and on again. If an administrator loses
+their device, another administrator marks the replacement compliant. If
+every administrator has lost theirs, use the deployment's management
+credential, which is a program and so is never asked. With it, call
+`/admin-api/devices/set-compliance` for the new device, or set
+`devices.requireCompliantDeviceForAdmin` to `off`.
+
+A realm whose own `role-issuance` document was built before 1.2.0 does not
+carry the rule. Rebuild the document from the template to add it.
+
+This repository's own test stacks run with
+`devices.requireCompliantDeviceForAdmin` set to `off`. Their browser-driven
+console jobs sign in from browsers that hold no registered device, and the
+first compliant sign-in would arm the realm and refuse them. One job turns
+the setting on in a realm of its own and checks the rule end to end. The
+default for a deployment is unchanged.
 
 Somebody else's device is only a fact: `device-owner-matches` is false. The
 built-in policy refuses nothing for that alone. A person may sign in on a
@@ -659,6 +717,7 @@ Drawn on **Protocols → Device registration**; the live source is that page and
 | `devices.browserReissueGraceSeconds` | `STS_DEVICES_BROWSER_REISSUE_GRACE_SECONDS` | `60` | yes | How long the previous token is still accepted after a reissue (two tabs); older is a copied cookie. |
 | `devices.browserTokenCertificateHeader` | `STS_DEVICES_BROWSER_TOKEN_CERTIFICATE_HEADER` | `x5u` | yes | The certificate header on the signed token. `x5c` and `both` make it too large for a cookie. |
 | `devices.requireCompliantDevice` | `STS_DEVICES_REQUIRE_COMPLIANT_DEVICE` | `false` | yes | Requires the subject's own compliant registered device. The console and the portal are exempt. |
+| `devices.requireCompliantDeviceForAdmin` | `STS_DEVICES_REQUIRE_COMPLIANT_DEVICE_FOR_ADMIN` | `auto` | yes | `auto` (on in product), `on` or `off`. Requires a compliant registered device of a person's console and `admin:*` tokens; armed on first proof. |
 | `devices.compliantDeviceAttested` | `STS_DEVICES_COMPLIANT_DEVICE_ATTESTED` | `false` | yes | A compliant device must also be attested, both for the rule above and for the acr. |
 
 ## In the running service

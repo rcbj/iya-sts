@@ -19,6 +19,64 @@ parties. `POST /admin-api/truststores/create` takes `kind`, `party`,
 `jwks` and `jwksUri`, and the new `POST /admin-api/truststores/set-keys`
 replaces a key set's keys.
 
+### Behaviour change: in product mode, administrators need a compliant registered device
+
+In product mode, a person's token for the admin console, or any token
+carrying an `admin:*` scope for `/admin-api`, is now issued only from a
+compliant registered device of their own (ASVS 5.0.0 8.4.2). The check is
+made at the token endpoint, on every grant and every refresh. A refusal is
+`access_denied`, recorded as `STS-DEVICE-0054`. The new setting
+`devices.requireCompliantDeviceForAdmin` controls it: `auto` (the default)
+is on in product and off in development, and `on` and `off` force it.
+Programs that use their own client credentials are not affected.
+
+**Upgrading.** Nothing to run, and nobody is locked out. The requirement
+starts unarmed in every realm, so every administrator signs in exactly as
+before. It arms itself the first time a console administrator signs in from
+a compliant registered device. Directory → Devices says which state a realm
+is in. Before that first sign-in, register your administrators' devices,
+have them marked compliant, and sign them in with the passkey or
+certificate on the device. [Devices](devices.md) has the steps, and the way
+back in if every administrator loses their device. A realm that keeps its
+own `role-issuance` document must rebuild it from the template to get the
+rule. To keep the 1.1 behaviour, set the setting to `off`.
+
+This repository's own test stacks run with the setting `off`
+(`docker-compose-run-tests.yml`), because their browser-driven console jobs
+sign in from browsers that hold no registered device. One job,
+`tests/protocol/sts_admin_device_requirement.js`, turns it on in a realm of
+its own and checks the rule end to end.
+### New: two-person approval for high-risk administrator acts
+
+A realm can now require a second administrator for its highest-risk acts
+(ASVS 5.0.0 2.3.5). This is new setting `admin.dualControl`, off by default
+and per realm. While it is on, these acts wait on a new console page,
+**Pending approvals** (`/admin/approvals`):
+
+* removing a realm
+* granting an administrator role
+* re-keying or revoking a CA
+* replacing a trust anchor
+* rotating, importing or retiring a signing key
+* rotating the key-encryption key
+* turning the setting off
+
+A second, different administrator with the same authority approves the act,
+and it then runs as the first administrator's act, or refuses it. The
+requester may withdraw it. Undecided, it expires after
+`admin.dualControlLifetimeHours` (default 24).
+
+The management API answers a held act with HTTP 202 and the request's id,
+and adds `GET /admin-api/approvals` and `POST /admin-api/approvals/{approve,
+refuse, withdraw}`. When fewer than two people could decide an act, it runs
+and is recorded as `STS-ADMIN-0976`, so a realm can never be locked out. The
+**Mode** page shows whether the control is in force.
+
+**Upgrading.** Nothing to run. With the setting off, which is the default,
+nothing changes. The held acts are kept in the existing store, so there is
+no schema change. See
+[Two-person approval](admin-console.md#two-person-approval).
+
 ### Behaviour change: a password an administrator types is temporary
 
 In product mode, a password an administrator types for somebody must now
