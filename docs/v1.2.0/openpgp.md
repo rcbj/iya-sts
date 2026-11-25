@@ -91,10 +91,10 @@ its list, and accepts SLH-DSA only once it adds the names.
 
 **SLH-DSA (#2220).** RFC 9980 section 7 defines SLH-DSA-SHAKE-128s (32),
 SLH-DSA-SHAKE-128f (33) and SLH-DSA-SHAKE-256s (34) as standalone signing
-algorithms for v6 keys, each bound to one digest: SHA3-256 for the two
-128-bit sets and SHA3-512 for 256s. A self-signature or a signed challenge
-over any other digest is not believed, and an SLH-DSA key in a v4 packet is
-refused. The signature is checked by node's OpenSSL; a runtime that cannot
+algorithms for v6 keys. Their signatures must use a digest of at least 256
+bits (section 6.2.1): SHA2-256, SHA2-384, SHA2-512, SHA3-256 and SHA3-512 are
+accepted, and a self-signature or a signed challenge over SHA-1 or SHA2-224
+is not believed. An SLH-DSA key in a v4 packet is refused. The signature is checked by node's OpenSSL; a runtime that cannot
 check it refuses the key (`STS-OPENPGP-0026`) rather than storing it
 unchecked. The key's encryption subkey, if it has one, must be one of the
 RFC 9980 ML-KEM composites for mail to be encrypted to it.
@@ -106,7 +106,7 @@ are on the same page. They cannot both be on (`STS-OPENPGP-0027`).
 Both version 4 keys (RFC 4880, what GnuPG 2.2 and 2.4 make) and version 6 keys
 (RFC 9580) are read. An RFC 9980 key is read by this service's own reader,
 which checks both halves of a composite signature, and an SLH-DSA
-signature over its bound digest. A new registration replaces
+signature over a digest of at least 256 bits. A new registration replaces
 the key you had.
 
 **The service cannot tell a key on a card from one in a file.** A signature
@@ -250,8 +250,9 @@ must keep old mail readable generates and escrows 9d keys instead
 A person can also have this service **issue** them a post-quantum S/MIME
 certificate (#2220), under **An ML-KEM certificate from this service** on
 the same page. An ML-KEM key cannot sign, so it cannot sign a certification
-request; possession is proved the way RFC 9810 (CMP) section 5.2.8.3
-proves it for a key that cannot sign, by a challenge:
+request; possession is proved by a challenge instead, RFC 9810 (CMP)
+section 5.2.8.3.3's challenge-response protocol, which section 5.2.8.4 lists
+for a KEM key as `KEMKPOPChallengeResp`:
 
 1. Make a key with OpenSSL 3.5 or later and send its public half:
 

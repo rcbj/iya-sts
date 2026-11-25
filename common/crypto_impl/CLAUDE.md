@@ -293,8 +293,10 @@ certificate parsing, base64, UTF-8 and binary strings.
   `postQuantumOffer()` says which of the five it offers. SoftHSM2 2.6 offers
   neither family, so `tests/pkcs11_pq_published_set.js` plays the token.
 * **`openpgp_pqc.js` reads SLH-DSA** (RFC 9980 section 7, ids 32–34):
-  standalone signatures over the dataDigest, v6 keys only, each bound to its
-  Table 9 digest. `verifyComposite()` hands a standalone algorithm to
+  standalone signatures over the dataDigest, v6 keys only, over any digest
+  of at least 256 bits (section 6.2.1; SHA-1 and SHA2-224 refused). The first
+  cut bound each set to one SHA3 digest, which would have refused a valid
+  SHA2-256 signature. `verifyComposite()` hands a standalone algorithm to
   `verifyStandalone()`, which answers the same shape (`eddsa` true, the
   SLH-DSA verdict in `mldsa`), so every caller — the self-signatures, a
   detached signature, a cleartext challenge — is unchanged.

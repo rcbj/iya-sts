@@ -10,7 +10,8 @@
 // (#2220; #2009's D4 left it to a later ticket).
 //
 // A KEM key cannot sign a certification request, so the proof is RFC 9810
-// section 5.2.8.3's challenge-response: the service encapsulates to the
+// section 5.2.8.3.3's challenge-response (`KEMKPOPChallengeResp` in its
+// section 5.2.8.4): the service encapsulates to the
 // key, the holder decapsulates and sends the secret back. Here the holder
 // is node's own ML-KEM (`crypto.decapsulate()`), as `openssl pkeyutl
 // -decap` would be.

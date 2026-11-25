@@ -7,8 +7,9 @@ Five post-quantum gaps of the migration plan are closed (#2220, section E).
 **ML-KEM S/MIME certificates are issued**, not only uploaded: on
 `/portal/openpgp` (the account API's `smime-kem-challenge` and
 `smime-kem-issue`) a person sends an ML-KEM public key, the service
-encapsulates to it, and on the secret coming back (RFC 9810's
-challenge-response proof of possession) the realm's EST Issuing CA issues an
+encapsulates to it, and on the secret coming back (the
+challenge-response proof of possession of RFC 9810 section 5.2.8.3.3,
+`KEMKPOPChallengeResp` in section 5.2.8.4) the realm's EST Issuing CA issues an
 `email`-profile certificate with `keyEncipherment` alone (RFC 9935), which
 becomes their S/MIME certificate (`STS-OPENPGP-0035` to `-0039`). **LDAPS on
 636 serves every listener certificate**, so `tls.certificateAlgorithms`

@@ -22466,8 +22466,11 @@ function smimeKemAvailable() {
 // A KEM key cannot sign, so it cannot sign a certification request, and a
 // certificate authority that certified a KEM key on the strength of a
 // request alone would be certifying a key nobody showed they hold. RFC 9810
-// (CMP v3) section 5.2.8.3 names the answer for a key that cannot sign: the
-// CHALLENGE-RESPONSE method — the authority encapsulates to the key, and only
+// (CMP v3) gives the answer for a key that cannot sign: section 5.2.8.3.3's
+// direct method, the CHALLENGE-RESPONSE protocol, written for a decryption
+// key, and named for a KEM key in section 5.2.8.4's summary of the
+// proof-of-possession options (`KEMKPOPChallengeResp`). The authority
+// encapsulates to the key, and only
 // the holder of the private key can recover the shared secret. So:
 //
 //   * `smimeKemPublicKeyOf()` reads the person's SubjectPublicKeyInfo and

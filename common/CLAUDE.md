@@ -13527,7 +13527,8 @@ The file's header is the argument; what a maintainer needs beside it:
 #2009's D4 made an ML-KEM certificate uploaded only, because a KEM key
 cannot sign a request. `openpgp_keys.ts`'s `issueSmimeKemChallenge()` and
 `issueSmimeKemCertificate()` are the later ticket's route, RFC 9810
-section 5.2.8.3's challenge-response: `crypto.js`'s
+section 5.2.8.3.3's challenge-response (written for a decryption key; the
+KEM case is `KEMKPOPChallengeResp` in section 5.2.8.4): `crypto.js`'s
 `smimeKemPublicKeyOf()` holds the key to RFC 9935, `smimeKemChallenge()`
 encapsulates and answers the ciphertext and the SHA-256 of the secret
 (all that is kept, in the OpenPGP challenge store under `kem:<entryUUID>`),

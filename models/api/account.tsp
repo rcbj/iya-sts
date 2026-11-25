@@ -5330,7 +5330,8 @@ op `revokeSshCertificate`(
 }
 
 // #2220: AN ML-KEM S/MIME CERTIFICATE THIS REALM ISSUES, on a proof of
-// possession (RFC 9810 section 5.2.8.3's challenge-response method).
+// possession (RFC 9810 section 5.2.8.3.3's challenge-response protocol;
+// `KEMKPOPChallengeResp` in its section 5.2.8.4).
 @js(#{`description`:"An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates."}) @hoisted model OpenPgpKemChallengeView {
   @js(#{`description`:"`ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`."}) `algorithm`: string;
   @js(#{`description`:"The ML-KEM ciphertext, base64."}) `cipherText`: string;

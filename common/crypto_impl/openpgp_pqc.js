@@ -17,12 +17,18 @@
 //
 // **SLH-DSA (algorithms 32, 33 and 34) IS READ SINCE #2220.** RFC 9980
 // section 7 makes SLH-DSA-SHAKE-128s, -128f and -256s MAY signing
-// algorithms, standalone rather than composite, for v6 keys only, each
-// bound to one digest (its Table 9: SHA3-256 for the two 128-bit sets,
-// SHA3-512 for 256s). The signature is SLH-DSA-Sign over the dataDigest
+// algorithms, standalone rather than composite, for v6 keys only. Section
+// 6.2.1 asks of the signature's digest only that it be at least 256 bits
+// (a verifier MUST reject a smaller one), whatever the parameter set, so
+// any digest in HASHES below is accepted: SHA2-256, -384, -512, SHA3-256,
+// SHA3-512. SHA-1 and SHA2-224 are not in HASHES and are refused. This
+// service signs no OpenPGP message; the first cut bound each set to one
+// SHA3 digest and would have refused a valid SHA2-256 signature (#2220
+// review). The signature is SLH-DSA-Sign over the dataDigest
 // with an empty context, exactly as the ML-DSA half of a composite is, so
 // it is checked by the same `pqc.js` (node's OpenSSL). A v4 key, a
-// signature over another digest, or one of the wrong length is refused;
+// signature over a digest under 256 bits, or one of the wrong length is
+// refused;
 // a runtime without SLH-DSA leaves the key `unchecked`, never accepted.
 // Until #2220 a key that used one was "not accepted" by name.
 //
@@ -54,9 +60,9 @@ const log = bunyan.createLogger({
   level: process.env.STS_LOG_LEVEL || 'info'
 });
 
-// RFC 9980 tables 4, 5, 6 and 7, and its section 7's SLH-DSA (Table 8
-// for the sizes, Table 9 for the digest each is bound to; FIPS 205 Table
-// 2 gives the same sizes). Lengths are octets. The secret-key columns are
+// RFC 9980 tables 4, 5, 6 and 7, and its section 7's SLH-DSA (FIPS 205
+// Table 2 gives the sizes; the digest rule is section 6.2.1's, applied in
+// `verifyStandalone()`). Lengths are octets. The secret-key columns are
 // the seed forms (ML-DSA xi is 32, ML-KEM d||z is 64; SLH-DSA has no
 // seed form and its secret is the whole key); this reader never stores a
 // secret, and uses the lengths only to refuse a secret packet that was
@@ -71,14 +77,11 @@ const ALGS = Object.freeze({
         eccPub: 57, pqPub: 2592, eccSig: 114, pqSig: 4627,
         eccSecret: 57, pqSecret: 32 },
   32: { name: 'SLH-DSA-SHAKE-128s', use: 'sign', standalone: true,
-        pq: 'SLH-DSA-SHAKE-128s', pqPub: 32, pqSig: 7856, pqSecret: 64,
-        hashAlg: 12 },
+        pq: 'SLH-DSA-SHAKE-128s', pqPub: 32, pqSig: 7856, pqSecret: 64 },
   33: { name: 'SLH-DSA-SHAKE-128f', use: 'sign', standalone: true,
-        pq: 'SLH-DSA-SHAKE-128f', pqPub: 32, pqSig: 17088, pqSecret: 64,
-        hashAlg: 12 },
+        pq: 'SLH-DSA-SHAKE-128f', pqPub: 32, pqSig: 17088, pqSecret: 64 },
   34: { name: 'SLH-DSA-SHAKE-256s', use: 'sign', standalone: true,
-        pq: 'SLH-DSA-SHAKE-256s', pqPub: 64, pqSig: 29792, pqSecret: 128,
-        hashAlg: 14 },
+        pq: 'SLH-DSA-SHAKE-256s', pqPub: 64, pqSig: 29792, pqSecret: 128 },
   35: { name: 'ML-KEM-768+X25519', use: 'encrypt',
         ecc: 'x25519', pq: 'ML-KEM-768',
         eccPub: 32, pqPub: 1184, eccCt: 32, pqCt: 1088,
@@ -608,7 +611,7 @@ function verifyComposite(sig, toSign, key) {
 
 /**
  * One SLH-DSA signature over `toSign` (RFC 9980 section 7, #2220): a v6
- * signature, over the digest its parameter set is bound to, of the
+ * signature, over a digest of at least 256 bits (section 6.2.1), of the
  * length FIPS 205 gives, verified over the dataDigest.
  *
  * @param sig - a parsed signature
@@ -628,10 +631,13 @@ function verifyStandalone(sig, toSign, key) {
   if (sig.version !== 6) {
     return refuse(spec.name + ' is used only in a v6 signature');
   }
-  if (sig.hashAlg !== spec.hashAlg) {
-    return refuse(spec.name + ' signatures are made over ' +
-                  HASHES[spec.hashAlg].name + ' (RFC 9980 section 7), ' +
-                  'not hash algorithm ' + sig.hashAlg);
+  // RFC 9980 section 6.2.1: a digest of at least 256 bits, and nothing
+  // smaller. Every row of HASHES is one; SHA-1 (2) and SHA2-224 (11) are
+  // absent from it on purpose.
+  if (!HASHES[sig.hashAlg]) {
+    return refuse(spec.name + ' signatures must use a digest of at least ' +
+                  '256 bits (RFC 9980 section 6.2.1); hash algorithm ' +
+                  sig.hashAlg + ' is not one');
   }
   if (key.material.length !== spec.pqPub) {
     return refuse(spec.name + ' public key is ' + key.material.length +

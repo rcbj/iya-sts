@@ -484,8 +484,9 @@ function checkAppended(t, leaf) {
 
 // ---------------------------------------------------------------------------
 // 10. SLH-DSA (#2220): RFC 9980 section 7's standalone signing algorithms,
-// 32 (SLH-DSA-SHAKE-128s), 33 (-128f) and 34 (-256s), v6 keys only, each
-// over the digest its Table 9 binds it to. A key is made here, signed with
+// 32 (SLH-DSA-SHAKE-128s), 33 (-128f) and 34 (-256s), v6 keys only, over
+// any digest of at least 256 bits (section 6.2.1) — SHA2-256 as well as
+// SHA3 — and never a smaller one. A key is made here, signed with
 // node's SLH-DSA through `pqc.js`, and read back.
 // ---------------------------------------------------------------------------
 // A v6 SLH-DSA primary of algorithm `id`, its secret kept by the test.
@@ -498,8 +499,30 @@ function slhPrimary(created, id, name) {
            created: created, id: id, name: name };
 }
 
+// OpenPGP hash ids (RFC 9580 section 9.5) this test signs over: node's
+// name and the v6 salt (Table 23; SHA-1 has none in v6, 16 is used so the
+// packet is well formed and the digest rule is what refuses it).
+const TEST_HASHES = { 2: ['sha1', 16], 8: ['sha256', 16],
+                      10: ['sha512', 32], 11: ['sha224', 16],
+                      12: ['sha3-256', 16], 14: ['sha3-512', 32] };
+
+// RFC 9580 section 5.2.4's dataDigest, for any hash: the reader's own
+// `dataDigest()` knows only the digests it accepts.
+function anyDigest(hashAlg, salt, over, signatureData) {
+  log.debug("Entering anyDigest(). " + hashAlg);
+  const trailer = Buffer.alloc(6);
+  trailer[0] = 6;
+  trailer[1] = 0xff;
+  trailer.writeUInt32BE(signatureData.length, 2);
+  const out = require('crypto').createHash(TEST_HASHES[hashAlg][0])
+    .update(salt).update(over).update(signatureData).update(trailer)
+    .digest();
+  log.debug("Leaving anyDigest().");
+  return out;
+}
+
 // A v6 SLH-DSA signature of `type` over `subject`, made over `hashAlg`
-// (12 SHA3-256, 14 SHA3-512, 10 SHA-512 for the refusal).
+// (a TEST_HASHES id).
 function slhSignature(leaf, primary, type, subject, hashAlg, opts) {
   log.debug("Entering slhSignature(). " + type);
   const o = opts || {};
@@ -511,11 +534,9 @@ function slhSignature(leaf, primary, type, subject, hashAlg, opts) {
   const hashed = Buffer.concat(parts);
   const signatureData = Buffer.concat([
     Buffer.from([6, type, primary.id, hashAlg]), u32(hashed.length), hashed]);
-  const saltLen = hashAlg === 12 ? 16 : 32;
-  const salt = require('crypto').randomBytes(saltLen);
+  const salt = require('crypto').randomBytes(TEST_HASHES[hashAlg][1]);
   const over = leaf.toSign(type, primary.body, subject, 6);
-  const digest = leaf.dataDigest({ version: 6, hashAlg: hashAlg, salt: salt,
-                                   signatureData: signatureData }, over);
+  const digest = anyDigest(hashAlg, salt, over, signatureData);
   const params = Buffer.from(pqc.signWithPriv(primary.name, digest,
                                               primary.priv));
   const body = Buffer.concat([signatureData, u32(0), digest.subarray(0, 2),
@@ -573,13 +594,24 @@ async function checkSlhDsa(t, leaf) {
   t.equal(codes.codeOf(narrowed), 'STS-OPENPGP-0004',
           '10f. a realm whose openpgp.algorithms leaves SLH-DSA out ' +
           'refuses it');
-  const wrongHash = leaf.readPublicKey(Buffer.concat([
-    packet(6, primary.body), packet(13, uid),
-    slhSignature(leaf, primary, 0x13, uid, 10, { created: now - 990,
-                                                 flags: 0x03 })]), at);
-  t.check(!wrongHash.ok && wrongHash.reason === 'bad-signature',
-          '10g. an SLH-DSA-SHAKE-128s self-signature over SHA-512, not ' +
-          'SHA3-256, is not believed', wrongHash.reason);
+  const overHash = function (hashAlg) {
+    return leaf.readPublicKey(Buffer.concat([
+      packet(6, primary.body), packet(13, uid),
+      slhSignature(leaf, primary, 0x13, uid, hashAlg,
+                   { created: now - 990, flags: 0x03 })]), at);
+  };
+  const sha256 = overHash(8);
+  t.check(sha256.ok === true,
+          '10g. an SLH-DSA-SHAKE-128s self-signature over SHA2-256 is ' +
+          'accepted: RFC 9980 section 6.2.1 asks only for 256 bits or more',
+          (sha256.reason || '') + ' ' + (sha256.why || ''));
+  const sha224 = overHash(11);
+  t.check(!sha224.ok && sha224.reason === 'bad-signature',
+          '10g2. one over SHA2-224, under 256 bits, is not believed',
+          sha224.reason);
+  const sha1 = overHash(2);
+  t.check(!sha1.ok && sha1.reason === 'bad-signature',
+          '10g3. nor one over SHA-1', sha1.reason);
   const old = leaf.readPublicKey(Buffer.concat([packet(6, Buffer.concat([
     Buffer.from([4]), u32(primary.created), Buffer.from([32]),
     primary.body.subarray(10)])), packet(13, uid), cert]), at);

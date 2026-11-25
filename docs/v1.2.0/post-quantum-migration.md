@@ -392,8 +392,9 @@ its three SLH-DSA algorithms first, and the classical algorithms after them
 **What the ecosystem limits.**
 
 * **A KEM key cannot sign a certification request**, so an ML-KEM S/MIME
-  certificate is issued on RFC 9810 (CMP) section 5.2.8.3's
-  challenge-response proof of possession instead: the person sends their
+  certificate is issued on a challenge-response proof of possession
+  instead (RFC 9810, CMP, section 5.2.8.3.3; `KEMKPOPChallengeResp` in
+  section 5.2.8.4): the person sends their
   ML-KEM public key, the service encapsulates to it, the person recovers
   the shared secret with `openssl pkeyutl -decap` (OpenSSL 3.5) and sends
   it back, and only then does the realm's EST Issuing CA issue the

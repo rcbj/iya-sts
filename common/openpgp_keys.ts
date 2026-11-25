@@ -1375,8 +1375,10 @@ class OpenPgpKeys {
   // #2009's D4 made an ML-KEM certificate UPLOADED, and left a realm-issued
   // one to a later ticket because a KEM key cannot sign a certification
   // request: there is nothing for the usual proof of possession to check.
-  // This is that ticket's route, RFC 9810 (CMP v3) section 5.2.8.3's
-  // challenge-response method for a key that cannot sign:
+  // This is that ticket's route: RFC 9810 (CMP v3) section 5.2.8.3.3's
+  // direct method, the challenge-response protocol (written there for a
+  // decryption key; section 5.2.8.4 names the KEM case,
+  // `KEMKPOPChallengeResp`), for a key that cannot sign:
   //
   //   1. `issueSmimeKemChallenge()` takes the person's ML-KEM public key,
   //      encapsulates to it (`crypto.smimeKemChallenge()`) and answers the
