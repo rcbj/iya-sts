@@ -581,6 +581,24 @@ const ACTIONS = [
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
   // DATA ENCRYPTION KEYS (#391 P2): `common/data_key_rotation.ts`.
+  // THE ROTATIONS AND RENEWALS #2220 PUT ON THE SCHEDULER (D1, D2): each is
+  // written by its job, by the scheduler, never by a person.
+  { action: 'pki.ca.renew', category: 'service',
+    label: 'A certificate authority\'s certificate was renewed over its ' +
+           'own key' },
+  { action: 'tls.server-certificate.renew', category: 'service',
+    label: 'The listener certificate was renewed' },
+  { action: 'keys.credential-signer.rotate', category: 'service',
+    label: 'The dedicated credential signer\'s keys were rotated' },
+  { action: 'keys.encryption.rotate', category: 'service',
+    label: 'The request-object, KEM and credential request encryption keys ' +
+           'were rotated' },
+  { action: 'cluster.secret-rotated', category: 'service',
+    label: 'A shared cluster secret was rotated' },
+  { action: 'application.secret-rotated', category: 'service',
+    label: 'An application\'s client secret was rotated automatically' },
+  { action: 'persistence.database-password-changed', category: 'service',
+    label: 'The database password was read again and changed' },
   { action: 'keys.data-key-rotate', category: 'service',
     label: 'Data encryption keys were rotated' },
   { action: 'keys.data-key-reencrypt', category: 'service',

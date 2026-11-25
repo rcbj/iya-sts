@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "Des clés de signature retirées dont le délai de grâce est écoulé ont été supprimées"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "Le certificat d'une autorité de certification a été renouvelé sur sa propre clé"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "Le certificat de l'écouteur a été renouvelé"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "Les clés du signataire dédié des attestations ont été renouvelées"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "Les clés de chiffrement des objets de requête, KEM et des requêtes d'attestation ont été renouvelées"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "Un secret partagé du cluster a été renouvelé"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "Le secret client d'une application a été renouvelé automatiquement"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "Le mot de passe de la base de données a été relu et a changé"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "Les clés de chiffrement des données ont été renouvelées"

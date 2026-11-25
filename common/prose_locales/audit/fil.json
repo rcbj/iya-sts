@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "Tinanggal ang mga retiradong signing key na lampas na sa kanilang grace"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "Ang sertipiko ng isang certificate authority ay na-renew sa sarili nitong susi"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "Ang sertipiko ng listener ay na-renew"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "Ang mga susi ng nakalaang tagapirma ng credential ay na-rotate"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "Ang mga susi sa pag-encrypt ng request object, KEM at kahilingan ng credential ay na-rotate"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "Ang isang ibinabahaging lihim ng cluster ay na-rotate"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "Ang client secret ng isang application ay awtomatikong na-rotate"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "Ang password ng database ay binasa muli at nagbago"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "Na-rotate ang mga data encryption key"
