@@ -29,6 +29,10 @@
 //      attribute-source pool's (`attributeSources.poolSize`).
 //   F. a synchronous call to another cell whose answer passes
 //      cells.maxAnswerBytes fails STS-CELL-0212.
+//   G. an outbound request whose request-target is over 8 KiB, or whose
+//      header fields come to more than 16 KiB, is destroyed before it is
+//      sent (STS-HTTP-0035, STS-HTTP-0036), and an ordinary one is not
+//      (#2247, ASVS 5.0.0 4.2.5).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -445,6 +449,49 @@ async function cells(t) {
   log.debug('Leaving cells().');
 }
 
+async function sizes(t) {
+  log.debug('Entering sizes().');
+  t.log.info('=== G. what an outbound request may send ===');
+  const OutboundLimits = require(ROOT + '/common/outbound_limits');
+  const fake = function (target, headers) {
+    const request = new EventEmitter();
+    /** @type {any} */ (request).path = target;
+    /** @type {any} */ (request).getHeaders = function () {
+      return headers || {};
+    };
+    /** @type {any} */ (request).destroyed = null;
+    /** @type {any} */ (request).destroy = function (e) {
+      /** @type {any} */ (request).destroyed = e;
+    };
+    return /** @type {any} */ (request);
+  };
+  const ordinary = fake('/scim/v2/Users?filter=' + 'a'.repeat(500),
+                        { authorization: 'Bearer ' + 'x'.repeat(4000) });
+  OutboundLimits.guard(ordinary, { deadlineMs: 0, where: 'the test' });
+  ordinary.emit('close');
+  t.check(ordinary.destroyed === null && !OutboundLimits.sizeProblem(ordinary),
+          'G1. an ordinary request is sent as before');
+  const longTarget = fake('/' + 'a'.repeat(8192));
+  OutboundLimits.guard(longTarget, { deadlineMs: 0, where: 'the test' });
+  t.check(longTarget.destroyed instanceof Error &&
+          OutboundLimits.sizeProblem(longTarget).code === 'STS-HTTP-0035',
+          'G2. a request-target over 8 KiB is destroyed before it is sent, ' +
+          'STS-HTTP-0035',
+          longTarget.destroyed && longTarget.destroyed.message);
+  const bigHeaders = fake('/', { cookie: 'c'.repeat(9000),
+                                 authorization: 'Bearer ' + 'x'.repeat(8000) });
+  OutboundLimits.guard(bigHeaders, { deadlineMs: 0, where: 'the test' });
+  t.check(bigHeaders.destroyed instanceof Error &&
+          OutboundLimits.sizeProblem(bigHeaders).code === 'STS-HTTP-0036',
+          'G3. header fields over 16 KiB are destroyed before they are ' +
+          'sent, STS-HTTP-0036',
+          bigHeaders.destroyed && bigHeaders.destroyed.message);
+  const exact = fake('/' + 'a'.repeat(8191));
+  t.check(!OutboundLimits.sizeProblem(exact),
+          'G4. exactly 8 KiB of request-target is allowed');
+  log.debug('Leaving sizes().');
+}
+
 module.exports = {
   name: 'dependency_limits',
   describe: 'the limits and timeouts on what this service dials (#2220): ' +
@@ -458,6 +505,7 @@ module.exports = {
     await stores(t);
     await pools(t);
     await cells(t);
+    await sizes(t);
     log.debug('Leaving run().');
   }
 };

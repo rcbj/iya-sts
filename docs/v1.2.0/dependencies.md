@@ -106,6 +106,12 @@ an internal address for a location a partner or caller can name (see
   answering a byte at a time kept a call open (`STS-HTTP-0033`).
 * **A connect timeout.** `federation.outboundConnectTimeoutMs` (10,000) for a
   new connection, with its TLS handshake (`STS-HTTP-0034`).
+* **A bound on what is sent.** A request whose path and query are over 8 KiB
+  (`STS-HTTP-0035`), or whose header fields come to more than 16 KiB
+  (`STS-HTTP-0036`), is not sent, and the call fails as a network failure
+  naming the bound. RFC 9110 asks a server to accept at least 8000 octets of
+  path, and 16 KiB is Node.js's own limit on a request's headers. No call this
+  service makes comes near either. The bounds are fixed, not settings.
 
 At the deadline or the connect timeout the call ends as a timeout, with the
 code its own row gives. The streaming read of an OpenID Provider Commands

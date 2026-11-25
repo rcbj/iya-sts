@@ -342,6 +342,10 @@ import scopeClaims = require('../common/scope_claims');
 // THE `did` CLAIM (#693): a person's preferred, proved DID, applied last to
 // an ID Token and a UserInfo response. A library; it reaches SIOPv2 lazily.
 import didClaim = require('./did_claim');
+// THE GROUPS CLAIM'S DISTRIBUTED SOURCE (#2247): `/oauth2/groups` answers
+// the whole list a token past `groups.claimMaxBytes` refers to. A library
+// that registers no route, and requires nothing that requires this module.
+import groupClaims = require('../common/group_claims');
 import identityAssurance = require('../common/identity_assurance');
 // THE DEVICE REGISTER (#130): Native SSO mints and checks its device_secret
 // against `ou=devices`. A library over `credentials.ts`; it requires nothing
@@ -3999,8 +4003,36 @@ class OAuth2Server {
       family_name: (user && user.family_name) || '',
       client_id: payload.client_id || payload.azp || '',
       audience: Array.isArray(payload.aud) ? payload.aud.join(' ') :
-                (payload.aud || base || '')
+                (payload.aud || base || ''),
+      // Where a groups claim past `groups.claimMaxBytes` is referenced to
+      // (#2247, `group_claims.ts`): this realm's `/oauth2/groups`.
+      base_url: base || ''
     };
+  }
+
+  // OpenID Connect Core section 5.6.2's two members, MERGED rather than
+  // assigned (#2247): a groups claim past its cap is already a distributed
+  // claim when a Claims Provider's references arrive, and an assignment
+  // would drop the reference to it. Each later name wins, as before.
+  private mergeClaimSources(target: Json, referenced: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.mergeClaimSources().");
+    ['_claim_names', '_claim_sources'].forEach(function (member: string) {
+      const held = target[member];
+      const more = referenced[member];
+      target[member] = (held && typeof held === 'object' && more &&
+                        typeof more === 'object')
+        ? Object.assign({}, held, more) : (more || held);
+      if (target[member] === undefined) {
+        delete target[member];
+      }
+    });
+    Object.keys(referenced).forEach(function (member: string) {
+      if (member !== '_claim_names' && member !== '_claim_sources') {
+        target[member] = referenced[member];
+      }
+    });
+    log.debug("Leaving OAuth2Server.mergeClaimSources().");
   }
 
   // What the token registry is told that the token itself does not say: which
@@ -5363,7 +5395,7 @@ class OAuth2Server {
         const referenced = await self.claimsProviders().sourcesFor(
           user.username, unanswered);
         if (referenced) {
-          Object.assign(payloadWithCustom, referenced);
+          self.mergeClaimSources(payloadWithCustom, referenced);
         }
       } catch (e: any) {
         // The rest of the ID Token is still owed (OIDC Core 5.5.1).
@@ -11710,6 +11742,36 @@ class OAuth2Server {
             : ''));
       }
     }
+    // AND THE MODES THIS CLIENT MAY ASK FOR (#2247, ASVS 5.0.0 10.4.12): an
+    // administrator's `oauthResponseMode` list, beside the server's above.
+    // The mode judged is the one the request names or, when it names none,
+    // its response type's default (Multiple Response Type Encoding Practices
+    // section 2.1 and 5: query for `code` and `none`, fragment otherwise), so
+    // a client listed for `form_post` alone cannot be answered in a query
+    // string by leaving the parameter out. No list is no restriction, which
+    // is every client until somebody writes one.
+    const allowedModes = applications.allowedResponseModesOf(q.client_id);
+    if (allowedModes) {
+      const askedTypes = String(q.response_type || '').split(/\s+/)
+        .filter(Boolean);
+      const effectiveMode = String(q.response_mode || '') ||
+        (askedTypes.every(function (t: string): boolean {
+          return t === 'code' || t === 'none';
+        }) ? 'query' : 'fragment');
+      if (allowedModes.indexOf(effectiveMode) < 0) {
+        log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). " +
+                  "response_mode " + effectiveMode + " is not one client " +
+                  q.client_id + " may use.");
+        return redirectable('STS-OAUTH-1016', 'unauthorized_client',
+          'Client "' + q.client_id + '" may use response_mode ' +
+          JSON.stringify(allowedModes) + ' (oauthResponseMode), and this ' +
+          'request ' + (q.response_mode
+            ? 'asks for "' + effectiveMode + '"'
+            : 'names none, so it would be answered in "' + effectiveMode +
+              '", the default for response_type "' + q.response_type + '"') +
+          '. Ask for one of the modes listed.');
+      }
+    }
 
     // MULTIPLE RESPONSE TYPE ENCODING PRACTICES section 2.1 (#125): a
     // response type that returns a token or an ID Token "MUST NOT use the
@@ -14226,6 +14288,114 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.protectUserinfo(). " +
               (signAlg === 'none' ? 'Encrypted.' : 'Signed then encrypted.'));
     return { contentType: 'application/jwt', body: jwe };
+  }
+
+  // -------------------------------------------------------------------------
+  // `/oauth2/groups` (#2247): THE DISTRIBUTED SOURCE OF A GROUPS CLAIM PAST
+  // ITS CAP. A token whose groups claim is over `groups.claimMaxBytes`
+  // carries `_claim_names` / `_claim_sources` (OpenID Connect Core section
+  // 5.6.2) pointing here, and this answers the whole list for the presented
+  // access token's subject as a signed JWT, which the section requires of a
+  // distributed source: `iss`, `sub` (the client's, as UserInfo's), `aud`
+  // (the client), `iat`, `exp` and the claim, under the name and value form
+  // of the token's client.
+  //
+  // THE ACCESS TOKEN IS CHECKED AS USERINFO CHECKS ONE — signature, issuer,
+  // sender constraint, `typ`, revocation — BUT NOT ITS AUDIENCE, and that is
+  // the one difference: an access token for a resource server is the token
+  // whose claim pointed here, and the list answered is the one that token
+  // would have carried below the cap, for the subject it names and nobody
+  // else. No `openid` scope is required for the same reason. A token with
+  // no person behind it (client_credentials) has no groups and is refused.
+  // -------------------------------------------------------------------------
+  private groupsResponse(req: Req, res: Res): void {
+    const { log, baseUrlOf, nameForSubject, dpop, stats, applications,
+            errorCodes, signJwtAsAsync } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.groupsResponse().");
+    const base = baseUrlOf(req);
+    const presented = dpop.presentedAccessToken(req, res,
+      'the groups endpoint',
+      { audience: { label: 'any audience (the groups endpoint answers a ' +
+                           'reference its own token made)',
+                    names: function names(): boolean {
+                      log.debug("Entering names().");
+                      log.debug("Leaving names().");
+                      return true;
+                    } } });
+    if (!presented) {
+      log.debug("Leaving OAuth2Server.groupsResponse(). No usable access " +
+                "token.");
+      return;
+    }
+    const scheme = presented.scheme === 'dpop' ? 'DPoP' : 'Bearer';
+    const refuse = function (code: string, description: string): void {
+      log.debug("Entering refuse(). " + code);
+      res.set('WWW-Authenticate', scheme + ' error="invalid_token"');
+      errorCodes.mark(res, code);
+      // error-code: none — marked on the line above, with the caller's code
+      self.oauthError(res, 401, 'invalid_token', description);
+      log.debug("Leaving refuse().");
+    };
+    const claims = presented.claims || {};
+    if (!presented.verified) {
+      refuse('STS-OAUTH-1017', 'The groups endpoint answers for an access ' +
+             'token this service issued and can verify, and this one is ' +
+             'not.');
+      log.debug("Leaving OAuth2Server.groupsResponse(). Not verified.");
+      return;
+    }
+    if (claims.typ !== 'Bearer' || stats.isRevoked(claims.jti)) {
+      refuse('STS-OAUTH-1018', 'This is not a live access token: it is ' +
+             'another kind of token, or it was revoked.');
+      log.debug("Leaving OAuth2Server.groupsResponse(). Not live.");
+      return;
+    }
+    // `username` is on every token about a person and on no
+    // client_credentials token; the subject names the person now, as at
+    // UserInfo, so a rename since the token was issued is answered for.
+    const username = claims.username
+      ? String(nameForSubject(claims.sub) || claims.username) : '';
+    if (!username) {
+      refuse('STS-OAUTH-1019', 'This access token has no person behind it, ' +
+             'so there are no groups to answer.');
+      log.debug("Leaving OAuth2Server.groupsResponse(). No person.");
+      return;
+    }
+    const clientId = String(claims.client_id || '');
+    const answer = groupClaims.groupsOf(username, clientId);
+    const now = Math.floor(Date.now() / 1000);
+    const payload: Json = {
+      iss: self.issuerOf(base),
+      sub: self.subjectFor(clientId, claims.sub,
+                           claims.sid || stats.sessionIdOfJti(claims.jti)),
+      aud: clientId || self.issuerOf(base),
+      iat: now,
+      exp: now + 300
+    };
+    if (answer.values.length) {
+      payload[answer.claim] = answer.values;
+    }
+    const registered: Json = clientId
+      ? (applications.clientConfigOf(clientId) || {}) : {};
+    const alg = String(registered.id_token_signed_response_alg ||
+                       self.deps.fapi.defaultSigningAlg() || 'RS256');
+    Promise.resolve().then(function () {
+      return signJwtAsAsync(payload, alg, registered.client_secret,
+                            { certificateHeader: 'userinfo' });
+    }).then(function (signed: Json) {
+      res.status(200).type('application/jwt')
+         .set('Cache-Control', 'no-store').send(signed);
+      log.debug("Leaving OAuth2Server.groupsResponse(). " +
+                answer.values.length + " group(s).");
+    }).catch(function (e: any) {
+      log.debug("Caught in OAuth2Server.groupsResponse(): " +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-OAUTH-1020');
+      self.oauthError(res, 500, 'server_error', 'The groups could not be ' +
+                      'signed with ' + alg + '.');
+      log.debug("Leaving OAuth2Server.groupsResponse(). Not signed.");
+    });
   }
 
   private userinfoResponse(req: Req, res: Res): Json {
@@ -16824,7 +16994,13 @@ class OAuth2Server {
           // The 'ascii' reading the hash was always fed, kept (#453).
           ? b64u(stsCrypto.digest('sha256', Buffer.from(verifier, 'ascii')))
           : verifier;
-        if (computed !== record.code_challenge) {
+        // RFC 7636 section 4.6, IN CONSTANT TIME (#2247, ASVS 5.0.0 11.2.4):
+        // the challenge is not a secret once it has crossed the front
+        // channel, but the comparison is the one place a verifier is judged,
+        // and `crypto.js` is where every such comparison lives. `plain`
+        // itself stays refused where RFC 9700 mode is in force.
+        if (!stsCrypto.constantTimeEquals(computed,
+                                          String(record.code_challenge))) {
           log.debug("Leaving the token endpoint. The grant was refused.");
           errorCodes.mark(res, 'STS-OAUTH-0203');
           log.debug("Leaving OAuth2Server.tokenGrant().");
@@ -23794,6 +23970,9 @@ class OAuth2Server {
     app.get('/oauth2/userinfo', self.userinfoResponse.bind(self));
 
     app.post('/oauth2/userinfo', self.userinfoResponse.bind(self));
+
+    // The groups claim's distributed source (#2247, OIDC Core 5.6.2).
+    app.get('/oauth2/groups', self.groupsResponse.bind(self));
 
     // --- token endpoint
     // ---------------------------------------------------------

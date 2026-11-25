@@ -10299,6 +10299,14 @@
     "en": "5f61809aa07c4db6",
     "text": "當群組項目未反向列出某人時，由「該人員」自身 `memberOf` 所指名的群組是否算作成員資格。此目錄中沒有任何東西會維護 memberOf——它甚至不是標準屬性——因此寫入它的用戶端正好會造成這種不一致，而 /admin/groups 存在的部分原因就是為了「顯示」它。此設定決定權杖採信哪一方。預設開啟，因為寫入了 memberOf 卻沒有得到宣告的用戶端，完全沒有被告知原因；關閉則讓群組項目保持為唯一權威。無論哪種情況，群組都必須「存在」於此——未指名任何東西的 memberOf 不會虛構出一個群組放入權杖。"
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "權杖中最大的 groups 宣告（位元組）"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "groups 宣告在存取權杖或 ID Token 中最多可佔的大小，以其值的 JSON 計算，在 base64url 之前。超過後宣告不會被截斷：它會成為 OpenID Connect Core 第 5.6.2 節的分散式宣告 —— `_claim_names` 指名它，`_claim_sources` 指向本領域的 /oauth2/groups，後者針對所出示的存取權杖以簽章 JWT 回傳完整清單。存取權杖透過標頭傳遞，超過 8 KiB 的權杖會被大多數伺服器拒絕（Node.js 為 16 KiB），回傳的 431 不指向任何原因。預設值 4096 約合 150 個群組名稱或 60 個 DN，因此人們今天取得的權杖不變。UserInfo 與 SAML 斷言始終攜帶完整清單。0 關閉此上限。"
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "攜帶 roles 宣告"

@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "قيم response_type التي يجوز لهذا العميل طلبها — response_types في القسم 2 من RFC 7591، من تسجيل أو يكتبها المسؤول، وكل قيمة نوع استجابة واحد (\"code\"، \"code id_token\"). ترفض نقطة نهاية التفويض أي غيرها (unauthorized_client)، في كل وضع؛ والقائمة الفارغة لا تقيّد شيئًا. ما طلبه العميل فعلًا هو oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "قيم response_mode التي يجوز لهذا العميل طلبها — query وfragment وform_post وقيم JARM ‏jwt وquery.jwt وfragment.jwt وform_post.jwt — يكتبها مسؤول. ترفض نقطة نهاية التفويض أي قيمة أخرى (unauthorized_client)، ويُحاسَب الطلب الذي لا يسمّي أيًّا منها على الوضع الافتراضي لنوع استجابته (query لـ code وfragment لغيره)، في كل وضع؛ والقائمة الفارغة لا تقيّد شيئًا يتجاوز response_modes_supported الخاص بالخادم. لا يحمله أي عضو من RFC 7591، لذا لا يكتبه التسجيل."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "أنواع الاستجابة التي تصدر رمز وصول من نقطة نهاية التفويض — token وcode token وid_token token وcode id_token token — التي يجوز لهذا العميل استخدامها حيث يسري وضع RFC 9700 (وضع المنتج يسري دائمًا). تُحترم فقط ما دام نطاق الثقة يتنازل عن القسم 2.1.2 من RFC 9700 (oauth2.allowImplicitTokenResponses، وليس أبدًا تحت OAuth 2.1 أو FAPI)؛ وعندئذ يُرفض نوع غير مدرج هنا (unauthorized_client). فارغ افتراضيًا، والفارغ يعني لا شيء. يكتبه المسؤول أو مالك التطبيق ما دام نطاق الثقة يسمح بهذه الأنواع، أو تسجيل ديناميكي ضمن oauth2.dynamicRegistrationTokenResponseTypes. يقول القسم 2.1.2 من RFC 9700 إن العملاء SHOULD NOT يستخدمونها."

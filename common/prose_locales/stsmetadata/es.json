@@ -3587,6 +3587,14 @@
     "en": "20eeca53c18916c1",
     "text": "responde 401 con un desafío WWW-Authenticate cuando se sigue sin más: es un recurso protegido y necesita el token de acceso de un flujo OIDC"
   },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "757f9c3e354a9b7b",
+    "text": "LA FUENTE DISTRIBUIDA DE UNA RECLAMACIÓN DE GRUPOS POR ENCIMA DE SU LÍMITE (#2247). Un token de acceso o ID Token cuya reclamación de grupos superaría groups.claimMaxBytes lleva en su lugar los _claim_names y _claim_sources de la sección 5.6.2 de OpenID Connect Core, que apuntan aquí, y este endpoint responde con la lista completa para el sujeto del token de acceso presentado como un application/jwt firmado (iss, sub, aud, iat, exp y la reclamación), como la sección exige de una fuente distribuida. El token se comprueba como UserInfo comprueba uno — firma, emisor, restricción de remitente, typ, revocación — salvo su audiencia y el ámbito openid, porque el token de un servidor de recursos es aquel cuya reclamación apuntaba aquí. Un token client_credentials no tiene persona y se rechaza."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "responde 401 con un desafío WWW-Authenticate cuando se sigue sin nada — necesita un token de acceso emitido por este servicio"
+  },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
     "text": "Un active/inactive honesto con los claims del token presentado (acr y auth_time entre ellos, RFC 9470 sección 6.2) como JSON de RFC 7662 o, cuando el encabezado Accept nombra application/token-introspection+jwt, como un JWT de RFC 9701 firmado (y opcionalmente cifrado) para el servidor de recursos que lo pidió, con los algoritmos que registró. Una solicitud JWT debe autenticarse como cliente en todos los modos y en caso contrario se rechaza con 400 invalid_client; una solicitud JSON debe autenticarse en modo producto (401) y no necesita hacerlo en desarrollo."

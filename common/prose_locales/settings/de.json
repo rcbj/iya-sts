@@ -10299,6 +10299,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Ob eine Gruppe, die das eigene `memberOf` der PERSON nennt, als Mitgliedschaft zählt, wenn der Gruppeneintrag die Person nicht seinerseits aufführt. Nichts in diesem Verzeichnis pflegt memberOf — es ist nicht einmal ein Standardattribut —, daher erzeugt ein Client, der es schreibt, genau diese Abweichung, und /admin/groups existiert zum Teil, um sie zu ZEIGEN. Diese Einstellung legt fest, welcher Seite davon ein Token glaubt. Standardmäßig ein, weil einem Client, der memberOf geschrieben und keinen Claim erhalten hat, nichts darüber gesagt wurde, warum; aus ist der Weg, auf dem der Gruppeneintrag die einzige Autorität bleibt. So oder so muss die Gruppe hier EXISTIEREN — ein memberOf, das nichts nennt, erfindet keine Gruppe, die in ein Token gesetzt wird."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Größter Gruppen-Claim in einem Token (Bytes)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Das Höchste, was der Gruppen-Claim in einem Access Token oder einem ID Token belegen darf, gemessen als JSON seiner Werte vor base64url. Darüber wird der Claim nicht gekürzt: Er wird zu einem verteilten Claim nach Abschnitt 5.6.2 von OpenID Connect Core — `_claim_names` nennt ihn und `_claim_sources` verweist auf /oauth2/groups dieses Realms, das die ganze Liste als signiertes JWT für das vorgelegte Access Token liefert. Ein Access Token reist in einem Header, und ein Token über 8 KiB wird von den meisten Servern (von Node.js über 16 KiB) mit einem 431 abgelehnt, das auf nichts zurückverweist. Der Standardwert 4096 entspricht etwa 150 Gruppennamen oder 60 DNs, sodass die Token, die Menschen heute erhalten, unverändert bleiben. UserInfo und die SAML-Assertions tragen immer die ganze Liste. 0 schaltet die Grenze ab."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Einen roles-Claim führen"

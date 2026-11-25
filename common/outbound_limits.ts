@@ -35,6 +35,21 @@
 //      socket the agent reuses is already connected and is not timed.
 //      (STS-HTTP-0034.)
 //
+//   4. **A BOUND ON WHAT IS SENT** (#2247, ASVS 5.0.0 4.2.5): a request
+//      whose request-target is over `MAX_REQUEST_TARGET_BYTES` (8 KiB), or
+//      whose header fields come to more than `MAX_HEADER_BYTES` (16 KiB), is
+//      destroyed before it is sent, with an error the caller's own `error`
+//      path reports (STS-HTTP-0035, STS-HTTP-0036). RFC 9110 section 4.1
+//      asks a server to accept at least 8000 octets of request-target, and
+//      16 KiB is Node.js's own default bound on a request's headers, so a
+//      partner running on Node.js would answer 431 to anything larger; most
+//      other servers stop at 8 KiB. A refusal here costs no connection and
+//      names the cause, where the partner's 414 or 431 would name neither.
+//      CONSTANTS rather than settings: no call this service makes comes
+//      near them (the longest is a front-channel logout URL or a SCIM
+//      filter, a few hundred bytes), and the bound exists so that a value a
+//      partner or a caller supplied cannot make one arbitrarily large.
+//
 // THE DEFAULTS CHANGE NOTHING A NORMAL CALL DOES: 64 connections to one
 // partner and 1024 in all are far above what one process opens (a sign-in
 // opens one or two), two minutes is eight times the longest inactivity
@@ -129,6 +144,14 @@ class KeyedHttpsAgent extends https.Agent {
 
 // How long a kept-alive socket may stay idle in the pool.
 const IDLE_SOCKET_MS = 30000;
+
+// The most a request-target (path and query) may take, in bytes: RFC 9110
+// section 4.1's "at least 8000 octets", rounded to 8 KiB (#2247).
+const MAX_REQUEST_TARGET_BYTES = 8192;
+
+// The most the header fields of one request may take, in bytes, counted as
+// `name: value` plus the CRLF: Node.js's default `maxHeaderSize` (#2247).
+const MAX_HEADER_BYTES = 16384;
 
 // Whether the warning that requests are waiting for a socket stands.
 let waitingNoted = false;
@@ -263,9 +286,56 @@ class OutboundLimits {
   }
 
   /**
+   * Measures what a request just made would send: its request-target and
+   * its header fields, against the two bounds (#2247).
+   *
+   * @param request - the ClientRequest
+   * @returns `{ code, why }` when one is over, or null
+   */
+  static sizeProblem(request: any): { code: string; why: string } | null {
+    log.debug("Entering OutboundLimits.sizeProblem().");
+    const target = Buffer.byteLength(String((request && request.path) || ''));
+    if (target > MAX_REQUEST_TARGET_BYTES) {
+      log.debug("Leaving OutboundLimits.sizeProblem(). The target.");
+      return { code: 'STS-HTTP-0035',
+               why: 'was not sent: its request-target is ' + target +
+                    ' bytes, over the ' + MAX_REQUEST_TARGET_BYTES +
+                    '-byte bound on what this service sends' };
+    }
+    let headers: Record<string, unknown> = {};
+    try {
+      headers = typeof request.getHeaders === 'function'
+        ? request.getHeaders() || {} : {};
+    } catch (e) {
+      // A request whose headers cannot be read has nothing to measure; it
+      // is sent as it was before this bound.
+      log.debug("Caught in OutboundLimits.sizeProblem(): " +
+                ((e && e.message) || e));
+      headers = {};
+    }
+    let total = 0;
+    Object.keys(headers).forEach(function (name) {
+      [].concat(headers[name] as any).forEach(function (value: unknown) {
+        total += Buffer.byteLength(name) + 4 +
+          Buffer.byteLength(String(value));
+      });
+    });
+    if (total > MAX_HEADER_BYTES) {
+      log.debug("Leaving OutboundLimits.sizeProblem(). The headers.");
+      return { code: 'STS-HTTP-0036',
+               why: 'was not sent: its header fields come to ' + total +
+                    ' bytes, over the ' + MAX_HEADER_BYTES +
+                    '-byte bound on what this service sends' };
+    }
+    log.debug("Leaving OutboundLimits.sizeProblem().");
+    return null;
+  }
+
+  /**
    * Arms the deadline and the connect timeout on a request just made, and
    * notes whether it had to wait for a socket. Both timers are cleared when
-   * the request closes.
+   * the request closes. A request over a size bound (`sizeProblem()`) is
+   * destroyed instead, with an error its caller's `error` handler reports.
    *
    * @param request - the ClientRequest
    * @param options - see GuardOptions
@@ -278,6 +348,19 @@ class OutboundLimits {
       return;
     }
     const where = String(o.where || '');
+    const oversize = OutboundLimits.sizeProblem(request);
+    if (oversize) {
+      log.warn(errorCodes.tag(oversize.code) + 'outbound: a request to ' +
+               (where || 'a peer') + ' ' + oversize.why + '.');
+      try {
+        request.destroy(new Error('the request ' + oversize.why));
+      } catch (e) {
+        log.debug("Caught in OutboundLimits.guard(): " +
+                  ((e && e.message) || e));
+      }
+      log.debug("Leaving OutboundLimits.guard(). Over a size bound.");
+      return;
+    }
     let fired = false;
     let deadline: NodeJS.Timeout | null = null;
     let connect: NodeJS.Timeout | null = null;

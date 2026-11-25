@@ -37,7 +37,9 @@ runs. On, the authorization flow is held to the whole of RFC 9700 section 2:
   on the loopback. A bad `redirect_uri` is answered with a 400 on this server,
   never redirected.
 * **PKCE** is required of every client not known to be confidential, `S256`
-  only. A downgrade is refused, and so is a reused challenge or nonce.
+  only. A downgrade is refused, and so is a reused challenge or nonce. In
+  every mode, the token endpoint compares the `code_verifier` with the
+  challenge in constant time.
 * A **nonce** is required with any `id_token` — OpenID Connect Core already
   requires one, in every mode, for the implicit flow and for the hybrid
   `code id_token` and `code id_token token` — and
@@ -1357,7 +1359,20 @@ is checked against what **this authorization server advertises** in
 modes that are performed instead of a 302 that leaves a client waiting for a
 message that never arrives. That check is per authorization server (one
 configured with `["form_post"]` refuses `query` at its own endpoint) and is not
-gated on the mode. The OP iframe, when Session Management is on, answers a
+gated on the mode.
+
+**A client can be held to fewer modes than the server performs**
+(`oauthResponseMode`, ASVS 5.0.0 10.4.12). An administrator lists the modes
+the client needs on its application entry (on the console's application
+editor, or `POST /admin-api/applications/add`). The authorization endpoint
+then refuses any other mode with `unauthorized_client`. A request that names
+no mode is judged by its response type's default: `query` for `code`, and
+`fragment` for the others. So a client listed for `form_post` alone cannot be
+answered in a query string by leaving the parameter out. A client with no list
+is held only to `response_modes_supported`, as before. RFC 7591 defines no
+member for this, so a dynamic registration cannot set it.
+
+The OP iframe, when Session Management is on, answers a
 relying party's session-state question and carries no authorization response.
 
 If `web_message` is ever added, the rows say what it costs: every message's

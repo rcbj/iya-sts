@@ -10299,6 +10299,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Om en grupp som anges av PERSONENS egen `memberOf` räknas som medlemskap när gruppposten inte listar personen tillbaka. Inget i den här katalogen underhåller memberOf — det är inte ens ett standardattribut — så en klient som skriver det skapar precis den oenigheten, och /admin/groups finns delvis för att VISA den. Den här inställningen avgör vilken sida av den en token tror på. På som standard, eftersom en klient som skrev memberOf och inte fick något anspråk inte har fått veta något om varför; av är hur gruppposten förblir den enda auktoriteten. I båda fallen måste gruppen FINNAS här — en memberOf som inte anger någonting hittar inte på en grupp att lägga i en token."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Största gruppanspråk i en token (byte)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Det mesta gruppanspråket får ta i en åtkomsttoken eller en ID Token, mätt som JSON för dess värden, före base64url. Över det kortas anspråket inte: det blir ett distribuerat anspråk enligt avsnitt 5.6.2 i OpenID Connect Core — `_claim_names` namnger det och `_claim_sources` pekar på denna realms /oauth2/groups, som svarar med hela listan som en signerad JWT för den åtkomsttoken som visas upp. En åtkomsttoken färdas i en header, och en token över 8 KiB avvisas av de flesta servrar (16 KiB av Node.js) med en 431 som inte pekar tillbaka på något. Standardvärdet, 4096, motsvarar ungefär 150 gruppnamn eller 60 DN, så de token människor får i dag är oförändrade. UserInfo och SAML-intygen bär alltid hela listan. 0 stänger av gränsen."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Bär ett rollanspråk"

@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Die response_type-Werte, die dieser Client verlangen darf — die response_types aus RFC 7591 Abschnitt 2, aus einer Registrierung oder von einem Administrator geschrieben, jeder Wert ein Antworttyp (\"code\", \"code id_token\"). Der Autorisierungsendpunkt lehnt jeden anderen ab (unauthorized_client), in jedem Modus; eine leere Liste beschränkt nichts. Was der Client tatsächlich verlangt hat, ist oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "Die response_mode-Werte, die dieser Client anfordern darf — query, fragment, form_post und die jwt, query.jwt, fragment.jwt und form_post.jwt von JARM — von einem Administrator geschrieben. Der Autorisierungsendpunkt lehnt jeden anderen ab (unauthorized_client), und eine Anfrage, die keinen nennt, wird am Standardmodus ihres Antworttyps gemessen (query für code, fragment für die übrigen), in jedem Modus; eine leere Liste schränkt nichts über response_modes_supported des Servers hinaus ein. Kein RFC-7591-Member trägt ihn, daher schreibt eine Registrierung ihn nicht."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "Die Antworttypen, die vom Autorisierungsendpunkt ein Access Token ausstellen — token, code token, id_token token, code id_token token —, die dieser Client verwenden darf, wo der RFC-9700-Modus gilt (der product-Modus gilt immer). Beachtet nur, solange der Bereich RFC 9700 Abschnitt 2.1.2 aussetzt (oauth2.allowImplicitTokenResponses, nie unter OAuth 2.1 oder FAPI); ein hier nicht aufgeführter Typ wird dann abgelehnt (unauthorized_client). STANDARDMÄSSIG LEER, und leer bedeutet keine. Geschrieben von einem Administrator oder dem Eigentümer der Anwendung, solange der Bereich diese Typen erlaubt, oder durch eine dynamische Registrierung innerhalb von oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 Abschnitt 2.1.2 sagt, dass Clients sie SHOULD NOT verwenden."

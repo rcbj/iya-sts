@@ -3587,6 +3587,14 @@
     "en": "20eeca53c18916c1",
     "text": "sumasagot ng 401 na may WWW-Authenticate challenge kapag sinundan nang walang laman — protected resource ito at kailangan ang access token mula sa isang OIDC flow"
   },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "757f9c3e354a9b7b",
+    "text": "ANG DISTRIBUTED SOURCE NG ISANG GROUPS CLAIM NA LAMPAS SA LIMITASYON NITO (#2247). Ang access token o ID Token na ang groups claim ay lalampas sa groups.claimMaxBytes ay may dalang _claim_names at _claim_sources ng OpenID Connect Core section 5.6.2 sa halip nito, na tumuturo rito, at sinasagot nito ang buong listahan para sa subject ng iniharap na access token bilang signed application/jwt (iss, sub, aud, iat, exp at ang claim), gaya ng hinihingi ng section sa isang distributed source. Sinusuri ang token gaya ng pagsuri ng UserInfo — signature, issuer, sender constraint, typ, revocation — maliban sa audience nito at sa openid scope, dahil ang token ng isang resource server ang siyang claim na tumuro rito. Walang tao ang client_credentials token at tinatanggihan ito."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "sumasagot ng 401 na may WWW-Authenticate challenge kapag sinundan nang walang dala — kailangan nito ng access token na inisyu ng serbisyong ito"
+  },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
     "text": "Tapat na active/inactive kasama ang mga claim ng ipinakitang token — kabilang ang acr at auth_time (RFC 9470 section 6.2) — bilang RFC 7662 JSON, o, kapag pinangangalanan ng Accept header ang application/token-introspection+jwt, bilang RFC 9701 JWT na signed (at opsyonal na encrypted) para sa resource server na nagtanong, gamit ang mga algorithm na inirehistro nito. Ang JWT request ay dapat mag-authenticate bilang client sa bawat mode at tinatanggihan ng 400 invalid_client kung hindi; ang JSON request ay dapat mag-authenticate sa product mode (401) at hindi kailangan sa development."

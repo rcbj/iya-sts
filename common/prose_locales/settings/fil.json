@@ -10299,6 +10299,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Kung ang group na pinapangalanan ng sariling `memberOf` ng TAO ay binibilang na membership kapag hindi siya inililista pabalik ng group entry. Walang anuman sa directory na ito ang nagme-maintain ng memberOf — hindi pa nga ito standard na attribute — kaya ang client na sumusulat nito ay gumagawa mismo ng ganoong hindi pagkakasundo, at umiiral ang /admin/groups bahagyang para IPAKITA ito. Ang setting na ito ang pumipili kung aling panig ang pinaniniwalaan ng token. Naka-on bilang default, dahil ang client na sumulat ng memberOf at walang nakuhang claim ay walang nasabihan kung bakit; ang off ang paraan para manatiling tanging awtoridad ang group entry. Alinman dito, dapat UMIIRAL dito ang group — ang memberOf na walang pinapangalanan ay hindi nag-iimbento ng group na ilalagay sa token."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Pinakamalaking groups claim sa isang token (bytes)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Ang pinakamaraming maaaring kunin ng groups claim sa isang access token o ID Token, sinusukat bilang JSON ng mga value nito, bago ang base64url. Lampas doon, hindi pinuputol ang claim: nagiging distributed claim ito ng OpenID Connect Core section 5.6.2 — pinapangalanan ito ng `_claim_names` at tumuturo ang `_claim_sources` sa /oauth2/groups ng realm na ito, na sumasagot ng buong listahan bilang signed JWT para sa iniharap na access token. Naglalakbay ang access token sa isang header, at ang token na lampas sa 8 KiB ay tinatanggihan ng karamihan ng server (16 KiB ng Node.js) ng 431 na walang itinuturo pabalik. Ang default, 4096, ay mga 150 pangalan ng grupo o 60 DN, kaya hindi nagbabago ang mga token na natatanggap ng mga tao ngayon. Laging dala ng UserInfo at ng mga SAML assertion ang buong listahan. Pinapatay ng 0 ang limitasyon."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Magdala ng roles claim"

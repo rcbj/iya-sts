@@ -2287,6 +2287,10 @@
     "en": "aebc2aa96e6b1b70",
     "text": "UserInfo एंडपॉइंट"
   },
+  "endpoints.route./oauth2/groups.name": {
+    "en": "fc727eb9da0b20fe",
+    "text": "groups claim का स्रोत"
+  },
   "endpoints.route./oauth2/introspect.name": {
     "en": "328dfd36fb81f446",
     "text": "इंट्रोस्पेक्शन एंडपॉइंट"
