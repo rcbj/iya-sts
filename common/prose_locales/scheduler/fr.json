@@ -759,6 +759,14 @@
     "en": "c84b42d3aab3bdde",
     "text": "Actualise la KRL de l’AC utilisateurs OpenSSH de chaque domaine après les révocations de certificats délivrés et supprime les révocations expirées."
   },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "Renouvellement de la réponse OCSP agrafée"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "Reproduit la réponse OCSP qu'agrafe chaque écouteur de ce processus (le port principal, LDAPS, le débogueur et les écouteurs personnalisés), à partir du propre répondeur de ce service, à chaque quart de pki.crlLifetimeMinutes, afin qu'une réponse agrafée soit toujours bien antérieure à son nextUpdate et qu'une révocation faite ailleurs l'atteigne. S'exécute dans le processus frontal de chaque nœud."
+  },
   "sched.jobs.tls.server-certificate-renew.title": {
     "en": "d7afa3328270e140",
     "text": "Renouvellement du certificat de l’écouteur"

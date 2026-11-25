@@ -1681,6 +1681,24 @@ function enforcesParanoidPki() {
   return isProduct();
 }
 
+// Does every TLS listener this process holds STAPLE an OCSP response for its
+// certificate (#2254, ASVS 5.0.0 12.1.4)? This is what `tls.ocspStapling=auto`
+// resolves to: product answers yes, development no. A staple never fails a
+// handshake (`tls/ocsp_stapling.ts`), so the cost of it is a signature per
+// refresh and the bytes in a handshake a client asked for them in; development
+// leaves the handshake as a client author first met it, and `on` staples there.
+/**
+ * Tells whether the listeners staple OCSP: what `tls.ocspStapling=auto`
+ * resolves to (on in product, off in development).
+ *
+ * @returns true in product mode
+ */
+function staplesOcsp() {
+  log.debug("Entering staplesOcsp().");
+  log.debug("Leaving staplesOcsp().");
+  return isProduct();
+}
+
 // Does a PERSON need a compliant registered device to be issued a credential
 // for the administrative surface — a token to the console or one carrying an
 // admin:* scope (#2179, 2026-11-24, ASVS 5.0.0 8.4.2)? This is what
@@ -4475,6 +4493,22 @@ const REQUIREMENTS = [
              'Directory > Devices says whether this realm is armed.',
     where: 'common/admin_device_requirement.ts, common/issuance_gate.js, ' +
            'xacml/xacml_templates.ts' },
+  // #2254, 2026-11-25. OCSP stapling on this service's own listeners.
+  { id: 'ocsp-stapling',
+    what: 'Every TLS listener staples an OCSP response for the certificate ' +
+          'it presents',
+    development: 'OFF (tls.ocspStapling=auto): a client that asks for the ' +
+                 'certificate status gets none, as before, and checks the ' +
+                 'responder named in the certificate itself if it checks ' +
+                 'at all. Set tls.ocspStapling=on to staple here.',
+    product: 'ON (tls.ocspStapling=auto): the main port, LDAPS, the ' +
+             'debugger and every custom listener staple the answer this ' +
+             'service\'s own OCSP responder gives for their certificate, ' +
+             'made in the process holding the socket and refreshed before ' +
+             'its nextUpdate. A certificate from an outside authority is ' +
+             'not stapled, and a staple that cannot be made leaves the ' +
+             'handshake without one (STS-TLS-0079), never failed.',
+    where: 'tls/ocsp_stapling.ts, common/pki_revocation.js' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -5226,6 +5260,7 @@ module.exports = {
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   refusesUnrevocableCertificates: refusesUnrevocableCertificates,
   enforcesParanoidPki: enforcesParanoidPki,
+  staplesOcsp: staplesOcsp,
   requiresCompliantDeviceForAdmin: requiresCompliantDeviceForAdmin,
   requiresPkiForGnapMtls: requiresPkiForGnapMtls,
   requiresEnrollmentTls: requiresEnrollmentTls,

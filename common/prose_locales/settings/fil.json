@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "I-renew ang certificate ng listener ganitong bilang ng araw bago ito mag-expire, kung mas maaga iyon kaysa sa puntong ikatlo na lamang ng validity nito ang natitira. Pinapanatili ng 0, ang default, ang ikatlo."
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Mag-staple ng OCSP response sa bawat listener"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Kung sasagutin ng main port, LDAPS, debugger at bawat custom listener ang isang client na humihingi ng status ng certificate (RFC 6066 status_request, sa TLS 1.2 at 1.3) ng isang naka-staple na OCSP response. Ang response ay ang ibinibigay ng sariling OCSP responder ng serbisyong ito para sa certificate ng listener, ginawa sa process na may hawak ng socket, nang walang network fetch, at nire-refresh ng job na tls.ocsp-staple-refresh bago ang nextUpdate nito. Hindi ini-staple ang certificate mula sa labas na authority (tls.certificateFile o ang sariling mga file ng isang custom listener). Kapag walang kasalukuyang response na magagawa, nagpapatuloy ang handshake nang wala nito; hindi ito kailanman nabibigo. **Naka-on ang `auto` sa product mode at naka-off sa development** (mode.staplesOcsp()); ipinipilit ito ng `on` at `off` sa alinmang mode."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "Ibinabahagi ng main port ang session-ticket key ng cluster"

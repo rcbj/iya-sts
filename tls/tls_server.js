@@ -3359,6 +3359,12 @@ function registerListenerRenewalJob() {
 
 registerListenerRenewalJob();
 
+// THE OCSP STAPLE REFRESH (#2254) is registered by its module's load, here so
+// that every process that loads this one registers it (cluster/CLAUDE.md:
+// every process registers the same jobs). A library that requires nothing
+// of this module at load; it reaches back lazily, at a handshake.
+require('./ocsp_stapling');
+
 // ---------------------------------------------------------------------------
 // WHAT THE FRONT PROCESS HANDS A WORKER, AND WHAT A WORKER DOES WITH A SECOND
 // ONE (2026-09-12).

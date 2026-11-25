@@ -8928,6 +8928,11 @@ was WHEN a node reads it. Two halves close that:
   `unknown` for want of a record. Concurrent questions about one scope share
   the read in flight, because the responder is anonymous and every serial
   nobody issued takes this path. Where the row is not merged it reads nothing.
+* **The listeners' staple (#2254)**: `stapleFor()` builds a request for a
+  listener's leaves and answers it through `answerOcsp()`, so a staple is this
+  responder's answer byte for byte, and `onStatusChange()` tells
+  `tls/ocsp_stapling.ts` of a revocation or a released hold made in this
+  process. `tls/CLAUDE.md` (*OCSP STAPLING*) argues the rest.
 
 The `tls:server` slot itself still holds one node's record, first writer
 wins; the others' serials are `displaced` records in `issuedKeyPairs`. That

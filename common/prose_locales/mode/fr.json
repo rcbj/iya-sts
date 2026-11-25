@@ -1319,6 +1319,18 @@
     "en": "b0228891759cb8fd",
     "text": "ACTIVÉ (devices.requireCompliantDeviceForAdmin=auto) : la règle device-required-admin de la politique d'émission refuse, au point de terminaison de jetons, tout jeton de la console et tout jeton admin:* d'une personne qui ne vient pas d'un appareil enregistré conforme qui lui appartient (STS-DEVICE-0054). Elle est ARMÉE par domaine la première fois qu'un administrateur de la console en reçoit un depuis un appareil conforme, et jusque-là tout administrateur est admis, si bien qu'une installation sans appareil conforme n'est jamais verrouillée ; une fois armée elle reste armée, et un programme (le justificatif de gestion du déploiement) est le chemin du retour. Annuaire > Appareils indique si ce domaine est armé."
   },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "Chaque écouteur TLS agrafe une réponse OCSP pour le certificat qu'il présente"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "INACTIF (tls.ocspStapling=auto) : un client qui demande l'état du certificat n'en reçoit aucun, comme avant, et interroge lui-même le répondeur nommé dans le certificat s'il vérifie quoi que ce soit. Réglez tls.ocspStapling=on pour agrafer ici."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "ACTIF (tls.ocspStapling=auto) : le port principal, LDAPS, le débogueur et chaque écouteur personnalisé agrafent la réponse que le propre répondeur OCSP de ce service donne pour leur certificat, produite dans le processus qui détient le socket et renouvelée avant son nextUpdate. Un certificat d'une autorité extérieure n'est pas agrafé, et une réponse qui ne peut pas être produite laisse la négociation sans elle (STS-TLS-0079), jamais en échec."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Une clé GNAP prouvée par TLS mutuel est un certificat qu’une autorité de confiance a émis pour le client"

@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "在監聽器憑證到期前這麼多天續期它，前提是這早於剩餘三分之一有效期的時間點。預設值 0 保持三分之一。"
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "在每個監聽器上裝訂 OCSP 回應"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "主連接埠、LDAPS、偵錯器和每個自訂監聽器是否以裝訂的 OCSP 回應答覆詢問憑證狀態的用戶端（RFC 6066 status_request，適用於 TLS 1.2 與 1.3）。該回應就是本服務自己的 OCSP 回應器為該監聽器憑證所給的回應，在持有通訊端的程序中產生，不經網路擷取，並由 tls.ocsp-staple-refresh 工作在其 nextUpdate 之前重新整理。來自外部機構的憑證（tls.certificateFile 或自訂監聽器自己的檔案）不裝訂。無法產生目前的回應時，交握在沒有它的情況下繼續；絕不會失敗。**`auto` 在產品模式下開啟、在開發模式下關閉**（mode.staplesOcsp()）；`on` 與 `off` 在任一模式下強制設定。"
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "主連接埠共用叢集工作階段票證金鑰"

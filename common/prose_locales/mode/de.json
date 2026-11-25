@@ -1319,6 +1319,18 @@
     "en": "b0228891759cb8fd",
     "text": "AN (devices.requireCompliantDeviceForAdmin=auto): Die Regel device-required-admin der Ausstellungsrichtlinie lehnt am Token-Endpunkt jedes Konsolen-Token und jedes admin:*-Token einer Person ab, das nicht von einem eigenen konformen registrierten Gerät kam (STS-DEVICE-0054). Sie wird pro Vertrauensbereich SCHARF GESCHALTET, sobald ein Konsolenadministrator zum ersten Mal eines von einem konformen Gerät erhält, und bis dahin wird jeder Administrator zugelassen, sodass eine Installation ohne konformes Gerät nie ausgesperrt wird; einmal scharf bleibt sie scharf, und ein Programm (die Verwaltungsberechtigung der Bereitstellung) ist der Weg zurück. Verzeichnis > Geräte zeigt, ob dieser Vertrauensbereich scharf geschaltet ist."
   },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "Jeder TLS-Listener heftet eine OCSP-Antwort für das Zertifikat an, das er präsentiert"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "AUS (tls.ocspStapling=auto): Ein Client, der nach dem Zertifikatsstatus fragt, erhält wie bisher keine Antwort und fragt, falls er überhaupt prüft, den im Zertifikat genannten Responder selbst. Setzen Sie tls.ocspStapling=on, um hier anzuheften."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "AN (tls.ocspStapling=auto): Der Hauptport, LDAPS, der Debugger und jeder benutzerdefinierte Listener heften die Antwort an, die der eigene OCSP-Responder dieses Dienstes für ihr Zertifikat gibt, erzeugt in dem Prozess, der den Socket hält, und vor ihrem nextUpdate erneuert. Ein Zertifikat einer fremden Zertifizierungsstelle wird nicht angeheftet, und eine Antwort, die nicht erzeugt werden kann, lässt den Handshake ohne sie (STS-TLS-0079), nie fehlschlagen."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Ein durch gegenseitiges TLS nachgewiesener GNAP-Schlüssel ist ein Zertifikat, das eine vertrauenswürdige Stelle dem Client ausgestellt hat"

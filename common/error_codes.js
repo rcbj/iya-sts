@@ -19324,6 +19324,21 @@ const CODES = [
       'tls.server-certificate-renew job could not re-issue it (#2220). ' +
       'The socket goes on presenting the certificate it has.',
     spec: 'a warning or error log line and a failure audit row' },
+  { code: 'STS-TLS-0079',
+    summary: 'No current OCSP response could be made for the certificate ' +
+      'a listener presents (#2254, tls.ocspStapling): this service\'s own ' +
+      'responder refused or failed, or the signature could not be made. ' +
+      'Handshakes go on without a staple (or with the previous one while ' +
+      'it is still current); none is failed. Logged when it starts, not ' +
+      'per handshake.',
+    spec: 'a warning log line' },
+  { code: 'STS-TLS-0080',
+    summary: 'The OCSP response a listener staples says its certificate is ' +
+      'REVOKED (#2254): the certificate was revoked at this service\'s own ' +
+      'certificate authority and is still being presented. The staple ' +
+      'says so to every client that asks; replace the certificate ' +
+      '(Renew on /admin/pki, or the listener\'s own files).',
+    spec: 'a warning log line' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

@@ -118,6 +118,7 @@ import ConnectRefusal = require('../common/connect_refusal');
 import ParserRefusal = require('../common/parser_refusal');
 import AlertClose = require('../tls/alert_close');
 import KeyExchange = require('../tls/key_exchange');
+import OcspStapling = require('../tls/ocsp_stapling');
 import audit = require('../common/audit');
 import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
@@ -940,6 +941,10 @@ class DebuggerServer {
       // does, with revocation, and `app`'s first middleware waits (#1360).
       tlsServer.holdConnectionsOn(server, 'the protocol debugger (' + port +
                                           ')');
+      // Its certificate's OCSP status stapled, as on the main port (#2254,
+      // tls/ocsp_stapling.ts).
+      OcspStapling.install(server, 'debugger',
+                           'the protocol debugger (' + port + ')');
       // The key exchange each handshake negotiated, counted (#2220).
       KeyExchange.install(server, 'debugger',
                           'the protocol debugger (' + port + ')');
