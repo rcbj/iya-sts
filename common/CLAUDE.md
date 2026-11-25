@@ -13685,7 +13685,8 @@ each argued there:
     ALLOWED administrative token from a compliant device owned by a member
     of a console roster group — THAT REALM'S roster, asked by name
     (`rolesOf(username, realms.currentId())`; #2236: unnamed, it read the
-    default realm's, and no trust realm ever armed). Until then every
+    default realm's, and no trust realm ever armed — and so did
+    `credentials.ts`'s and `browser_devices.ts`'s `consoleRolesOf`). Until then every
     administrator is admitted:
     that is the no-lockout rule. It is a latch rather than a count, because
     a person removes their own device on the exempt portal, so a count
