@@ -120,7 +120,7 @@
   "createKind": "Enthält",
   "createKindX509": "Zertifikate",
   "createKindJwks": "ein an eine Partei gebundener Schlüsselsatz",
-  "createParty": "Partei (nur Schlüsselsatz): client:, federation: oder claims-provider:…",
+  "createParty": "Partei (nur Schlüsselsatz): client:, federation:, claims-provider: oder oidfed-anchor:…",
   "createJwks": "Öffentliche Schlüssel als JSON Web Key Set",
   "createJwksUri": "Oder eine jwks_uri"
 }

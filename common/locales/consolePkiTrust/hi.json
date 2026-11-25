@@ -120,7 +120,7 @@
   "createKind": "रखता है",
   "createKindX509": "प्रमाणपत्र",
   "createKindJwks": "एक पक्ष से बंधा कुंजी सेट",
-  "createParty": "पक्ष (केवल कुंजी सेट): client:, federation: या claims-provider:…",
+  "createParty": "पक्ष (केवल कुंजी सेट): client:, federation:, claims-provider: या oidfed-anchor:…",
   "createJwks": "सार्वजनिक कुंजियाँ, JSON Web Key Set के रूप में",
   "createJwksUri": "या एक jwks_uri"
 }

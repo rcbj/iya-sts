@@ -300,6 +300,62 @@ async function body(t) {
           '7c. the Historical Keys response is a signed jwk-set+jwt ' +
           'listing it');
   config.clearOverride('oidfed.signingAlg');
+
+  // 8. A TRUST ANCHOR FROM A KEY-SET TRUSTSTORE (#2150): bound to the anchor,
+  // pasted keys only, read by anchors() in the realm that names it.
+  t.log.info('=== 8. an anchor from a truststore ===');
+  const truststores = require('../common/truststores');
+  const outside = 'https://anchor-' + RUN + '.example.net';
+  const anchorKey = Object.assign({ kid: 'ta-' + RUN, alg: 'ES256' },
+    nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' })
+      .publicKey.export({ format: 'jwk' }));
+  const storeName = 'ta-' + RUN;
+  const fetched = truststores.create(REALM, { name: storeName + '-uri',
+    kind: 'jwks', party: 'oidfed-anchor:' + outside,
+    jwksUri: outside + '/jwks' });
+  t.check(fetched.code === 'STS-PKI-0308',
+          '8a. a Trust Anchor\'s key set is never a jwks_uri',
+          JSON.stringify(fetched));
+  t.check(truststores.create(REALM, { name: storeName, kind: 'jwks',
+    party: 'oidfed-anchor:' + outside,
+    jwks: JSON.stringify({ keys: [anchorKey] }) }).ok &&
+          truststores.setKeys(REALM, storeName,
+                              { jwksUri: outside + '/jwks' }).code ===
+          'STS-PKI-0308',
+          '8b. it is created with pasted keys, and cannot be switched to a ' +
+          'jwks_uri');
+  const anchorIds = function () {
+    return inRealm(REALM, function () {
+      return oidfed.anchors(req);
+    });
+  };
+  const before8 = anchorIds();
+  t.check(!before8.some(function (a) {
+    return a.entityId === outside;
+  }), '8c. unassigned, it is no anchor');
+  t.check(truststores.assign(REALM, 'oidfed-anchor',
+                             ['registered-keys', storeName]).ok,
+          '8d. oidfed-anchor names the registration and the key set');
+  const with8 = anchorIds();
+  const addedAnchor = with8.filter(function (a) {
+    return a.entityId === outside;
+  })[0];
+  t.check(!!addedAnchor &&
+          addedAnchor.jwks.keys[0].kid === anchorKey.kid &&
+          with8.length === before8.length + 1,
+          '8e. the realm trusts it as an anchor, with its pasted key, beside ' +
+          'the ones it had', JSON.stringify(with8.map(function (a) {
+            return a.entityId;
+          })));
+  t.check(truststores.assign(REALM, 'oidfed-anchor', [storeName]).ok &&
+          anchorIds().map(function (a) {
+            return a.entityId;
+          }).join(',') === outside,
+          '8f. without registered-keys it is the only anchor');
+  t.check(truststores.assign(REALM, 'oidfed-anchor', []).ok &&
+          truststores.remove(REALM, storeName).ok &&
+          anchorIds().length === before8.length,
+          '8g. unassigned and deleted, the realm\'s anchors are as before');
   log.debug("Leaving body().");
 }
 

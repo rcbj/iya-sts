@@ -1362,7 +1362,7 @@ One entry per named truststore; its certificates are stsSignerTrustAnchor entrie
 | `stsTruststoreJwks` | one | this service | `1.3.6.1.4.1.67607.1.1.1008` | A jwks truststore's key set as pasted: a JSON Web Key Set of public keys only. |
 | `stsTruststoreJwksUri` | one | this service | `1.3.6.1.4.1.67607.1.1.1009` | A jwks truststore's jwks_uri, fetched under the outbound policy where no key set was pasted. |
 | `stsTruststoreKind` | one | this service | `1.3.6.1.4.1.67607.1.1.1005` | What the truststore holds: x509 (certificate authorities) or jwks (a key set bound to one party, #2149). Absent is x509. |
-| `stsTruststoreParty` | one | this service | `1.3.6.1.4.1.67607.1.1.1007` | A jwks truststore's party, the one whose JSON Web Tokens its keys may verify: client:<client_id>, federation:<relationship id> or claims-provider:<provider id> (#2149). |
+| `stsTruststoreParty` | one | this service | `1.3.6.1.4.1.67607.1.1.1007` | A jwks truststore's party, the one whose JSON Web Tokens its keys may verify: client:<client_id>, federation:<relationship id>, claims-provider:<provider id> or oidfed-anchor:<entity id> (#2149, #2150). |
 
 ## Truststore assignments
 

@@ -5645,11 +5645,12 @@ const CODES = [
       'errors}' },
   { code: 'STS-PKI-0308',
     summary: 'A key-set truststore was refused its party or its keys ' +
-      '(#2149): the party is not client:, federation: or claims-provider:' +
-      '<id>; the key set is not JSON, holds no key, more than 32, a key ' +
-      'without kty, or a private or symmetric key; or neither or both of ' +
-      'pasted keys and a jwks_uri were given. Also recorded where a stored ' +
-      'key set no longer reads, at a verification.',
+      '(#2149): the party is not client:, federation:, claims-provider: ' +
+      'or oidfed-anchor:<id>; the key set is not JSON, holds no key, more ' +
+      'than 32, a key without kty, or a private or symmetric key; neither ' +
+      'or both of pasted keys and a jwks_uri were given; or a Trust ' +
+      'Anchor\'s key set was given a jwks_uri (#2150). Also recorded where ' +
+      'a stored key set no longer reads, at a verification.',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0309',

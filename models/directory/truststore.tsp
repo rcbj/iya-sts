@@ -40,7 +40,7 @@ model Truststore {
   stsTruststoreKind?: string;
   @attr(#{
     kind: "single",
-    what: "A jwks truststore's party, the one whose JSON Web Tokens its keys may verify: client:<client_id>, federation:<relationship id> or claims-provider:<provider id> (#2149)."
+    what: "A jwks truststore's party, the one whose JSON Web Tokens its keys may verify: client:<client_id>, federation:<relationship id>, claims-provider:<provider id> or oidfed-anchor:<entity id> (#2149, #2150)."
   })
   stsTruststoreParty?: string;
   @attr(#{

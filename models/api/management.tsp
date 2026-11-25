@@ -34347,7 +34347,7 @@ op `setParanoidPkiRow`(@js(#{`examples`:#[#{`setting`:"pki.paranoidFidoMds",`val
   @js(#{`description`:"A SPIFFE bundle truststore's trust domain."}) `trustDomain`?: string;
   @js(#{`description`:"A SPIFFE bundle truststore's JWT-SVID keys, counted."}) `jwtKeys`?: integer;
   @js(#{`description`:"What it holds where that is not certificates: `jwks`, a key set (#2149)."}) `storeKind`?: string;
-  @js(#{`description`:"A key-set truststore's party, the one whose JSON Web Tokens its keys may verify: `client:<client_id>`, `federation:<relationship id>` or `claims-provider:<provider id>`."}) `party`?: string;
+  @js(#{`description`:"A key-set truststore's party, the one whose JSON Web Tokens its keys may verify: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`."}) `party`?: string;
   @js(#{`description`:"A key-set truststore's pasted keys, counted; 0 for one that is fetched."}) `keys`?: integer;
   @js(#{`description`:"A key-set truststore's jwks_uri, where its keys are fetched rather than pasted."}) `jwksUri`?: string;
   @js(#{`description`:"The use cases that trust it in this realm, assigned or by default."}) `usedBy`: (string)[];
@@ -34521,7 +34521,7 @@ op `createTruststore`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The truststore's name.",`maxLength`:200}) `name`: string;
     @js(#{`description`:"What it is for, for a reader."}) `description`?: string;
     @js(#{`description`:"`x509` (the default: certificates) or `jwks`: a key set bound to one party (#2149)."}) `kind`?: string;
-    @js(#{`description`:"A key set's party: `client:<client_id>`, `federation:<relationship id>` or `claims-provider:<provider id>`. Fixed once created."}) `party`?: string;
+    @js(#{`description`:"A key set's party: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`. Fixed once created."}) `party`?: string;
     @js(#{`description`:"A key set's public keys, as a JSON Web Key Set (JSON text or the object); not with `jwksUri`."}) `jwks`?: Record<unknown> | string;
     @js(#{`description`:"A key set's jwks_uri, fetched under the outbound policy; not with `jwks`."}) `jwksUri`?: string
   },

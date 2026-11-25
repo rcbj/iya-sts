@@ -273,6 +273,15 @@ const ROWS: UseCase[] = [
     title: 'A Security Event Token an SSF transmitter partner signed',
     sites: ['ssf/ssf_transmitters.ts'],
     defaults: ['registered-keys'] },
+  // #2150: the Trust Anchors a realm's OpenID Federation chains end at. A
+  // key set bound to `oidfed-anchor:<entity id>` makes that entity an anchor
+  // with those keys (pasted, never fetched); `registered-keys` is the
+  // ou=oidfed anchor entries and the realm's own topology.
+  { id: 'oidfed-anchor', scope: 'realm', kind: 'jwks', direction: 'inbound',
+    title: 'A Trust Anchor an OpenID Federation trust chain ends at, and its ' +
+      'keys',
+    sites: ['oidfed/oidfed.ts anchors', 'oidfed/trust_chain.ts validate'],
+    defaults: ['registered-keys'] },
   { id: 'claims-provider-jwt', scope: 'realm', kind: 'jwks',
     direction: 'inbound',
     title: 'Aggregated or distributed claims a claims provider signed',

@@ -119,7 +119,10 @@ const KEYSET_VIEWS: Json = {
     'jwks or jwks_uri, a federation relationship\'s fedJwks or fedJwksUri, ' +
     'a claims provider\'s jwksUri. Changed where each party is registered.'
 };
-const PARTY = /^(client|federation|claims-provider):[^\s]{1,255}$/;
+// `oidfed-anchor` (#2150): an OpenID Federation Trust Anchor, by its Entity
+// Identifier.
+const PARTY =
+  /^(client|federation|claims-provider|oidfed-anchor):[^\s]{1,255}$/;
 const MAX_KEYS = 32;
 // A JWK member that makes it a private or a symmetric key.
 const SECRET_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k'];
@@ -1540,12 +1543,19 @@ class Truststores {
     let why = '';
     if (withParty && !PARTY.test(party)) {
       why = 'a key set names the one party it speaks for: client:<client_id>' +
-        ', federation:<relationship id> or claims-provider:<provider id>';
+        ', federation:<relationship id>, claims-provider:<provider id> or ' +
+        'oidfed-anchor:<entity id>';
     } else if (!!jwks === !!uri) {
       why = 'a key set is either pasted keys or a jwks_uri, not both and ' +
         'not neither';
     } else if (jwks) {
       why = Truststores.keysOfText(jwks).why;
+    } else if (/^oidfed-anchor:/.test(String((spec && spec.boundTo) ||
+                                            party))) {
+      // A Trust Anchor's keys are trusted out of band (OpenID Federation
+      // 1.1, 10.2), and `Oidfed.anchors()` reads them synchronously (#2150).
+      why = 'a Trust Anchor\'s key set is pasted keys: its keys are trusted ' +
+        'out of band, never fetched';
     } else {
       let url: URL | null = null;
       try {
@@ -1595,7 +1605,8 @@ class Truststores {
       return this.refused('STS-PKI-0309', '"' + name + '" holds ' +
                           'certificates, not a key set');
     }
-    const problem = Truststores.keySetProblem(spec, false);
+    const problem = Truststores.keySetProblem(
+      Object.assign({}, spec, { boundTo: row.party }), false);
     if (problem) {
       log.debug("Leaving Truststores.setKeys(). Refused.");
       return this.refused('STS-PKI-0308', problem);
@@ -1666,6 +1677,51 @@ class Truststores {
   }
 
   /**
+   * EVERY key set a key-set use case names that is bound to a party OF ONE
+   * KIND (#2150), for a reader that enumerates its parties rather than being
+   * presented one: `Oidfed.anchors()`, whose anchors ARE the parties. Pasted
+   * keys only; a set naming a jwks_uri is skipped.
+   *
+   * @param useCaseId - a `jwks` use case
+   * @param partyKind - e.g. `oidfed-anchor`
+   * @param realmId - the realm; the ambient one where omitted
+   * @returns `{ registered, sets: [{ name, party, keys }], problems }`
+   */
+  boundKeySets(useCaseId: string, partyKind: string, realmId?: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Truststores.boundKeySets(). " + useCaseId);
+    const useCase = UseCases.get(useCaseId);
+    if (!useCase || useCase.kind !== 'jwks') {
+      log.debug("Leaving Truststores.boundKeySets(). Not a key-set use case.");
+      return { registered: true, sets: [], problems: [] };
+    }
+    const self = this;
+    const chosen = this.namesFor(useCaseId, realmId);
+    const here = this.resolvingRealm(useCase, realmId);
+    const prefix = partyKind + ':';
+    const sets: Json[] = [];
+    const problems: Json[] = [];
+    (chosen.names as string[]).forEach(function (name: string) {
+      const where = self.locate(here, name);
+      if (!where || where.kind !== 'named' || where.storeKind !== 'jwks' ||
+          String(where.row.party || '').indexOf(prefix) !== 0 ||
+          where.row.jwksUri) {
+        return;
+      }
+      const read = Truststores.keysOfText(String(where.row.jwks || ''));
+      if (read.why) {
+        problems.push({ code: 'STS-PKI-0308', store: name, why: read.why });
+        return;
+      }
+      sets.push({ name: name, party: String(where.row.party).slice(
+        prefix.length), keys: read.keys });
+    });
+    const registered = chosen.names.indexOf('registered-keys') >= 0;
+    log.debug("Leaving Truststores.boundKeySets(). " + sets.length + ".");
+    return { registered: registered, sets: sets, problems: problems };
+  }
+
+  /**
    * The store's limits, for the page.
    *
    * @returns `{ maxStores, maxAnchors, maxIntermediates, installed }`
@@ -1719,6 +1775,7 @@ export = {
   // Key sets (#2149).
   setKeys: slot.forward('setKeys'),
   keySources: slot.forward('keySources'),
+  boundKeySets: slot.forward('boundKeySets'),
   keysOfText: Truststores.keysOfText,
   keySetProblem: Truststores.keySetProblem,
   limits: slot.forward('limits')

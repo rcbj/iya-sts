@@ -6823,7 +6823,7 @@ Scope: `admin:read`.
 | `stores[].keys` | integer |  | A key-set truststore's pasted keys, counted; 0 for one that is fetched. |
 | `stores[].kind` | string | yes | `built-in`, `view`, `setting`, `spiffe` or `named`. |
 | `stores[].name` | string | yes | Unique in its realm. A built-in (`system`, `service-root`, …), a view (`signers`, `client-certificates`), a legacy setting (`setting:<key>`), a SPIFFE bundle (`spiffe:<trust domain>`) or a named truststore. |
-| `stores[].party` | string |  | A key-set truststore's party, the one whose JSON Web Tokens its keys may verify: `client:<client_id>`, `federation:<relationship id>` or `claims-provider:<provider id>`. |
+| `stores[].party` | string |  | A key-set truststore's party, the one whose JSON Web Tokens its keys may verify: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`. |
 | `stores[].problem` | string | yes | Why what it names could not be read (an unreadable legacy file), in English; empty where nothing is wrong. |
 | `stores[].readOnly` | boolean | yes | Whether this realm may change it here: built-ins, views and settings are changed where they are kept, and a service-wide named truststore only from the default realm. |
 | `stores[].scope` | string | yes | `service` (the default realm's, nameable by a handshake or outbound use case) or `realm`. |
@@ -6993,7 +6993,7 @@ Scope: `admin:write`.
 | `jwksUri` | string |  | A key set's jwks_uri, fetched under the outbound policy; not with `jwks`. |
 | `kind` | string |  | `x509` (the default: certificates) or `jwks`: a key set bound to one party (#2149). |
 | `name` | string | yes | The truststore's name. |
-| `party` | string |  | A key set's party: `client:<client_id>`, `federation:<relationship id>` or `claims-provider:<provider id>`. Fixed once created. |
+| `party` | string |  | A key set's party: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`. Fixed once created. |
 
 **200**: The truststore was created.
 

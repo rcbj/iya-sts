@@ -120,7 +120,7 @@
   "createKind": "Contient",
   "createKindX509": "des certificats",
   "createKindJwks": "un jeu de clés lié à une seule partie",
-  "createParty": "Partie (jeu de clés uniquement) : client:, federation: ou claims-provider:…",
+  "createParty": "Partie (jeu de clés uniquement) : client:, federation:, claims-provider: ou oidfed-anchor:…",
   "createJwks": "Clés publiques, sous forme de JSON Web Key Set",
   "createJwksUri": "Ou une jwks_uri"
 }
