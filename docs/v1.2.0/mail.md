@@ -181,7 +181,7 @@ is yours.
 3. Set `mail.dkimSwitchAt` to an ISO 8601 time. From then on, messages are
    signed with the next selector, **but only once DNS answers the next
    selector's name with its key**. Until it does, the current selector keeps
-   signing and `STS-MAIL-0244` is logged.
+   signing and `STS-MAIL-0245` is logged.
 4. Keep the old selector's record published for at least a week after the
    switch.
 5. Make the next selector the current one: move the key to the

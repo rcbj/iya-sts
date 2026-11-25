@@ -2751,7 +2751,7 @@ async function readPreviousKek() {
  *
  * @returns the key as the provider returned it, or null when
  *   `keys.previousCellKekProvider` is `none`
- * @throws an Error (STS-CELL-0212) when its location is empty, or the
+ * @throws an Error (STS-CELL-0213) when its location is empty, or the
  *   provider's error when the read fails
  */
 async function readPreviousCellKek() {
@@ -2765,7 +2765,7 @@ async function readPreviousCellKek() {
   const own = locationOf(PREVIOUS_CELL_KEK,
                          provider === 'file' ? 'file' : 'ref');
   if (!own.where) {
-    throw new Error(errorCodes.tag('STS-CELL-0212') +
+    throw new Error(errorCodes.tag('STS-CELL-0213') +
                     PREVIOUS_CELL_KEK.provider + ' is "' + provider +
                     '" and keys.previousCellKekRef is empty. The previous ' +
                     'cell key has no fallback location.');

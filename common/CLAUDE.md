@@ -7945,7 +7945,7 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
   wrapped under the old refuses (`STS-KEYS-0091`). **A cell key is rotated the
   same way since #2220**: `keys.previousCellKek*` (`secrets.PREVIOUS_CELL_KEK`,
-  no fallback, refused without a cell key, `STS-CELL-0212`) is read beside the
+  no fallback, refused without a cell key, `STS-CELL-0213`) is read beside the
   new cell key, and `unwrapWithRotation()` tries each scope's OWN previous key
   — the service key's for `service`, the cell key's for this cell's scope.
 * **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's

@@ -474,7 +474,7 @@ Raised from: persistence/.
 | `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
 | `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it only once the flush is stuck (STS-STORE-0177). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
 | `STS-STORE-0177` | A request worker's own flush has been out four times workers.readBarrierTimeoutMs (2 minutes by default), so the worker asks the front process to replace it (STS-WORKER-0055). Its drain waits for that flush to settle until ten times the bound after it began, so a flush that is only slow keeps its writes. | Log line |
-| `STS-STORE-0178` | The database password could not be read again from its secret store (persistence.database-password-refresh, or after the database refused a login, #2220); new connections go on using the password already held. | Log line and audit row |
+| `STS-STORE-0179` | The database password could not be read again from its secret store (persistence.database-password-refresh, or after the database refused a login, #2220); new connections go on using the password already held. | Log line and audit row |
 
 ## STS-CLUSTER
 
@@ -617,7 +617,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
 | `STS-CELL-0210` | A cell conversion found a sealed directory entry it could not open, so it could not decide the entry's tier; nothing was converted (#391). | cell_convert — refused |
 | `STS-CELL-0211` | A provider's server-to-server notification could not reach every cell (#727): it is answered 503 and its once-ever claim is released, so the provider's retry is accepted and fanned out again. | HTTP 503 with Retry-After |
-| `STS-CELL-0212` | keys.previousCellKekProvider is set and its location is empty, or no cell key is configured for it to be the previous one of (#2220); the service does not start. | Log line (fatal at start) |
+| `STS-CELL-0213` | keys.previousCellKekProvider is set and its location is empty, or no cell key is configured for it to be the previous one of (#2220); the service does not start. | Log line (fatal at start) |
 
 ## STS-SCHED
 
@@ -4583,7 +4583,7 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0241` | A message was not queued because the encryption the person chose cannot be honoured now (no usable OpenPGP encryption key, no S/MIME certificate that can receive); it is not sent in the clear against their choice (#1955). | log only (the use refuses as for any unsent message) |
 | `STS-MAIL-0242` | An encrypted message cannot be carried by the realm's transport: Azure Communication Services takes structured content and cannot send a MIME entity this service composed (#1955). | log only |
 | `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
-| `STS-MAIL-0244` | A DKIM selector switch is held back (#2220): mail.dkimNextSelector's key cannot sign, or mail.dkimSwitchAt has passed and DNS does not answer the next selector with its key. Messages are signed with the current selector until it does. | RFC 6376 section 3.6.1 (log only) |
+| `STS-MAIL-0245` | A DKIM selector switch is held back (#2220): mail.dkimNextSelector's key cannot sign, or mail.dkimSwitchAt has passed and DNS does not answer the next selector with its key. Messages are signed with the current selector until it does. | RFC 6376 section 3.6.1 (log only) |
 
 ## STS-I18N
 

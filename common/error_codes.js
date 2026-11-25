@@ -2312,7 +2312,7 @@ const CODES = [
       'waits for that flush to settle until ten times the bound after it ' +
       'began, so a flush that is only slow keeps its writes.',
     spec: 'Log line' },
-  { code: 'STS-STORE-0178',
+  { code: 'STS-STORE-0179',
     summary: 'The database password could not be read again from its ' +
       'secret store (persistence.database-password-refresh, or after the ' +
       'database refused a login, #2220); new connections go on using the ' +
@@ -2928,7 +2928,7 @@ const CODES = [
       'every cell (#727): it is answered 503 and its once-ever claim is ' +
       'released, so the provider\'s retry is accepted and fanned out again.',
     spec: 'HTTP 503 with Retry-After' },
-  { code: 'STS-CELL-0212',
+  { code: 'STS-CELL-0213',
     summary: 'keys.previousCellKekProvider is set and its location is ' +
       'empty, or no cell key is configured for it to be the previous one ' +
       'of (#2220); the service does not start.',
@@ -21287,7 +21287,7 @@ const CODES = [
       '(the stored key or certificate no longer reads); it is a ' +
       'dead letter, never sent in the clear (#1955).',
     spec: 'log only' },
-  { code: 'STS-MAIL-0244',
+  { code: 'STS-MAIL-0245',
     summary: 'A DKIM selector switch is held back (#2220): ' +
       'mail.dkimNextSelector\'s key cannot sign, or mail.dkimSwitchAt has ' +
       'passed and DNS does not answer the next selector with its key. ' +

@@ -370,7 +370,7 @@ with its own previous-key settings:
    `keys.previousCellKekProvider` back to `none` and restart again.
 
 The previous cell key has no fallback location, and is refused when no cell
-key is configured (`STS-CELL-0212`).
+key is configured (`STS-CELL-0213`).
 
 ---
 

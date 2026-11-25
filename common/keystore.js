@@ -1460,7 +1460,7 @@ async function startOnce() {
   previousCellKek = null;
   if (secrets.configuredFor(secrets.PREVIOUS_CELL_KEK)) {
     if (!cellKek) {
-      throw new Error(errorCodes.tag('STS-CELL-0212') + 'keys.' +
+      throw new Error(errorCodes.tag('STS-CELL-0213') + 'keys.' +
                       'previousCellKekProvider is set and no cell key is ' +
                       '(keys.cellKekProvider is none). The previous cell ' +
                       'key is read only to re-wrap under a new cell key.');

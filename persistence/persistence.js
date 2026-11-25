@@ -2739,13 +2739,13 @@ function refreshDatabasePassword(reason) {
       detail: { reason: String(reason) } });
     return { read: true, changed: true };
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-STORE-0178') + 'persistence: the ' +
+    log.error(errorCodes.tag('STS-STORE-0179') + 'persistence: the ' +
               'database password could not be read again (' + String(reason) +
               '), so new connections go on using the one held: ' +
               ((e && e.message) || e));
     auditPasswordRefresh({
       action: 'persistence.database-password-changed', outcome: 'failure',
-      errorCode: 'STS-STORE-0178',
+      errorCode: 'STS-STORE-0179',
       summary: 'The database password could not be read again from its ' +
                'secret store', detail: { reason: String(reason) } });
     throw e;

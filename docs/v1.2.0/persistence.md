@@ -403,7 +403,7 @@ without a restart, when it comes from a secret store
 * A changed password is used for every connection made after it. Open
   connections keep working, because PostgreSQL and MariaDB do not end a
   session when its password changes.
-* A failed read is logged and audited (`STS-STORE-0178`), and the password
+* A failed read is logged and audited (`STS-STORE-0179`), and the password
   already held stays in use.
 
 So the old password has to stay valid at the database until every node has

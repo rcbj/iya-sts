@@ -29,7 +29,7 @@
 //      push fails is not.
 //   G. THE DKIM SELECTOR SWITCH: the next selector signs only once its
 //      moment has passed AND DNS answers with its key.
-//   H. THE PREVIOUS CELL KEY with no location is refused (STS-CELL-0212).
+//   H. THE PREVIOUS CELL KEY with no location is refused (STS-CELL-0213).
 //
 // In a child process: the shared secrets, the settings and the applications
 // are module-wide, and nothing set here may outlive this file.
@@ -260,7 +260,7 @@ async function childMain() {
       refused = String((e && e.message) || e);
     }
     delete process.env.STS_PREVIOUS_CELL_KEK_PROVIDER;
-    note(/STS-CELL-0212/.test(refused),
+    note(/STS-CELL-0213/.test(refused),
          'H1. a previous cell key with no location is refused', refused);
 
     // --- G ---------------------------------------------------------------

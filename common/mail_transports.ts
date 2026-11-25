@@ -511,7 +511,7 @@ class MailTransports {
   //
   // From that moment the transport signs with the next selector, BUT ONLY
   // ONCE DNS ANSWERS WITH ITS KEY: a record not (yet) published, or carrying
-  // another key, keeps the current selector and says so (STS-MAIL-0244), so
+  // another key, keeps the current selector and says so (STS-MAIL-0245), so
   // a forgotten step 2 is a warning and not every message failing DMARC.
   // The transport is rebuilt within an hour (`common/mail.ts`) and when the
   // moment passes, so the check is made again. Once the switch has held for
@@ -550,7 +550,7 @@ class MailTransports {
     } catch (e) {
       log.debug("Caught in MailTransports.dkimSigning(): " +
                 ((e && e.message) || e));
-      log.warn(errorCodes.tag('STS-MAIL-0244') + 'mail: ' +
+      log.warn(errorCodes.tag('STS-MAIL-0245') + 'mail: ' +
                'mail.dkimNextSelector is "' + nextSelector + '" and its key ' +
                '(mail.dkimNextKeyField) cannot sign, so messages are signed ' +
                'with the current selector: ' + ((e && e.message) || e));
@@ -581,7 +581,7 @@ class MailTransports {
       published = false;
     }
     if (!published) {
-      log.warn(errorCodes.tag('STS-MAIL-0244') + 'mail: mail.dkimSwitchAt ' +
+      log.warn(errorCodes.tag('STS-MAIL-0245') + 'mail: mail.dkimSwitchAt ' +
                'has passed, but DNS does not answer ' + name + ' with the ' +
                'next DKIM key, so messages are still signed with the ' +
                'current selector "' + current.selector + '". Publish: ' +
