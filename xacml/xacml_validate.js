@@ -453,6 +453,74 @@ function problemsIn(policy) {
   return problems;
 }
 
+// ---------------------------------------------------------------------------
+// THE PATTERNS A SAVE REFUSES (#2220, ASVS 5.0.0 1.3.12), and why this is
+// not part of `validate()`.
+//
+// `validate()` runs whenever a document is PARSED — at the save, and again
+// when a stored policy is read (`xacml_store.ts`'s `parseDocument()`). A
+// rule added to it refuses a policy stored before the rule existed, which
+// then decides nothing at all. So the bound on a regexp-match's literal
+// pattern (`xacml_functions.js`'s `patternCheck`) is asked here, by the
+// store's `write()` only, and a policy stored before #2220 still loads —
+// its unsafe pattern goes Indeterminate at the evaluation instead.
+//
+// The walk is over the whole model rather than through the checks above,
+// because a pattern can sit in a Target's Match, a Condition, a
+// VariableDefinition or an obligation's expression, and missing one place
+// is how a bound gets a hole. Every object reached is visited once.
+// ---------------------------------------------------------------------------
+/**
+ * Lists every literal regexp-match pattern in a policy that a save refuses:
+ * too long, a backreference, or a nested quantifier.
+ *
+ * @param policy - a Policy or PolicySet from the model
+ * @returns the problems found, as strings; empty when clean
+ */
+function patternProblemsIn(policy) {
+  log.debug("Entering patternProblemsIn().");
+  const problems = [];
+  const report = function (message) {
+    log.debug("Entering report().");
+    if (problems.indexOf(message) < 0) {
+      problems.push(message);
+    }
+    log.debug("Leaving report().");
+  };
+  const seen = new Set();
+  const stack = [policy];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== 'object' || seen.has(node)) {
+      continue;
+    }
+    seen.add(node);
+    if (node.kind === 'apply' && typeof node.functionId === 'string') {
+      const definition = functions.lookup(node.functionId);
+      if (definition && typeof definition.patternCheck === 'function') {
+        definition.patternCheck(node.args || [], report);
+      }
+    }
+    if (typeof node.matchId === 'string' && node.value) {
+      const definition = functions.lookup(node.matchId);
+      if (definition && typeof definition.patternCheck === 'function') {
+        definition.patternCheck([node.value, node.reference], report);
+      }
+    }
+    const values = Array.isArray(node) ? node : Object.keys(node)
+      .map(function (key) {
+        return node[key];
+      });
+    values.forEach(function (value) {
+      if (value && typeof value === 'object') {
+        stack.push(value);
+      }
+    });
+  }
+  log.debug("Leaving patternProblemsIn(). " + problems.length);
+  return problems;
+}
+
 /**
  * Static validation of a XACML policy model: the type and literal errors a
  * policy is refused for at load.
@@ -464,5 +532,6 @@ function problemsIn(policy) {
 module.exports = {
   validate: validate,
   problemsIn: problemsIn,
+  patternProblemsIn: patternProblemsIn,
   staticTypeOf: staticTypeOf
 };

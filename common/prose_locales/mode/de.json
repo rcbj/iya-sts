@@ -119,6 +119,18 @@
     "en": "01bf0ea288cde1c4",
     "text": "Die Regel protocol-not-declared der Ausstellungsrichtlinie lehnt eine Ausstellung über eine Protokollfamilie ab, für die die Anwendung nicht erklärt ist (STS-XACML-0084): ein ID-Token an eine nur für OAuth 2.0 erklärte Anwendung, eine SAML-Assertion an eine für OpenID Connect erklärte. Eine für nichts erklärte Anwendung wird nicht abgelehnt."
   },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "Das JSON-Schema eines Zugriffstyps ist auf eine Teilmenge beschränkt und jedes seiner Muster auf eine Grenze"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "Eine über die Konsole oder die Verwaltungs-API geschriebene Definition beschränkt ihr Schema auf die Schlüsselwörter, die ein Limits-Schema verwenden darf, und jedes Muster auf die Grenze für einen regulären Ausdruck; alles andere wird abgelehnt (STS-REG-0374). Eine vor dieser Regel gespeicherte Definition wird weiterhin wie gespeichert verwendet, und diese Zeile meldet für sie ASVS 5.0.0 1.3.12 als nicht erfüllt."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "Dasselbe."
+  },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
     "text": "Ein GNAP-Zugriffsrecht wird nur für einen Typ gewährt, den der Katalog der Zugriffstypen erklärt"

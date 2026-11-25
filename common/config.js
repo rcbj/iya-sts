@@ -449,6 +449,71 @@ const log = bunyan.createLogger({ name: 'sts-config',
                                   level: appconfig.logLevel || 'info' });
 
 // ---------------------------------------------------------------------------
+// A LIST OF REGULAR EXPRESSIONS AN ADMINISTRATOR WROTE (#2220, ASVS 5.0.0
+// 1.3.12): SPIFFE's http_challenge DNS patterns and sigstore identities,
+// matched against what an agent or a signing certificate names. Each entry
+// that is a pattern is held to `common/pattern_safety.js` — at most 256
+// characters, no backreference, no quantified group that is itself
+// quantified or an alternation — and must compile. `csvPatterns` on the
+// row says how an entry reads: `regex`, the whole entry; `identity-pairs`,
+// `issuer=subject`, each half a pattern only when it holds one of SPIRE's
+// regex characters (`spiffe_sigstore.ts`'s `identityAllowed()`).
+// ---------------------------------------------------------------------------
+const CSV_PATTERN_CHARS = /[*+?^${}[\]|()]/;
+
+/**
+ * Says why a list setting's regular expressions may not be stored, or null.
+ *
+ * @param raw - the value as given: text or an array
+ * @param setting - the row, whose `csvPatterns` says how an entry reads
+ * @returns the problem as a sentence, or null
+ */
+function csvPatternProblem(raw, setting) {
+  log.debug("Entering csvPatternProblem().");
+  // Lazily, and a leaf: `pattern_safety.js` requires nothing.
+  const PatternSafety = require('./pattern_safety');
+  const parts = (Array.isArray(raw) ? raw :
+                 String(raw === undefined || raw === null ? '' : raw)
+                   .split(','))
+    .map(function (part) {
+      return String(part).trim();
+    }).filter(function (part) {
+      return part.length > 0;
+    });
+  const pairs = setting.csvPatterns === 'identity-pairs';
+  for (let i = 0; i < parts.length; i++) {
+    const cut = parts[i].indexOf('=');
+    const halves = pairs
+      ? (cut > 0 ? [parts[i].slice(0, cut), parts[i].slice(cut + 1)]
+                 : [parts[i]])
+      : [parts[i]];
+    for (let j = 0; j < halves.length; j++) {
+      const pattern = halves[j];
+      if (pairs && !CSV_PATTERN_CHARS.test(pattern)) {
+        continue;
+      }
+      let problem = PatternSafety.problem(pattern, PatternSafety.PATTERN_MAX);
+      if (!problem) {
+        try {
+          new RegExp(pattern);
+        } catch (e) {
+          log.debug("Caught in csvPatternProblem(): " +
+                    ((e && e.message) || e));
+          problem = 'it does not compile: ' + e.message;
+        }
+      }
+      if (problem) {
+        log.debug("Leaving csvPatternProblem(). Refused.");
+        return 'holds the regular expression "' + pattern.slice(0, 80) +
+               '", which is refused: ' + problem;
+      }
+    }
+  }
+  log.debug("Leaving csvPatternProblem().");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Types.
 //
 // A value arrives here as a string when it came from the environment or from a
@@ -721,8 +786,24 @@ const TYPES = {
     // — addresses, host names, ids another table owns — and is not checked,
     // as before. The entries are split and trimmed as parse() does, so what
     // is checked is exactly what the reader will be handed.
-    check: function (raw, setting) {
+    // A ROW THAT DECLARES `csvPatterns` (#2220) is a list of regular
+    // expressions — `regex`, each entry one, or `identity-pairs`, each entry
+    // `issuer=subject` whose halves are one when they hold a regex
+    // character — and each is held to `csvPatternProblem()`. Only a
+    // caller's write: a value from the environment or an appconfig file is
+    // WARNED about at startup (`opts.startup`, STS-CORE-0184), and a stored
+    // override read back is not checked (`opts.stored`), so a deployment
+    // that started on one before #2220 still starts with it.
+    check: function (raw, setting, opts) {
       log.debug("Entering check().");
+      if (setting && setting.csvPatterns &&
+          !(opts && (opts.startup || opts.stored))) {
+        const patterns = csvPatternProblem(raw, setting);
+        if (patterns) {
+          log.debug("Leaving check(). An unsafe pattern.");
+          return patterns;
+        }
+      }
       const allowed = setting && Array.isArray(setting.csvValues)
         ? setting.csvValues : null;
       if (!allowed) {
@@ -16004,6 +16085,44 @@ const SETTINGS = [
                  'client\'s own shorter timeLimit wins. The entries sent ' +
                  'before it are the answer, marked incomplete.' },
 
+  // THE LARGEST MESSAGE A CLIENT MAY SEND (#2220), read from its BER header
+  // by `ldap/ldap_message_guard.ts` before ldapjs buffers any of it, on 389
+  // and 636 alike. Only CLIENT-TO-SERVER messages are counted: a search
+  // result is the server's, however large. The numbers:
+  //   * AFTER A BIND, 5 MiB — the limit every HTTP body here is held to
+  //     (`common/app.js`), so anything the console or the APIs could write
+  //     fits through LDAP too. A modify carrying a jpegPhoto (hundreds of
+  //     KB), a certificate chain (a few KB each) or a group of tens of
+  //     thousands of member DNs (about 60 bytes each) is well inside it.
+  //   * BEFORE A BIND, 128 KiB. What a client sends first is a bind (a DN
+  //     and a password: under a kilobyte), StartTLS, or a root DSE search.
+  //     The largest is a SASL bind carrying a Kerberos token, which Windows
+  //     caps with MaxTokenSize at 48,000 bytes by default and 65,535 at
+  //     most — half this limit. Bigger than that is memory spent for
+  //     somebody who has not said who they are.
+  // Read at each message's header, so a change applies to the next one.
+  { key: 'ldap.maxMessageBytes', group: 'LDAP',
+    label: 'Largest message from a bound client (bytes)',
+    env: 'LDAP_MAX_MESSAGE_BYTES', type: 'int', dflt: 5242880,
+    min: 65536, max: 268435456, runtime: true, perProcess: true,
+    description: 'The largest LDAP message a client that has bound may ' +
+                 'send, in bytes, counted from the length its BER header ' +
+                 'declares: a connection whose next message declares more ' +
+                 'is closed before any of it is read (STS-LDAP-0227). ' +
+                 'Search results are sent by the server and do not count. ' +
+                 '5 MiB by default, the limit every HTTP body here has.' },
+
+  { key: 'ldap.maxMessageBytesBeforeBind', group: 'LDAP',
+    label: 'Largest message before a bind (bytes)',
+    env: 'LDAP_MAX_MESSAGE_BYTES_BEFORE_BIND', type: 'int', dflt: 131072,
+    min: 4096, max: 268435456, runtime: true, perProcess: true,
+    description: 'The largest LDAP message a client may send before it has ' +
+                 'bound, in bytes: a bind, StartTLS or a root DSE search. ' +
+                 'Over it the connection is closed before any of the ' +
+                 'message is read (STS-LDAP-0227). 128 KiB by default, ' +
+                 'twice the largest Kerberos token a SASL bind can carry. ' +
+                 'Never more than ldap.maxMessageBytes in effect.' },
+
   { key: 'ldap.plainListener', group: 'LDAP', label: 'Plain LDAP listener',
     env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: strongerInProduct(false, true), derived: true,
     runtime: false,
@@ -20141,7 +20260,7 @@ const SETTINGS = [
   { key: 'spiffe.httpChallengeAllowedDnsPatterns', group: 'SPIFFE',
     label: 'http_challenge allowed host names (regular expressions)',
     env: 'STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS', type: 'csv',
-    dflt: '', runtime: true,
+    dflt: '', runtime: true, csvPatterns: 'regex',
     description: 'SPIRE\'s allowed_dns_patterns, comma-separated regular ' +
                  'expressions. An http_challenge agent\'s host name must ' +
                  'match one BEFORE this server looks it up or dials it. ' +
@@ -20488,7 +20607,7 @@ const SETTINGS = [
   { key: 'spiffe.dockerSigstoreAllowedIdentities', group: 'SPIFFE',
     label: 'docker sigstore: allowed signer identities',
     env: 'STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_IDENTITIES', type: 'csv',
-    dflt: '', runtime: true,
+    dflt: '', runtime: true, csvPatterns: 'identity-pairs',
     description: 'SPIRE\'s allowed_identities, one issuer=subject pair per ' +
                  'element: the OIDC issuer and the subject a keyless ' +
                  'signing certificate must name. Either half containing one ' +
@@ -24285,7 +24404,12 @@ function overrideProblem(key, raw, forRealm, withRules) {
     return '"' + key + '" holds a NUL character or half of a surrogate ' +
       'pair, which this service cannot store.';
   }
-  const problem = TYPES[setting.type].check(raw, setting);
+  // A STORED value (`withRules` false: a restore, a replica's pull) is not
+  // held to `csvPatterns` (#2220): a pattern written before the rule must
+  // survive a restart, and is refused only at its next save.
+  const problem = TYPES[setting.type].check(raw, setting,
+                                            withRules ? undefined
+                                                      : { stored: true });
   if (problem) {
     log.debug("Leaving overrideProblem().");
     return '"' + key + '" ' + problem + '.';
@@ -24456,6 +24580,10 @@ function checkOverrideCode(key, raw, forRealm) {
   if (unstorableText(raw)) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0171';
+  }
+  if (setting.csvPatterns && csvPatternProblem(raw, setting)) {
+    log.debug("Leaving checkOverrideCode(). An unsafe pattern.");
+    return 'STS-CORE-0183';
   }
   if (TYPES[setting.type].check(raw, setting)) {
     log.debug("Leaving checkOverrideCode().");
@@ -25483,6 +25611,14 @@ function refuseMalformedSettings() {
       if (problem) {
         named.push('  ' + layer.where + ': "' + setting.key + '" ' + problem);
       }
+      if (!problem && setting.csvPatterns &&
+          csvPatternProblem(layer.raw, setting)) {
+        log.warn(errorCodes.tag('STS-CORE-0184') + 'config: ' +
+                 layer.where + ': "' + setting.key + '" ' +
+                 csvPatternProblem(layer.raw, setting) + '. It is used as ' +
+                 'configured; /admin/config and the management API refuse ' +
+                 'it on the next save.');
+      }
       if (!problem && setting.absoluteUri &&
           TYPES[setting.type].check(layer.raw, setting)) {
         log.warn(errorCodes.tag('STS-CORE-0176') + 'config: ' +
@@ -25630,7 +25766,9 @@ function parseAs(key, raw) {
   if (problem) {
     log.debug("Leaving parseAs(). Refused: " + problem);
     return errorCodes.mark({ ok: false, problem: '"' + key + '" ' + problem },
-                           'STS-CORE-0006');
+                           setting.csvPatterns &&
+                           csvPatternProblem(raw, setting)
+                             ? 'STS-CORE-0183' : 'STS-CORE-0006');
   }
   const parsed = TYPES[setting.type].parse(raw, setting);
   log.debug("Leaving parseAs(). Parsed.");

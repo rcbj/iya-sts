@@ -4249,9 +4249,17 @@ class ApplicationsPage {
       ].map(function (pair) {
         return '<div><strong>' + pair[0] + ':</strong> ' + pair[1] + '</div>';
       }).join('');
+      // A definition stored before a stricter write rule (#2220): still
+      // used, and flagged, with the view's own sentence (English, as the
+      // problem above is).
+      const stale = d.schemaProblem
+        ? '<div><span class="state-revoked">' +
+          t.html('consoleApplications.a3.writeWouldRefuse') + '</span>: ' +
+          kit.esc(d.schemaProblem) + '</div>' : '';
       return '<tr><td><code>' + kit.esc(d.type) + '</code>' +
         (d.description ? '<div class="sub">' + kit.esc(d.description) +
-                         '</div>' : '') + '</td><td>' + facts + '</td><td>' +
+                         '</div>' : '') + '</td><td>' + stale + facts +
+        '</td><td>' +
         '<form method="post" action="/admin/applications" class="inline">' +
         carryBack + '<input type="hidden" name="action" ' +
         'value="remove-access-type"><input type="hidden" name="application" ' +
