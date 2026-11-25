@@ -4073,7 +4073,7 @@ const CODES = [
       'thread waiting for it takes it over and initialises the module ' +
       'again itself (#1955).',
     spec: '' },
-  { code: 'STS-KEYS-0214',
+  { code: 'STS-KEYS-0217',
     summary: 'The keys.encryption-key-rotate job could not replace a ' +
       'realm\'s request-decryption keys (#2220): the key set could not ' +
       'be replaced (a newer generation was already held, or the store ' +

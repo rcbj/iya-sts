@@ -559,20 +559,20 @@ class KeyRenewal {
       'request-decryption keys (' + kinds.join(', ') + ')');
     if (!done || !done.ok) {
       const why = String((done && done.why) || 'refused');
-      log.error(errorCodes.tag('STS-KEYS-0214') + 'key renewal: the "' +
+      log.error(errorCodes.tag('STS-KEYS-0217') + 'key renewal: the "' +
                 (realmId || 'default') + '" realm\'s request-decryption ' +
                 'keys (' + kinds.join(', ') + ') could not be rotated: ' +
                 why + '. They go on as they are; the next run tries again.');
       audit().record({
         action: 'keys.encryption.rotate', protocol: 'Keys',
         channel: 'scheduler', outcome: 'failure', realm: realmId,
-        errorCode: 'STS-KEYS-0214',
+        errorCode: 'STS-KEYS-0217',
         summary: 'The request-decryption keys could not be rotated',
         detail: { kinds: kinds, why: why }
       });
       log.debug("Leaving KeyRenewal.rotateEncryptionKeysDue(). Refused.");
       throw errorCodes.mark(new Error('the request-decryption keys could ' +
-        'not be rotated: ' + why), 'STS-KEYS-0214');
+        'not be rotated: ' + why), 'STS-KEYS-0217');
     }
     this.inRealm(realmId, function (): void {
       done.rotated.forEach(function (one: Json): void {
