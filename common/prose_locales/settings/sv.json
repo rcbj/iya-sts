@@ -379,6 +379,14 @@
     "en": "ee9334d5a57de03e",
     "text": "Lägger till preload i Strict-Transport-Security, som bara produktläget skickar, så att värdnamnet kan skickas in till webbläsarnas förladdningslista på hstspreload.org. Förladdning binder hela den registrerbara domänen och varje underdomän till HTTPS i alla webbläsare, och att lämna listan tar månader. Skickas bara medan Tillämpa HSTS på underdomäner är på."
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Vidarebefordra rapporter om CSP-överträdelser till"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Av när den är tom, standardvärdet. En https-URL som tar emot varje rapport om en överträdelse av Content Security Policy som tjänsten tar emot, som JSON: sfären, direktivet, sidans sökväg utan frågan, det blockerade ursprunget och dispositionen, aldrig rapporten så som webbläsaren skickade den. Skickas enligt samma regler för utgående anrop som federationens bakkanaler."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Acceptera ett påstående utan målgrupp"
@@ -12450,6 +12458,30 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "När TJÄNSTEN, inte en person, markerar en inloggningsuppgift som komprometterad eller inaktiverar ett konto (riskbedömning), skicka även e-post till varje medlem i sfärens Admin Write-förteckning som har en adress."
+  },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Inloggningsvarningar"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Meddela en person när en inloggning på kontot lyckas men verkar ovanlig – en enhet eller webbläsare, eller ett land, som personen aldrig har loggat in från, ett anonymiseringsnätverk som Tor, nekade lösenord strax innan, eller en risknivå på eller över mail.signInAlertLevel – med när, ungefär var, med vad och hur, och en länk till personens senaste inloggningar; och när lösenord nekas för kontot så många gånger som inloggningsgränsen tillåter (security.rateLimitPerIdentity under security.rateLimitWindowS), oavsett om någon sedan loggar in. Inget skickas medan säkerhetsmeddelanden är av eller ingen transport är konfigurerad."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Nivå för inloggningsvarningar"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "Den lägsta risknivå en lyckad inloggning måste nå för att personen ska meddelas. På LOW meddelas en ny enhet eller ett nytt land oavsett poäng; på MEDIUM, standardvärdet, en inloggning som riskmotorn bedömer som ovanlig; på HIGH bara en som den bedömer mycket sannolikt inte är personens. En inloggning som ingen har tillräcklig historik för att bedöma meddelas bara för det den visar: ett anonymiseringsnätverk eller nekade lösenord."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Fönster för inloggningsvarningar (sekunder)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Hur länge en typ av inloggningsvarning – en ny enhet, ett nytt land, ett anonymiseringsnätverk, nekade lösenord – meddelas en person högst en gång. Utkorgen är registret, så ett fönster längre än mail.retentionS varar bara så länge."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

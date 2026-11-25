@@ -40,6 +40,12 @@ const log = bunyan.createLogger({ name: 'sts-report' });
 const BASE = '/report';
 
 const REPORT_STYLE = [
+  // THE BAR A SECOND AUTHORIZATION DRAWS (#2168, `SpaClient.drawStepBar()`),
+  // the console's session-ended bar: over the page, which stays under it.
+  '.reauth { position: fixed; left: 0; right: 0; top: 0; z-index: 60;',
+  '  background: #fff4e5; border-bottom: 2px solid #f0a020;',
+  '  padding: 10px 16px; display: flex; flex-wrap: wrap;',
+  '  gap: .5em 1em; align-items: center; }',
   'body { margin: 0; background: #f4f4f7; color: #1f2330;',
   '  font: 16px/1.45 system-ui, sans-serif; }',
   '.wrap { max-width: 64rem; margin: 0 auto; padding: 1rem; }',

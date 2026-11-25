@@ -149,5 +149,14 @@
   "adminOnlySource": "Nur für Berichtsadministratoren",
   "adminOnlyNote": "Nur ein Berichtsadministrator (REPORT_ADMIN) darf diese Quelle abfragen: Sie enthält, wer was von wo aus getan hat oder wer welche Anmeldeinformation besitzt.",
   "noWebCrypto.title": "Dieser Browser kann diese Seite nicht öffnen",
-  "noWebCrypto.text": "Dieser Browser kann diese Seite nicht sicher ausführen: WebCrypto ist nicht verfügbar, meist weil die Seite nicht über HTTPS geöffnet wurde oder der Browser zu alt ist."
+  "noWebCrypto.text": "Dieser Browser kann diese Seite nicht sicher ausführen: WebCrypto ist nicht verfügbar, meist weil die Seite nicht über HTTPS geöffnet wurde oder der Browser zu alt ist.",
+  "step.pending": "Berechtigung für diese Änderung wird eingeholt…",
+  "step.blocked": "Diese Änderung braucht Ihre Berechtigung. Öffnen Sie das Fenster, um sie zu erteilen.",
+  "step.signIn": "Melden Sie sich an, um diese Änderung vorzunehmen.",
+  "step.fresh": "Für diese Änderung müssen Sie sich erneut anmelden.",
+  "step.open": "Weiter",
+  "step.cancel": "Abbrechen",
+  "step.refused": "Die Berechtigung für diese Änderung wurde nicht erteilt: ",
+  "step.other": "Diese Anmeldung gehörte zu einem anderen Konto, daher wurde nichts gesendet.",
+  "step.failed": "Die Berechtigung für diese Änderung konnte nicht eingeholt werden."
 }

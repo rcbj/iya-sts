@@ -20,5 +20,14 @@
   "accounts.refused.text": "Sumagot ng {status} ang management API para sa account na naka-sign in sa tab na ito.",
   "policyName.required": "Kailangan ng pangalan.",
   "noWebCrypto.title": "Hindi mabuksan ng browser na ito ang pahinang ito",
-  "noWebCrypto.text": "Hindi ligtas na mapapatakbo ng browser na ito ang pahinang ito: hindi available ang WebCrypto, kadalasan dahil hindi binuksan ang pahina sa HTTPS o masyadong luma na ang browser."
+  "noWebCrypto.text": "Hindi ligtas na mapapatakbo ng browser na ito ang pahinang ito: hindi available ang WebCrypto, kadalasan dahil hindi binuksan ang pahina sa HTTPS o masyadong luma na ang browser.",
+  "step.pending": "Kinukuha ang pahintulot na gawin ang pagbabagong ito…",
+  "step.blocked": "Kailangan ng pagbabagong ito ang iyong pahintulot. Buksan ang window para ibigay ito.",
+  "step.signIn": "Mag-sign in para gawin ang pagbabagong ito.",
+  "step.fresh": "Kailangan mong mag-sign in muli para sa pagbabagong ito.",
+  "step.open": "Magpatuloy",
+  "step.cancel": "Kanselahin",
+  "step.refused": "Hindi naibigay ang pahintulot na gawin ang pagbabagong ito: ",
+  "step.other": "Ibang account ang nag-sign in na iyon, kaya walang ipinadala.",
+  "step.failed": "Hindi nakuha ang pahintulot na gawin ang pagbabagong ito."
 }

@@ -1569,6 +1569,20 @@ hides from them, whether the roster is still open — this operation tells it.
   policy" and `write` the same for ADMIN_WRITE, which are held ∩ carried
   (#303). A second reading of the roster here could disagree with the gate
   that has just let the request in.
+* **`holds` IS THE OTHER HALF (#2168).** The console signs in with `admin:read
+  admin:console`, so `write` and `security` are false on its first token for
+  everybody; `holds` is held ∩ DECLARED — the roles the subject holds now
+  whose permission the client may still be issued, whatever this token
+  carries (`heldAdminRoles()`) — and the console draws forms from it and the
+  frame's banner (`consoleGateOf()`) says what the reader may do. It decides
+  nothing: the gate asks held ∩ carried of every call. Beside it the gate
+  names a missing scope on its two refusals a missing scope ends in —
+  `WWW-Authenticate: <scheme> error="insufficient_scope", scope="…"` on
+  STS-API-0005 (the operation's scope, `admin:write` too for a console form
+  helper, `owner:write` beside it for an owner's write) and STS-API-0138
+  (`admin:security`), status, code and body unchanged, and only where the
+  token LACKS the scope (`challengeMissingScope()`), so a subject who lost
+  the role is not sent round a second authorization that cannot help.
 * **THE ROSTER IS ASKED FOR WHAT ONLY IT KNOWS**: whether the console is open
   to anybody, and the bootstrap administrator's state (`console`). Asked for a
   person only, in the token's realm; one that cannot be read reports itself

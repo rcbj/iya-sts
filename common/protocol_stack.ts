@@ -258,6 +258,14 @@ class ProtocolStack {
     this.build('common/public_assets', require('./public_assets'),
                'PublicAssets');
     this.register(app, require('./public_assets'), 'common/public_assets');
+    // 6a-csp. THE CSP REPORT ENDPOINT (#2164): `POST /web/csp-report`, where
+    // every page's policy reports a violation. Beside the other `/web` paths,
+    // whose reason it shares: a library (its forward reaches
+    // `federation_http` lazily) whose one path collides with nothing. Its
+    // body is read by `app.js`'s intake, above the parsers, so where it is
+    // registered decides nothing else.
+    this.build('common/csp_reports', require('./csp_reports'), 'CspReports');
+    this.register(app, require('./csp_reports'), 'common/csp_reports');
     // A REALM'S SIGN-IN APPEARANCE (#717): `/web/theme.css`,
     // `/web/branding/logo` and `/web/branding/preview`, beside the card
     // they style.

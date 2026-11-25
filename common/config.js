@@ -1688,6 +1688,19 @@ const SETTINGS = [
                  'commits the whole registrable domain and every subdomain ' +
                  'to HTTPS in every browser, and leaving the list takes ' +
                  'months. Sent only while Apply HSTS to subdomains is on.' },
+  // #2164. Per process: the collector is the operator's, and a realm
+  // administrator may not point this service's outbound requests anywhere.
+  { key: 'cspReports.forwardUrl', group: 'CSP reports',
+    label: 'Forward CSP violation reports to',
+    env: 'STS_CSP_REPORTS_FORWARD_URL', type: 'string', dflt: '',
+    maxLength: 2048, runtime: true, perProcess: true,
+    description: 'Off when empty, the default. An https URL that receives ' +
+                 'each Content Security Policy violation report this ' +
+                 'service accepts, as JSON: the realm, the directive, the ' +
+                 'page\'s path without its query, the blocked origin and ' +
+                 'the disposition, never the report as the browser sent ' +
+                 'it. Sent through the same outbound rules as ' +
+                 'federation\'s back channels.' },
 
   { key: 'federation.allowAssertionWithoutAudience', group: 'Federation',
     label: 'Accept an assertion that names no audience',
@@ -22408,6 +22421,43 @@ const SETTINGS = [
                  'compromised or disables an account (risk scoring), also ' +
                  'mail every member of the realm\'s Admin Write roster that ' +
                  'has an address.' },
+  // #2162 (ASVS 5.0.0 6.3.5): `common/mail_uses.ts`'s signInAlert() and
+  // refusedAttempts(), asked by `risk/risk_engine.ts` and
+  // `risk/risk_failures.ts`.
+  { key: 'mail.signInAlerts', group: 'Mail', label: 'Sign-in alerts',
+    env: 'STS_MAIL_SIGN_IN_ALERTS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Tell a person when a sign-in to their account succeeds ' +
+                 'looking unusual — a device or browser, or a country, ' +
+                 'they have not signed in from before, an anonymising ' +
+                 'network such as Tor, refused passwords just before, or a ' +
+                 'risk level at or above mail.signInAlertLevel — with when, ' +
+                 'roughly where, with what and how, and a link to their ' +
+                 'recent sign-ins; and when passwords are refused for their ' +
+                 'account as many times as the sign-in limit allows ' +
+                 '(security.rateLimitPerIdentity in ' +
+                 'security.rateLimitWindowS), whether or not anybody then ' +
+                 'signs in. Nothing is sent while security notices are off ' +
+                 'or no transport is configured.' },
+  { key: 'mail.signInAlertLevel', group: 'Mail',
+    label: 'Sign-in alert level',
+    env: 'STS_MAIL_SIGN_IN_ALERT_LEVEL', type: 'enum',
+    enumValues: ['LOW', 'MEDIUM', 'HIGH'], dflt: 'MEDIUM', runtime: true,
+    description: 'The lowest risk level a successful sign-in must reach to ' +
+                 'be told to the person. At LOW a new device or country is ' +
+                 'told whatever its score; at MEDIUM, the default, a sign-in ' +
+                 'the risk engine thinks unusual; at HIGH only a sign-in it ' +
+                 'thinks very likely not the person\'s. A sign-in nobody ' +
+                 'has history enough to score is told only for what it ' +
+                 'shows, an anonymising network or refused passwords.' },
+  { key: 'mail.signInAlertWindowS', group: 'Mail',
+    label: 'Sign-in alert window (seconds)',
+    env: 'STS_MAIL_SIGN_IN_ALERT_WINDOW_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true,
+    description: 'How long a kind of sign-in alert — a new device, a new ' +
+                 'country, an anonymising network, refused passwords — is ' +
+                 'told at most once to a person. The outbox is the record, ' +
+                 'so a window longer than mail.retentionS is that long.' },
   // -------------------------------------------------------------------------
   // REPORTING (#956). Realm-overridable because none of these set
   // perProcess. Read where the question is asked; zero is not a legal

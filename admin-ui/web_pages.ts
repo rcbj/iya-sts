@@ -68,6 +68,7 @@ import LogoutPage = require('../logout/web_logout');
 import LdapPage = require('../ldap/web_ldap');
 import ListenersPage = require('./web_listeners');
 import MalwareScanPage = require('./web_malware_scan');
+import CspReportsPage = require('./web_csp_reports');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import MetricsPage = require('./web_metrics');
@@ -866,6 +867,8 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/malware-scanning', title: 'Malware scanning',
     operation: '/admin-api/malware-scanning', render: MalwareScanPage.render },
+  { path: '/admin/csp-reports', title: 'CSP reports',
+    operation: '/admin-api/csp-reports', render: CspReportsPage.render },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
   { path: '/admin/logout', title: 'Sign-out',
