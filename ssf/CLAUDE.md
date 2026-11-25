@@ -1595,13 +1595,17 @@ its realm, and the application's own credential-change unfiltered.
 landed: the in-process file holds its subject's shape, and the wire job an
 application's own credential change, which has the same subject.
 
-**Nine older jobs set `all` in their throwaway realms** — their receivers
-hear about people never signed in to them, which is what they test, not the
-scope: `sts_ssf_allowed_events`, `sts_ssf_subject_issuer`,
+**Fourteen older jobs set `all` in their throwaway realms** — their
+receivers hear about people never signed in to them, which is what they
+test, not the scope: `sts_ssf_allowed_events`, `sts_ssf_subject_issuer`,
 `sts_ssf_conformance`, `sts_caep_credential_changes`, `sts_risc_acts`,
-`sts_risc_register_recovery`, `sts_credential_signals`, `sts_devices` and
-`sts_gnap_signals` (its unscoped control stream); and
-`sts_ssf_oidf_conformance` in its plan realms.
+`sts_risc_register_recovery`, `sts_credential_signals`, `sts_devices`,
+`sts_ca_hierarchy_signals`, `sts_second_factor_doors`, `sts_native_sso`,
+`sts_email_verification`, `sts_ssf_foreign_receiver` (its people are linked,
+not signed in), `sts_gnap_signals` (its unscoped control stream); and
+`sts_ssf_oidf_conformance` in its plan realms. `tests/ssf_model_wire.js`
+replays answers recorded before #2234, so its child runs with
+`STS_SSF_APPLICATION_STREAM_SCOPE=all`.
 
 ---
 
