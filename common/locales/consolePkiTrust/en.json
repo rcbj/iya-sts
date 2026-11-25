@@ -126,5 +126,10 @@
   "createKindSsh": "SSH certificate authority keys",
   "createSshKeys": "SSH CA public keys, in authorized_keys form, one per line",
   "sshKeys": "{n} SSH CA key(s)",
-  "kindSshCa": "SSH CA keys"
+  "kindSshCa": "SSH CA keys",
+  "createKindCosign": "cosign public keys",
+  "createKindSigstoreRoot": "a Sigstore trusted root",
+  "createKindTufRoot": "a TUF root",
+  "createDocument": "A document (cosign, Sigstore trusted root or TUF root only)",
+  "documentsHeld": "{n} document(s)"
 }

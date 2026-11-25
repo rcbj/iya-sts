@@ -431,6 +431,8 @@ namespace IyaSts.Directory;
   "stsTruststoreParty", "stsTruststoreJwks", "stsTruststoreJwksUri",
   // An SSH CA truststore's keys (#2151).
   "stsTruststoreSshKeys",
+  // A document truststore's document (#2152).
+  "stsTruststoreDocument",
 
   // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
   // above and it is the SECOND of them that can be read back and used — a set

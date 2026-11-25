@@ -126,5 +126,10 @@
   "createKindSsh": "مفاتيح سلطات شهادات SSH",
   "createSshKeys": "مفاتيح SSH CA العامة بصيغة authorized_keys، مفتاح في كل سطر",
   "sshKeys": "{n} مفتاح SSH CA",
-  "kindSshCa": "مفاتيح SSH CA"
+  "kindSshCa": "مفاتيح SSH CA",
+  "createKindCosign": "مفاتيح cosign العامة",
+  "createKindSigstoreRoot": "جذر موثوق لـ Sigstore",
+  "createKindTufRoot": "جذر TUF",
+  "createDocument": "مستند (cosign أو جذر Sigstore الموثوق أو جذر TUF فقط)",
+  "documentsHeld": "{n} مستند"
 }

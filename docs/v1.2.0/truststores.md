@@ -5,9 +5,11 @@ nav_order: 7
 
 # Truststores
 
-A **truststore** is a named set of certificate authorities. Every place this
-service checks a signature, a certificate chain or the certificate of a
-server it connects to belongs to a **use case**. Each use case trusts the
+A **truststore** is a named set of certificate authorities, of the public
+keys that may verify one party's signatures (a **key set**), of SSH
+certificate authority keys, or of Sigstore trust material. Every
+place this service checks a signature, a certificate chain or the
+certificate of a server it connects to belongs to a **use case**. Each use case trusts the
 truststores it is **assigned**, in order, or its default list until it is
 assigned one. Protocols → PKI trust (`/admin/pki/trust`) shows and changes
 both, and `/admin-api/truststores` is the same controls for a machine.
@@ -23,6 +25,10 @@ and the pages that edit them still work:
   [client-certificate truststore](tls.md#the-client-truststore).
 * `setting:<key>` is what one older setting names, for example
   `setting:federation.outboundCaFile`. Change it by changing the setting.
+* `registered-keys` is each party's own registered keys: a client's `jwks`
+  or `jwks_uri`, a federation relationship's `fedJwks` or `fedJwksUri`, a
+  claims provider's key set, and the Trust Anchors registered under OpenID
+  Federation. Change them where each party is registered.
 
 An upgrade therefore trusts exactly what it trusted before, and needs no
 migration step.
@@ -38,7 +44,11 @@ migration step.
 | View | `signers`, `client-certificates` | The two older stores | on their own pages |
 | Setting | `setting:<key>` | What an older anchor or CA setting names | by the setting |
 | SPIFFE bundle | `spiffe:<trust domain>` | A trust domain's whole bundle: its X.509 authorities **and** its JWT-SVID keys | through SPIFFE federation |
+| View | `registered-keys` | Each party's own registered keys (see [Key sets](#key-sets)) | where each party is registered |
 | Named | any name you choose | Certificate authorities you add | on the **Truststores** tab |
+| Named key set | any name you choose | Public keys bound to one party, pasted or fetched from a `jwks_uri` | on the **Truststores** tab |
+| Named SSH CA | any name you choose | SSH certificate authority public keys (see [SSH certificate authorities](#ssh-certificate-authorities)) | on the **Truststores** tab |
+| Named document | any name you choose | cosign public keys, a Sigstore trusted root or a TUF root (see [Sigstore trust material](#sigstore-trust-material)) | on the **Truststores** tab |
 
 A named truststore holds at most 32 anchors (self-signed CAs) and 64
 intermediates, and a realm holds at most 64 named truststores. A leaf
@@ -90,6 +100,28 @@ checks a host certificate against; it defaults to the setting
 `spiffe.sshpopCertAuthorities`, so nothing changes until you assign a
 truststore. SSH CA keys and certificates never stand in for each other
 (`STS-PKI-0309`).
+
+## Sigstore trust material
+
+The SPIFFE Docker workload attestor's Sigstore check (#2152) trusts three
+kinds of document, each a truststore kind of its own that holds one
+document as text, at most 256 KiB:
+
+* **`cosign`**: 1 to 32 PEM public keys, for keyed signatures. Use case
+  `sigstore-cosign-key`, default `setting:spiffe.dockerSigstorePublicKeyFiles`.
+* **`sigstore-root`**: a Sigstore `trusted_root.json` (Fulcio, Rekor and CT
+  log keys), used while TUF is off. Several are combined into one, as the
+  format already lists several authorities and logs. Use case
+  `sigstore-trusted-root`, default
+  `setting:spiffe.dockerSigstoreTrustedRootFile`.
+* **`tuf-root`**: the TUF `root.json` the trusted root is delivered under.
+  TUF starts from exactly one root, so the first one the use case names
+  counts. TUF is on while `sigstore-tuf-root` names a root and
+  `spiffe.dockerSigstoreTufUrl` is set. Use case `sigstore-tuf-root`,
+  default `setting:spiffe.dockerSigstoreTufRootFile`.
+
+Each default reads the setting's files as before, under
+`security.fileRoots`, so nothing changes until you assign a truststore.
 
 ## Scope: service-wide and per realm
 
@@ -168,6 +200,9 @@ unassigned and its default list holds no anchor.
 | `claims-provider-jwt` | Aggregated or distributed claims a claims provider signed | realm | jwks | `registered-keys` |  |
 | `oidfed-anchor` | A Trust Anchor an OpenID Federation trust chain ends at, and its keys | realm | jwks | `registered-keys` |  |
 | `spiffe-sshpop` | An SSH host certificate a SPIFFE sshpop agent presents | realm | ssh | `setting:spiffe.sshpopCertAuthorities` |  |
+| `sigstore-cosign-key` | A cosign public key an image signature is verified with | realm | cosign | `setting:spiffe.dockerSigstorePublicKeyFiles` |  |
+| `sigstore-trusted-root` | A pinned Sigstore trusted root (Fulcio, Rekor and CT log keys), while TUF is off | realm | sigstore-root | `setting:spiffe.dockerSigstoreTrustedRootFile` |  |
+| `sigstore-tuf-root` | The TUF root the Sigstore trusted root is delivered under | realm | tuf-root | `setting:spiffe.dockerSigstoreTufRootFile` |  |
 | `revocation-signer` | A CRL issuer outside the path of the certificate checked | service | x509 | `setting:pki.revocationCrlIssuersFile` |  |
 | `cell-peer` | Another cell of this deployment | service | fixed | `service-root` |  |
 | `ca-import` | A certificate authority imported into this service's hierarchy | realm | admission | — |  |
@@ -200,7 +235,11 @@ On `/admin/pki/trust`:
   truststore, add certificates to it (PEM, one or more blocks, each through
   the [admission rule](signer-truststore.md#what-belongs-in-it)), remove
   them, or delete it. A truststore a use case still trusts is not deleted
-  (`STS-PKI-0307`).
+  (`STS-PKI-0307`). To create a key set, choose **a key set bound to one
+  party** as what it holds, name the party, and paste its public keys or
+  give a `jwks_uri`; **Replace the keys** on its row changes them later. Its
+  party never changes. SSH CA keys (`sshKeys`) and the three Sigstore
+  documents (`document`) are created and replaced the same way.
 * **Use cases** lists every use case, what it trusts now and its default.
   Assign a use case a list, or clear its assignment to return it to its
   default. A service-wide inbound use case is assigned from the default
@@ -225,9 +264,20 @@ curl -X POST https://sts.example/admin-api/truststores/add \
 curl -X POST https://sts.example/admin-api/truststores/assign \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"useCase": "saml-signer", "truststores": ["partners", "signers"]}'
+
+# A key set for one client, added to what the client registered
+curl -X POST https://sts.example/admin-api/truststores/create \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name": "acme-keys", "kind": "jwks", "party": "client:acme",
+       "jwks": {"keys": [{"kty": "EC", "crv": "P-256", "x": "...", "y": "..."}]}}'
+curl -X POST https://sts.example/admin-api/truststores/assign \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"useCase": "client-jws", "truststores": ["registered-keys", "acme-keys"]}'
 ```
 
-The other actions are `show`, `remove`, `delete` and `unassign`; the
+The other actions are `show`, `remove`, `delete`, `unassign` and
+`set-keys`, which replaces a key set's keys, an SSH CA truststore's keys or
+a document; the
 [Management API reference](openapi/admin-api-pki.md) has each one.
 
 Truststores are kept in the directory under `ou=truststores` in each realm

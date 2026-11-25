@@ -305,31 +305,54 @@ class SigstoreVerifier {
    * @throws a coded failure (STS-SPIFFE-0126) when there is none
    */
   trustMaterial(): TrustMaterial {
-    const { log, fs, config, stsCrypto, tufTrustedRoot } = this.deps;
+    const { log, stsCrypto, tufTrustedRoot } = this.deps;
     log.debug("Entering SigstoreVerifier.trustMaterial().");
+    // WHAT EACH USE CASE TRUSTS (#2152): by default the three settings'
+    // files, read exactly as before (under security.fileRoots); a cosign,
+    // sigstore-root or tuf-root truststore assigned in their place or beside
+    // them.
+    const truststores: any = require('../common/truststores');
     const keys: Buffer[] = [];
-    const files = this.list('spiffe.dockerSigstorePublicKeyFiles');
-    for (let i = 0; i < files.length; i++) {
-      let spki = null;
-      try {
-        require('../common/outbound_tls').assertNamedFile(files[i]);
-        spki = stsCrypto.spkiFromPublicKeyPem(fs.readFileSync(files[i],
-                                                              'utf8'));
-      } catch (e) {
-        log.debug("Caught in SigstoreVerifier.trustMaterial(): " +
-                  ((e && e.message) || e));
+    const cosign: any = truststores.documentsFor('sigstore-cosign-key');
+    if (cosign.problems.length) {
+      log.debug("Leaving SigstoreVerifier.trustMaterial(). An unread key.");
+      throw this.fail('STS-SPIFFE-0126', 'the cosign public key file ' +
+                    (cosign.problems[0].file || cosign.problems[0].store) +
+                    ' could not be read as a PEM public key');
+    }
+    for (const doc of cosign.documents) {
+      const blocks: string[] = String(doc.text).match(
+        /-----BEGIN PUBLIC KEY-----[\s\S]+?-----END PUBLIC KEY-----/g) || [];
+      let bad = !blocks.length;
+      for (const block of blocks) {
+        let spki = null;
+        try {
+          spki = stsCrypto.spkiFromPublicKeyPem(block);
+        } catch (e) {
+          log.debug("Caught in SigstoreVerifier.trustMaterial(): " +
+                    ((e && e.message) || e));
+        }
+        if (spki) {
+          keys.push(spki);
+        } else {
+          bad = true;
+        }
       }
-      if (!spki) {
+      if (bad) {
         log.debug("Leaving SigstoreVerifier.trustMaterial(). A bad key.");
-        throw this.fail('STS-SPIFFE-0126', 'the cosign public key file ' +
-                      files[i] + ' could not be read as a PEM public key');
+        throw this.fail('STS-SPIFFE-0126', 'the cosign public key ' +
+                      (doc.file ? 'file ' + doc.file : 'truststore ' +
+                       doc.name) + ' could not be read as a PEM public key');
       }
-      keys.push(spki);
     }
     let root = null;
     let source = '';
-    const tufOn = !!String(config.value('spiffe.dockerSigstoreTufRootFile') ||
-                           '');
+    // TUF is ON while its use case names a root, as it was on while the
+    // setting named a file — readable or not, so an unreadable one fails
+    // in TUF, where it always did.
+    const tuf: any = truststores.documentsFor('sigstore-tuf-root');
+    const tufOn = tuf.documents.length > 0 || tuf.problems.length > 0;
+    const pinnedRoots: any[] = [];
     if (tufOn) {
       root = tufTrustedRoot();
       source = 'TUF';
@@ -342,26 +365,38 @@ class SigstoreVerifier {
                       'read its outcome');
       }
     } else {
-      const pinned = String(config.value(
-        'spiffe.dockerSigstoreTrustedRootFile') || '');
-      if (pinned) {
+      const pinned: any = truststores.documentsFor('sigstore-trusted-root');
+      if (pinned.problems.length) {
+        log.debug("Leaving SigstoreVerifier.trustMaterial(). Unreadable.");
+        throw this.fail('STS-SPIFFE-0126', 'the pinned trust root ' +
+                      pinned.problems[0].why);
+      }
+      for (const doc of pinned.documents) {
         try {
-          require('../common/outbound_tls').assertNamedFile(pinned);
-          root = JSON.parse(fs.readFileSync(pinned, 'utf8'));
-          source = pinned;
+          pinnedRoots.push(JSON.parse(String(doc.text)));
         } catch (e) {
           log.debug("Caught in SigstoreVerifier.trustMaterial(): " +
                     ((e && e.message) || e));
           log.debug("Leaving SigstoreVerifier.trustMaterial(). Unreadable.");
-          throw this.fail('STS-SPIFFE-0126', 'the pinned trust root ' + pinned +
-                        ' could not be read: ' + ((e && e.message) || e));
+          throw this.fail('STS-SPIFFE-0126', 'the pinned trust root ' +
+                        (doc.file || doc.name) + ' could not be read: ' +
+                        ((e && e.message) || e));
         }
       }
+      source = pinned.documents.map(function (doc: any) {
+        return doc.file || doc.name;
+      }).join(', ');
     }
+    // SEVERAL PINNED ROOTS ARE UNIONED (#2152): a trusted root already lists
+    // several CAs and logs, so two of them are one longer list.
     let parsed = { fulcio: [], rekor: [], ct: [] };
-    if (root) {
+    const roots = root ? [root] : pinnedRoots;
+    for (const one of roots) {
       try {
-        parsed = this.parseTrustedRoot(root);
+        const each: any = this.parseTrustedRoot(one);
+        parsed = { fulcio: parsed.fulcio.concat(each.fulcio),
+                   rekor: parsed.rekor.concat(each.rekor),
+                   ct: parsed.ct.concat(each.ct) };
       } catch (e) {
         log.debug("Caught in SigstoreVerifier.trustMaterial(): " +
                   ((e && e.message) || e));

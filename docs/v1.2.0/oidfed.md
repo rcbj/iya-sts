@@ -170,7 +170,10 @@ subordinate's history.
 
 **A Trust Anchor** is registered with its entity identifier and its keys.
 A Trust Chain may end only at a configured anchor, and the chain is checked
-against the keys configured for that anchor.
+against the keys configured for that anchor. An anchor may also come from a
+[key-set truststore](truststores.md#key-sets) bound to
+`oidfed-anchor:<entity id>` and assigned to the `oidfed-anchor` use case;
+its keys are always pasted, never fetched.
 
 ## Resolving another entity
 

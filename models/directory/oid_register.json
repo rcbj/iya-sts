@@ -833,7 +833,8 @@
   "stsTruststoreParty": 1007,
   "stsTruststoreJwks": 1008,
   "stsTruststoreJwksUri": 1009,
-  "stsTruststoreSshKeys": 1010
+  "stsTruststoreSshKeys": 1010,
+  "stsTruststoreDocument": 1011
  },
  "classes": {
   "spiffeAgent": 1,

@@ -74,6 +74,9 @@ model Truststore {
   @fromAttr(#{attr: "stsTruststoreSshKeys", transform: "first"})
   sshKeys?: string;
 
+  @fromAttr(#{attr: "stsTruststoreDocument", transform: "first"})
+  document?: string;
+
   @fromAttr(#{attr: "stsTrustAnchorAddedBy", transform: "first"})
   addedBy?: string;
 

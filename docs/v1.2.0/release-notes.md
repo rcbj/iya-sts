@@ -33,6 +33,15 @@ least the longest GNAP access-token lifetime. A resource server's
 `gnapMacaroonKey` is rewritten when the first macaroon for it is minted
 after a rotation. Tokens issued before the upgrade keep verifying.
 Nothing needs an upgrade script.
+### New: Sigstore trust material as truststores
+
+The SPIFFE Docker workload attestor's cosign public keys, pinned Sigstore
+trusted root and TUF root may now come from truststores (#2152): three
+new use cases, `sigstore-cosign-key`, `sigstore-trusted-root` and
+`sigstore-tuf-root`, each defaulting to today's setting, so nothing
+changes until an administrator assigns a truststore. Several trusted roots
+are combined; a TUF root is one. `POST /admin-api/truststores/create` and
+`set-keys` take `document`.
 
 ### New: SSH certificate authorities as truststores
 

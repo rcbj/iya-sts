@@ -341,7 +341,10 @@ certificate authority issued it, or from an `x5c` chain to this realm's Root.
 **A registered `jwks_uri` is fetched** when a key is needed, under the
 outbound policy (https, no redirects, a size cap, internal addresses refused in
 product mode). The key set is cached for `oauth2.clientJwksCacheS` and fetched
-again for an unknown `kid` at most every `oauth2.clientJwksRefetchS`. The mutual TLS methods are
+again for an unknown `kid` at most every `oauth2.clientJwksRefetchS`. An
+administrator may also give a client keys in a
+[key-set truststore](truststores.md#key-sets) bound to it and assigned to the
+`client-jws` use case, beside or instead of what it registered. The mutual TLS methods are
 described in [OAuth security](oauth-security.md#mutual-tls-rfc-8705).
 
 **An application may hold several client secrets, each with its own expiry.**
