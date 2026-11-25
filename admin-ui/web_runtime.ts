@@ -258,14 +258,17 @@ class ConsoleRuntime extends SpaClient {
 
   // The resource this console's tokens are for: the management API of the
   // realm it signed in at (`AdminApi.wantedAudiences()` and
-  // `realmAudienceAccepted()` say which audiences it accepts).
+  // `realmAudienceAccepted()` say which audiences it accepts) — THAT realm's
+  // after the realm switcher has moved the pages (#2200), so a second
+  // authorization's write token is for the same audience as the read token
+  // it sits beside, and is kept under the same key.
   /**
    * The management API this console's tokens are audienced to.
    *
    * @returns the resource indicator
    */
   resource(): string {
-    return this.url('/admin-api');
+    return this.issuerUrl('/admin-api');
   }
 
   /**
@@ -383,6 +386,9 @@ class ConsoleRuntime extends SpaClient {
     }
     const before = this.storedAccount();
     this.keepTokens(answer.json);
+    // THE REALM THAT ISSUED THEM (#2200), which the realm switcher keeps:
+    // every later token request asks it, whatever realm is on screen.
+    this.issuerPrefix = this.prefix;
     const to = String(saved.returnTo || '/admin');
     this.env.history.replaceState(null, '', this.prefix + to);
     await this.route();
@@ -547,7 +553,9 @@ class ConsoleRuntime extends SpaClient {
                      extra?: Json): Promise<string> {
     const params: Json = {
       response_type: 'code', client_id: CLIENT_ID,
-      redirect_uri: this.url('/admin/callback'),
+      // THE SIGNING-IN REALM'S CALLBACK (#2200), the one its client
+      // registers, whatever realm the switcher has moved the page to.
+      redirect_uri: this.issuerUrl('/admin/callback'),
       // The read scopes, or a second authorization's (#2168).
       scope: (extra && extra.scope) || SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
@@ -586,7 +594,7 @@ class ConsoleRuntime extends SpaClient {
    * @returns the URL
    */
   callbackUrl(): string {
-    return this.url('/admin/callback');
+    return this.issuerUrl('/admin/callback');
   }
 
   /**
@@ -738,7 +746,7 @@ class ConsoleRuntime extends SpaClient {
     }
     const answer = await this.tokenRequest({
       grant_type: 'authorization_code', code: String(data.code || ''),
-      redirect_uri: this.url('/admin/callback'), client_id: CLIENT_ID,
+      redirect_uri: this.issuerUrl('/admin/callback'), client_id: CLIENT_ID,
       code_verifier: r.verifier, resource: this.resource()
     });
     if (answer.status !== 200 || !answer.json.access_token) {

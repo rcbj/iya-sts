@@ -212,6 +212,12 @@ const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
+// What the console asks for after a Save — a recent sign-in (#2173), the
+// write scope by a popup (#2189) — completed as an administrator would
+// (#2196).
+const consoleSteps = require("./console_steps.js");
+// A password the person holds as their own (#2160).
+const ownPassword = require("./own_password.js");
 // The redirect URI the token-minting client registers: tokens come from the
 // authorization code flow (a product-mode service has no password grant).
 const CONSOLE_REDIRECT_URI = "https://admin-console-job.example.test/cb";
@@ -297,6 +303,12 @@ async function apiPostJson(url, payload) {
 // `/admin-api` or this realm's) with real attributes and CONSOLE_PASSWORD.
 // Answers true when this call created them and false when somebody already
 // had — a name the directory already holds is left exactly as it was.
+//
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a password an administrator
+// types is temporary in product, and the sign-in screen asks for a new one
+// (`/authn/password-change`), so the person is created with a temporary one
+// and chooses CONSOLE_PASSWORD at that step (`own_password.js`; in
+// development the administrator's door sets it).
 async function ensurePerson(apiBase, username) {
   log.debug("Entering ensurePerson(). username=" + username);
   const key = apiBase + " user " + username;
@@ -304,18 +316,28 @@ async function ensurePerson(apiBase, username) {
     log.debug("Leaving ensurePerson(). Already handled.");
     return ensured[key];
   }
+  const temporary = ownPassword.temporaryFor(CONSOLE_PASSWORD);
   const r = await apiPostJson(apiBase + "/users/create", {
     username: username, invent: false,
     attributes: { cn: "Console " + username, givenName: "Console",
                   sn: username, displayName: "Console " + username,
                   mail: username + "@admin-console-job.test" },
-    credential: "password", password: CONSOLE_PASSWORD
+    credential: "password", password: temporary
   });
   const made = r.status === 200 && !!r.body && r.body.ok === true;
   assert.ok(made || (r.body && r.body.existing),
     "POST " + apiBase + "/users/create should create " + username + " or say " +
     "they already exist; it answered " + r.status + " " +
     String(r.raw).slice(0, 300));
+  if (made) {
+    await ownPassword.chooseOwn(apiBase.replace(/\/admin-api$/, ""),
+      username, temporary, CONSOLE_PASSWORD, function (who, value) {
+        log.debug("Entering setPassword().");
+        log.debug("Leaving setPassword().");
+        return apiPostJson(apiBase + "/users/set-password",
+                           { user: who, password: value });
+      });
+  }
   ensured[key] = made;
   log.debug("Leaving ensurePerson(). " +
             (made ? "Created." : "Already there."));
@@ -438,6 +460,89 @@ function since(from) {
   return responses.slice(from);
 }
 
+// WHETHER A RESPONSE IS THE RUNTIME'S CHALLENGE rather than the form's
+// answer (#2196): a 403 `insufficient_scope` that starts the write scope's
+// second authorization (#2189), a 401 `insufficient_user_authentication`
+// that starts a fresh sign-in (#2173), a 401 `use_dpop_nonce` sent again at
+// once. After one, the runtime sends the SAME write again, so a press that
+// stepped makes two POSTs and the second is the answer.
+function isChallenge(r) {
+  log.debug("Entering isChallenge().");
+  log.debug("Leaving isChallenge().");
+  return consoleSteps.isStepChallenge(r.status, r.headers);
+}
+
+// A POST the RUNTIME makes, which no form does: its token requests (#446)
+// and, where it signs in on the page, the sign-in screen's own.
+function isTheRuntimes(r) {
+  log.debug("Entering isTheRuntimes().");
+  const path = new URL(r.url).pathname.replace(/^\/realm\/[^/]+/, "");
+  log.debug("Leaving isTheRuntimes().");
+  return /^\/oauth2\//.test(path) || /^\/authn(-api)?\//.test(path);
+}
+
+// The form's own answer since a mark: a POST that is not the runtime's and
+// not a challenge. Null until it is in.
+function formAnswerSince(from) {
+  log.debug("Entering formAnswerSince().");
+  const found = since(from).filter(function (r) {
+    return r.method === "POST" && !isTheRuntimes(r) && !isChallenge(r);
+  })[0] || null;
+  log.debug("Leaving formAnswerSince(). " + !!found);
+  return found;
+}
+
+// THE STEPS AFTER A PRESS (#2196), completed by `console_steps.js` as the
+// signed-in account: a popup, a Continue, a sign-in again. Done when the
+// form's own answer is in (`formAnswerSince()`), and kept waiting while a
+// challenge is the last word.
+let steps = null;
+async function completeTheSteps(start, from) {
+  log.debug("Entering completeTheSteps().");
+  const out = await steps.after(start, {
+    settled: async function () {
+      return !!formAnswerSince(from);
+    },
+    stepping: async function () {
+      return since(from).some(function (r) {
+        return r.method === "POST" && isChallenge(r);
+      });
+    }
+  });
+  log.debug("Leaving completeTheSteps().");
+  return out;
+}
+
+// THE FRAME MAY HAVE BEEN REDRAWN DURING A STEP (#2196), before the answer
+// was drawn, so a press's "the page it was pressed on is gone" says nothing
+// about the answer. The frame there now — the answer has just arrived and is
+// drawn next — is marked, and the answer's drawing is what replaces it:
+// waited for, bounded, since a press answered with a file replaces none.
+async function answerDrawnAfterStep(driver, stepped) {
+  log.debug("Entering answerDrawnAfterStep().");
+  if (!stepped.popups && !stepped.continued) {
+    log.debug("Leaving answerDrawnAfterStep(). No step.");
+    return;
+  }
+  await driver.executeScript(
+    "const f = document.querySelector('.shell');" +
+    "if (f) { f.__stsStepped = true; }").catch(function (e) {
+      log.debug("Caught marking the frame: " + ((e && e.message) || e));
+    });
+  await driver.wait(function () {
+    return driver.executeScript(
+      "const f = document.querySelector('.shell');" +
+      "return !!f && !f.__stsStepped;").catch(function (e) {
+        log.debug("Caught reading the frame: " + ((e && e.message) || e));
+        return false;
+      });
+  }, 5000).catch(function (e) {
+    log.debug("Caught waiting for the answer's frame: " +
+              ((e && e.message) || e));
+  });
+  log.debug("Leaving answerDrawnAfterStep().");
+}
+
 // The one POST in a stretch of responses. A console interaction makes exactly
 // one; more than one means a page grew a second request and the caller's
 // assertion about "the POST" would silently be about the wrong one.
@@ -446,9 +551,17 @@ function thePostIn(stretch, what) {
   // The console's own token requests are not the form's (#446): a page
   // that renews its token while answering a form makes a POST to
   // /oauth2/token that is the runtime's and not the control's.
-  const posts = stretch.filter(function (r) {
-    return r.method === "POST" && !/\/oauth2\/token$/.test(r.url);
+  const sent = stretch.filter(function (r) {
+    return r.method === "POST" && !isTheRuntimes(r);
   });
+  // A CHALLENGE IS NOT THE ANSWER WHERE ONE FOLLOWED IT (#2196): the write
+  // was sent again with the token the step got, and that is the answer. A
+  // step that got no write scope (a reader) sends nothing again, and then
+  // the challenge IS the answer — the refusal the caller asserts.
+  const answers = sent.filter(function (r) {
+    return !isChallenge(r);
+  });
+  const posts = answers.length ? answers : sent.slice(-1);
   assert.strictEqual(posts.length, 1,
     "expected exactly one POST while " + what + "; the browser made " +
     posts.length + ": " + JSON.stringify(posts.map(function (r) {
@@ -1128,7 +1241,24 @@ async function fillAndPress(driver, formIndex, values, options) {
                 ((e && e.message) || e));
       return null;
     });
+  const start = await steps.before();
   await clickInView(driver, button);
+  if (typed.method === "POST") {
+    // WHAT THE CONSOLE ASKS FOR FIRST (#2196), done as a person does it.
+    const stepped = await completeTheSteps(start, from);
+    if (stepped.leftToSignIn && !opts.pressedAgain) {
+      // THE PAGE LEFT TO SIGN IN AND SENT NOTHING: the console puts the page
+      // back and says so, and the reader fills it in and presses again.
+      await waitForDrawn(driver);
+      log.info("[steps] form " + formIndex + " was not sent: the console " +
+               "signed in again on the page. Pressed again.");
+      const again = await fillAndPress(driver, formIndex, values,
+        Object.assign({}, opts, { pressedAgain: true }));
+      log.debug("Leaving fillAndPress(). Pressed again.");
+      return again;
+    }
+    await answerDrawnAfterStep(driver, stepped);
+  }
   if (leaving) {
     await pageReplaced(driver, leaving, 20000).catch(function (e) {
       log.debug("Caught waiting for the page to be replaced (a download " +
@@ -5435,7 +5565,7 @@ async function theFieldGridIsPressed(driver) {
   // Presses the first VISIBLE-TO-A-PERSON button the css and the text pick,
   // having first set `values` in that button's form. A real click, then a
   // wait for the page it replaces, as fillAndPress() does.
-  const press = async function (css, text, values) {
+  const press = async function (css, text, values, pressedAgain) {
     log.debug("Entering press(). " + css + " " + (text || ""));
     const button = await driver.executeScript(`
       const css = arguments[0];
@@ -5483,7 +5613,20 @@ async function theFieldGridIsPressed(driver) {
     // switch, +, the trash can — is drawn in place by the static console,
     // which replaces the frame and never loads a document.
     const leaving = await driver.findElement(By.css(".shell"));
+    const start = await steps.before();
     await button.click();
+    // WHAT THE CONSOLE ASKS FOR FIRST (#2196); a page that left to sign in
+    // sent nothing, and is pressed again.
+    const stepped = await completeTheSteps(start, from);
+    if (stepped.leftToSignIn && !pressedAgain) {
+      await waitForDrawn(driver);
+      log.info("[steps] the grid's " + (text || css) + " was not sent: " +
+               "the console signed in again on the page. Pressed again.");
+      await press(css, text, values, true);
+      log.debug("Leaving press(). Pressed again.");
+      return;
+    }
+    await answerDrawnAfterStep(driver, stepped);
     await pageReplaced(driver, leaving, 20000);
     await settleAfterSubmit(driver, from, "POST");
     log.debug("Leaving press().");
@@ -8112,6 +8255,13 @@ async function test() {
 
   try {
     const handle = await driver.getWindowHandle();
+    steps = consoleSteps.forDriver(driver, {
+      credentials: function () {
+        return { username: signedInAs || CONSOLE_USER,
+                 password: CONSOLE_PASSWORD };
+      },
+      log: log
+    });
     const inspector = await NetworkInspector(driver, [handle]);
     await inspector.responseCompleted(recordResponse);
 
