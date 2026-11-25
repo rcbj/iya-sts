@@ -117,6 +117,8 @@ import version = require('../common/version');
 // Whether the User-Agent may name the build (#2142). A leaf of this module.
 import mode = require('../common/mode');
 import OutboundTls = require('../common/outbound_tls');
+// The shared agent, deadline and connect timeout (#2220).
+import OutboundLimits = require('../common/outbound_limits');
 
 const { URL } = nodeUrl;
 
@@ -845,6 +847,7 @@ class SsfHttp {
           requestOptions.lookup = require('../federation/federation_http')
             .pinnedLookup(vetted);
         }
+        OutboundLimits.useAgent(requestOptions, secure);
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
           const status = response.statusCode || 0;
@@ -951,6 +954,13 @@ class SsfHttp {
           errorCode: 'STS-SSF-0042',
           why: 'it did not answer within ' + timeoutMs() +
                'ms (ssf.pushTimeoutMs)' });
+      });
+      OutboundLimits.guard(request, {
+        timeoutMs: timeoutMs(), secure: secure, where: target.origin,
+        onTimeout: function (why: string) {
+          done({ ok: false, status: 0, err: '', description: '',
+            retryable: true, errorCode: 'STS-SSF-0042', why: 'it ' + why });
+        }
       });
       request.on('error', function (e) {
         log.debug("Caught in a callback in pushSet(): " +
@@ -1082,6 +1092,7 @@ class SsfHttp {
         };
       }
       let request = null;
+      OutboundLimits.useAgent(requestOptions, secure);
       try {
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
@@ -1144,6 +1155,13 @@ class SsfHttp {
         done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0042',
           why: 'it did not answer within ' + timeoutMs +
                'ms (ssf.pushTimeoutMs)' });
+      });
+      OutboundLimits.guard(request, {
+        timeoutMs: timeoutMs, secure: secure, where: target.origin,
+        onTimeout: function (why: string) {
+          done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0042',
+            why: 'it ' + why });
+        }
       });
       request.on('error', function (e) {
         log.debug("Caught in a callback in pollOwn(): " +

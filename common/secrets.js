@@ -166,6 +166,179 @@ function setSdkLoader(fn) {
   log.debug("Leaving setSdkLoader().");
 }
 
+// ---------------------------------------------------------------------------
+// A TIMEOUT AND A BOUNDED RETRY FOR EVERY SECRET STORE (#2220, ASVS 5.0.0
+// 13.1.3). Until #2220 the Vault client was given no timeout at all, and the
+// AWS, Google Cloud and Azure clients ran on their SDKs' defaults, which
+// this service did not state. Each now gets its OWN SDK's options, from two
+// settings:
+//
+//   * `keys.storeTimeoutMs` (30 s) — how long one attempt may wait: AWS's
+//     `requestHandler` `requestTimeout` (and a connect timeout of at most
+//     10 s), Google Cloud's per-call `timeout`, Azure's per-try request
+//     `timeout` (a pipeline policy, `perRetry`), and node-vault's `timeout`
+//     (its axios instance's);
+//   * `keys.storeAttempts` (3) — how many attempts in all: AWS's
+//     `maxAttempts`, Google Cloud's `maxRetries` (attempts less one), Azure's
+//     `retryOptions.maxRetries`, and for node-vault, which retries nothing,
+//     `vaultLimits()` below: a call that got NO answer (a timeout, a lost
+//     connection) or a 5xx or 429 is made again, after 250 ms doubling, up
+//     to the bound. A 4xx is an answer and is never repeated.
+//
+// THE DEFAULTS CHANGE NOTHING A STORE THAT ANSWERS SEES: three attempts is
+// what the AWS and Azure SDKs already make, and thirty seconds is far longer
+// than a secret read takes. What changes is a store that does not answer:
+// the start that waits on it now fails, with its code, rather than hanging.
+// The pause between Vault attempts is a retry delay inside one operation,
+// which the scheduler directive leaves where it is (root CLAUDE.md).
+// ---------------------------------------------------------------------------
+function storeTimeoutMs() {
+  log.debug("Entering storeTimeoutMs().");
+  log.debug("Leaving storeTimeoutMs().");
+  return Math.max(1000, Number(config.value('keys.storeTimeoutMs')) || 30000);
+}
+
+function storeAttempts() {
+  log.debug("Entering storeAttempts().");
+  log.debug("Leaving storeAttempts().");
+  return Math.max(1, Math.min(10,
+    Number(config.value('keys.storeAttempts')) || 3));
+}
+
+/**
+ * An AWS SDK v3 client's configuration with this service's timeout and
+ * attempt bound.
+ *
+ * @param base - the client's own configuration
+ * @returns the configuration to construct it with
+ */
+function awsLimits(base) {
+  log.debug("Entering awsLimits().");
+  const ms = storeTimeoutMs();
+  log.debug("Leaving awsLimits().");
+  return Object.assign({}, base || {}, {
+    maxAttempts: storeAttempts(),
+    requestHandler: { requestTimeout: ms,
+                      connectionTimeout: Math.min(ms, 10000) }
+  });
+}
+
+/**
+ * A Google Cloud client whose every call carries this service's timeout and
+ * retry bound as its call options (a GAPIC method's second argument), unless
+ * the caller gave some. Only a call with one plain-object argument — a
+ * request — is given them; path helpers and `close()` are left alone.
+ *
+ * @param client - the SDK's client
+ * @returns the client, bounded
+ */
+function gcpLimits(client) {
+  log.debug("Entering gcpLimits().");
+  if (!client || typeof client !== 'object') {
+    log.debug("Leaving gcpLimits(). Not a client.");
+    return client;
+  }
+  log.debug("Leaving gcpLimits().");
+  return new Proxy(client, {
+    get: function (target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function' || typeof prop !== 'string' ||
+          prop.charAt(0) === '_') {
+        return value;
+      }
+      return function (...args) {
+        if (args.length === 1 && args[0] && typeof args[0] === 'object' &&
+            !Array.isArray(args[0])) {
+          args.push({ timeout: storeTimeoutMs(),
+                      maxRetries: storeAttempts() - 1 });
+        }
+        return value.apply(target, args);
+      };
+    }
+  });
+}
+
+/**
+ * An Azure SDK client's options with this service's per-try timeout and
+ * retry bound.
+ *
+ * @param [base] - the client's own options
+ * @returns the options to construct it with
+ */
+function azureLimits(base) {
+  log.debug("Entering azureLimits().");
+  const ms = storeTimeoutMs();
+  log.debug("Leaving azureLimits().");
+  return Object.assign({}, base || {}, {
+    retryOptions: { maxRetries: storeAttempts() - 1 },
+    additionalPolicies: [{
+      position: 'perRetry',
+      policy: {
+        name: 'stsStoreTimeout',
+        sendRequest: function (request, next) {
+          request.timeout = ms;
+          return next(request);
+        }
+      }
+    }]
+  });
+}
+
+// Whether a node-vault failure is worth another attempt: no answer at all,
+// or a 5xx or 429. No Entering/Leaving pair: a predicate per failure.
+function vaultRetryable(err) {
+  const status = Number(err && err.response &&
+                        (err.response.statusCode || err.response.status)) ||
+    0;
+  if (!status) {
+    return true;
+  }
+  return status >= 500 || status === 429;
+}
+
+/**
+ * A node-vault client whose `request()` — which every one of its methods
+ * goes through — is attempted up to `keys.storeAttempts` times (see above).
+ *
+ * @param client - node-vault's client
+ * @returns the same client
+ */
+function vaultLimits(client) {
+  log.debug("Entering vaultLimits().");
+  if (!client || typeof client.request !== 'function' ||
+      client.stsBounded) {
+    log.debug("Leaving vaultLimits(). Nothing to bound.");
+    return client;
+  }
+  const original = client.request.bind(client);
+  client.request = async function (options) {
+    const attempts = storeAttempts();
+    for (let n = 1; ; n++) {
+      try {
+        return await original(Object.assign({}, options));
+      } catch (err) {
+        log.debug("Caught in a Vault request: " +
+                  ((err && err.message) || err));
+        if (n >= attempts || !vaultRetryable(err)) {
+          if (n > 1) {
+            log.warn(errorCodes.tag('STS-KEYS-0214') + 'secrets: a call ' +
+                     'to the secret store failed ' + n + ' time(s) ' +
+                     '(keys.storeAttempts): ' + ((err && err.message) || err));
+          }
+          throw err;
+        }
+        const pause = 250 * Math.pow(2, n - 1);
+        await new Promise(function (resolve) {
+          setTimeout(resolve, pause);
+        });
+      }
+    }
+  };
+  client.stsBounded = true;
+  log.debug("Leaving vaultLimits().");
+  return client;
+}
+
 // One sentence for a missing SDK, so all four say the same thing the same way.
 function missingModule(pkg, provider, err) {
   log.debug("Entering missingModule().");
@@ -663,8 +836,8 @@ const awsProvider = {
                             'STS-KEYS-0046');
     }
     const region = reachOf(secret, 'region');
-    const client = new sdk.SecretsManagerClient(region ? { region: region } :
-                                                {});
+    const client = new sdk.SecretsManagerClient(awsLimits(region
+      ? { region: region } : {}));
     const answer = await client.send(
       new sdk.GetSecretValueCommand({ SecretId: secretId }));
     // A secret may be a string or binary, and both are legitimate here: a
@@ -721,7 +894,7 @@ const gcpProvider = {
     if (name.indexOf('/versions/') < 0) {
       name = name.replace(/\/+$/, '') + '/versions/latest';
     }
-    const client = new sdk.SecretManagerServiceClient();
+    const client = gcpLimits(new sdk.SecretManagerServiceClient());
     const [answer] = await client.accessSecretVersion({ name: name });
     const payload = answer && answer.payload && answer.payload.data;
     // noBytes(), not `!payload`: the payload is a Buffer and an empty one is
@@ -786,7 +959,7 @@ const azureProvider = {
                       secret.ref + ' (the secret name).'), 'STS-KEYS-0046');
     }
     const client = new secretsSdk.SecretClient(
-      vault, new identitySdk.DefaultAzureCredential());
+      vault, new identitySdk.DefaultAzureCredential(), azureLimits());
     const answer = await client.getSecret(name);
     if (!answer || !answer.value) {
       throw errorCodes.mark(new Error('the secret "' + name + '" in ' + vault +
@@ -954,7 +1127,11 @@ async function vaultConnect(spec) {
     // A certificate identity needs none of it and overrides it below.
     token ? { token: token } : {},
     Object.keys(tls.options).length
-      ? { requestOptions: tls.options, rpDefaults: tls.options } : {}));
+      ? { requestOptions: tls.options } : {},
+    // node-vault's own timeout (its axios instance's), #2220.
+    { rpDefaults: Object.assign({}, tls.options,
+                                { timeout: storeTimeoutMs() }) }));
+  vaultLimits(client);
   const role = String(config.value('keys.vaultCertRole') || '').trim();
   if (!tls.authenticates) {
     log.debug('Leaving vaultConnect(). No client certificate; a token, or ' +
@@ -1371,7 +1548,8 @@ const awsKmsProvider = {
       throw missingModule('@aws-sdk/client-kms', 'aws-kms', e);
     }
     const region = reachOf(secret, 'region');
-    const client = new sdk.KMSClient(region ? { region: region } : {});
+    const client = new sdk.KMSClient(awsLimits(region ? { region: region }
+      : {}));
     const described = await client.send(new sdk.DescribeKeyCommand(
       { KeyId: keyId }));
     const meta = (described && described.KeyMetadata) || {};
@@ -1510,7 +1688,7 @@ const gcpKmsProvider = {
     } catch (e) {
       throw missingModule('@google-cloud/kms', 'gcp-kms', e);
     }
-    const client = new sdk.KeyManagementServiceClient();
+    const client = gcpLimits(new sdk.KeyManagementServiceClient());
     const [key] = await client.getCryptoKey({ name: name });
     const algorithm = key && key.versionTemplate &&
                       key.versionTemplate.algorithm;
@@ -1677,7 +1855,8 @@ const azureKeysProvider = {
       throw missingModule('@azure/identity', 'azure-keys', e);
     }
     const credential = new identitySdk.DefaultAzureCredential();
-    const keyClient = new keysSdk.KeyClient(vault, credential);
+    const keyClient = new keysSdk.KeyClient(vault, credential,
+                                            azureLimits());
     const key = await keyClient.getKey(name);
     const props = (key && key.properties) || {};
     const ops = (key && key.keyOperations) || [];
@@ -1720,7 +1899,7 @@ const azureKeysProvider = {
       let one = clients.get(version);
       if (!one) {
         one = new keysSdk.CryptographyClient(keyRef + '/' + version,
-                                             credential);
+                                             credential, azureLimits());
         clients.set(version, one);
       }
       log.debug('Leaving azureKeysProvider.cryptoFor().');
@@ -2242,7 +2421,11 @@ async function openHsmToken(uri) {
   const token = crypto.openPkcs11Token(binding, {
     modulePath: modulePath, tokenLabel: uri.token, serial: uri.serial,
     slotId: uri.slotId, pin: pin,
-    maxSessions: Number(config.value('keys.pkcs11Sessions')) || 4 });
+    maxSessions: Number(config.value('keys.pkcs11Sessions')) || 4,
+    // #2220: the wait for, and on, an HSM operation, and the queue for a
+    // session.
+    timeoutMs: Number(config.value('keys.pkcs11TimeoutMs')),
+    queueLimit: Number(config.value('keys.pkcs11QueueLimit')) });
   pkcs11Tokens.set(key, token);
   log.debug('Leaving openHsmToken(). Opened.');
   return token;
@@ -3841,7 +4024,10 @@ async function vaultConnectUnauthenticated(spec) {
     { apiVersion: 'v1' },
     endpoint ? { endpoint: endpoint } : {},
     Object.keys(tls.options).length
-      ? { requestOptions: tls.options, rpDefaults: tls.options } : {}));
+      ? { requestOptions: tls.options } : {},
+    { rpDefaults: Object.assign({}, tls.options,
+                                { timeout: storeTimeoutMs() }) }));
+  vaultLimits(client);
   log.debug('Leaving vaultConnectUnauthenticated().');
   return { client: client };
 }
@@ -3887,7 +4073,7 @@ PROBES.aws = {
         }
         const region = reachOf(spec, 'region');
         const client = new sdk.SecretsManagerClient(
-          region ? { region: region } : {});
+          awsLimits(region ? { region: region } : {}));
         const answer = await client.send(
           new sdk.DescribeSecretCommand({ SecretId: at.where }));
         return {
@@ -3992,7 +4178,8 @@ PROBES['aws-kms'] = {
           throw new Error('no KMS key is configured');
         }
         const region = reachOf(spec, 'region');
-        const client = new sdk.KMSClient(region ? { region: region } : {});
+        const client = new sdk.KMSClient(awsLimits(region
+          ? { region: region } : {}));
         const described = await client.send(
           new sdk.DescribeKeyCommand({ KeyId: keyId }));
         const m = (described && described.KeyMetadata) || {};
@@ -4106,7 +4293,7 @@ PROBES['gcp-kms'] = {
         if (!name) {
           throw new Error('no Cloud KMS key is configured');
         }
-        const client = new sdk.KeyManagementServiceClient();
+        const client = gcpLimits(new sdk.KeyManagementServiceClient());
         const [k] = await client.getCryptoKey({ name: name });
         const primary = (k && k.primary) || {};
         return { name: k && k.name, purpose: k && k.purpose,
@@ -4155,7 +4342,7 @@ PROBES['azure-keys'] = {
           throw new Error('no Key Vault key is configured');
         }
         const client = new keysSdk.KeyClient(
-          vault, new identitySdk.DefaultAzureCredential());
+          vault, new identitySdk.DefaultAzureCredential(), azureLimits());
         const k = await client.getKey(name);
         const p = (k && k.properties) || {};
         let rotation = null;
@@ -4261,7 +4448,7 @@ function gcpClient() {
     throw missingModule('@google-cloud/secret-manager', 'gcp', e);
   }
   log.debug("Leaving gcpClient().");
-  return new sdk.SecretManagerServiceClient();
+  return gcpLimits(new sdk.SecretManagerServiceClient());
 }
 
 // ---------------------------------------------------------------------------
@@ -4313,7 +4500,7 @@ PROBES.azure = {
                           'secret name');
         }
         const client = new secretsSdk.SecretClient(
-          vault, new identitySdk.DefaultAzureCredential());
+          vault, new identitySdk.DefaultAzureCredential(), azureLimits());
         const versions = [];
         for await (const one of
                    client.listPropertiesOfSecretVersions(at.where)) {
@@ -4707,13 +4894,13 @@ async function pushAws(target) {
   } catch (e) {
     throw missingDestinationSdk('@aws-sdk/client-secrets-manager', 'aws', e);
   }
-  const client = new sdk.SecretsManagerClient({
+  const client = new sdk.SecretsManagerClient(awsLimits({
     region: target.region,
     credentials: { accessKeyId: String(credential.accessKeyId),
                    secretAccessKey: String(credential.secretAccessKey),
                    sessionToken: credential.sessionToken
                      ? String(credential.sessionToken) : undefined }
-  });
+  }));
   let answer;
   try {
     answer = await client.send(new sdk.PutSecretValueCommand({
@@ -4759,10 +4946,10 @@ async function pushGcp(target) {
   } catch (e) {
     throw missingDestinationSdk('@google-cloud/secret-manager', 'gcp', e);
   }
-  const client = new sdk.SecretManagerServiceClient({
+  const client = gcpLimits(new sdk.SecretManagerServiceClient({
     credentials: { client_email: String(credential.client_email),
                    private_key: String(credential.private_key) },
-    projectId: target.project || credential.project_id || undefined });
+    projectId: target.project || credential.project_id || undefined }));
   let answer;
   try {
     [answer] = await client.addSecretVersion({
@@ -4808,7 +4995,8 @@ async function pushAzure(target) {
   const client = new secretsSdk.SecretClient(target.endpoint,
     new identitySdk.ClientSecretCredential(String(credential.tenantId),
                                            String(credential.clientId),
-                                           String(credential.clientSecret)));
+                                           String(credential.clientSecret)),
+    azureLimits());
   let exists = false;
   try {
     const versions = client.listPropertiesOfSecretVersions(target.secretName);
@@ -5132,6 +5320,9 @@ module.exports = {
   openSigningToken: openSigningToken,
   heldSigningToken: heldSigningToken,
   setSdkLoader: setSdkLoader,
+  // Each SDK's timeout and attempt bound (#2220), for a test.
+  sdkLimits: { aws: awsLimits, gcp: gcpLimits, azure: azureLimits,
+               vault: vaultLimits },
   // The second secret (2026-09-12). The descriptors are exported for
   // `tests/database_password.js`, which asserts the fallback and the field
   // rules directly — they are the part of this file with no other way in.

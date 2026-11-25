@@ -1783,6 +1783,87 @@ async function valuesInLanguage(t) {
   log.debug('Leaving valuesInLanguage().');
 }
 
+// ---------------------------------------------------------------------------
+// 30. THE OUTBOX'S TWO LIMITS (#2220): the first attempt after a message is
+// queued is held to mail.concurrency, and a message that would take the
+// realm's PENDING rows past mail.maxRows is refused STS-MAIL-0244, with
+// nothing already queued dropped.
+// ---------------------------------------------------------------------------
+async function outboxLimits(t) {
+  log.debug('Entering outboxLimits().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  const people = {};
+  for (let i = 0; i < 12; i++) {
+    people['p' + i] = { mail: ['p' + i + '@example.com'] };
+  }
+  mailModule.setDirectory(stubDirectory(people));
+  await withRealm(t, realms, realmId('mail-limits'),
+                  { 'mail.transport': 'smtp', 'mail.concurrency': 2,
+                    'mail.maxRows': 10, 'mail.ratePerRecipient': 100,
+                    'mail.ratePerCategory': 100 },
+                  async function (realm) {
+    let inFlight = 0;
+    let most = 0;
+    const transports = stubTransports(function () {
+      inFlight++;
+      most = Math.max(most, inFlight);
+      return new Promise(function (resolve) {
+        setImmediate(function () {
+          inFlight--;
+          resolve({ providerId: 'x' });
+        });
+      });
+    });
+    const m = makeMail({ transports: transports });
+    const group = m.send({ toAdministrators: false, username: 'p0',
+                           template: 'test-message' });
+    const many = ['p1', 'p2', 'p3', 'p4'].map(function (who) {
+      return m.send({ username: who, template: 'test-message' });
+    });
+    await Promise.all([group.delivered].concat(many.map(function (one) {
+      return one.delivered;
+    })));
+    t.check(most <= 2 && transports.sent.length >= 2,
+            '30a. the first attempts after five messages are queued run at ' +
+            'most mail.concurrency (2) at once',
+            'most=' + most + ' sent=' + transports.sent.length);
+    // Rows that stay pending: a claim store that never grants an attempt.
+    const quiet = makeMail({ transports: stubTransports(),
+      claims: { claim: function () {
+        return Promise.resolve({ ok: false, reason: 'used' });
+      } } });
+    const outcomes = [];
+    for (let i = 0; i < 12; i++) {
+      outcomes.push(quiet.send({ username: 'p' + i,
+                                 template: 'account-disabled' }));
+    }
+    await Promise.all(outcomes.map(function (one) {
+      return one.delivered;
+    }));
+    const refused = outcomes.filter(function (one) {
+      return !one.ok && one.refused[0] &&
+        one.refused[0].code === 'STS-MAIL-0244';
+    });
+    const queued = outcomes.filter(function (one) {
+      return one.ok;
+    });
+    t.check(refused.length > 0 && queued.length > 0 &&
+            refused.every(function (one) {
+              return /mail\.maxRows/.test(one.refused[0].why);
+            }),
+            '30b. past mail.maxRows PENDING rows a new message is refused ' +
+            'STS-MAIL-0244, and says why',
+            'queued=' + queued.length + ' refused=' + refused.length);
+    t.check(queued.every(function (one) {
+      const held = quiet.message(one.queued[0].id);
+      return !!held && held.state === 'pending';
+    }), '30c. what was queued before the cap is still queued, pending');
+    void realm;
+  });
+  log.debug('Leaving outboxLimits().');
+}
+
 module.exports = {
   name: 'mail',
   describe: 'The mail channel (#63): templates, directory-only recipients, ' +
@@ -1825,6 +1906,7 @@ async function sections(t) {
     await recoveryCodeReset(t);
     await addressChange(t);
     await valuesInLanguage(t);
+    await outboxLimits(t);
   }
   log.debug('Leaving sections().');
 }

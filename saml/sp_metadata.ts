@@ -145,6 +145,8 @@ import version = require('../common/version');
 // SAML's vocabularies (#1579). A leaf.
 import SamlModel = require('./saml_model');
 import truststores = require('../common/truststores');
+// The shared agent, deadline and connect timeout (#2220).
+import OutboundLimits = require('../common/outbound_limits');
 
 // What parse() answers. It answers rather than throws; see that method.
 interface ParsedMetadata {
@@ -900,7 +902,10 @@ class SpMetadata {
         }
         callback(null, vetted.address, vetted.family);
       };
+      // The address it answers, for the shared agent's pool key (#2220).
+      options.lookup.stsPinned = String(vetted.address);
     }
+    OutboundLimits.useAgent(options, parsed.protocol === 'https:');
     const request = agent.get(url, options, function (res) {
       // NO REDIRECT FOLLOWING, deliberately: a redirect is how a URL somebody
       // vetted becomes a URL nobody vetted, and this is one of two places in
@@ -950,6 +955,13 @@ class SpMetadata {
                                                          'answer ' +
           'within ' + self.timeoutMs() +
              'ms (federation.outboundTimeoutMs)' });
+    });
+    OutboundLimits.guard(request, {
+      timeoutMs: self.timeoutMs(), secure: parsed.protocol === 'https:',
+      where: parsed.origin,
+      onTimeout: function (why: string) {
+        done({ ok: false, errorCode: 'STS-SAML-0050', why: 'it ' + why });
+      }
     });
     request.on('error', function (e) {
       // The message is the node error's, because "self-signed certificate",

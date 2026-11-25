@@ -958,10 +958,41 @@ class CellChannel {
     }).then(function (response) {
       return new Promise(function (resolve, reject) {
         const chunks: Buffer[] = [];
+        // A CAP ON THE ANSWER (#2220, ASVS 5.0.0 13.1.2): another cell is a
+        // peer this one trusts over mutual TLS, but an answer is read into
+        // memory whole, so a cell that answered without end would be this
+        // process's memory. `cells.maxAnswerBytes` (16 MiB by default) is
+        // far above any operation's answer; past it the connection is
+        // closed and the call fails (STS-CELL-0212), as a cell that answered
+        // an error does.
+        const cap = Math.max(65536,
+                             Number(config.value('cells.maxAnswerBytes')) ||
+                             16777216);
+        let bytes = 0;
+        let over = false;
         response.on('data', function (chunk: Buffer) {
+          if (over) {
+            return;
+          }
+          bytes += chunk.length;
+          if (bytes > cap) {
+            over = true;
+            chunks.length = 0;
+            self.counters.failures += 1;
+            response.destroy();
+            reject(new Error(errorCodes.tag('STS-CELL-0212') + 'cells: "' +
+                             name + '" at cell "' + cellId + '" answered ' +
+                             'more than ' + cap + ' bytes ' +
+                             '(cells.maxAnswerBytes); the answer was not ' +
+                             'read.'));
+            return;
+          }
           chunks.push(chunk);
         });
         response.on('end', function () {
+          if (over) {
+            return;
+          }
           let parsed: any = {};
           try {
             parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') ||

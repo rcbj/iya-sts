@@ -164,6 +164,8 @@ import InstanceSlot = require('./../common/instance_slot');
 import errorCodes = require('./../common/error_codes');
 import version = require('./../common/version');
 import OutboundTls = require('./../common/outbound_tls');
+// The shared agent, deadline and connect timeout (#2220).
+import OutboundLimits = require('./../common/outbound_limits');
 
 const { URL } = url;
 
@@ -893,6 +895,8 @@ class FederationHttp {
           requestOptions.servername = target.hostname;
           requestOptions.lookup = self.pinnedLookup(vetted);
         }
+        // The shared agent (#2220): a cap per destination and in all.
+        OutboundLimits.useAgent(requestOptions, secure);
         let request = null;
         try {
           request = transport.request(requestOptions, function (response) {
@@ -961,6 +965,13 @@ class FederationHttp {
           request.destroy();
           done({ ok: false, status: 0, kind: 'timeout',
                  why: 'it did not answer within ' + timeoutMs + 'ms' });
+        });
+        // The overall deadline and the connect timeout (#2220).
+        OutboundLimits.guard(request, {
+          timeoutMs: timeoutMs, secure: secure, where: target.origin,
+          onTimeout: function (why) {
+            done({ ok: false, status: 0, kind: 'timeout', why: 'it ' + why });
+          }
         });
         request.on('error', function (e) {
           log.debug("Caught in a request callback in deliver(): " +
@@ -1109,6 +1120,7 @@ class FederationHttp {
           requestOptions.servername = target.hostname;
           requestOptions.lookup = self.pinnedLookup(vetted);
         }
+        OutboundLimits.useAgent(requestOptions, secure);
         let request = null;
         try {
           request = transport.request(requestOptions, function (response) {
@@ -1249,6 +1261,15 @@ class FederationHttp {
           request.destroy();
           done({ ok: false, status: 0, kind: 'timeout',
                  why: 'the stream was idle for ' + idleMs + 'ms' });
+        });
+        // A STREAM HAS NO OVERALL DEADLINE (#2220): a stream of a million
+        // accounts is long, not slow, and it is bounded by its idle timeout
+        // and by `maxBytes` and `maxEvents`. The connect timeout applies.
+        OutboundLimits.guard(request, {
+          deadlineMs: 0, secure: secure, where: target.origin,
+          onTimeout: function (why) {
+            done({ ok: false, status: 0, kind: 'timeout', why: 'it ' + why });
+          }
         });
         request.on('error', function (e) {
           log.debug("Caught in a request callback in streamEvents(): " +
@@ -1405,6 +1426,7 @@ class FederationHttp {
           requestOptions.servername = target.hostname;
           requestOptions.lookup = self.pinnedLookup(vetted);
         }
+        OutboundLimits.useAgent(requestOptions, secure);
         let request = null;
         try {
           request = transport.request(requestOptions, function (response) {
@@ -1458,6 +1480,12 @@ class FederationHttp {
           done({ ok: false, status: 0, kind: 'timeout',
                  why: 'it did not answer within ' + timeoutMs + 'ms' });
         });
+        OutboundLimits.guard(request, {
+          timeoutMs: timeoutMs, secure: secure, where: target.origin,
+          onTimeout: function (why) {
+            done({ ok: false, status: 0, kind: 'timeout', why: 'it ' + why });
+          }
+        });
         request.on('error', function (e) {
           log.debug("Caught in a request callback in fetchPublished(): " +
                     ((e && e.message) || e));
@@ -1498,6 +1526,12 @@ class FederationHttp {
         }
         log.debug("Leaving done().");
       };
+      // The shared agent (#2220), except over a local Unix socket, which
+      // is not a network destination and is not pooled.
+      const secure = requestOptions.protocol === 'https:';
+      if (!requestOptions.socketPath && !requestOptions.agent) {
+        OutboundLimits.useAgent(requestOptions, secure);
+      }
       let request = null;
       try {
         request = transport.request(requestOptions, function (response) {
@@ -1548,6 +1582,14 @@ class FederationHttp {
         request.destroy();
         done({ ok: false, status: 0, kind: 'timeout',
                why: 'it did not answer within ' + timeoutMs + 'ms' });
+      });
+      OutboundLimits.guard(request, {
+        timeoutMs: timeoutMs, secure: secure,
+        where: String(requestOptions.hostname || requestOptions.socketPath ||
+                      ''),
+        onTimeout: function (why) {
+          done({ ok: false, status: 0, kind: 'timeout', why: 'it ' + why });
+        }
       });
       request.on('error', function (e) {
         log.debug("Caught in a request callback in exchange(): " +
@@ -1868,8 +1910,8 @@ class FederationHttp {
     const { log } = this.deps;
     log.debug("Entering FederationHttp.pinnedLookup().");
     log.debug("Leaving FederationHttp.pinnedLookup().");
-    return function (hostname: string, lookupOptions: any,
-                     callback: Function): void {
+    const lookup: any = function (hostname: string, lookupOptions: any,
+                                  callback: Function): void {
       log.debug("Entering lookup().");
       setImmediate(function () {
         if (lookupOptions && lookupOptions.all) {
@@ -1881,6 +1923,11 @@ class FederationHttp {
       });
       log.debug("Leaving lookup().");
     };
+    // The address it answers, which the shared agent's pool key carries so
+    // that a kept-alive socket serves only requests pinned where it was
+    // (#2220, `common/outbound_limits.ts`).
+    lookup.stsPinned = String(vetted.address);
+    return lookup;
   }
 
   // -------------------------------------------------------------------------
@@ -2112,6 +2159,7 @@ class FederationHttp {
             requestOptions.key = String(opts.clientCertificate.key);
           }
         }
+        OutboundLimits.useAgent(requestOptions, secure);
         request = transport.request(requestOptions, function (response) {
           const status = response.statusCode || 0;
           const location = response.headers.location;
@@ -2198,6 +2246,13 @@ class FederationHttp {
                why: 'it did not answer within ' + this.timeoutMs() + 'ms ' +
                     '(federation.outboundTimeoutMs). A browser is waiting ' +
                     'on this request, which is why the wait is short' });
+      });
+      OutboundLimits.guard(request, {
+        timeoutMs: this.timeoutMs(), secure: secure, where: target.origin,
+        onTimeout: function (why) {
+          done({ ok: false, status: 0, json: null, text: '',
+                 errorCode: 'STS-FED-0054', why: 'it ' + why });
+        }
       });
       request.on('error', function (e) {
         // The one that actually happens: DNS, connection refused, a

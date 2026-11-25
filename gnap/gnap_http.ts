@@ -85,6 +85,8 @@ import version = require('../common/version');
 // Whether the User-Agent may name the build (#2142).
 import mode = require('../common/mode');
 import OutboundTls = require('../common/outbound_tls');
+// The shared agent, deadline and connect timeout (#2220).
+import OutboundLimits = require('../common/outbound_limits');
 
 // What a push answers. It never rejects.
 interface PushResult {
@@ -453,6 +455,7 @@ class GnapHttp {
       if (transport && transport.checkServerIdentity) {
         requestOptions.checkServerIdentity = transport.checkServerIdentity;
       }
+      OutboundLimits.useAgent(requestOptions, secure);
       try {
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
@@ -488,6 +491,13 @@ class GnapHttp {
           request.destroy(new Error('timed out after ' + timeout + 'ms'));
           done({ ok: false, status: 0, errorCode: 'STS-GNAP-0605',
                  why: 'the push timed out after ' + timeout + 'ms' });
+        });
+        OutboundLimits.guard(request, {
+          timeoutMs: timeout, secure: secure, where: target.origin,
+          onTimeout: function (why: string) {
+            done({ ok: false, status: 0, errorCode: 'STS-GNAP-0605',
+                   why: 'the push ' + why });
+          }
         });
         request.on('error', function (error) {
           done({ ok: false, status: 0, errorCode: 'STS-GNAP-0604',
