@@ -272,8 +272,8 @@
     "text": "Ancienneté maximale de la connexion pour une modification sensible (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. Il en va de même lorsqu'un administrateur accorde ou retire un rôle, crée, modifie ou supprime un domaine de confiance, agit sur la PKI, les clés de signature, la clé de chiffrement des clés ou les destinations de transmission des secrets, ou modifie un paramètre quel qu'il soit (#2161). 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
+    "en": "b20d406d9605d06f",
+    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. Il en va de même lorsqu'un administrateur accorde ou retire un rôle, crée, modifie ou supprime un domaine de confiance, agit sur la PKI, les clés de signature, la clé de chiffrement des clés ou les destinations de transmission des secrets, ou modifie un paramètre quel qu'il soit (#2161). Il en va de même pour la modification d’une application, d’une relation de fédération, d’un fournisseur de services SAML, d’une politique d’accès, d’un groupe, d’une politique nommée, des claims qu’un jeton porte, ou de tout ce qui décide qui peut se connecter, ce qui lui est délivré ou où cela va (#2247). 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -5606,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Ce que la revendication `aud` doit nommer pour qu’un jeton soit accepté ici. Par défaut, l’URL de base de l’API de gestion — global.publicBaseUrl suivi de /admin-api lorsqu’il est défini, et sinon le schéma, l’hôte et le port propres à ce processus. Tant qu’elle est à cette valeur par défaut, un jeton ayant pour audience /admin-api sous l’hôte sur lequel la requête est arrivée est aussi accepté, ce qu’obtient un client en demandant `resource=<base>/admin-api` au point de terminaison de jeton (RFC 8707) sous le nom par lequel il a joint ce service. Définissez-la pour fixer une valeur unique lorsqu’un déploiement est joint sous plusieurs noms."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Modifications par personne et par fenêtre dans l’API de gestion"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Combien de modifications un administrateur connecté peut faire via /admin-api (console d’administration comprise) dans une fenêtre de adminApi.writeWindowS. Compté par le sujet du jeton, non par adresse. Chaque POST qui écrit compte ; les lectures non. Au-delà, une modification est refusée avec 429 et Retry-After jusqu’à la fin de la fenêtre, et la lecture continue. Le jeton d’un programme est compté par adminApi.programWritesPerSubject à la place. 0 signifie aucune limite, valeur par défaut en développement. Le mode produit utilise 1200 par défaut."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Modifications par programme et par fenêtre dans l’API de gestion"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Combien de modifications un programme peut faire via /admin-api dans une fenêtre de adminApi.writeWindowS : un jeton client_credentials, compté par son client, ou celui d’un compte de service, compté par son sujet. Au-delà, une modification est refusée avec 429 et Retry-After jusqu’à la fin de la fenêtre. 0, la valeur par défaut dans tous les modes, signifie aucune limite, car un provisionnement ou une migration fait légitimement des milliers de modifications en quelques minutes ; réglez-le selon les besoins de vos programmes."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Fenêtre des modifications de l’API de gestion (secondes)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "La fenêtre dans laquelle adminApi.writesPerSubject et adminApi.programWritesPerSubject sont comptés, en secondes. Une fenêtre fixe, comme toute limite de débit ici."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",

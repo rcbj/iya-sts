@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6170** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6172** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 462
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 768
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 769
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
@@ -98,7 +98,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 320
-* [Management API (`STS-API`)](#sts-api) — 97
+* [Management API (`STS-API`)](#sts-api) — 98
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
@@ -2677,6 +2677,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1018` | The groups endpoint was presented a token that is not a live access token: another kind of token, or one revoked (#2247). | RFC 6750 section 3.1: HTTP 401 invalid_token |
 | `STS-OAUTH-1019` | The groups endpoint was presented an access token with no person behind it (a client_credentials token), which has no groups (#2247). | RFC 6750 section 3.1: HTTP 401 invalid_token |
 | `STS-OAUTH-1020` | The groups endpoint could not sign the JWT it answers with, under the algorithm the client registered for its ID Tokens or the realm's default (#2247). | HTTP 500 server_error |
+| `STS-OAUTH-1021` | The groups endpoint was presented an access token that carries no overage reference to it (_claim_names mapping a claim to sts-groups, whose _claim_sources endpoint is this realm's /oauth2/groups): only a token issued with a groups claim over groups.claimMaxBytes may redeem one (#2247). | RFC 6750 section 3.1: HTTP 401 invalid_token |
 
 ## STS-SAML
 
@@ -6468,6 +6469,7 @@ Raised from: mgmt-api/.
 | `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
 | `STS-API-0146` | An answer was refused by its response model (STS-API-0139) in a process where every plain object or array inherits an enumerable member: something wrote to Object.prototype or Array.prototype, so every closed model refuses every answer. The log line names the members, once per set of names; the process needs a restart and the write that polluted it a fix. | — |
 | `STS-API-0147` | A remote PEP's decision-record push (POST /admin-api/pep-audit) arrived on a token that does not carry xacml:pep-audit or whose subject is not in the remote PEPs' group (REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented at another operation (#1827). Refused at the gate itself, so that the separation does not depend on xacml.enforceAccess. | HTTP 403, an error message |
+| `STS-API-0148` | A management API caller made more changes than its write budget allows in an adminApi.writeWindowS window, counted by the token's subject: adminApi.writesPerSubject for a person's token, adminApi.programWritesPerSubject for a client_credentials or service account's. Further changes are refused until the window passes; reads go on (#2247, ASVS 5.0.0 2.4.2). | HTTP 429 {ok:false, errors} with Retry-After |
 
 ## STS-PORTAL
 

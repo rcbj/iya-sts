@@ -272,8 +272,8 @@
     "text": "Hur nyligen inloggningen måste ha skett för en känslig ändring (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. Detsamma gäller när en administratör tilldelar eller tar bort en roll, skapar, ändrar eller tar bort en förtroendesfär, agerar på PKI:n, signeringsnycklarna, nyckelkrypteringsnyckeln eller målen för utskick av hemligheter, eller ändrar någon inställning (#2161). 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+    "en": "b20d406d9605d06f",
+    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. Detsamma gäller när en administratör tilldelar eller tar bort en roll, skapar, ändrar eller tar bort en förtroendesfär, agerar på PKI:n, signeringsnycklarna, nyckelkrypteringsnyckeln eller målen för utskick av hemligheter, eller ändrar någon inställning (#2161). Detsamma gäller när en applikation, en federationsrelation, en SAML-tjänsteleverantör, en åtkomstpolicy, en grupp, en namngiven policy, de claims en token bär eller något annat som avgör vem som kan logga in, vad de utfärdas eller vart det går ändras (#2247). 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -5606,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Det som anspråket `aud` måste ange för att en token ska godtas här. Standard är hanterings-API:ets bas-URL — global.publicBaseUrl följd av /admin-api där den är angiven, och annars den här processens eget schema, värd och port. Medan den har det standardvärdet godtas även en token med /admin-api som målgrupp under den värd som begäran kom in på, vilket är vad en klient får genom att begära `resource=<base>/admin-api` vid tokenslutpunkten (RFC 8707) under vilket namn den än nådde den här tjänsten. Ange den för att fästa ett enda värde där en driftsättning nås under flera namn."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Ändringar per person och fönster i hanterings-API:t"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Hur många ändringar en inloggad administratör får göra via /admin-api (administrationskonsolen inräknad) inom ett fönster på adminApi.writeWindowS. Räknas per tokenens subjekt, inte per adress. Varje POST som skriver räknas; läsningar gör det inte. Därefter avvisas en ändring med 429 och Retry-After tills fönstret har passerat, och läsning fortsätter. Ett programs token räknas i stället av adminApi.programWritesPerSubject. 0 betyder ingen gräns, standardvärdet i utveckling. Produktläget använder 1200 som standard."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Ändringar per program och fönster i hanterings-API:t"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Hur många ändringar ett program får göra via /admin-api inom ett fönster på adminApi.writeWindowS: en client_credentials-token, räknad per klient, eller ett tjänstekontos, räknad per subjekt. Därefter avvisas en ändring med 429 och Retry-After tills fönstret har passerat. 0, standardvärdet i alla lägen, betyder ingen gräns, eftersom en provisionering eller en migrering legitimt gör tusentals ändringar på några minuter; sätt det till vad dina program behöver."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Fönster för ändringar i hanterings-API:t (sekunder)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "Fönstret som adminApi.writesPerSubject och adminApi.programWritesPerSubject räknas inom, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",

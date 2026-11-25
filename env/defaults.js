@@ -947,8 +947,10 @@ var config = {
 
   // --- Management API --------------------------------------------------
   adminApi: {
-    authRequired: true, // Require an access token on /admin-api
-    clientSecret: ""    // The management API client's secret; restart to apply
+    authRequired: true,         // Require an access token on /admin-api
+    clientSecret: "",           // The management API client's secret; restart to apply
+    programWritesPerSubject: 0, // Management API writes per program per window
+    writeWindowS: 600           // Management API write window (seconds)
   },
 
   // --- Protocol debugger -----------------------------------------------
