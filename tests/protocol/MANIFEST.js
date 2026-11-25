@@ -3433,6 +3433,12 @@ const LOCAL_HELPERS = [
   // person's own change at the sign-in screen, since a typed password is
   // temporary in product.
   'own_password.js',
+  // What the static console asks for after a press, completed in the
+  // browser as an administrator would (#2196): the write scope's popup
+  // (#2189), its Continue, and a sign-in again (#2173), in the popup or on
+  // the page, never a refusal swallowed. The browser console jobs press
+  // their forms through it.
+  'console_steps.js',
   // The portal's sign-in and a client of the operations its pages are drawn
   // from (#568): the static portal signs in as the public client
   // `sts-user-portal` and draws every page from `/account-api`.

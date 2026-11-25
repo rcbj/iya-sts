@@ -115,6 +115,12 @@ const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
+// What the console asks for after a Save — a recent sign-in (#2173), the
+// write scope by a popup (#2189) — completed as an administrator would
+// (#2196).
+const consoleSteps = require("./console_steps.js");
+// A password the person holds as their own (#2160).
+const ownPassword = require("./own_password.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -1018,13 +1024,22 @@ async function afterThePress(driver, token, what, wantSurvey) {
   return answered.page;
 }
 
+// THE STEPS AFTER A PRESS (#2196), completed by `console_steps.js`; set in
+// test() once there is a driver.
+let steps = null;
+
 // Fill named fields in one form and press its submit button, in one script
 // (PRESS), then wait for the console to draw the answer and return that page.
 // `expectPath` is the hidden `path` the form must carry — null for a form
 // with none, the policy chooser.
-async function submitForm(driver, index, values, expectPath) {
+//
+// WHAT THE CONSOLE ASKS FOR FIRST (#2196) — a popup, a Continue, a sign-in
+// again — is done in between as the person does it, and a page that left to
+// sign in, which sent nothing, is pressed again.
+async function submitForm(driver, index, values, expectPath, pressedAgain) {
   log.debug("Entering submitForm(). index=" + index);
   const token = pressToken();
+  const start = await steps.before();
   const pressed = await driver.executeScript(PRESS, index, values || {},
       expectPath === undefined ? null : expectPath, token, PRESS_MARK);
   if (pressed && pressed.error === "not offered") {
@@ -1034,6 +1049,24 @@ async function submitForm(driver, index, values, expectPath) {
   }
   assert.ok(pressed && pressed.error === "",
     "pressing form " + index + ": " + JSON.stringify(pressed));
+  const stepped = await steps.after(start, {
+    settled: async function () {
+      const now = await driver.executeScript(AFTER_PRESS, token, PRESS_MARK,
+                                             false).catch(function (e) {
+        log.debug("Caught in submitForm(): " + ((e && e.message) || e));
+        return null;
+      });
+      return !!(now && now.done);
+    }
+  });
+  if (stepped.leftToSignIn && !pressedAgain) {
+    await waitForDrawn(driver, "the page the console signed in again on");
+    log.info("form " + index + " was not sent: the console signed in " +
+             "again on the page. Pressed again.");
+    const again = await submitForm(driver, index, values, expectPath, true);
+    log.debug("Leaving submitForm(). Pressed again.");
+    return again;
+  }
   const page = await afterThePress(driver, token, "form " + index, true);
   log.debug("Leaving submitForm().");
   return page;
@@ -2093,17 +2126,28 @@ async function createTheRealm() {
 // this run's realm where the PIP will look them up.
 async function createThePeople() {
   log.debug("Entering createThePeople().");
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): typed by an administrator it
+  // is temporary in product, so it is a temporary one, and the person
+  // chooses CONSOLE_PASSWORD (`own_password.js`).
+  const temporary = ownPassword.temporaryFor(CONSOLE_PASSWORD);
   const consoleAccount = await apiPost("/admin-api/users/create", {
     username: CONSOLE_USER, invent: false,
     attributes: { cn: "XACML Editor Operator", givenName: "XACML",
                   sn: "Editor Operator", displayName: "XACML Editor Operator",
                   mail: CONSOLE_USER + "@xacml-editor.test" },
-    credential: "password", password: CONSOLE_PASSWORD
+    credential: "password", password: temporary
   });
   assert.ok(consoleAccount.status === 200 && consoleAccount.body &&
             consoleAccount.body.ok,
     "creating the console account " + CONSOLE_USER + " answered " +
     consoleAccount.status + " " + String(consoleAccount.text).slice(0, 300));
+  await ownPassword.chooseOwn(base, CONSOLE_USER, temporary,
+    CONSOLE_PASSWORD, function (who, value) {
+      log.debug("Entering setPassword().");
+      log.debug("Leaving setPassword().");
+      return apiPost("/admin-api/users/set-password",
+                     { user: who, password: value });
+    });
   // ADMIN WRITE, WHERE THE CONSOLE IS NOT OPEN TO ANYONE (2026-09-23). This
   // account holds no console role, and product mode never opens the window an
   // unclaimed bootstrap administrator leaves (#103) — so there it was refused
@@ -2227,6 +2271,12 @@ async function test() {
   browserFlags.addBrowserAccessFlags(options, base);
   const driver = await new Builder().forBrowser("chrome")
       .setChromeOptions(options).build();
+  steps = consoleSteps.forDriver(driver, {
+    credentials: function () {
+      return { username: CONSOLE_USER, password: CONSOLE_PASSWORD };
+    },
+    log: log
+  });
   await recordFetches(driver);
 
   try {
