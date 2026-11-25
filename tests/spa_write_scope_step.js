@@ -33,7 +33,14 @@
 //   7. another account coming back sends nothing, and the refusal is what
 //      the page gets;
 //   8. the portal steps to `account:manage` for `/account-api`, and the
-//      reports application to whichever report scope the roles allow.
+//      reports application to whichever report scope the roles allow;
+//   9. AFTER THE REALM SWITCHER (#2200): a service administrator signed in
+//      at the default realm, on a realm's page, is stepped by the DEFAULT
+//      realm's authorization server — its authorize URL, its token request,
+//      its callback and its management API as the resource — while the
+//      write itself still goes to the realm on screen; and the reports
+//      application's step after its realm field moved the page likewise.
+//      (The portal has no realm switcher: its prefix never moves.)
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -518,7 +525,114 @@ async function run(t) {
   t.check(reported && reported.status === 200,
           '8b. a write token carrying report:use alone is enough, and the ' +
           'write is sent once more', reported && reported.status);
+
+  await afterTheSwitcher(t);
   log.debug("Leaving run().");
+}
+
+/**
+ * 9. The step after the realm switcher asks the realm that issued the
+ * tokens (#2200).
+ *
+ * @param t - the harness
+ * @returns nothing
+ */
+async function afterTheSwitcher(t) {
+  log.debug("Entering afterTheSwitcher().");
+  const REALM = '/realm/acme';
+  const sw = browser('/admin/users', apiNaming('admin:write'),
+    { sub: 'urn:uuid:alice',
+      scope: 'openid admin:read admin:console admin:write' });
+  const console5 = new ConsoleRuntime(sw.env);
+  signedIn(console5);
+  // What the callback records with the tokens: the realm signed in at.
+  console5.issuerPrefix = '';
+  // The switcher, as the shell offers it; the page drawn is not this test's.
+  console5.shell = { realms: [{ id: 'acme', prefix: REALM }] };
+  console5.go = async function () {
+    log.debug("Entering go().");
+    log.debug("Leaving go().");
+  };
+  await console5.switchRealm('acme', '/admin/users');
+  const target = ORIGIN + REALM + '/admin-api/users/update-fields';
+  const sending = console5.send('POST', target, { user: 'bob' });
+  await until(function () { return sw.opened.length > 0; });
+  const step = sw.opened[0] ? new URL(sw.opened[0]) : null;
+  t.check(step && step.origin + step.pathname ===
+            ORIGIN + '/oauth2/authorize' &&
+          step.searchParams.get('resource') === ORIGIN + '/admin-api' &&
+          step.searchParams.get('redirect_uri') ===
+            ORIGIN + '/admin/callback',
+          '9. after the switcher the console\'s step is the signing-in ' +
+          'realm\'s: its authorize endpoint, its management API and its ' +
+          'callback, not ' + REALM + '\'s', sw.opened[0]);
+  t.check(console5.resource() === ORIGIN + '/admin-api' &&
+          console5.callbackUrl() === ORIGIN + '/admin/callback',
+          '9. resource() and callbackUrl() stay the signing-in realm\'s',
+          console5.resource() + ' ' + console5.callbackUrl());
+  answerStep(sw, sw.opened[0], { code: 'switched-code' });
+  const res = await sending;
+  const redeem = sw.calls.filter(function (c) {
+    return /oauth2\/token$/.test(c.url);
+  })[0];
+  const form = redeem ? new URLSearchParams(redeem.init.body) : null;
+  t.check(redeem && redeem.url === ORIGIN + '/oauth2/token' && form &&
+          form.get('resource') === ORIGIN + '/admin-api' &&
+          form.get('redirect_uri') === ORIGIN + '/admin/callback',
+          '9. the step\'s code is redeemed at the signing-in realm\'s token ' +
+          'endpoint, for its management API', redeem && redeem.url + ' ' +
+          redeem.init.body);
+  const writes = sw.calls.filter(function (c) {
+    return c.url === target;
+  }).map(function (c) { return c.init.headers.Authorization; });
+  t.check(res && res.status === 200 && writes.length === 2 &&
+          writes[1] === 'DPoP write-at',
+          '9. and the write goes, with the write token, to the realm on ' +
+          'screen', JSON.stringify(writes));
+  await console5.refresh();
+  const renewed = sw.calls.filter(function (c) {
+    return /oauth2\/token$/.test(c.url) &&
+           /refresh_token/.test(String(c.init.body || ''));
+  }).pop();
+  t.check(renewed && renewed.url === ORIGIN + '/oauth2/token',
+          '9. a refresh after the switcher asks the signing-in realm too',
+          renewed && renewed.url);
+
+  // The reports application, its realm field having moved the page.
+  const rs = browser('/report', apiNaming('report:use'),
+    { sub: 'urn:uuid:alice',
+      scope: 'openid profile email offline_access report:read report:use' });
+  const reports = new ReportRuntime(rs.env);
+  signedIn(reports);
+  reports.issuerPrefix = '';
+  reports.prefix = REALM;
+  const defining = reports.call('POST', '/report-api/definitions',
+                                { name: 'x' });
+  await until(function () { return rs.opened.length > 0; });
+  const rstep = rs.opened[0] ? new URL(rs.opened[0]) : null;
+  t.check(rstep && rstep.origin + rstep.pathname ===
+            ORIGIN + '/oauth2/authorize' &&
+          rstep.searchParams.get('redirect_uri') ===
+            ORIGIN + '/report/callback' &&
+          rstep.searchParams.get('resource') === ORIGIN + '/report-api',
+          '9. the reports application\'s step after its realm field moved ' +
+          'the page is the issuing realm\'s, callback and resource ' +
+          'included', rs.opened[0]);
+  answerStep(rs, rs.opened[0], { code: 'report-switched' });
+  const reported = await defining;
+  const rredeem = rs.calls.filter(function (c) {
+    return /oauth2\/token$/.test(c.url);
+  })[0];
+  t.check(reported && reported.status === 200 && rredeem &&
+          rredeem.url === ORIGIN + '/oauth2/token' &&
+          new URLSearchParams(rredeem.init.body).get('redirect_uri') ===
+            ORIGIN + '/report/callback' &&
+          rs.calls.some(function (c) {
+            return c.url === ORIGIN + REALM + '/report-api/definitions';
+          }),
+          '9. its code is redeemed at the issuing realm, and the write goes ' +
+          'to the realm on screen', reported && reported.status);
+  log.debug("Leaving afterTheSwitcher().");
 }
 
 module.exports = {
