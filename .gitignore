@@ -96,6 +96,8 @@ home/home.bundle.js
 home/home-spa.js
 home/home-spa.js.br
 home/home-spa.js.gz
+# The browser check every shell runs first (#2220), the same kind of file.
+common/browser-check.js
 # The sign-in screen's (#571), the same kind of file.
 authn/authn.bundle.js
 authn/authn-spa.js

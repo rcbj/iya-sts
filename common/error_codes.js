@@ -737,6 +737,23 @@ const CODES = [
       'or the outbound rules refused the URL. Logged when forwarding ' +
       'starts failing, not per report; the report is still recorded here.',
     spec: 'none — the report was answered 204 and counted' },
+  { code: 'STS-HTTP-0032',
+    summary: 'Outbound HTTP requests are waiting for a connection: the ' +
+      'shared agent\'s cap per destination (federation.outboundMaxSockets) ' +
+      'or in all (federation.outboundMaxTotalSockets) is reached. They wait ' +
+      'within their overall deadline. Logged when requests first queue, ' +
+      'and again only after the queue has drained (#2220).',
+    spec: 'none — the requests wait; nothing is refused for the cap' },
+  { code: 'STS-HTTP-0033',
+    summary: 'An outbound request did not finish within its overall deadline ' +
+      '(federation.outboundDeadlineMs, or its own timeout where longer): ' +
+      'it was ended, and the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
+  { code: 'STS-HTTP-0034',
+    summary: 'An outbound connection was not made within the connect timeout ' +
+      '(federation.outboundConnectTimeoutMs): the request was ended, and ' +
+      'the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -1394,6 +1411,12 @@ const CODES = [
       'Turn on security.hstsIncludeSubDomains, or turn off ' +
       'security.hstsPreload.',
     spec: 'none — a warning; the header is still sent, without preload' },
+  { code: 'STS-CORE-0182',
+    summary: 'A file was not scanned because malwareScan.concurrency scans ' +
+      'were running and malwareScan.queueLimit more were waiting: it is ' +
+      'refused as a file the scanner could not answer for is. The warning ' +
+      'is logged when the queue first fills (#2220).',
+    spec: 'HTTP 503' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -2312,6 +2335,12 @@ const CODES = [
       'waits for that flush to settle until ten times the bound after it ' +
       'began, so a flush that is only slow keeps its writes.',
     spec: 'Log line' },
+  { code: 'STS-STORE-0178',
+    summary: 'A database statement was cancelled by the server at its ' +
+      'statement timeout (persistence.statementTimeoutMs, unless it set ' +
+      'its own). The caller\'s own failure path decides what follows: a ' +
+      'refused request, or a retried flush (#2220).',
+    spec: '' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2911,6 +2940,11 @@ const CODES = [
       'every cell (#727): it is answered 503 and its once-ever claim is ' +
       'released, so the provider\'s retry is accepted and fanned out again.',
     spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-CELL-0212',
+    summary: 'A synchronous call to another cell answered more than ' +
+      'cells.maxAnswerBytes: the connection was closed and the call ' +
+      'failed without reading the answer (#2220).',
+    spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
@@ -4072,6 +4106,22 @@ const CODES = [
       'held it, or the module hung in C_Finalize or C_Initialize): the ' +
       'thread waiting for it takes it over and initialises the module ' +
       'again itself (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0214',
+    summary: 'A call to the OpenBao or Vault secret store still failed after ' +
+      'keys.storeAttempts attempts (no answer, a timeout, a 5xx or a 429 ' +
+      'each time); the failure is the caller\'s (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0215',
+    summary: 'An HSM operation was refused because keys.pkcs11QueueLimit ' +
+      'operations were already waiting for a session of the token in this ' +
+      'thread (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0216',
+    summary: 'An HSM operation, or the wait for a session to run it on, took ' +
+      'longer than keys.pkcs11TimeoutMs: it is refused, and a session ' +
+      'whose operation outlived its caller is discarded when the module ' +
+      'answers (#2220).',
     spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -21265,6 +21315,11 @@ const CODES = [
       '(the stored key or certificate no longer reads); it is a ' +
       'dead letter, never sent in the clear (#1955).',
     spec: 'log only' },
+  { code: 'STS-MAIL-0244',
+    summary: 'A message was not queued because the realm\'s outbox already ' +
+      'holds mail.maxRows unsent messages; nothing already queued is ' +
+      'dropped to make room (#2220).',
+    spec: 'none — the sender is told the message was refused' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +

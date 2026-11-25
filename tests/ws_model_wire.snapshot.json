@@ -10,6 +10,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -30,6 +31,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -49,6 +51,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -72,6 +75,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -95,6 +99,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -118,6 +123,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -141,6 +147,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -164,6 +171,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -187,6 +195,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -210,6 +219,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -233,6 +243,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -256,6 +267,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -279,6 +291,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -298,6 +311,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -317,6 +331,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -336,6 +351,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -355,6 +371,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -374,6 +391,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -393,6 +411,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -412,6 +431,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -435,6 +455,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -458,6 +479,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -477,6 +499,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -496,6 +519,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -514,10 +538,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -539,6 +565,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -559,6 +586,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -582,6 +610,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -605,6 +634,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/wswire/authn/login?authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -630,10 +660,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -658,10 +690,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -685,10 +719,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -712,10 +748,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -741,6 +779,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/wswire/authn/login?authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -766,10 +805,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -795,6 +836,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/wswire/authn/login?authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -820,10 +862,12 @@
    "code": "STS-WSFED-0006",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -846,10 +890,12 @@
    "code": "STS-WSFED-0001",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -872,10 +918,12 @@
    "code": "STS-WSFED-0002",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -898,10 +946,12 @@
    "code": "STS-WSFED-0005",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -924,10 +974,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -951,10 +1003,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -978,10 +1032,12 @@
    "code": "STS-WSFED-0012",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1004,10 +1060,12 @@
    "code": "STS-WSFED-0013",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1030,10 +1088,12 @@
    "code": "STS-WSFED-0025",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1056,10 +1116,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_session=; Path=/; Max-Age=0"
     ],
@@ -1079,10 +1141,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswire/web/csp-report\"",
     "set-cookie": [
      "sts_session=; Path=/; Max-Age=0"
     ],
@@ -1103,6 +1167,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1123,6 +1188,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1142,6 +1208,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1165,6 +1232,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1188,6 +1256,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1211,6 +1280,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1234,6 +1304,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1257,6 +1328,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1280,6 +1352,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1303,6 +1376,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1326,6 +1400,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1349,6 +1424,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1372,6 +1448,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1391,6 +1468,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1410,6 +1488,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1429,6 +1508,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1448,6 +1528,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1467,6 +1548,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1486,6 +1568,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1505,6 +1588,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1524,6 +1608,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1543,6 +1628,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1562,6 +1648,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/soap+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1581,6 +1668,7 @@
    "headers": {
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1599,10 +1687,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1624,6 +1714,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1644,6 +1735,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1667,6 +1759,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "set-cookie": [
@@ -1690,6 +1783,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/wswirep/authn/login?app=https%3A%2F%2Frp.wswire.test%2Fapp#authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1715,10 +1809,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1743,10 +1839,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1770,10 +1868,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1797,10 +1897,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1826,6 +1928,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/wswirep/authn/login?app=https%3A%2F%2Frp.wswire.test%2Fapp#authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1851,10 +1954,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1878,10 +1983,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1905,10 +2012,12 @@
    "code": "STS-WSFED-0006",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1931,10 +2040,12 @@
    "code": "STS-WSFED-0001",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1957,10 +2068,12 @@
    "code": "STS-WSFED-0002",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1983,10 +2096,12 @@
    "code": "STS-WSFED-0005",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2009,10 +2124,12 @@
    "code": "STS-WSFED-0003",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2035,10 +2152,12 @@
    "code": "STS-WSFED-0021",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2061,10 +2180,12 @@
    "code": "STS-WSFED-0012",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2087,10 +2208,12 @@
    "code": "STS-WSFED-0013",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2113,10 +2236,12 @@
    "code": "STS-WSFED-0025",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_wswirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2139,10 +2264,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_session=; Path=/; Max-Age=0"
     ],
@@ -2162,10 +2289,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src *; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/wswirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/wswirep/web/csp-report\"",
     "set-cookie": [
      "sts_session=; Path=/; Max-Age=0"
     ],

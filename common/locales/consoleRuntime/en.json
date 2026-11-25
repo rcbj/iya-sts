@@ -5,6 +5,7 @@
   "reauth.here": "Sign in on this page",
   "reauth.hereInstead": "Sign in on this page instead",
   "reauth.noPopup": "This browser cannot hand a sign-in back from another window, so sign in on this page.",
+  "reauth.popupBlocked": "The sign-in window was blocked. Allow pop-ups for this site, or sign in on this page.",
   "reauth.finish": "Finish signing in in the window that opened.",
   "otherPerson.waiting": "A different person signed in, so what was waiting on this page was not sent.",
   "otherPerson.typed": "A different person signed in, so what was typed on this page before was not put back.",

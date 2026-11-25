@@ -76,6 +76,8 @@ import WebAccounts = require('../common/web_accounts');
 import WebFooter = require('../common/web_footer');
 import WebWsTrustProtection = require('./web_wstrust_protection');
 import WebCertSignIn = require('./web_cert_sign_in');
+import WebClipboard = require('../common/web_clipboard');
+import WebPageState = require('../common/web_page_state');
 
 type Json = any;
 
@@ -712,8 +714,12 @@ class ConsoleRuntime extends SpaClient {
     const popup = this.env.window.open(r.url, POPUP_CHANNEL,
                                        'popup,width=560,height=760');
     if (!popup) {
-      this.drawReauthBar('The sign-in window was blocked. Allow pop-ups ' +
-                         'for this site, or sign in on this page.');
+      // In English where no catalog has it yet (drawReauthBar()).
+      const said = this.t;
+      this.drawReauthBar(said.has('consoleRuntime.reauth.popupBlocked')
+        ? said.text('consoleRuntime.reauth.popupBlocked')
+        : 'The sign-in window was blocked. Allow pop-ups for this site, or ' +
+          'sign in on this page.');
       return;
     }
     r.popup = popup;
@@ -864,39 +870,18 @@ class ConsoleRuntime extends SpaClient {
 
   // --- what the page held, across a redirect (#508) ------------------------
 
+  // THE THREE BELOW ARE `common/web_page_state.ts`'s SINCE #2220, shared
+  // with the portal and the reports application, which keep their page's
+  // choices across a sign-in that leaves the page too; kept here by name,
+  // as the console's tests call them.
   /**
-   * Whether a form control's value may be kept across a sign-in: never a
-   * password, a file, a hidden field, a button, or a control named or
-   * marked for a secret.
+   * Whether a form control's value may be kept across a sign-in.
    *
    * @param el - the control
    * @returns true when it is kept
    */
   static keepsField(el: Json): boolean {
-    const name = String((el && el.name) || '');
-    const type = String((el && el.type) || '').toLowerCase();
-    if (!name || el.disabled) {
-      return false;
-    }
-    if (['password', 'file', 'hidden', 'submit', 'button', 'reset',
-         'image'].indexOf(type) >= 0) {
-      return false;
-    }
-    // WHAT PEOPLE TYPE STAYS OUT OF STORAGE (ASVS 5.0.0 14.3.3): names and mail
-    // are personal data, and this survives until the page returns. Choices
-    // carry none of it.
-    if (['checkbox', 'radio', 'select-one', 'select-multiple']
-      .indexOf(type) < 0) {
-      return false;
-    }
-    const auto = el.getAttribute
-      ? String(el.getAttribute('autocomplete') || '') : '';
-    if (/new-password|current-password|one-time-code/.test(auto) ||
-        (el.getAttribute && el.getAttribute('data-sensitive') !== null &&
-         el.getAttribute('data-sensitive') !== undefined)) {
-      return false;
-    }
-    return !/secret|passw|private|credential|token|otp/i.test(name);
+    return WebPageState.keepsField(el);
   }
 
   /**
@@ -907,94 +892,18 @@ class ConsoleRuntime extends SpaClient {
    * @returns `{ action, pending, fields }`
    */
   static formSnapshot(form: Json, pending: boolean): Json {
-    const fields: Json[] = [];
-    const els = (form && form.elements) || [];
-    for (let i = 0; i < els.length; i++) {
-      const el = els[i];
-      if (!ConsoleRuntime.keepsField(el)) {
-        continue;
-      }
-      const type = String(el.type || '').toLowerCase();
-      if (type === 'checkbox' || type === 'radio') {
-        fields.push({ name: el.name, value: String(el.value),
-                      checked: !!el.checked });
-      } else if (el.multiple && el.options) {
-        const values: string[] = [];
-        for (let j = 0; j < el.options.length; j++) {
-          if (el.options[j].selected) {
-            values.push(String(el.options[j].value));
-          }
-        }
-        fields.push({ name: el.name, values: values });
-      } else {
-        fields.push({ name: el.name, value: String(el.value || '') });
-      }
-    }
-    return { action: String((form.getAttribute &&
-                             form.getAttribute('action')) || ''),
-             pending: !!pending, fields: fields };
+    return WebPageState.formSnapshot(form, pending);
   }
 
   /**
-   * Puts kept values back into the forms drawn: the same form by its place
-   * and its address, the same control by its name and order.
+   * Puts kept values back into the forms drawn.
    *
    * @param forms - the forms drawn, in document order
    * @param saved - `formSnapshot()`'s answers, in the same order
    * @returns `{ restored, unplaced }`, counts of values
    */
   static restoreForms(forms: Json[], saved: Json[]): Json {
-    let restored = 0;
-    let unplaced = 0;
-    (saved || []).forEach(function (kept, i) {
-      const form = forms[i];
-      const action = form && form.getAttribute
-        ? String(form.getAttribute('action') || '') : '';
-      if (!form || action !== String(kept.action || '')) {
-        unplaced += (kept.fields || []).length;
-        return;
-      }
-      const byName: Json = {};
-      const els = form.elements || [];
-      for (let j = 0; j < els.length; j++) {
-        if (ConsoleRuntime.keepsField(els[j])) {
-          (byName[els[j].name] = byName[els[j].name] || []).push(els[j]);
-        }
-      }
-      const used: Json = {};
-      (kept.fields || []).forEach(function (field) {
-        const named = byName[field.name] || [];
-        if (field.checked !== undefined) {
-          const box = named.filter(function (el) {
-            return String(el.value) === String(field.value);
-          })[0];
-          if (!box) {
-            unplaced++;
-            return;
-          }
-          box.checked = !!field.checked;
-          restored++;
-          return;
-        }
-        const at = used[field.name] || 0;
-        used[field.name] = at + 1;
-        const el = named[at];
-        if (!el) {
-          unplaced++;
-          return;
-        }
-        if (field.values && el.options) {
-          for (let k = 0; k < el.options.length; k++) {
-            el.options[k].selected =
-              field.values.indexOf(String(el.options[k].value)) >= 0;
-          }
-        } else {
-          el.value = String(field.value || '');
-        }
-        restored++;
-      });
-    });
-    return { restored: restored, unplaced: unplaced };
+    return WebPageState.restoreForms(forms, saved);
   }
 
   /**
@@ -1812,9 +1721,11 @@ class ConsoleRuntime extends SpaClient {
    *
    * @param title - what went wrong
    * @param detail - the detail
+   * @param more - optional; markup drawn after the detail (#2220: the link
+   *   to what this service needs from a browser)
    * @returns nothing
    */
-  drawProblem(title: string, detail: string): void {
+  drawProblem(title: string, detail: string, more?: string): void {
     // No tabbed page is drawn, so a fragment change has no trail to redraw.
     this.trailOf = null;
     this.env.document.title = title + ' — IYA STS admin';
@@ -1822,7 +1733,7 @@ class ConsoleRuntime extends SpaClient {
     WebSafeDom.render(this.env.document.body,
       '<div class="shell"><div ' +
       'class="main"><div class="card"><h1>' + kit.esc(title) + '</h1>' +
-      kit.note(kit.esc(detail)) + '<p><a href="' +
+      kit.note(kit.esc(detail)) + (more || '') + '<p><a href="' +
       kit.esc(this.prefix + '/admin') + '">' +
       // In English where no catalog has it yet (drawReauthBar()).
       (this.t.has('consoleRuntime.openConsole')
@@ -2738,6 +2649,13 @@ class ConsoleRuntime extends SpaClient {
       await this.go(base + (base.indexOf('?') < 0 ? '?' : '&') + kind + '=' +
                     encodeURIComponent(message));
     };
+    // NO WEBAUTHN HERE (#2220): both ceremonies need it, so it is asked
+    // before anything is begun, and said in the reader's language rather
+    // than as the `TypeError` of a missing `navigator.credentials`.
+    if (WebWebAuthn.missing(this.env.navigator, this.env.window)) {
+      await report('error', WebWebAuthn.missingText(this.t));
+      return;
+    }
     let upgradeId = '';
     try {
       const begun = await this.apiJson('POST',
@@ -4134,58 +4052,22 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   wireCopyButtons(): void {
-    const t = this.t;
+    const self = this;
     const doc = this.env.document;
     const buttons = doc.querySelectorAll('button.copybtn[data-copy]');
     const nav = this.env.navigator;
     // OUTSIDE A SECURE CONTEXT `navigator.clipboard` is undefined — a console
     // reached over plain http — so a selected, hidden text area and
     // `execCommand('copy')` stand in, as the parent project's `copyField()`
-    // and the deleted `/admin/copy.js` did.
-    const fallback = function (text: string): boolean {
-      const area = doc.createElement('textarea');
-      area.value = text;
-      area.setAttribute('readonly', '');
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      doc.body.appendChild(area);
-      area.focus();
-      area.select();
-      let ok = false;
-      try {
-        ok = doc.execCommand('copy');
-      } catch (e) {
-        // A browser that has dropped execCommand: the button says it failed.
-        ok = false;
-      }
-      doc.body.removeChild(area);
-      return ok;
-    };
-    const copied = function (button: Json, ok: boolean): void {
-      const label = button.textContent;
-      // "Copy failed" is a failure, and failures stay English (#539).
-      button.textContent = ok
-        ? (t.has('consoleRuntime.copied') ? t.text('consoleRuntime.copied')
-                                          : 'Copied')
-        : 'Copy failed';
-      setTimeout(function () {
-        button.textContent = label;
-      }, 1500);
-    };
+    // and the deleted `/admin/copy.js` did. ONE COPY OF IT SINCE #2220,
+    // `common/web_clipboard.ts`, shared with the portal, and "Copy failed"
+    // is said in the reader's language with what to do instead.
     for (let i = 0; i < buttons.length; i++) {
       const button = buttons[i];
       button.hidden = false;
       button.addEventListener('click', function () {
-        const text = button.getAttribute('data-copy') || '';
-        if (nav && nav.clipboard && nav.clipboard.writeText) {
-          nav.clipboard.writeText(text).then(function () {
-            copied(button, true);
-          }, function () {
-            copied(button, fallback(text));
-          });
-          return;
-        }
-        copied(button, fallback(text));
+        WebClipboard.copyFrom(doc, nav, self.t, button,
+                              button.getAttribute('data-copy') || '');
       });
     }
   }
@@ -4200,7 +4082,16 @@ class ConsoleRuntime extends SpaClient {
     if (SpaClient.webCryptoMissing(this.env)) {
       const words = await this.noWebCryptoWords('consoleRuntime');
       this.t = words.t;
-      this.drawProblem(words.title, words.text);
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
+      return;
+    }
+    // NO SESSION STORAGE, NO SIGN-IN (#2220): the same, in its words.
+    if (SpaClient.sessionStorageMissing(this.env)) {
+      const words = await this.noStorageWords('consoleRuntime');
+      this.t = words.t;
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
       return;
     }
     const self = this;

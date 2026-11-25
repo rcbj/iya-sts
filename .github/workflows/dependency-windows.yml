@@ -17,12 +17,25 @@
 # main's image (CVE-2026-102276, CVE-2026-102278, CVE-2026-19534); develop's
 # image ships no npm since the 2026-11-14 slim image, and a dispatch from
 # develop still scanned main's.
+#
+# SECURITY ADVISORIES ONLY (#2219, rcbj 2026-11-25). The scheduled run holds
+# the advisory windows (critical 7, high 30, moderate 90 days) over both
+# lockfiles, the root's and sdk/'s, and over the image. Until then it also
+# ran SECURITY.md's 90-day update review (`--updates`), which since #2159
+# read the 27 sdk/ workspace pins too, so the day went red whenever an SDK
+# fell behind with no advisory against it. The update review now runs only
+# when a dispatch asks for it (`updates`), and reads the root lockfile only.
 name: Dependency windows
 
 on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+    inputs:
+      updates:
+        description: Also run the 90-day update review of the root lockfile
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -80,4 +93,9 @@ jobs:
       - name: Fail on anything past its window
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node tests/tools/dependency-windows.js --updates --image-report=image-report.json
+          UPDATE_REVIEW: ${{ inputs.updates && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${UPDATE_REVIEW}" = true ]; then args+=(--updates); fi
+          node tests/tools/dependency-windows.js --image-report=image-report.json "${args[@]}"

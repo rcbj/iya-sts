@@ -1470,7 +1470,7 @@ class Pkcs11Token {
   /**
    * @param binding - the loaded binding (`require('pkcs11js')`) or a fake
    * @param options - `{ modulePath, tokenLabel, serial, slotId, pin,
-   *   maxSessions }`
+   *   maxSessions, timeoutMs, queueLimit }`
    */
   constructor(binding, options) {
     log.debug('Entering Pkcs11Token.constructor().');
@@ -1483,6 +1483,16 @@ class Pkcs11Token {
                   o.slotId === '' ? null : String(o.slotId);
     this.pin = o.pin === undefined || o.pin === null ? null : String(o.pin);
     this.maxSessions = Math.max(1, Math.min(64, Number(o.maxSessions) || 4));
+    // THE WAIT AND THE QUEUE (#2220, ASVS 5.0.0 13.1.2 and 13.1.3). An
+    // asynchronous operation (and the wait for a session to run it on) is
+    // given up after `timeoutMs` (`keys.pkcs11TimeoutMs`, 60 s; 0 for
+    // none), and at most `queueLimit` operations (`keys.pkcs11QueueLimit`,
+    // 1000) wait for a session of this token in this thread; past it an
+    // operation is refused at once (STS-KEYS-0215). See `acquire()` and
+    // `run()`.
+    this.timeoutMs = Math.max(0, Number(o.timeoutMs) || 0);
+    this.queueLimit = Number(o.queueLimit) > 0 ? Number(o.queueLimit)
+      : Infinity;
     /** @type {any} */
     this.entry = null;
     this.slot = null;
@@ -1806,8 +1816,41 @@ class Pkcs11Token {
         return opened;
       }
       const waiters = this.waiters;
-      const handed = await new Promise(function (resolve) {
-        waiters.push(resolve);
+      if (waiters.length >= this.queueLimit) {
+        log.warn(errorCodes.tag('STS-KEYS-0215') + 'pkcs11: ' +
+                 waiters.length + ' operations are already waiting for a ' +
+                 'session of ' + this.describe() +
+                 ' (keys.pkcs11QueueLimit); this one is refused.');
+        log.debug('Leaving Pkcs11Token.acquire(). The queue is full.');
+        throw refusal('STS-KEYS-0215', 'too many operations are waiting ' +
+                      'for a session of ' + this.describe());
+      }
+      const timeoutMs = this.timeoutMs;
+      const what = this.describe();
+      const handed = await new Promise(function (resolve, reject) {
+        let timer = null;
+        const waiter = function (session) {
+          if (timer) {
+            clearTimeout(timer);
+          }
+          resolve(session);
+        };
+        waiters.push(waiter);
+        if (timeoutMs > 0) {
+          // A wait inside one operation, cleared when a session comes.
+          timer = setTimeout(function () {
+            const at = waiters.indexOf(waiter);
+            if (at >= 0) {
+              waiters.splice(at, 1);
+            }
+            reject(refusal('STS-KEYS-0216', 'no session of ' + what +
+                           ' came free within ' + timeoutMs + ' ms ' +
+                           '(keys.pkcs11TimeoutMs)'));
+          }, timeoutMs);
+          if (timer && typeof timer.unref === 'function') {
+            timer.unref();
+          }
+        }
       });
       if (handed) {
         log.debug('Leaving Pkcs11Token.acquire(). Handed on.');
@@ -2006,11 +2049,18 @@ class Pkcs11Token {
         throw e;
       }
       try {
-        const out = await fn(this.entry.lib, session.h);
+        const out = await this.bounded(what, session, fn(this.entry.lib,
+                                                        session.h));
         this.release(session);
         log.debug('Leaving Pkcs11Token.run().');
         return out;
       } catch (e) {
+        if (e && e.stsTimedOut) {
+          // The session is still the module's: `bounded()` discards it
+          // when the late answer comes.
+          log.debug('Leaving Pkcs11Token.run(). Timed out.');
+          throw e;
+        }
         if (attempt === 0 && RECONNECT_ON.has(ckrOf(e))) {
           log.debug('Caught in Pkcs11Token.run(): ' + ((e && e.message) || e) +
                     '; reconnecting once.');
@@ -2033,6 +2083,57 @@ class Pkcs11Token {
     }
     log.debug('Leaving Pkcs11Token.run(). Unreachable.');
     throw refusal('STS-KEYS-0201', what + ' failed on ' + this.describe());
+  }
+
+  // -------------------------------------------------------------------------
+  // AN OPERATION THAT DOES NOT ANSWER (#2220). The call itself runs in the
+  // module, on libuv's pool, and nothing can stop it there; what can stop is
+  // the WAITING. After `timeoutMs` the operation is refused (STS-KEYS-0216)
+  // and its caller goes on, and the session it holds is not lent again: when
+  // the module does answer, the session is discarded (closed, and a waiter
+  // woken to open another), because a session whose operation outlived its
+  // caller is in no known state. A synchronous call cannot be timed.
+  // -------------------------------------------------------------------------
+  bounded(what, session, pending) {
+    log.debug('Entering Pkcs11Token.bounded().');
+    const timeoutMs = this.timeoutMs;
+    if (!timeoutMs || !pending || typeof pending.then !== 'function') {
+      log.debug('Leaving Pkcs11Token.bounded(). Not timed.');
+      return Promise.resolve(pending);
+    }
+    const self = this;
+    log.debug('Leaving Pkcs11Token.bounded().');
+    return new Promise(function (resolve, reject) {
+      let late = false;
+      const timer = setTimeout(function () {
+        late = true;
+        log.warn(errorCodes.tag('STS-KEYS-0216') + 'pkcs11: ' + what +
+                 ' on ' + self.describe() + ' did not answer within ' +
+                 timeoutMs + ' ms (keys.pkcs11TimeoutMs); it is refused, ' +
+                 'and its session is discarded when the module answers.');
+        const out = refusal('STS-KEYS-0216', what + ' on ' + self.describe() +
+                            ' did not answer within ' + timeoutMs + ' ms');
+        /** @type {any} */ (out).stsTimedOut = true;
+        reject(out);
+      }, timeoutMs);
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref();
+      }
+      const settle = function () {
+        if (late) {
+          self.discard(session);
+        }
+      };
+      pending.then(function (value) {
+        clearTimeout(timer);
+        settle();
+        resolve(value);
+      }, function (err) {
+        clearTimeout(timer);
+        settle();
+        reject(err);
+      });
+    });
   }
 
   // The blocking session, opened once where it is not.

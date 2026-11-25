@@ -310,6 +310,8 @@ const pkiRevocation = require('./pki_revocation');
 // The outbound User-Agent's builder (a leaf). Asked per fetch since #2142:
 // product leaves the build out (`mode.publishesBuildDetail()`).
 const version = require('./version');
+// The overall deadline and the connect timeout of an outbound call (#2220).
+const OutboundLimits = require('./outbound_limits');
 
 /**
  * The values `pki.revocationCheck` may take.
@@ -1886,6 +1888,16 @@ function fetchBytes(url, options) {
       done({ ok: false,
              why: 'it did not answer within ' + timeout + 'ms ' +
                   '(pki.revocationFetchTimeoutMs)' });
+    });
+    // NOT THE SHARED AGENT (#2220): `agent: false` stays, because this fetch
+    // is the one the outbound gate must not ask (`stsOutboundGate` above),
+    // and it is already one fetch per address at a time. The deadline and
+    // the connect timeout apply as to every other call.
+    OutboundLimits.guard(request, {
+      timeoutMs: timeout, secure: secure, where: target.origin,
+      onTimeout: function (why) {
+        done({ ok: false, why: 'it ' + why });
+      }
     });
     request.on('error', function (e) {
       done({ ok: false, why: 'the request failed: ' +

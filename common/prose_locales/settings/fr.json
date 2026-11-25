@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Temps d’attente du service. Un fichier volumineux dispose d’une seconde de plus par mébioctet."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Analyses simultanées"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Combien de fichiers un processus envoie simultanément au scanner, chacun sur sa propre connexion. Les autres attendent leur tour."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Analyses en attente"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Combien de fichiers peuvent attendre une analyse au-delà de ceux en cours. Un fichier au-delà est refusé avec 503 (STS-CORE-0182), comme lorsque le scanner ne répond pas."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "Fichier CA pour un service icaps"
@@ -2123,6 +2139,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Combien de temps une sonde derrière /admin/secrets peut attendre la réponse d’un magasin de secrets. Chacune d’elles est une LECTURE de métadonnées — un stat du fichier de clé, un point de terminaison sys, un historique de versions KV, un DescribeSecret — et aucune ne récupère jamais la valeur d’un secret. La limite existe pour que l’ouverture d’une page de la console ne puisse jamais rester bloquée sur le magasin de quelqu’un d’autre ; une sonde qui expire est affichée comme une ligne qui le signale, exactement comme une sonde refusée."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Délai d’un appel au magasin de secrets (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Combien de temps une tentative d’appel à OpenBao ou Vault, AWS KMS ou Secrets Manager, Google Cloud KMS ou Secret Manager, ou Azure Key Vault peut attendre ; transmis à chaque SDK comme sa propre option de délai."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Tentatives par appel au magasin de secrets"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Combien de fois un appel à un magasin de secrets ou à un service de clés est tenté au total : la borne de nouvelles tentatives propre aux SDK cloud, et pour OpenBao ou Vault un appel resté sans réponse, ou ayant reçu un 5xx ou un 429, est refait après une courte pause (STS-KEYS-0214 lorsque toutes les tentatives ont échoué). Un 4xx n’est jamais répété."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "Région AWS"
@@ -2180,6 +2212,30 @@
     "text": "Le nombre maximal de sessions que chaque processus et chaque worker de requêtes garde ouvertes sur un jeton, chacune exécutant une opération HSM à la fois. Un YubiHSM 2 a 16 sessions en tout, partagées par chaque processus de chaque nœud : gardez le produit de cette valeur, des processus et des nœuds en dessous de ce nombre."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "le jeton est ouvert une fois, au démarrage"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Délai d’une opération HSM (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Combien de temps une opération HSM, et l’attente d’une session pour l’exécuter, peuvent durer avant d’être refusées (STS-KEYS-0216). Une session dont l’opération l’a dépassé est abandonnée lorsque le module répond. 0 pour aucune limite."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "le jeton est ouvert une fois, au démarrage"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Opérations HSM en attente par jeton"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Combien d’opérations HSM peuvent attendre une session d’un jeton dans un processus ou un worker. Une de plus est refusée immédiatement (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "le jeton est ouvert une fois, au démarrage"
   },
@@ -5638,6 +5694,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "Durée d’attente de la réponse d’un partenaire avant abandon. Elle compte davantage qu’un délai d’expiration ordinaire car le navigateur l’ATTEND — une connexion fédérée, c’est une personne qui regarde un onglet vide pendant que ce service échange un code — elle est donc assez courte pour qu’un partenaire hors service produise une page d’erreur plutôt qu’un blocage, et l’erreur nomme le délai. Elle était de 5000 jusqu’au 2026-08-30, et ce qui a changé, c’est que le partenaire ici est LE PLUS SOUVENT CE PROCESSUS : un domaine de confiance est une copie logique de ce service, et la première chose qu’on demande à un domaine tout neuf est son JWKS — ce qui fait naître les onze clés post-quantiques de ce domaine, dont une génération de clé SLH-DSA-SHAKE-128s d’environ cinq secondes. 5000 était un budget qui n’a jamais fonctionné que parce que ce service SE BLOQUAIT AUTREFOIS pendant qu’il répondait : la boucle d’événements arrêtée, le minuteur qui faisait respecter ce budget ne pouvait se déclencher qu’une fois la réponse déjà produite. Les clés sont désormais générées sur le pool de threads de libuv (common/pq_native.js) et préparées à la création d’un domaine : la récupération ordinaire prend donc quelques millisecondes — ceci est le budget pour celle qui arrive pendant qu’un domaine est encore en train de naître."
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Connexions sortantes par destination"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Combien de connexions un processus garde ouvertes simultanément vers une destination (un partenaire, un récepteur, l’URL d’un client), pour chaque appel HTTP sortant. Une requête au-delà attend une connexion, dans la limite de son échéance globale, et un avertissement est journalisé lorsque des requêtes commencent à attendre (STS-HTTP-0032). Les connexions sont maintenues ouvertes et réutilisées."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Connexions sortantes au total"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Combien de connexions HTTP sortantes un processus garde ouvertes au total. Une requête au-delà attend une connexion, dans la limite de son échéance globale (STS-HTTP-0032). Jamais moins que federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Échéance globale des appels sortants (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "La durée maximale d’un appel HTTP sortant au total : l’attente d’une connexion, la connexion, la négociation et toute la réponse. Les autres délais portent sur l’inactivité, si bien qu’un pair qui répond lentement garderait sinon un appel ouvert. Un appel dont le propre délai est plus long obtient celui-ci à la place. À l’échéance, l’appel se termine par un dépassement de délai (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Délai de connexion sortante (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Combien de temps une nouvelle connexion sortante peut mettre à s’établir, négociation TLS comprise. Une connexion réutilisée depuis le pool n’est pas chronométrée. À la limite, l’appel se termine par un dépassement de délai (STS-HTTP-0034)."
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -11391,6 +11479,66 @@
     "en": "fe511fad2e40a74b",
     "text": "La durée maximale d’exécution de chaque requête derrière /admin/database, sous la forme du statement_timeout propre à PostgreSQL sur l’unique connexion qu’emprunte cette page. Chacune d’elles est une lecture d’une vue du catalogue ; la limite existe pour que l’ouverture d’une page de la console ne puisse jamais immobiliser une connexion d’un pool dont ce service se sert pour répondre au trafic protocolaire. Elle est définie sur le serveur plutôt que sous forme de minuterie ici, car une minuterie abandonnerait la promesse et laisserait la requête comme la connexion exactement où elles étaient."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Connexions à la base par processus"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Combien de connexions à la base de données chaque processus garde dans son pool. 0, la valeur par défaut, vaut deux fois le nombre de workers de requêtes du nœud et jamais moins de quatre. Un appelant au-delà attend une connexion libre jusqu’à persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Attente d’une connexion à la base (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Combien de temps un appelant attend une connexion libre dans le pool avant d’échouer. Une écriture qui échoue ainsi reçoit une réponse 503 (STS-STORE-0066) et son vidage est retenté."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Délai de connexion à la base (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Combien de temps l’établissement d’une nouvelle connexion à la base de données peut prendre."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Conservation d’une connexion inactive à la base (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Combien de temps une connexion inactive reste dans le pool avant d’être fermée."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Délai d’exécution des requêtes de la base (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "La durée maximale d’exécution d’une requête ordinaire de la base avant que le serveur ne l’annule (statement_timeout de PostgreSQL, max_statement_time de MariaDB), journalisée sous STS-STORE-0178. 0 pour aucun. L’ouverture du stockage, ses migrations, la restauration au démarrage et les constructions d’index en ligne n’y sont pas soumises ; les remplissages rétroactifs s’exécutent par petits lots."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "il est fixé sur le pool une fois le stockage ouvert et lu"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Répertoire de données"
@@ -11811,6 +11959,14 @@
     "en": "839a4a009d203829",
     "text": "Combien de temps une requête relayée vers une autre cellule, ou un appel sur le canal inter-cellules, peut prendre avant que la réponse soit que l’autre cellule est injoignable (et traitée comme l’indique `cells.homeUnreachable`)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Plus grande réponse inter-cellules (octets)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Le maximum qu’un appel synchrone à une autre cellule peut renvoyer. Au-delà, la connexion est fermée et l’appel échoue (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Tentatives de livraison inter-cellules"
@@ -12042,6 +12198,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Combien de personnes chaque source d’attributs lit par exécution de l’actualisation planifiée (attribute-sources.refresh, chaque minute), en reprenant après la dernière la fois suivante. Une valeur plus grande termine un passage plus tôt et occupe un nœud plus longtemps par exécution."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Connexions par source"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Combien de connexions chaque processus garde vers une source d’attributs. Une recherche au-delà attend une connexion dans la limite du délai propre à la source. Une modification prend effet à la recherche suivante de chaque source."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12352,8 +12516,8 @@
     "text": "Envois en cours"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Combien de messages un processus envoie simultanément lors d’un balayage."
+    "en": "d6de0478b866cf8b",
+    "text": "Combien de messages un processus envoie simultanément, lors d’un balayage et à la première tentative après la mise en file d’un message. Un message qui ne trouve aucune place libre attend le balayage suivant."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12368,8 +12532,8 @@
     "text": "Lignes de la boîte d’envoi par domaine"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Le plafond de la boîte d’envoi, par domaine : la ligne TERMINÉE la plus ancienne est retirée en premier, et une ligne en attente jamais."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Le plafond de la boîte d’envoi, par domaine : la ligne TERMINÉE la plus ancienne est retirée en premier, et une ligne en attente jamais. Un message qui porterait les lignes EN ATTENTE au-delà est refusé (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

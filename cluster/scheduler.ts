@@ -873,7 +873,7 @@ class Scheduler {
           require('../common/process_memory').requestWorkers() +
           Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
         return Number(require('../persistence/persistence_postgres')
-          .poolMax(workers)) || 0;
+          .poolMax(workers, config.value('persistence.poolSize'))) || 0;
       },
       requestWorkers: function (): number {
         // LAZILY, for storeConnections()'s reason. Only the PROTOCOL pool:

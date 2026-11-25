@@ -29,6 +29,42 @@ type Json = any;
  * Base64url and a credential's JSON form. A static utility class.
  */
 class WebWebAuthn {
+  // A BROWSER WITHOUT WEBAUTHN IS ASKED FOR BEFORE A CEREMONY (#2220,
+  // ASVS 5.0.0 3.1.1): a page that would call `navigator.credentials`
+  // first asks this, and says in its language that this browser cannot use
+  // passkeys (`browser.noPasskeys`) instead of throwing a `TypeError`
+  // nobody reads, or leaving a pending ceremony with nothing said.
+  /**
+   * Whether this browser lacks what a WebAuthn ceremony needs:
+   * `PublicKeyCredential`, and `navigator.credentials` with the call asked.
+   *
+   * @param navigator - the browser's navigator
+   * @param window - the browser's window, for `PublicKeyCredential`
+   * @param call - optional; `create` or `get`, both where left out
+   * @returns true when the ceremony cannot run
+   */
+  static missing(navigator: Json, window: Json, call?: string): boolean {
+    const c = navigator && navigator.credentials;
+    const calls = call ? [call] : ['create', 'get'];
+    return !window || !window.PublicKeyCredential || !c ||
+      calls.some(function (name: string): boolean {
+        return typeof c[name] !== 'function';
+      });
+  }
+
+  /**
+   * The sentence a page without WebAuthn draws, in its language.
+   *
+   * @param t - the page's translator, or null
+   * @returns the text
+   */
+  static missingText(t: Json): string {
+    return t && t.has && t.has('browser.noPasskeys')
+      ? t.text('browser.noPasskeys')
+      : 'This browser cannot use passkeys: WebAuthn is unavailable. Use a ' +
+        'current browser, or another device.';
+  }
+
   /**
    * Base64url of bytes, no padding.
    *

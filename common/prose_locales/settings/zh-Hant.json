@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "等待服務的時間。大型檔案每 MiB 額外增加一秒。"
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "同時掃描數"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "一個程序同時向掃描器傳送多少個檔案，每個檔案使用各自的連線。其餘檔案排隊等候。"
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "等待掃描數"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "除正在掃描的檔案外，最多可有多少個檔案等待掃描。超出的檔案以 503 拒絕（STS-CORE-0182），與掃描器無回應時相同。"
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "icaps 服務的 CA 檔案"
@@ -2123,6 +2139,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "/admin/secrets 背後的任一探測等待秘密存放區回應的時間上限。每個探測都只是「讀取」中繼資料——金鑰檔案的 stat、一個 sys 端點、KV 版本歷程、一次 DescribeSecret——且沒有任何探測會擷取秘密值。設定上限是為了讓開啟主控台頁面時絕不會卡在別人的存放區上；逾時的探測會繪製為一列說明此情況，與被拒絕的探測完全相同。"
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "機密儲存區呼叫逾時（毫秒）"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "對 OpenBao 或 Vault、AWS KMS 或 Secrets Manager、Google Cloud KMS 或 Secret Manager、或 Azure Key Vault 的一次呼叫嘗試最多可等待多久；作為各 SDK 自身的逾時選項傳入。"
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "每次機密儲存區呼叫的嘗試次數"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "對機密儲存區或金鑰服務的一次呼叫總共嘗試多少次：即各雲端 SDK 自身的重試上限；對於 OpenBao 或 Vault，未獲回應、或收到 5xx 或 429 的呼叫會在短暫停頓後重送（所有嘗試均失敗時記為 STS-KEYS-0214）。4xx 絕不重試。"
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS 區域"
@@ -2180,6 +2212,30 @@
     "text": "每個程序與請求工作程序在一個權杖上最多保持開啟的工作階段數，每個工作階段一次執行一項 HSM 作業。YubiHSM 2 總共有 16 個工作階段，由每個節點的每個程序共用：請讓此值、程序數與節點數的乘積低於該數。"
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "權杖只在啟動時開啟一次"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "HSM 作業逾時（毫秒）"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "一項 HSM 作業及等待執行它的工作階段最多可用多久，逾時即被拒絕（STS-KEYS-0216）。作業逾時的工作階段會在模組回應時被捨棄。0 表示不限制。"
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "權杖只在啟動時開啟一次"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "每個權杖等待中的 HSM 作業數"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "在一個程序或工作程序中，最多可有多少項 HSM 作業等待同一權杖的工作階段。超出的作業立即被拒絕（STS-KEYS-0215）。"
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "權杖只在啟動時開啟一次"
   },
@@ -5638,6 +5694,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "等待夥伴回應多久後放棄。它比一般逾時更重要，因為瀏覽器正在「等待」它——聯合登入時，某人正看著空白分頁，而此服務在兌換代碼——因此它短到足以讓失效的夥伴產生錯誤頁面而不是卡住，且錯誤會指出逾時。在 2026-08-30 之前它是 5000，改變的是此處的夥伴「通常就是此程序」：信任領域是此服務的邏輯副本，而任何人向全新領域要求的第一樣東西就是其 JWKS——這會促使該領域的十一把後量子金鑰產生，其中一把是 SLH-DSA-SHAKE-128s 金鑰，產生約需五秒。5000 這個預算之所以能運作，只是因為此服務「過去在回應時會阻塞」：事件迴圈停止時，強制執行該預算的計時器要等到回應完成後才能觸發。現在金鑰在 libuv 的執行緒集區上產生（common/pq_native.js），並在建立領域時預先產生，因此一般擷取只需數毫秒——此值是為領域仍在誕生時抵達的那次擷取所準備的預算。"
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "每個目的地的輸出連線數"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "對於每次輸出 HTTP 呼叫，一個程序同時向一個目的地（合作夥伴、接收端、用戶端的 URL）保持開啟的連線數。超出的請求在其整體期限內等待連線，請求首次開始等待時會記錄一則警告（STS-HTTP-0032）。連線會保持作用中並重複使用。"
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "輸出連線總數"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "一個程序總共保持開啟的輸出 HTTP 連線數。超出的請求在其整體期限內等待連線（STS-HTTP-0032）。不得少於 federation.outboundMaxSockets。"
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "輸出整體期限（毫秒）"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "任何輸出 HTTP 呼叫總共最多可用的時間：包括等待連線、建立連線、交握以及接收完整回應。其他逾時針對的是無活動時間，因此回應緩慢的對端否則會讓呼叫一直保持開啟。自身逾時較長的呼叫改用其自身逾時。到達期限時，呼叫以逾時結束（STS-HTTP-0033）。"
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "輸出連線逾時（毫秒）"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "新建輸出連線（含 TLS 交握）最多可用多久。從連線集區重複使用的連線不計時。到達上限時，呼叫以逾時結束（STS-HTTP-0034）。"
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -11391,6 +11479,66 @@
     "en": "fe511fad2e40a74b",
     "text": "/admin/database 背後任一陳述式可執行的時間，以 PostgreSQL 自己的 statement_timeout 設定在該頁面借用的單一連線上。其中每一個都是對目錄檢視的讀取；設下此上限，是為了讓開啟主控台頁面永遠不會佔住此服務用來回應協定流量的連線集區中的連線。它設定在伺服器上，而不是以此處的計時器實作，因為計時器會放棄該 promise，而讓陳述式與連線都原封不動地留在原處。"
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "每個程序的資料庫連線數"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "每個程序在其連線集區中保持的資料庫連線數。預設值 0 表示節點請求工作程序數的兩倍，且不少於四個。超出的呼叫端最多等待 persistence.poolWaitMs 以取得閒置連線。"
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "等待資料庫連線（毫秒）"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "呼叫端在連線集區中等待閒置連線多久後失敗。因此失敗的寫入以 503 回應（STS-STORE-0066），其排清會重試。"
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "資料庫連線逾時（毫秒）"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "建立一個新的資料庫連線最多可用多久。"
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "閒置資料庫連線保留時間（毫秒）"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "閒置連線在連線集區中保留多久後被關閉。"
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "資料庫陳述式逾時（毫秒）"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "一般資料庫陳述式在被伺服器取消前最多可執行多久（PostgreSQL 的 statement_timeout、MariaDB 的 max_statement_time），記錄為 STS-STORE-0178。0 表示不限制。開啟儲存區、其移轉、啟動時的還原以及線上索引建置不受此限制；回填以小批次執行。"
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "它在儲存區開啟並讀取後設定到連線集區上"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "資料目錄"
@@ -11811,6 +11959,14 @@
     "en": "839a4a009d203829",
     "text": "轉送至另一個單元的請求，或單元間通道上的呼叫，在被當作另一個單元無法連線而回應（並依 `cells.homeUnreachable` 的規定處理）之前，可花費的時間。"
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "單元間最大回應（位元組）"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "對另一個單元的同步呼叫最多可傳回的回應大小。超過後連線將被關閉，呼叫失敗（STS-CELL-0212）。"
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "單元間投遞嘗試次數"
@@ -12042,6 +12198,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "每個屬性來源在每次排程重新整理（attribute-sources.refresh，每分鐘一次）中讀取的人數，下一次會從上次結束處接續。數值越大，完成一輪越快，但每次執行佔用節點的時間也越長。"
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "每個來源的連線數"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "每個程序對一個屬性來源保持的連線數。超出的查詢在該來源自身的逾時內等待連線。變更在每個來源的下一次查詢時生效。"
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12352,8 +12516,8 @@
     "text": "進行中的傳送數"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "一個程序在一次清理中同時傳送的訊息數量。"
+    "en": "d6de0478b866cf8b",
+    "text": "一個程序同時傳送多少則訊息，包括一次清理中以及訊息排入佇列後的首次嘗試。找不到空閒名額的訊息會等待下一次清理。"
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12368,8 +12532,8 @@
     "text": "每個領域的寄件匣列數"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "每個領域的寄件匣上限：最舊的「已完成」列會先被移除，待處理的列則絕不移除。"
+    "en": "3b7f698ec30a6ed1",
+    "text": "每個領域的寄件匣上限：最舊的「已完成」列會先被移除，待處理的列則絕不移除。會使「待處理」列超過該上限的訊息將被拒絕（STS-MAIL-0244）。"
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",
