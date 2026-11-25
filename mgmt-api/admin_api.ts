@@ -743,6 +743,48 @@ const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'create-app-password', 'revoke-app-password', 'export-ldif',
   'import-ldif', 'delete'];
 
+// ---------------------------------------------------------------------------
+// THE OTHER ACTS THAT NEED A RECENT SIGN-IN (#2161, ASVS 5.0.0 7.5.3; rcbj,
+// 2026-11-24). The list above names actions of `/users/:action` and
+// `/mfa/:action`, and those two handlers check it themselves. This is
+// declared by FAMILY rather than by action. `registerRoutes()` checks it
+// for every POST before the handler runs, so an action or a route added to
+// one of these families later needs no edit to be covered:
+//
+//   * by OpenAPI TAG: role grants and removals (`Admin roles`: the console
+//     roster; `Roles`: the role register, its members, permissions, owners
+//     and eligibility), the trust realms (create, change, remove), the PKI
+//     (CA, intermediate, certificates, revocation, the signer truststore,
+//     paranoid PKI mode) and the settings (`Configuration`: every
+//     `config/*` write, `global.mode` among them). A setting is not sorted
+//     into "security" and "other" here, because such a list is one a new
+//     security setting could be left off.
+//   * by ROUTE, where the tag is shared with acts that are not one of these
+//     (`Service` covers the mail outbox and the scheduler too): the signing
+//     keys (`/keys/*`: rotate, emergency, export), the data keys and the
+//     key-encryption key (`/encryption/*`), the TLS client truststore, and
+//     the secret push destinations (`/secret-destinations/*`), which hold
+//     what a rotated password is pushed with.
+//   * by ACTION, on a route whose other acts are not one of these: the
+//     krbtgt key, which signs every ticket and PAC, and a person's keytab
+//     reset, which sets their password.
+//   * and every request the gate already classifies as a Security
+//     Administrator's change (#645, `common/security_operations.ts`).
+//
+// An act marked `writesNothing` (a console form helper) is not asked. As for
+// the list above, only a token with a person behind it is asked, because a
+// program has nobody to sign in again, and the window is the same
+// `account.recentAuthMinutes`.
+// ---------------------------------------------------------------------------
+const RECENT_SIGN_IN_TAGS = ['Admin roles', 'Roles', 'Trust realms', 'PKI',
+  'Configuration'];
+const RECENT_SIGN_IN_ROUTES = ['/keys/:action', '/encryption/:action',
+  '/tls/trust/:action', '/secret-destinations/:action'];
+const RECENT_SIGN_IN_ACTIONS = {
+  '/kerberos/principals/:action': ['rotate-krbtgt', 'rotate-krbtgt-invalidate',
+    'reset-person-keytab']
+};
+
 class AdminApi {
   /**
    * Builds the management API over the given dependencies.
@@ -1781,15 +1823,78 @@ class AdminApi {
     const { log } = this.deps;
     log.debug("Entering AdminApi.reauthenticationOwed().");
     const caller = res && res.locals && res.locals.apiCaller;
-    const limit = Number(require('../common/config')
-      .value('account.recentAuthMinutes')) * 60;
-    if (!limit || !caller || caller.kind !== 'person' ||
-        REAUTHENTICATED_ACTIONS.indexOf(String(action)) < 0) {
+    if (REAUTHENTICATED_ACTIONS.indexOf(String(action)) < 0) {
       log.debug("Leaving AdminApi.reauthenticationOwed(). Not asked.");
       return false;
     }
-    const at = Number(caller.authTime || 0);
     log.debug("Leaving AdminApi.reauthenticationOwed().");
+    return AdminApi.signInIsStale(caller);
+  }
+
+  // Which of the families above a POST to a row is in: the family's name,
+  // or null where the act needs no recent sign-in beyond the list above.
+  /**
+   * Names the recent sign-in family a POST to a route row is in (#2161).
+   *
+   * @param entry - the route row
+   * @param action - the action the request names, '' for none
+   * @param securityChange - what the gate classified the request as, if
+   *   anything (#645)
+   * @returns the family's name, or null
+   */
+  static recentSignInFamilyOf(entry, action, securityChange?) {
+    log.debug("Entering AdminApi.recentSignInFamilyOf().");
+    const asked = String(action || '');
+    const declared = (entry && entry.actions || []).filter(function (one) {
+      return one.action === asked;
+    })[0];
+    if (declared && declared.writesNothing) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). Writes nothing.");
+      return null;
+    }
+    if (securityChange) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). A security " +
+                "change.");
+      return 'security change';
+    }
+    const route = String((entry && (entry.route || entry.path)) || '')
+      .replace(BASE, '');
+    if (entry && RECENT_SIGN_IN_TAGS.indexOf(String(entry.tag)) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + entry.tag + ".");
+      return String(entry.tag);
+    }
+    if (RECENT_SIGN_IN_ROUTES.indexOf(route) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + route + ".");
+      return route;
+    }
+    if ((RECENT_SIGN_IN_ACTIONS[route] || []).indexOf(asked) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + route + " " +
+                asked + ".");
+      return route + ' ' + asked;
+    }
+    log.debug("Leaving AdminApi.recentSignInFamilyOf(). None.");
+    return null;
+  }
+
+  // Whether the PERSON behind the token signed in longer ago than
+  // `account.recentAuthMinutes` allows. Zero (development's default) asks
+  // nobody; a program is never asked.
+  /**
+   * Whether the caller must sign in again before a sensitive act.
+   *
+   * @param caller - `res.locals.apiCaller`
+   * @returns true when the sign-in is stale
+   */
+  static signInIsStale(caller) {
+    log.debug("Entering AdminApi.signInIsStale().");
+    const limit = Number(require('../common/config')
+      .value('account.recentAuthMinutes')) * 60;
+    if (!limit || !caller || caller.kind !== 'person') {
+      log.debug("Leaving AdminApi.signInIsStale(). Not asked.");
+      return false;
+    }
+    const at = Number(caller.authTime || 0);
+    log.debug("Leaving AdminApi.signInIsStale().");
     return !(at > 0 && Date.now() / 1000 - at <= limit);
   }
 
@@ -1807,6 +1912,43 @@ class AdminApi {
       error: 'insufficient_user_authentication',
       errors: ['Sign in again to make this change.'] });
     log.debug("Leaving AdminApi.refuseStaleSignIn().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // RFC 6750 SECTION 3.1'S `insufficient_scope`, SAID IN A HEADER (#2168).
+  //
+  // The console signs in with read scopes only (ASVS 5.0.0 10.2.3) and asks a
+  // second authorization for a write scope the first time a write needs it.
+  // It learns WHICH scope from the refusal itself rather than from a table
+  // of its own, so the gate names it on the two refusals a missing scope
+  // ends in: the access policy's (STS-API-0005) and the security change's
+  // (STS-API-0138). Only the header is added — the status, the code and the
+  // body are what they were, so a caller that reads none of it sees no
+  // change — and only for a scope the token does not carry: a token that
+  // carries it and whose subject lost the role is told nothing a second
+  // authorization could mend, so no client loops on it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the scopes a refused request lacks, in a `WWW-Authenticate`
+   * challenge of the scheme it was presented in.
+   *
+   * @param res - the response
+   * @param scheme - the presented scheme, `dpop` or `bearer`
+   * @param missing - the scopes the token does not carry, none for no
+   *   challenge
+   */
+  challengeMissingScope(res, scheme, missing) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.challengeMissingScope().");
+    const named = (missing || []).filter(Boolean);
+    if (!named.length) {
+      log.debug("Leaving AdminApi.challengeMissingScope(). None missing.");
+      return;
+    }
+    res.set('WWW-Authenticate', (scheme === 'dpop' ? 'DPoP' : 'Bearer') +
+            ' error="insufficient_scope", scope="' + named.join(' ') + '"');
+    log.debug("Leaving AdminApi.challengeMissingScope(). " +
+              named.join(' '));
   }
 
   withAction(req, body) {
@@ -3295,6 +3437,24 @@ class AdminApi {
       // listeners and the mapping are set here, because the mapping's write
       // is the one that may need `confirm` (rcbj's D6).
       // ---------------------------------------------------------------------
+      // CSP VIOLATION REPORTS (#2164): Monitoring > CSP reports, the counts
+      // `common/csp_reports.ts` keeps of what browsers reported to
+      // `/web/csp-report`, in the realm the call is in. Under
+      // `request_pool.js`'s NEVER_DISPATCHED with the endpoint, because the
+      // counts are the front process's.
+      { method: 'GET', path: BASE + '/csp-reports', tag: 'Service',
+        operationId: 'getCspReports',
+        mirrors: 'GET /admin/csp-reports',
+        handler: function (req, res) {
+          log.debug("Entering the management API CSP reports endpoint.");
+          const cspReports = require('../common/csp_reports');
+          self.sendJson(res, 200, Object.assign(cspReports.view(), {
+            settings: require('../admin-ui/admin')
+              .configSettingsJson(cspReports.PAGE)
+          }));
+          log.debug("Leaving the management API CSP reports endpoint.");
+        } },
+
       // MALWARE SCANNING (#1501).
       { method: 'GET', path: BASE + '/malware-scanning', tag: 'Service',
         operationId: 'getMalwareScanning',
@@ -8819,6 +8979,60 @@ class AdminApi {
           { action: 'set-row', operationId: 'setParanoidPkiRow' }
         ] }),
 
+      // #2118 PHASE 4. Named truststores and the use cases that trust them,
+      // the Truststores, Use cases and System truststore tabs of
+      // /admin/pki/trust. A path of its own rather than more actions under
+      // `/pki/trust`, whose `add` and `remove` already mean the signer
+      // truststore (which this API keeps, unchanged, as the `signers` view).
+      // The forms post from the two tabs, so each names its tab
+      // (`web_forms.ts` resolves `<page>#<tab> <action>` first): the page's
+      // own `add` stays `/pki/trust/add`.
+      { method: 'GET', path: BASE + '/truststores', tag: 'PKI',
+        operationId: 'getTruststores',
+        mirrors: 'GET /admin/pki/trust',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores endpoint.");
+          self.sendJson(res, 200, adminViews.namedTruststoresJson(req));
+          log.debug("Leaving the management API truststores endpoint.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/truststores/:action', tag: 'PKI',
+        mirrors: 'POST /admin/pki/trust#pki-trust-tab-truststores and ' +
+                 'POST /admin/pki/trust#pki-trust-tab-usecases',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          // AWAITED, AND THE REJECTION IS TURNED INTO A REFUSAL, `/pki/trust`'s
+          // reason: Express 4 does not look at what a handler returns.
+          adminActions.namedTruststoresAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) })
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0141');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API truststores action " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API truststores action " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0141');
+              self.sendJson(res, 500, { ok: false, errors: [e.message] });
+            });
+        },
+        actions: [
+          { action: 'show', operationId: 'showTruststore' },
+          { action: 'create', operationId: 'createTruststore' },
+          { action: 'delete', operationId: 'deleteTruststore' },
+          { action: 'add', operationId: 'addTruststoreCertificates' },
+          { action: 'remove', operationId: 'removeTruststoreCertificate' },
+          { action: 'assign', operationId: 'assignTruststores' },
+          { action: 'unassign', operationId: 'unassignTruststores' }
+        ] }),
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/pki/:action', tag: 'PKI',
         // TWO CONSOLE PATHS, because the pane answers with a PAGE rather than a
@@ -11794,8 +12008,12 @@ class AdminApi {
   consoleGateOf(me) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleGateOf().");
+    // WHAT THE PERSON HOLDS, NOT WHAT THIS TOKEN CARRIES (#2168): the
+    // console's first token is a read token, and the frame says what its
+    // reader may do — a write is one second authorization away (`holds`).
+    const holds = Array.isArray(me.holds) ? me.holds : (me.roles || []);
     // SECURITY_ADMIN is the roster's `security` (#645).
-    const roles = (me.roles || []).map(function (role) {
+    const roles = holds.map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
         : (role === 'ADMIN_WRITE' ? 'write'
           : (role === 'SECURITY_ADMIN' ? 'security'
@@ -11810,7 +12028,9 @@ class AdminApi {
       username: me.caller ? String(me.caller.name || '') : '',
       authority: me.authority || null, identityRealm: me.realm || null,
       readGroup: me.readGroup, writeGroup: me.writeGroup,
-      read: !!me.read, write: !!me.write, security: !!me.security,
+      read: !!me.read,
+      write: !!me.write || holds.indexOf('ADMIN_WRITE') >= 0,
+      security: !!me.security || holds.indexOf('SECURITY_ADMIN') >= 0,
       roles: roles,
       open: enforced && !!held.open,
       closed: enforced && !!held.empty && !held.open && !roles.length,
@@ -11926,6 +12146,58 @@ class AdminApi {
     log.debug("Leaving AdminApi.consoleSetLanguage(). " + (tag || 'removed'));
   }
 
+  // ---------------------------------------------------------------------------
+  // WHAT A SECOND AUTHORIZATION COULD ADD (#2168). The console signs in with
+  // `admin:read admin:console` and asks for `admin:write` or `admin:security`
+  // the first time a write needs one, so `write` and `security` above — held
+  // ∩ carried, what THIS token is let through for — are false on its first
+  // token for everybody, and a page drawn from them would offer no form to
+  // press. `holds` is the other half: the roles the subject holds NOW, in
+  // the realm that issued the token, whose permission the token's client
+  // still declares — held ∩ declared — so the console draws a form only for
+  // somebody a write token would be issued to. It decides nothing: the gate
+  // asks held ∩ carried of every call, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles the caller's subject holds now whose permission its
+   * client may still be issued, whatever this token carries.
+   *
+   * @param res - the response, with the gate's caller and claims
+   * @param carriedRoles - the roles this token carries (held ∩ carried)
+   * @returns the role names
+   */
+  heldAdminRoles(res, carriedRoles) {
+    const { log, rolePermissions } = this.deps;
+    log.debug("Entering AdminApi.heldAdminRoles().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const claims = (res && res.locals && res.locals.apiTokenClaims) || null;
+    if (!caller || !claims || caller.kind !== 'person') {
+      log.debug("Leaving AdminApi.heldAdminRoles(). Carried only.");
+      return (carriedRoles || []).slice(0);
+    }
+    let held = [];
+    try {
+      const asked = this.declaredAdminScopes(claims, String(caller.realm),
+        ['admin:read', 'admin:write', 'admin:security']).kept;
+      held = rolePermissions.effectiveRoles(claims, asked,
+                                            String(caller.realm)).roles;
+    } catch (e) {
+      // A roster that cannot be read now adds nothing: the console then
+      // draws what this token carries, which is what it drew before.
+      log.debug("Caught in AdminApi.heldAdminRoles(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    const all = (carriedRoles || []).slice(0);
+    (held || []).forEach(function (role) {
+      if (all.indexOf(role) < 0) {
+        all.push(role);
+      }
+    });
+    log.debug("Leaving AdminApi.heldAdminRoles(). " + all.length + ".");
+    return all;
+  }
+
   meJson(req, res) {
     const { log, config, realms, mode, adminScope } = this.deps;
     log.debug("Entering AdminApi.meJson().");
@@ -11961,6 +12233,8 @@ class AdminApi {
       write: !required || roles.indexOf('ADMIN_WRITE') >= 0,
       // #645: whether a security change would be let through.
       security: !required || roles.indexOf('SECURITY_ADMIN') >= 0,
+      // #2168: what a second authorization could add to this token.
+      holds: this.heldAdminRoles(res, roles),
       expiresAt: caller ? caller.expiresAt : null,
       // The account menu's picture (#719): this realm's copy, a person's only.
       photo: caller && caller.kind === 'person'
@@ -12153,6 +12427,9 @@ class AdminApi {
         // not make it — see `common/security_operations.ts`.
         const securityChange = mdmFeed || pepFeed || consoleOp ? null
           : self.securityChangeOf(req);
+        // Kept for the route wrapper: a security change is one of the
+        // families that need a recent sign-in (#2161).
+        res.locals.securityChange = securityChange;
         const scopesWanted = mdmFeed ? 'device:compliance'
           : pepFeed ? 'xacml:pep-audit'
           : (consoleOp ? 'admin:console'
@@ -12707,6 +12984,10 @@ class AdminApi {
           log.info('admin-api: refusing ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + ': ' +
                    securityChange.detail + '.');
+          // The scope a second authorization would add (#2168), where the
+          // token lacks it; a missing role is not mended by one.
+          self.challengeMissingScope(res, presentation.scheme,
+            scopes.indexOf('admin:security') < 0 ? ['admin:security'] : []);
           errorCodes.mark(res, 'STS-API-0138');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
             'Only a Security Administrator may make this change: ' +
@@ -12856,6 +13137,28 @@ class AdminApi {
           log.info('admin-api: the access policy refused ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + '. ' +
                    policy.why);
+          // WHICH SCOPE A SECOND AUTHORIZATION WOULD ADD (#2168): the one
+          // the operation takes, where the token lacks it — `admin:write`
+          // too for a console form helper, which needs both — and an
+          // owner's `owner:write` beside it for a write on an object the
+          // caller may own, asked on an owner's read token.
+          const lacking = [];
+          if (!mdmFeed && !pepFeed && !ownerPath) {
+            if (scopes.indexOf(scopesWanted) < 0) {
+              lacking.push(scopesWanted);
+            }
+            if (requiredAllRoles.indexOf('ADMIN_WRITE') >= 0 &&
+                scopes.indexOf('admin:write') < 0) {
+              lacking.push('admin:write');
+            }
+            if (req.method !== 'GET' && !consoleOp && !securityChange &&
+                carried.indexOf('owner:read') >= 0 &&
+                carried.indexOf('owner:write') < 0 &&
+                self.ownedOperationOf(req)) {
+              lacking.push('owner:write');
+            }
+          }
+          self.challengeMissingScope(res, presentation.scheme, lacking);
           errorCodes.mark(res, 'STS-API-0005');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
             'The access policy refused this request. ' + policy.why +
@@ -12918,6 +13221,9 @@ class AdminApi {
         // its token is the session, so the caller this gate verified is
         // who they are asked about.
         req.adminApiCaller = res.locals.apiCaller;
+        // THE CLAIMS THE DECISION WAS MADE ON, for `GET /admin-api/me`'s
+        // `holds` (#2168): asked there only, never on every request.
+        res.locals.apiTokenClaims = claims;
         // WHAT AN OWNER IS ANSWERED (#607): a read whose answer carries more
         // than the one object — the role register around one role — is
         // narrowed to it in `sendJson()`.
@@ -13146,6 +13452,16 @@ class AdminApi {
                     (entry.operationId || path) + "'s schema.");
           errorCodes.mark(res, 'STS-API-0009');
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
+          return undefined;
+        }
+        // A RECENT SIGN-IN FOR THE FAMILIES THAT NEED ONE (#2161), after
+        // the body is known to be well formed and before anything acts.
+        const family = AdminApi.recentSignInFamilyOf(entry, asked,
+          res.locals.securityChange);
+        if (family && AdminApi.signInIsStale(res.locals.apiCaller)) {
+          log.debug("The management API asked for a recent sign-in before " +
+                    (entry.operationId || path) + " (" + family + ").");
+          self.refuseStaleSignIn(req, res);
           return undefined;
         }
         // WHO IS ACTING is not put into the body: each handler hands its

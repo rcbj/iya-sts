@@ -245,8 +245,9 @@ What it does, in every mode:
   or with **Register at the partner** (`register-partner` on
   `/admin-api`). The `client_id` and secret are written to the relationship,
   the secret sealed. What is registered is the relationship's own addresses,
-  response type, client authentication and algorithms, and the one public
-  key that signs its Request Objects.
+  response type, client authentication and algorithms, its `fedScope` as
+  the registration's `scope` (the scopes the partner may issue it), and the
+  one public key that signs its Request Objects.
 * **`fedRequestObject`** sends the authorization request as a Request Object
   (Core section 6, RFC 9101): `request` by value, or `request_uri` by
   reference, served once at `/federation/request/{id}/{handle}`. Signed under
@@ -859,7 +860,7 @@ changes:
 |---|---|---|
 | A person with no directory entry | under `link-at-first-sign-in` and `jit-namespaced`, created on first sign-in as `<relationship>~<subject>`, linked, unless `fedAutocreateUsers` is off. A new relationship is created with the switch on. `any-existing` creates under the confirm-lookup name instead | created when `fedAutocreateUsers` is on, as `<relationship>~<subject>`, linked. A new relationship is created with the switch off, and a sign-in for somebody with no entry is then refused `STS-FED-0090`. A relationship that already stores TRUE keeps creating. `any-existing` cannot be set |
 | `fedSubjectPolicy` `any-existing` | the name match of old | refused, when set and at the sign-in |
-| The browser the answer arrives in | any | the browser that started the sign-in: a cookie set when the person is sent to the partner must come back with the answer, or it is refused (`STS-FED-0237`) |
+| The browser the answer arrives in | any | the browser that started the sign-in: a cookie set when the person is sent to the partner must come back with the answer, or it is refused (`STS-FED-0237`). The answer clears it, and a browser holds at most eight: a ninth start clears the oldest |
 | A SAML 1.1 or WS-Federation assertion with no audience restriction | accepted, with a warning | refused (`STS-FED-0241`) unless `federation.allowAssertionWithoutAudience` is on |
 | An untyped Logout Token from an OpenID Connect partner | accepted when it is typed `jwt` or carries no type | accepted only typed `logout+jwt`, unless `federation.allowUntypedLogoutToken` is on |
 | The password at the linking sign-in | not checked (the reserved `invalid` is refused) | verified, with the second factor |

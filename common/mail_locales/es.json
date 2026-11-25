@@ -30,6 +30,11 @@
       "text": "La contraseña de la cuenta {{username}} se cambió el {{when}} ({{how}}).\n\nSi no fue usted, comuníquese ahora con quien administra su cuenta.\n",
       "html": "<p>La contraseña de la cuenta <strong>{{username}}</strong> se cambió el {{when}} ({{how}}).</p><p>Si no fue usted, comuníquese ahora con quien administra su cuenta.</p>"
     },
+    "credential-changed": {
+      "subject": "Las credenciales de su cuenta de {{service}} han cambiado",
+      "text": "Las credenciales de la cuenta {{username}} se modificaron el {{when}}, {{by}}: {{what}}.\n\nSi no fue usted y no lo solicitó, inicie sesión ahora, revise su configuración de seguridad y cierre sus otras sesiones, o comuníquese con quien administra su cuenta.\n",
+      "html": "<p>Las credenciales de la cuenta <strong>{{username}}</strong> se modificaron el {{when}}, {{by}}: {{what}}.</p><p>Si no fue usted y no lo solicitó, inicie sesión ahora, revise su configuración de seguridad y cierre sus otras sesiones, o comuníquese con quien administra su cuenta.</p>"
+    },
     "account-disabled": {
       "subject": "Se deshabilitó su cuenta de {{service}}",
       "text": "La cuenta {{username}} se deshabilitó el {{when}}. {{why}}\n\nNadie puede iniciar sesión en ella hasta que se vuelva a habilitar, y se cerraron todas sus sesiones.\n",
@@ -49,6 +54,16 @@
       "subject": "Se inició la recuperación de su cuenta de {{service}}",
       "text": "{{by}} inició la recuperación de la cuenta {{username}} el {{when}}.\n\nSi no fue usted ni alguien a quien usted se lo pidió, comuníquese ahora con quien administra su cuenta.\n",
       "html": "<p>{{by}} inició la recuperación de la cuenta <strong>{{username}}</strong> el {{when}}.</p><p>Si no fue usted ni alguien a quien usted se lo pidió, comuníquese ahora con quien administra su cuenta.</p>"
+    },
+    "sign-in-alert": {
+      "subject": "Un inicio de sesión inusual en su cuenta de {{service}}",
+      "text": "Alguien inició sesión en la cuenta {{username}} el {{when}}, y parecía inusual: {{what}}.\n\nDónde, aproximadamente: {{place}}\nCon: {{device}}\nCómo: {{method}}\n\nSi fue usted, no tiene que hacer nada. Si no, abra sus inicios de sesión recientes e indíquelo allí, lo que cierra todas sus sesiones, y luego cambie su contraseña:\n\n{{link}}\n",
+      "html": "<p>Alguien inició sesión en la cuenta <strong>{{username}}</strong> el {{when}}, y parecía inusual: {{what}}.</p><p>Dónde, aproximadamente: {{place}}</p><p>Con: {{device}}</p><p>Cómo: {{method}}</p><p>Si fue usted, no tiene que hacer nada. Si no, <a href=\"{{link}}\">abra sus inicios de sesión recientes</a> e indíquelo allí, lo que cierra todas sus sesiones, y luego cambie su contraseña.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Intentos de inicio de sesión rechazados en su cuenta de {{service}}",
+      "text": "Se rechazaron {{count}} intentos de iniciar sesión en la cuenta {{username}} con una contraseña incorrecta en los {{minutes}} minuto(s) anteriores al {{when}}.\n\nSi fue usted, no tiene que hacer nada. Si no, alguien puede estar intentando adivinar su contraseña: inicie sesión, revise sus inicios de sesión recientes y cambie su contraseña si pudiera ser conocida.\n\n{{link}}\n",
+      "html": "<p>Se rechazaron {{count}} intentos de iniciar sesión en la cuenta <strong>{{username}}</strong> con una contraseña incorrecta en los {{minutes}} minuto(s) anteriores al {{when}}.</p><p>Si fue usted, no tiene que hacer nada. Si no, alguien puede estar intentando adivinar su contraseña: inicie sesión, <a href=\"{{link}}\">revise sus inicios de sesión recientes</a> y cambie su contraseña si pudiera ser conocida.</p>"
     },
     "address-changed": {
       "subject": "Se cambió la dirección de correo electrónico de su cuenta de {{service}}",

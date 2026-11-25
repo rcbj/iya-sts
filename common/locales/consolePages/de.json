@@ -117,6 +117,7 @@
   "title.ssf-dead-letters": "Unzustellbare Nachrichten",
   "title.ssf-transmitters": "Signale von Partnern",
   "title.tls-connection": "TLS-Verbindung",
+  "title.csp-reports": "CSP-Berichte",
   "title.pki-trust": "PKI-Vertrauen",
   "title.tls-trust": "Vertrauensspeicher für Clientzertifikate",
   "title.token-lifetimes": "Token-Laufzeiten",

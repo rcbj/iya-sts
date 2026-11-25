@@ -82,12 +82,24 @@ type Json = any;
 // The console's client: public, DPoP-bound (`sender_constraints.ts`,
 // `DPOP_BOUND_PUBLIC_CLIENTS`).
 const CLIENT_ID = 'sts-admin-console';
-// What it asks for: an ID Token for who signed in, the three scopes the
-// management API takes (admin:security since #645), narrowed at issuance to
-// the roles the person holds, and the console's own (#454), which every
-// person signing in here is issued through the ADMIN_CONSOLE role this
-// client confers.
-const SCOPE = 'openid admin:read admin:write admin:security admin:console';
+// What it signs in with: an ID Token for who signed in, `admin:read`,
+// narrowed at issuance to the roles the person holds, and the console's own
+// (#454), which every person signing in here is issued through the
+// ADMIN_CONSOLE role this client confers. READ SCOPES ONLY SINCE #2168
+// (ASVS 5.0.0 10.2.3, rcbj's decision): a person who only browses holds no
+// write scope. The first write the management API refuses for want of
+// `admin:write` or `admin:security` asks for it by a second authorization
+// (`SpaClient.stepUp()`), silently while the sign-on session holds and with
+// a fresh sign-in for `admin:security`; reads keep the read token.
+const SCOPE = 'openid admin:read admin:console';
+// What a second authorization may add, and which of it needs a fresh
+// sign-in (#2168).
+const WRITE_SCOPES = ['admin:write', 'admin:security'];
+const FRESH_SCOPES = ['admin:security'];
+// What `sendOnce()` answers when the write token it sent met RFC 9470's
+// `insufficient_user_authentication` (#1538): the write is stepped up again
+// with a fresh sign-in rather than the read token's session signed in again.
+const NEEDS_FRESH_STEP = { needsFreshStep: true };
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-console-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
@@ -180,7 +192,8 @@ class ConsoleRuntime extends SpaClient {
       clientId: CLIENT_ID, scope: SCOPE,
       elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
                    '/logout': 'data-sts-authn' },
-      accountKey: ACCOUNT_KEY });
+      accountKey: ACCOUNT_KEY,
+      writeScopes: WRITE_SCOPES, freshScopes: FRESH_SCOPES });
     this.shell = null;
     this.t = kit.context().t;
     this.shellPrefix = '';
@@ -293,6 +306,11 @@ class ConsoleRuntime extends SpaClient {
     // A JARM answer is opened and checked first (#568, `SpaClient`).
     const query = await this.openAuthorizationResponse(
       this.callbackParameters());
+    // A SECOND AUTHORIZATION'S WINDOW (#2168) hands its answer back the same
+    // way, to the page whose write is waiting on it.
+    if (this.handBackStepUp(query, this.prefix + '/admin/callback')) {
+      return;
+    }
     // A POPUP'S SIGN-IN (#508) is the opener's to redeem: it holds the
     // verifier and the key, and this window hands the answer back.
     if (String(query.state || '').indexOf(POPUP_STATE_PREFIX) === 0) {
@@ -529,7 +547,9 @@ class ConsoleRuntime extends SpaClient {
                      extra?: Json): Promise<string> {
     const params: Json = {
       response_type: 'code', client_id: CLIENT_ID,
-      redirect_uri: this.url('/admin/callback'), scope: SCOPE,
+      redirect_uri: this.url('/admin/callback'),
+      // The read scopes, or a second authorization's (#2168).
+      scope: (extra && extra.scope) || SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
       code_challenge_method: 'S256', resource: this.resource(),
       // OpenID Connect's nonce, which FAPI 1.0 requires (`SpaClient`).
@@ -546,9 +566,56 @@ class ConsoleRuntime extends SpaClient {
     if (extra && extra.prompt) {
       params.prompt = String(extra.prompt);
     }
+    // A fresh sign-in for `admin:security` (#2168, OpenID Connect Core
+    // section 3.1.2.1's `max_age=0`), beside `prompt=login`.
+    if (extra && extra.max_age !== undefined && extra.max_age !== '') {
+      params.max_age = String(extra.max_age);
+    }
     // Pushed first where the realm requires it (RFC 9126, #568's
     // `SpaClient.authorizationRequestUrl()`).
     return this.authorizationRequestUrl(params);
+  }
+
+  // THE CONSOLE'S HALF OF A SECOND AUTHORIZATION (#2168, `SpaClient`'s
+  // `stepUp()`): its callback, where it goes when no window can be opened —
+  // keeping what the page holds as #508 does, because the write waiting is
+  // lost — and the bar's words in the reader's language.
+  /**
+   * The console's callback, a second authorization's `redirect_uri`.
+   *
+   * @returns the URL
+   */
+  callbackUrl(): string {
+    return this.url('/admin/callback');
+  }
+
+  /**
+   * Signs in on this page for a write scope, keeping what the page holds.
+   *
+   * @param scope - the scope to sign in with
+   * @param prompt - `login`, or '' for none
+   * @returns nothing
+   */
+  async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    this.savePageState();
+    await this.beginSignIn(this.hereWithFragment(), prompt
+      ? { scope: scope, prompt: prompt, max_age: '0' } : { scope: scope });
+  }
+
+  /**
+   * The step's bar's words, from the console's catalog where it has them.
+   *
+   * @returns `SpaClient.stepWords()`'s shape
+   */
+  stepWords(): Json {
+    const english = super.stepWords();
+    const t = this.t;
+    const out: Json = {};
+    Object.keys(english).forEach(function (name: string) {
+      const key = 'consoleRuntime.step.' + name;
+      out[name] = t && t.has(key) ? t.text(key) : english[name];
+    });
+    return out;
   }
 
   /**
@@ -707,6 +774,8 @@ class ConsoleRuntime extends SpaClient {
       return;
     }
     this.keepTokens(answer.json);
+    // A WRITE TOKEN BELONGED TO THE SESSION THAT ENDED (#2168).
+    this.dropWriteToken();
     this.reauth = null;
     if (r.channel) {
       r.channel.close();
@@ -1041,7 +1110,8 @@ class ConsoleRuntime extends SpaClient {
     // once: the sign-in again (`signInAgain()`) leaves the page as it is,
     // and the act the reader pressed completes when they are back. A false
     // answer is a sign-in that left the page, or a different person.
-    const first = await this.sendOnce(method, target, body);
+    const first = await this.writeStep(method, target, body,
+      await this.sendOnce(method, target, body));
     if (first === ABORTED) {
       return null;
     }
@@ -1051,7 +1121,8 @@ class ConsoleRuntime extends SpaClient {
     if (!await this.signInAgain()) {
       return null;
     }
-    const second = await this.sendOnce(method, target, body);
+    const second = await this.writeStep(method, target, body,
+      await this.sendOnce(method, target, body));
     if (second === ABORTED) {
       return null;
     }
@@ -1063,6 +1134,52 @@ class ConsoleRuntime extends SpaClient {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // A WRITE THE READ TOKEN CANNOT MAKE (#2168). The API's refusal names the
+  // scope (`insufficient_scope`, which `/admin-api` sends since #2168), the
+  // second authorization gets a write token carrying it, and the write is
+  // sent once more with that token — the same closure, so what was pressed
+  // never leaves memory. A step that does not end with the scope in hand
+  // answers the refusal itself, drawn as it always was. A write token that
+  // met RFC 9470 (#1538) is stepped again with a fresh sign-in.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers what `sendOnce()` answered, after the second authorization a
+   * refused write asked for.
+   *
+   * @param method - the method
+   * @param target - the absolute URL
+   * @param body - as `send()` takes it
+   * @param answered - `sendOnce()`'s answer
+   * @returns the answer to use
+   */
+  async writeStep(method: string, target: string, body: Json,
+                  answered: Json): Promise<Json> {
+    if (answered === NEEDS_FRESH_STEP) {
+      const held = this.writeScopesHeld(this.resource())
+        .filter(function (one: string): boolean {
+          return WRITE_SCOPES.indexOf(one) >= 0;
+        });
+      this.dropWriteToken(this.resource());
+      if (!await this.stepUp(this.resource(),
+                             held.length ? held : ['admin:write'], true)) {
+        return ABORTED;
+      }
+      return this.sendOnce(method, target, body);
+    }
+    const named = ConsoleRuntime.insufficientScopeOf(answered);
+    if (!named.length || answered === ABORTED ||
+        answered === NEEDS_SIGN_IN) {
+      return answered;
+    }
+    if (!await this.stepUp(this.resource(), named)) {
+      return answered;
+    }
+    const again = await this.sendOnce(method, target, body);
+    return again === NEEDS_FRESH_STEP
+      ? this.writeStep(method, target, body, again) : again;
+  }
+
   /**
    * Sends one request with the tokens in hand, refreshing them where they
    * have run out.
@@ -1070,7 +1187,8 @@ class ConsoleRuntime extends SpaClient {
    * @param method - the method
    * @param target - the absolute URL
    * @param body - as `send()` takes it
-   * @returns the response, or NEEDS_SIGN_IN when no token will do
+   * @returns the response, NEEDS_SIGN_IN when no token will do, or
+   *   NEEDS_FRESH_STEP when the write token needs a fresh sign-in
    */
   async sendOnce(method: string, target: string, body?: Json): Promise<Json> {
     // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and whatever
@@ -1087,9 +1205,13 @@ class ConsoleRuntime extends SpaClient {
       return NEEDS_SIGN_IN;
     }
     for (let attempt = 0; attempt < 3; attempt++) {
+      // THE READ TOKEN FOR A GET, AND A WRITE TOKEN FOR ANYTHING ELSE WHILE
+      // ONE IS HELD (#2168).
+      const token = this.tokenFor(method, this.resource());
+      const writing = token !== this.accessToken;
       const headers: Json = {
-        'Authorization': 'DPoP ' + this.accessToken,
-        'DPoP': await this.proof(method, target, this.accessToken),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json'
       };
       // THE LANGUAGE THE CONSOLE NEGOTIATED, NAMED TO THE API (#543), which
@@ -1139,6 +1261,17 @@ class ConsoleRuntime extends SpaClient {
       const challenge = String((res.headers && res.headers.get &&
                                 res.headers.get('WWW-Authenticate')) || '');
       if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
+        continue;
+      }
+      // A WRITE TOKEN IS NEVER REFRESHED (#2168): one refused is dropped,
+      // and the write goes again on the read token — whose refusal for the
+      // scope then asks for a new one — or, for RFC 9470's answer, the
+      // write token is asked for again with a fresh sign-in.
+      if (writing) {
+        this.dropWriteToken(this.resource());
+        if (/insufficient_user_authentication/.test(challenge)) {
+          return NEEDS_FRESH_STEP;
+        }
         continue;
       }
       if (/invalid_token/.test(challenge) && await this.refresh()) {
@@ -1397,8 +1530,11 @@ class ConsoleRuntime extends SpaClient {
     this.env.document.title = title + ' — IYA STS admin';
     // THE PAGE FOOTER the shell drew (`common/web_footer.ts`), below the
     // frame and so below the runtime facts at the foot of the card: one
-    // footer element, in the console's language.
-    const footer = WebFooter.drawnIn(this.env.document, this.t);
+    // footer element, in the console's language. With the version the shell
+    // ANSWER gave (#2142): in product the shell document, which anybody can
+    // fetch, carries none, and an administrator still sees the build.
+    const footer = WebFooter.drawnIn(this.env.document, this.t,
+                                     shell.version);
     // THE TRAIL NAMES THE OPEN TAB (rcbj 2026-11-15): the body's tab tree,
     // read from the string drawn, and the tabs the fragment opens in it.
     this.trailOf = { title: title, active: active, up: up,
@@ -1903,9 +2039,17 @@ class ConsoleRuntime extends SpaClient {
     const json = state
       ? Object.assign({}, this.view.json, { state: state })
       : this.view.json;
-    const write = !!(this.me && this.me.write);
+    // WHAT THE READER MAY DO, NOT WHAT THIS TOKEN CARRIES (#2168): the
+    // console signs in with read scopes, so a form is drawn for whoever
+    // holds the role (`holds`, `GET /admin-api/me`) and its write is the
+    // first to ask for the write scope.
+    const holds = (this.me && Array.isArray(this.me.holds))
+      ? this.me.holds : [];
+    const write = !!(this.me && this.me.write) ||
+      holds.indexOf('ADMIN_WRITE') >= 0;
     // #645: the Security Administrator's role, which a policy page asks.
-    const security = !!(this.me && this.me.security);
+    const security = !!(this.me && this.me.security) ||
+      holds.indexOf('SECURITY_ADMIN') >= 0;
     const ctx = kit.context(query, write, this.t, security);
     const drilled = page.drill && query[page.drill.param];
     // A drill-down whose list is a tab of another page (`upTo`, #1760)

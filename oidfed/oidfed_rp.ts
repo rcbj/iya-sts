@@ -184,11 +184,23 @@ class OidfedRp {
   // OP through the federation, since an entity type nothing uses would only
   // invite registrations that lead nowhere. Its redirect_uris are the
   // assertion consumer service of every such relationship.
+  //
+  // ITS `scope` IS WHAT THOSE RELATIONSHIPS ASK FOR (#2169): every word of
+  // each one's `fedScope`, once — which its authorization request sends as
+  // it is, since a FAPI profile (which would add `openid`) never applies to
+  // a relationship with a Trust Anchor. An OP registers this metadata
+  // automatically, and RFC 7591 section 2's `scope` is the client's
+  // declaration: an OP that issues a client only what it declared (this
+  // service's own in product, `openid` alone for a client that declares
+  // none, #1589) refused `profile` and `email` to a realm that never said
+  // it would ask for them. Absent where no relationship names a scope, as
+  // before.
   // -------------------------------------------------------------------------
   /**
    * Builds the realm's `openid_relying_party` metadata for its Entity
    * Configuration, its `redirect_uris` the assertion consumer service of every
-   * relationship that trusts an OP through the federation.
+   * relationship that trusts an OP through the federation, and its `scope`
+   * every scope those relationships ask for.
    *
    * @param req - the request, for the realm's base URL
    * @returns the metadata, or null where no enabled relationship needs it
@@ -207,7 +219,16 @@ class OidfedRp {
       return null;
     }
     const sp = federationSp();
-    const out = {
+    const scopes: string[] = [];
+    records.forEach(function (r: Json): void {
+      String(r.fedScope || '').split(/\s+/)
+        .forEach(function (word: string): void {
+          if (word && scopes.indexOf(word) < 0) {
+            scopes.push(word);
+          }
+        });
+    });
+    const out: Json = {
       redirect_uris: records.map(function (r: Json): string {
         return sp.acsUrl(base, r);
       }),
@@ -220,6 +241,9 @@ class OidfedRp {
       client_registration_types: ['automatic'],
       jwks: { keys: [jwk] }
     };
+    if (scopes.length) {
+      out.scope = scopes.join(' ');
+    }
     log.debug("Leaving OidfedRp.relyingPartyMetadata(). " + records.length +
               " relationship(s).");
     return out;

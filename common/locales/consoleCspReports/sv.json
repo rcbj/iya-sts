@@ -1,0 +1,14 @@
+{
+  "intro": "Webbläsare rapporterar hit varje gång en sida i den här sfären bröt mot sin Content Security Policy: policyn hindrade ett skript, en ram, en stil eller en annan resurs från att läsas in eller köras. En rapport säger vad en webbläsare påstår, och vem som helst kan skicka en, så läs dem som signaler: en rad rapporter för ett direktiv efter en ändring är en sida som ändringen förstörde, och ett blockerat ursprung som ingen här använder kan vara en injektion som en webbläsare stoppade.",
+  "tileTotal": "Rapporter",
+  "tileDirectives": "Direktiv",
+  "since": "Räknade av den här nodens frontprocess sedan {since}; antalen sparas inte över en omstart.",
+  "none": "Ingen webbläsare har rapporterat en överträdelse sedan dess.",
+  "colDirective": "Direktiv",
+  "colCount": "Rapporter",
+  "colLast": "Senast rapporterad",
+  "limits": "Sidorna rapporterar till <code>{path}</code>. Den läser en kropp på högst {bytes} byte och {perMinute} rapporter i minuten från en adress, sparar direktivet, sidans sökväg utan frågan och det blockerade ursprunget, och skriver varje rapport till tjänstens logg.",
+  "forwardOn": "Varje godtagen rapport vidarebefordras också till insamlaren som anges nedan.",
+  "forwardOff": "Rapporter vidarebefordras inte. Ange insamlaren nedan för att vidarebefordra dem.",
+  "notForwarded": "{count} rapporter vidarebefordrades inte eftersom för många vidarebefordringar pågick."
+}

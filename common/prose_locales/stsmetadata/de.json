@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. Das Icon, das ein Browser auf jeder Seite von sich aus anfordert: das quadratische Zeichen des Logos (common/favicon.ico). Auf jedem Listener beantwortet; einen Tag vorgehalten."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). Der Empfänger dessen, was CSP Level 3 und die Reporting API einen Browser senden lassen: Die Richtlinie jeder Seite nennt ihn in report-uri und report-to, neben einem Reporting-Endpoints-Header. Nur POST, ohne Berechtigungsnachweis, höchstens 16 KiB und 60 Berichte pro Minute von einer Adresse; er hält die Direktive, den Pfad der Seite ohne Abfrage und den blockierten Ursprung fest, protokolliert STS-HTTP-0027 und antwortet 204 ohne Body. Vom Front-Prozess beantwortet (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Die Karte des Anmeldebildschirms und die Regeln der Sprachauswahl, als ein Stylesheet, das die Shell einer statischen öffentlichen Oberfläche einbindet (common/web_card_css.ts). Auf jedem Listener beantwortet; eine Adresse, die das ?v= dieses Builds trägt, wird dauerhaft zwischengespeichert."
@@ -1742,6 +1746,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — die Steuerelemente auf /admin/pki/trust. add nimmt `certificates` (einen oder mehrere PEM-Blöcke, jeder durch die Zulassungsregel und jede Ablehnung benannt), mit `purposes`, um sie einzuschränken; remove nimmt einen `fingerprint`; recheck führt die Prüfung jetzt aus; set-row nimmt ein `pki.paranoid*` `setting` und dessen `value`, über das gewöhnliche Schreiben von Einstellungen. Benötigt admin:write. Geschrieben nach ou=signerTrustAnchors, sodass eine Änderung einen Neustart überdauert."
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "Die Reiter Truststores, Anwendungsfälle und System-Truststore von /admin/pki/trust über JSON (#2118): jeder Truststore, den diese Realm nennen kann (eingebaut, Ansicht, Einstellung, SPIFFE-Bundle oder benannt), mit seinem gezählten Inhalt und den Anwendungsfällen, die ihm vertrauen, jeder Anwendungsfall mit dem, dem er jetzt vertraut, und seinem Standard, die Grenzen, und der Standardspeicher von node, Zertifikat für Zertifikat beschrieben, ohne PEM."
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — die Bedienelemente der Reiter Truststores und Anwendungsfälle von /admin/pki/trust (#2118). show nimmt einen `name` (und `withPem`) und schreibt nichts; create nimmt einen `name` und eine `description`; delete wird abgelehnt, solange ein Anwendungsfall dem Truststore vertraut; add nimmt `certificates`, jedes durch die Aufnahmeregel und jede Ablehnung benannt; remove nimmt einen `fingerprint`; assign nimmt einen `useCase` und seine geordneten `truststores`, und unassign setzt den Anwendungsfall auf seinen Standard zurück. Ein dienstweiter Anwendungsfall wird nur aus der Standard-Realm zugewiesen. Benötigt admin:write. Wird nach ou=truststores geschrieben, eine Änderung übersteht also einen Neustart."
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -2426,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Eine Seite der Bewohner einer anderen Zelle, beantwortet von jener Zelle nur dort, wo ihre Freigaberichtlinie es zulässt."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports als JSON: die Verstöße gegen die Content Security Policy, die Browser für diesen Realm gemeldet haben, nach Direktive gezählt vom Front-Prozess dieses Knotens, und die Einstellung für die Weiterleitung. Es ändert nichts."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

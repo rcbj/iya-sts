@@ -30,6 +30,11 @@
       "text": "Le mot de passe du compte {{username}} a été modifié le {{when}} ({{how}}).\n\nSi ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.\n",
       "html": "<p>Le mot de passe du compte <strong>{{username}}</strong> a été modifié le {{when}} ({{how}}).</p><p>Si ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.</p>"
     },
+    "credential-changed": {
+      "subject": "Les identifiants de votre compte {{service}} ont changé",
+      "text": "Les identifiants du compte {{username}} ont été modifiés le {{when}}, {{by}} : {{what}}.\n\nSi ce n’était pas vous et que vous ne l’avez pas demandé, connectez-vous maintenant, vérifiez vos paramètres de sécurité et fermez vos autres sessions, ou contactez la personne qui gère votre compte.\n",
+      "html": "<p>Les identifiants du compte <strong>{{username}}</strong> ont été modifiés le {{when}}, {{by}} : {{what}}.</p><p>Si ce n’était pas vous et que vous ne l’avez pas demandé, connectez-vous maintenant, vérifiez vos paramètres de sécurité et fermez vos autres sessions, ou contactez la personne qui gère votre compte.</p>"
+    },
     "account-disabled": {
       "subject": "Votre compte {{service}} a été désactivé",
       "text": "Le compte {{username}} a été désactivé le {{when}}. {{why}}\n\nPersonne ne peut s’y connecter tant qu’il n’est pas réactivé, et toutes ses sessions ont été fermées.\n",
@@ -49,6 +54,16 @@
       "subject": "La récupération de votre compte {{service}} a été lancée",
       "text": "La récupération du compte {{username}} a été lancée le {{when}} par {{by}}.\n\nSi ce n’était ni vous ni une personne à qui vous l’avez demandé, contactez dès maintenant la personne qui gère votre compte.\n",
       "html": "<p>La récupération du compte <strong>{{username}}</strong> a été lancée le {{when}} par {{by}}.</p><p>Si ce n’était ni vous ni une personne à qui vous l’avez demandé, contactez dès maintenant la personne qui gère votre compte.</p>"
+    },
+    "sign-in-alert": {
+      "subject": "Une connexion inhabituelle à votre compte {{service}}",
+      "text": "Quelqu’un s’est connecté au compte {{username}} le {{when}}, et cela semblait inhabituel : {{what}}.\n\nOù, approximativement : {{place}}\nAvec : {{device}}\nComment : {{method}}\n\nSi c’était vous, il n’y a rien à faire. Sinon, ouvrez vos connexions récentes et indiquez-le, ce qui ferme toutes vos sessions, puis changez votre mot de passe :\n\n{{link}}\n",
+      "html": "<p>Quelqu’un s’est connecté au compte <strong>{{username}}</strong> le {{when}}, et cela semblait inhabituel : {{what}}.</p><p>Où, approximativement : {{place}}</p><p>Avec : {{device}}</p><p>Comment : {{method}}</p><p>Si c’était vous, il n’y a rien à faire. Sinon, <a href=\"{{link}}\">ouvrez vos connexions récentes</a> et indiquez-le, ce qui ferme toutes vos sessions, puis changez votre mot de passe.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Tentatives de connexion refusées sur votre compte {{service}}",
+      "text": "{{count}} tentatives de connexion au compte {{username}} avec un mot de passe erroné ont été refusées dans les {{minutes}} minute(s) précédant le {{when}}.\n\nSi c’était vous, il n’y a rien à faire. Sinon, quelqu’un essaie peut-être de deviner votre mot de passe : connectez-vous, vérifiez vos connexions récentes et changez votre mot de passe s’il pourrait être connu.\n\n{{link}}\n",
+      "html": "<p>{{count}} tentatives de connexion au compte <strong>{{username}}</strong> avec un mot de passe erroné ont été refusées dans les {{minutes}} minute(s) précédant le {{when}}.</p><p>Si c’était vous, il n’y a rien à faire. Sinon, quelqu’un essaie peut-être de deviner votre mot de passe : connectez-vous, <a href=\"{{link}}\">vérifiez vos connexions récentes</a> et changez votre mot de passe s’il pourrait être connu.</p>"
     },
     "address-changed": {
       "subject": "L’adresse e-mail de votre compte {{service}} a été modifiée",

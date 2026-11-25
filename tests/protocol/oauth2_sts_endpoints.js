@@ -1436,6 +1436,9 @@ async function testNativeRedirectsRegistrationAndRefreshScope(meta) {
       oauthResponseType: ["code"],
       oauthGrantType: ["authorization_code", "refresh_token"],
       oauthScope: ["openid", "profile", "email"],
+      // Declared (#2169): in product a client that declares none is issued
+      // `openid` alone (#1589), and this section asks for all three.
+      oauthAllowedScope: ["openid", "profile", "email"],
       oauthTokenEndpointAuthMethod: "none",
       oauthConfidential: "FALSE"
     },
@@ -1455,7 +1458,8 @@ async function testNativeRedirectsRegistrationAndRefreshScope(meta) {
     "a private-use redirect URI should be answered at itself; the " +
     "authorization response went to " + answered.location);
   const code = answered.params.get("code");
-  assert.ok(code, "no authorization code came back to the native redirect.");
+  assert.ok(code, "no authorization code came back to the native redirect: " +
+            answered.location);
   log.info("[native] OK — a private-use redirect URI is answered.");
 
   const formPost = await get(meta.authorization_endpoint + "?" + form({

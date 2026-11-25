@@ -56,6 +56,7 @@ import secrets = require('./secrets');
 import crypto = require('./crypto');
 import nodeTls = require('tls');
 import OutboundTls = require('./outbound_tls');
+import truststores = require('./truststores');
 
 type Json = any;
 
@@ -503,16 +504,27 @@ class MailTransports {
     // Verified, with RFC 9525's host check and the path rules (#201) —
     // `OutboundTls.verifiedOptions()`, the one helper every dialer outside
     // the four families asks. `mail.smtpCaFile` is added beside it below.
-    const tls: Json = Object.assign(OutboundTls.verifiedOptions(null), {
+    // `outbound-smtp`'s truststores where it is assigned (#2118); unassigned,
+    // node's store and mail.smtpCaFile as before.
+    const assigned = truststores.namesFor('outbound-smtp').assigned ?
+      OutboundTls.optionsFor('outbound-smtp') : null;
+    if (assigned && assigned.problem) {
+      throw sendError(assigned.problem.why, 'STS-MAIL-0004', false);
+    }
+    const tls: Json = Object.assign(assigned ||
+                                    OutboundTls.verifiedOptions(null), {
       minVersion: 'TLSv1.2',
       servername: String(cfg.smtpServerName || '') || host
     });
     try {
-      if (cfg.smtpCaFile) {
+      if (cfg.smtpCaFile && !assigned) {
         // BESIDE node's store, as this file's header and the setting say
         // (#1360): `ca` replaces the store, so a relay on a public CA stopped
-        // verifying the moment somebody named a file for a private one.
-        tls.ca = nodeTls.rootCertificates
+        // verifying the moment somebody named a file for a private one. And
+        // beside what `verifiedOptions()` already put there (#2118): writing
+        // node's roots over it dropped the signer truststore under paranoid
+        // PKI mode.
+        tls.ca = (tls.ca || nodeTls.rootCertificates)
           .concat(String(readFile(String(cfg.smtpCaFile))));
       }
       if (cfg.smtpClientCertFile || cfg.smtpClientKeyFile) {

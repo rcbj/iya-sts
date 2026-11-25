@@ -68,6 +68,7 @@ import LogoutPage = require('../logout/web_logout');
 import LdapPage = require('../ldap/web_ldap');
 import ListenersPage = require('./web_listeners');
 import MalwareScanPage = require('./web_malware_scan');
+import CspReportsPage = require('./web_csp_reports');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import MetricsPage = require('./web_metrics');
@@ -345,7 +346,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/wsfed': ['settings'],
   '/admin/pki': ['hierarchy', 'pinned', 'edit', 'build', 'applications',
                  'people', 'revocation', 'workbench', 'settings'],
-  '/admin/pki/trust': ['paranoid', 'signers', 'pins', 'client'],
+  // #2118: the named truststores, the use cases, node's own store.
+  '/admin/pki/trust': ['paranoid', 'signers', 'pins', 'client', 'truststores',
+                       'usecases', 'system'],
   '/admin/tls': [],
   '/admin/tls/trust': ['anchors', 'add'],
   // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
@@ -864,6 +867,8 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/malware-scanning', title: 'Malware scanning',
     operation: '/admin-api/malware-scanning', render: MalwareScanPage.render },
+  { path: '/admin/csp-reports', title: 'CSP reports',
+    operation: '/admin-api/csp-reports', render: CspReportsPage.render },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
   { path: '/admin/logout', title: 'Sign-out',
@@ -936,8 +941,14 @@ const PAGES: WebPage[] = [
   // Key Directory publication and their mail encryption.
   { path: '/admin/openpgp', title: 'OpenPGP keys',
     operation: '/admin-api/openpgp', render: OpenPgpPage.render },
+  // #2118: the Truststores, Use cases and System truststore tabs are
+  // `GET /admin-api/truststores`, always asked; `systemq` filters the System
+  // truststore tab and is the page's own, never asked of either operation.
   { path: '/admin/pki/trust', title: 'PKI trust',
-    operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
+    operation: '/admin-api/pki/trust',
+    compose: { truststores: '/admin-api/truststores' },
+    ownParams: ['systemq'],
+    render: PkiTrustPage.render },
   // THE CERTIFICATE DIALOG (#446). `GET /admin-api/pki` does not carry one
   // certificate. View details adds `?certificate=` and the page composes
   // `GET /admin-api/certificates` into `certificateDetails`; `composeKeep`

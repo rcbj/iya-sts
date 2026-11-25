@@ -1,0 +1,14 @@
+{
+  "intro": "Los navegadores informan aquí cada vez que una página de este reino infringió su Content Security Policy: la política impidió que se cargara o ejecutara un script, un marco, un estilo u otro recurso. Un informe dice lo que afirma un navegador y cualquiera puede enviarlo, así que léalos como señales: una serie de informes de una directiva tras un cambio es una página que el cambio rompió, y un origen bloqueado que nadie usa aquí puede ser una inyección que un navegador detuvo.",
+  "tileTotal": "Informes",
+  "tileDirectives": "Directivas",
+  "since": "Contados por el proceso frontal de este nodo desde {since}; los recuentos no se conservan tras un reinicio.",
+  "none": "Ningún navegador ha informado de una infracción desde entonces.",
+  "colDirective": "Directiva",
+  "colCount": "Informes",
+  "colLast": "Último informe",
+  "limits": "Las páginas informan a <code>{path}</code>. Lee un cuerpo de como máximo {bytes} bytes y {perMinute} informes por minuto desde una dirección, registra la directiva, la ruta de la página sin su consulta y el origen bloqueado, y escribe cada informe en el registro del servicio.",
+  "forwardOn": "Cada informe aceptado también se reenvía al recopilador configurado abajo.",
+  "forwardOff": "Los informes no se reenvían. Configure el recopilador abajo para reenviarlos.",
+  "notForwarded": "{count} informes no se reenviaron porque había demasiados reenvíos pendientes."
+}

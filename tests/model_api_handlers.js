@@ -329,6 +329,9 @@ function everyHandlerBound(t) {
   });
   delete served.reportShapeRefused;
   delete served.reportMissingJob;
+  // A gate before any operation, as the shape check is (#2167): it answers
+  // only the per-subject budget's 429, which every operation's model holds.
+  delete served.reportOverActBudget;
   const unserved = Object.keys(served).filter(function (name) {
     return !new RegExp('function ' + name + '\\([^)]*res: ReportAnswering<')
       .test(report);

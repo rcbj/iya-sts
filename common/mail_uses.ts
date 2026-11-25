@@ -27,10 +27,14 @@
 //      for everybody, because an administrator who never sees a person's
 //      reset link cannot be the one who used it.
 //   4. **SECURITY NOTICES**, which a person cannot decline: disabled,
-//      sessions ended by an administrator, password changed or reset, a
+//      sessions ended by an administrator, password changed or reset, any
+//      other credential added or removed (#2163), a
 //      credential marked compromised, recovery started, the address changed
 //      (to the OLD address). When the SERVICE did it (risk scoring), the
-//      realm's Admin Write roster is told as well.
+//      realm's Admin Write roster is told as well. Since #2162 also a
+//      SIGN-IN THAT SUCCEEDED LOOKING UNUSUAL and a RUN OF REFUSED
+//      PASSWORDS, each at most once in `mail.signInAlertWindowS` per kind
+//      (`signInAlert()`, `refusedAttempts()`).
 //   5. **AN ACCESS REQUEST WAITING FOR ITS OWNER** (#432 phase 6), a
 //      notification a person may decline: a GNAP grant a client asked for
 //      while they were not there, waiting on /portal/ciba.
@@ -72,6 +76,10 @@ import Classes = require('./domain_classes');
 // The activities' table (#2009 P4): which reminder each one is sent with. A
 // leaf that requires nothing of this service.
 import PostLoginKinds = require('./post_login_kinds');
+// The batch a door's several credential changes are told in (#2163): an
+// ambient slot, so a door wraps its work once and every signal inside it,
+// however deep, joins the one notice.
+import { AsyncLocalStorage } from 'async_hooks';
 
 type Json = any;
 
@@ -79,12 +87,68 @@ type Json = any;
 const RESET_PATH = '/portal/reset-password';
 const ACTIVATE_PATH = '/portal/activate';
 const VERIFY_PATH = '/portal/verify-email';
+// Where a sign-in alert sends the person (#2162): their recent sign-ins,
+// where "This wasn't me" signs every session out.
+const SIGN_INS_PATH = '/portal/sign-ins';
+
+// THE KINDS OF UNUSUAL SIGN-IN A PERSON IS TOLD OF (#2162), each told at
+// most once in `mail.signInAlertWindowS`. `risk/risk_engine.ts` decides
+// which a sign-in shows.
+const SIGN_IN_ALERT_KINDS = ['new-device', 'new-country', 'anonymiser',
+                             'after-refusals', 'unusual'];
 
 // The one sentence the forgot-password form answers, whatever happened.
 const RESET_ANSWER = 'If that names an account here with an email address ' +
   'it may be reached at, a link to choose a new password has been sent ' +
   'there. It works once and for a limited time. Nothing changes until it ' +
   'is used.';
+
+// ---------------------------------------------------------------------------
+// A CREDENTIAL ADDED OR REMOVED, TOLD TO THE PERSON (#2163, ASVS 5.0.0
+// 6.3.7). Until then only a password change was mailed. The kinds below are
+// what a person signs in or receives encrypted mail with; each change is
+// told in the person's language as one line of the `credential-changed`
+// notice — WHAT changed (the kind and its label, never a secret), WHEN, and
+// BY WHOM (the person, or an administrator) — and the notice says what to
+// do if it was not them.
+//
+// The CAEP credential types (`ssf/account_signals.ts`) a change arrives
+// under, as the kind the mail names. A type not listed is not mailed: the
+// Kerberos keys (derived from the password, whose change is mailed), a
+// wallet credential this service issued, a self-issued key, a HOBA or ACME
+// key, the emailed factor (which tells the person itself).
+// ---------------------------------------------------------------------------
+const CREDENTIAL_KINDS: Record<string, string> = {
+  'fido2-roaming': 'passkey',
+  'fido2-platform': 'passkey',
+  'fido-u2f': 'passkey',
+  'app': 'totp',
+  'urn:iya:sts:credential-type:hotp-token': 'hotp',
+  'urn:iya:sts:credential-type:yubikey-otp': 'yubiotp',
+  'x509': 'certificate'
+};
+
+// The kinds a door may name directly (`credentialChanged()`), beside those:
+// the ones held only as directory attributes, told by `ldap_server.js`.
+const OWN_KINDS = ['passkey', 'totp', 'app-password', 'hotp', 'yubiotp',
+                   'recovery-codes', 'certificate', 'certificate-binding',
+                   'smime', 'openpgp'];
+
+// One change, as a notice line.
+interface CredentialChangeItem {
+  username: string;
+  kind: string;
+  change: string;
+  label: string;
+  by: string;
+}
+
+// The ambient batch: the changes told inside one door's act, per person.
+interface CredentialBatch {
+  items: CredentialChangeItem[];
+}
+
+const credentialBatches = new AsyncLocalStorage<CredentialBatch>();
 
 interface MailUsesDeps {
   log: typeof helpers.log;
@@ -856,9 +920,215 @@ class MailUses {
         values: { by: notice.initiatingEntity === 'user'
           ? MailUses.said('by.you') : MailUses.said('by.administrator') },
         via: notice.via });
+    } else {
+      // EVERY OTHER CREDENTIAL ADDED OR REMOVED (#2163).
+      const item = MailUses.credentialChangeOf(act, notice);
+      if (item) {
+        out = this.credentialChanged(item);
+      }
     }
     log.debug("Leaving MailUses.fromAccountSignal().");
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // 4b. A CREDENTIAL ADDED OR REMOVED (#2163). See CREDENTIAL_KINDS above.
+  // -------------------------------------------------------------------------
+  /**
+   * The notice line an account signal is, or null when it is not one this
+   * use mails: a password itself (the `password-changed` notice's), a type
+   * no kind names, a change with no `changeType`, or one the service or a
+   * policy made (a renewal superseding a certificate, a key a policy no
+   * longer accepts), which no person did and nobody has to answer for.
+   *
+   * @param act - the account-signals method's name
+   * @param n - its notice
+   * @returns `{ username, kind, change, label, by }`, or null
+   */
+  static credentialChangeOf(act: string, n: Json): CredentialChangeItem |
+      null {
+    helpers.log.debug("Entering MailUses.credentialChangeOf(). " + act);
+    const notice = n || {};
+    const username = String(notice.username || '');
+    const type = String(notice.credentialType || '');
+    const changeType = String(notice.changeType || '');
+    const entity = String(notice.initiatingEntity || 'admin');
+    let kind = '';
+    if (act === 'credentialChanged') {
+      // An app password (#101) is a password with a name. A SCEP challenge
+      // password is a password too, and an enrolment secret rather than
+      // anything a person signs in with.
+      if (type === 'password') {
+        kind = notice.friendlyName && !/SCEP/.test(String(notice.via || ''))
+          ? 'app-password' : '';
+      } else {
+        kind = CREDENTIAL_KINDS[type] || '';
+      }
+    } else if (act === 'recoveryInformationChanged') {
+      // A SET GENERATED OR REMOVED, never a code spent: the person spending
+      // one is at the screen, and was not asked to be told of it.
+      kind = 'recovery-codes';
+    }
+    const change = changeType === 'create'
+      ? (kind === 'recovery-codes' ? 'generated' : 'added')
+      : (changeType === 'delete' || changeType === 'revoke' ? 'removed'
+        : (changeType === 'update' ? 'changed' : ''));
+    if (!kind || !username || !change || entity === 'system' ||
+        entity === 'policy') {
+      helpers.log.debug("Leaving MailUses.credentialChangeOf(). Not one.");
+      return null;
+    }
+    helpers.log.debug("Leaving MailUses.credentialChangeOf(). " + kind);
+    return { username: username, kind: kind, change: change,
+             label: String(notice.friendlyName || ''),
+             by: entity === 'user' ? 'user' : 'admin' };
+  }
+
+  /**
+   * Tells a person that a credential of theirs was added, removed or
+   * changed (#2163): at once, or — inside `batch()` — as one line of the
+   * one notice the batch sends when it ends.
+   *
+   * Never throws. Off with `mail.credentialChangeNotices` (or every
+   * security notice, `mail.securityNotices`), or without a transport.
+   *
+   * @param item - `{ username, kind, change, label, by }`: `kind` one of
+   *   the kinds above, `change` `added`, `generated`, `removed` or
+   *   `changed`, `by` `user` or `admin`
+   * @returns what `notice()` answered, `{ ok: true, batched: true }`, or a
+   *   skip
+   */
+  credentialChanged(item: CredentialChangeItem): Json {
+    const { log, config } = this.deps;
+    log.debug("Entering MailUses.credentialChanged().");
+    const one = item || ({} as CredentialChangeItem);
+    if (!one.username || OWN_KINDS.indexOf(String(one.kind)) < 0) {
+      log.debug("Leaving MailUses.credentialChanged(). Not one.");
+      return { ok: false, skipped: 'not a credential change' };
+    }
+    let on = true;
+    try {
+      on = !!config.value('mail.credentialChangeNotices');
+    } catch (e) {
+      log.debug("Caught in MailUses.credentialChanged(): " +
+                ((e && e.message) || e));
+      // A configuration that cannot be read keeps the default, which is on.
+      on = true;
+    }
+    if (!on) {
+      log.debug("Leaving MailUses.credentialChanged(). Off.");
+      return { ok: false, skipped: 'off' };
+    }
+    const held = credentialBatches.getStore();
+    if (held) {
+      held.items.push({ username: String(one.username),
+                        kind: String(one.kind), change: String(one.change),
+                        label: String(one.label || ''),
+                        by: one.by === 'user' ? 'user' : 'admin' });
+      log.debug("Leaving MailUses.credentialChanged(). Batched.");
+      return { ok: true, batched: true };
+    }
+    const out = this.sendCredentialNotice(String(one.username), [one]);
+    log.debug("Leaving MailUses.credentialChanged().");
+    return out;
+  }
+
+  // The one notice for one person's changes: a line each, the repeats
+  // (the same change told by two doors) dropped.
+  private sendCredentialNotice(username: string,
+                               items: CredentialChangeItem[]): Json {
+    const { log } = this.deps;
+    log.debug("Entering MailUses.sendCredentialNotice(). " + items.length);
+    const seen: string[] = [];
+    const lines: Json[] = [];
+    let byUser = true;
+    items.forEach(function (one: CredentialChangeItem): void {
+      const key = one.kind + '|' + one.change + '|' + (one.label || '');
+      if (seen.indexOf(key) >= 0) {
+        return;
+      }
+      seen.push(key);
+      if (one.by !== 'user') {
+        byUser = false;
+      }
+      lines.push(one.label
+        ? MailUses.said('credentialChange.itemNamed', {
+            kind: one.kind, change: one.change, label: one.label })
+        : MailUses.said('credentialChange.item', {
+            kind: one.kind, change: one.change }));
+    });
+    // ONE CHANGE MAILS ONCE: the same change told again in the channel's
+    // window (`mail.dedupWindowS`) is that message, not another.
+    const out = this.notice('credential-changed', username, {
+      values: { what: { list: lines },
+                by: MailUses.said('credentialChange.by',
+                                  { entity: byUser ? 'user' : 'admin' }) },
+      dedupKey: 'credential-changed:' + seen.join(',') + ':' +
+                this.when(),
+      via: 'a credential change' });
+    log.debug("Leaving MailUses.sendCredentialNotice().");
+    return out;
+  }
+
+  /**
+   * Runs a door's act as ONE batch of credential changes (#2163): every
+   * change told inside it, however deep, is held, and when `fn` returns —
+   * or its promise settles — each person is sent one notice listing every
+   * line of theirs. An administrator removing all of a person's factors
+   * sends one message, not one per factor. A batch inside a batch is the
+   * outer one.
+   *
+   * @param fn - the act
+   * @returns what `fn` returns
+   */
+  batch<T>(fn: () => T): T {
+    const { log } = this.deps;
+    log.debug("Entering MailUses.batch().");
+    if (credentialBatches.getStore()) {
+      log.debug("Leaving MailUses.batch(). Inside another.");
+      return fn();
+    }
+    const held: CredentialBatch = { items: [] };
+    const self = this;
+    const flush = function (): void {
+      log.debug("Entering flush().");
+      const people: string[] = [];
+      held.items.forEach(function (one: CredentialChangeItem): void {
+        if (people.indexOf(one.username) < 0) {
+          people.push(one.username);
+        }
+      });
+      people.forEach(function (who: string): void {
+        self.sendCredentialNotice(who, held.items.filter(
+          function (one: CredentialChangeItem): boolean {
+            return one.username === who;
+          }));
+      });
+      held.items = [];
+      log.debug("Leaving flush().");
+    };
+    let answer: T;
+    try {
+      answer = credentialBatches.run(held, fn);
+    } catch (e) {
+      log.debug("Caught in MailUses.batch(): " + ((e && e.message) || e));
+      // What was changed before the throw was changed: it is told.
+      flush();
+      throw e;
+    }
+    if (answer && typeof (answer as Json).then === 'function') {
+      log.debug("Leaving MailUses.batch(). A promise.");
+      return (answer as Json).then(function (value: Json): Json {
+        flush();
+        return value;
+      }, function (e: Json): Json {
+        flush();
+        throw e;
+      });
+    }
+    flush();
+    log.debug("Leaving MailUses.batch().");
+    return answer;
   }
 
   // -------------------------------------------------------------------------
@@ -1148,6 +1418,144 @@ class MailUses {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // 4c. A SIGN-IN THAT SUCCEEDED LOOKING UNUSUAL, AND A RUN OF REFUSED
+  // PASSWORDS (#2162, ASVS 5.0.0 6.3.5). Security notices: a person cannot
+  // decline them, an operator can (`mail.signInAlerts`). Each kind is told
+  // at most once in `mail.signInAlertWindowS` — the outbox is the record
+  // (`mail.queuedWithin()`), so the window is the cluster's and survives a
+  // restart for as long as `mail.retentionS` keeps the row. Never throws:
+  // the sign-in has already happened.
+  // -------------------------------------------------------------------------
+  private signInAlertsOn(): boolean {
+    const { log, config, mail } = this.deps;
+    log.debug("Entering MailUses.signInAlertsOn().");
+    const on = !!config.value('mail.signInAlerts') &&
+      !!config.value('mail.securityNotices') && mail.available();
+    log.debug("Leaving MailUses.signInAlertsOn(). " + on);
+    return on;
+  }
+
+  /**
+   * Tells a person that a sign-in to their account succeeded looking
+   * unusual: when, roughly where, with what browser or device, by which
+   * method, what was unusual, and a link to their recent sign-ins, where
+   * saying it was not them signs every session out.
+   *
+   * A kind already told in `mail.signInAlertWindowS` is left out, and
+   * nothing is sent when every kind was.
+   *
+   * @param username - the person
+   * @param facts - `kinds` (of SIGN_IN_ALERT_KINDS), `at` (ms), `city`,
+   *   `subdivision`, `country`, `browser`, `os`, `method` (the credential
+   *   kind)
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  signInAlert(username: string, facts: Json): Json {
+    const { log, config, mail } = this.deps;
+    log.debug("Entering MailUses.signInAlert(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'off' };
+    try {
+      if (!username || !this.signInAlertsOn()) {
+        log.debug("Leaving MailUses.signInAlert(). Off or nobody.");
+        return out;
+      }
+      const windowS = Number(config.value('mail.signInAlertWindowS'));
+      const kinds = (Array.isArray(f.kinds) ? f.kinds : [])
+        .map(String).filter(function (k: string, i: number, all: string[]) {
+          return SIGN_IN_ALERT_KINDS.indexOf(k) >= 0 && all.indexOf(k) === i;
+        });
+      const fresh = kinds.filter(function (k: string): boolean {
+        return !mail.queuedWithin(username, 'sign-in-alert', 'kind:' + k,
+                                  windowS);
+      });
+      if (!fresh.length) {
+        log.debug("Leaving MailUses.signInAlert(). Told already.");
+        return { ok: false, skipped: kinds.length ? 'told in the window'
+                                                  : 'nothing unusual' };
+      }
+      const place = [f.city, f.subdivision, f.country].map(function (v) {
+        return String(v || '').trim();
+      }).filter(Boolean).join(', ');
+      const browser = String(f.browser || '').trim();
+      const os = String(f.os || '').trim();
+      out = mail.send({
+        username: username, template: 'sign-in-alert',
+        values: {
+          username: username,
+          when: { date: Number(f.at) || this.deps.now() },
+          place: place || MailUses.said('signIn.placeUnknown'),
+          device: browser || os
+            ? MailUses.said('signIn.device', { browser: browser || '?',
+                                                os: os || '?' })
+            : MailUses.said('signIn.deviceUnknown'),
+          method: MailUses.said('signIn.method',
+                                { kind: String(f.method || 'other') }),
+          what: { list: fresh.map(function (k: string): Json {
+            return MailUses.said('signIn.kind', { kind: k });
+          }) }
+        },
+        links: { link: SIGN_INS_PATH },
+        // EACH KIND IS A KEY: the message is about every fresh kind, so a
+        // later sign-in showing any of them in the window finds it.
+        dedupKey: 'kind:' + fresh[0],
+        dedupAlso: fresh.slice(1).map(function (k: string): string {
+          return 'kind:' + k;
+        }),
+        dedupWindowS: windowS,
+        via: 'a sign-in alert', actor: '' });
+    } catch (e) {
+      log.debug("Caught in MailUses.signInAlert(): " + ((e && e.message) ||
+                                                         e));
+      log.warn(this.deps.errorCodes.tag('STS-MAIL-0031') + 'mail: a ' +
+               'sign-in alert for ' + username + ' could not be queued: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.signInAlert().");
+    return out;
+  }
+
+  /**
+   * Tells a person that passwords were refused for their account enough
+   * times to reach the sign-in limit, whether or not anybody then signed
+   * in; at most once in `mail.signInAlertWindowS`.
+   *
+   * @param username - the person
+   * @param facts - `count` (refusals) and `minutes` (the window they were
+   *   counted in)
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  refusedAttempts(username: string, facts: Json): Json {
+    const { log, config, mail } = this.deps;
+    log.debug("Entering MailUses.refusedAttempts(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'off' };
+    try {
+      if (!username || !this.signInAlertsOn()) {
+        log.debug("Leaving MailUses.refusedAttempts(). Off or nobody.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'sign-in-refusals',
+        values: { username: username, when: this.instant(),
+                  count: String(Number(f.count) || 0),
+                  minutes: String(Number(f.minutes) || 0) },
+        links: { link: SIGN_INS_PATH },
+        dedupKey: 'refusals',
+        dedupWindowS: Number(config.value('mail.signInAlertWindowS')),
+        via: 'a sign-in alert', actor: '' });
+    } catch (e) {
+      log.debug("Caught in MailUses.refusedAttempts(): " +
+                ((e && e.message) || e));
+      log.warn(this.deps.errorCodes.tag('STS-MAIL-0031') + 'mail: the ' +
+               'refused-attempts notice for ' + username + ' could not be ' +
+               'queued: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.refusedAttempts().");
+    return out;
+  }
+
   // An account was disabled (`common/account_state.ts`), by `by`.
   /**
    * Sends the account-disabled notice.
@@ -1254,8 +1662,14 @@ export = {
   mailAdministratorLink: slot.forward('mailAdministratorLink'),
   notice: slot.forward('notice'),
   fromAccountSignal: slot.forward('fromAccountSignal'),
+  credentialChanged: slot.forward('credentialChanged'),
+  credentialChangeOf: MailUses.credentialChangeOf,
+  batch: slot.forward('batch'),
   accountDisabled: slot.forward('accountDisabled'),
   sessionsEnded: slot.forward('sessionsEnded'),
+  signInAlert: slot.forward('signInAlert'),
+  refusedAttempts: slot.forward('refusedAttempts'),
+  SIGN_IN_ALERT_KINDS: SIGN_IN_ALERT_KINDS,
   addressChanged: slot.forward('addressChanged'),
   accessRequested: slot.forward('accessRequested'),
   authzenAccessRequested: slot.forward('authzenAccessRequested'),

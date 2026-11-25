@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. L’icône qu’un navigateur demande de lui-même sur chaque page : la marque carrée du logo (common/favicon.ico). Servie sur chaque écouteur ; conservée un jour."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). Le récepteur de ce que CSP Level 3 et la Reporting API font envoyer à un navigateur : la politique de chaque page le nomme dans report-uri et report-to, avec un en-tête Reporting-Endpoints. POST seulement, sans authentifiant, au plus 16 Kio et 60 rapports par minute d'une même adresse ; il enregistre la directive, le chemin de la page sans sa requête et l'origine bloquée, journalise STS-HTTP-0027 et répond 204 sans corps. Répondu par le processus frontal (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Les règles de la carte de l’écran de connexion et du sélecteur de langue, en une seule feuille de style que lie le shell d’une surface publique statique (common/web_card_css.ts). Servie sur chaque écouteur ; une adresse portant le ?v= de ce build est mise en cache définitivement."
@@ -1742,6 +1746,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — les commandes de /admin/pki/trust. add prend `certificates` (un ou plusieurs blocs PEM, chacun soumis à la règle d’admission, chaque refus étant nommé), avec `purposes` pour les restreindre ; remove prend un seul `fingerprint` ; recheck lance l’audit immédiatement ; set-row prend un `setting` `pki.paranoid*` et sa `value`, par l’écriture ordinaire des réglages. Exige admin:write. Écrit dans ou=signerTrustAnchors, donc une modification survit à un redémarrage."
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "Les onglets Magasins de confiance, Cas d’usage et Magasin de confiance du système de /admin/pki/trust en JSON (#2118) : chaque magasin de confiance que ce domaine peut nommer (intégré, vue, réglage, bundle SPIFFE ou nommé), avec son contenu compté et les cas d’usage qui lui font confiance, chaque cas d’usage avec ce à quoi il fait confiance maintenant et son défaut, les limites, et le magasin par défaut de node décrit certificat par certificat sans PEM."
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — les contrôles des onglets Magasins de confiance et Cas d’usage de /admin/pki/trust (#2118). show prend un `name` (et `withPem`) et n’écrit rien ; create prend un `name` et une `description` ; delete est refusé tant qu’un cas d’usage fait confiance au magasin ; add prend des `certificates`, chacun soumis à la règle d’admission et chaque refus nommé ; remove prend une `fingerprint` ; assign prend un `useCase` et ses `truststores` ordonnés, et unassign ramène le cas d’usage à son défaut. Un cas d’usage à l’échelle du service ne s’attribue que depuis le domaine par défaut. Requiert admin:write. Écrit dans ou=truststores, donc une modification survit à un redémarrage."
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -2426,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Une page des résidents d’une autre cellule, renvoyée par cette cellule uniquement lorsque sa politique de divulgation le permet."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports en JSON : les violations de la Content Security Policy que les navigateurs ont signalées pour ce domaine, comptées par directive par le processus frontal de ce nœud, et le paramètre de transfert. Il ne change rien."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

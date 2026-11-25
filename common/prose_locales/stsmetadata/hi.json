@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. वह आइकन जो ब्राउज़र प्रत्येक पृष्ठ पर स्वयं माँगता है: लोगो का वर्गाकार चिह्न (common/favicon.ico)। प्रत्येक लिसनर पर उत्तरित; एक दिन के लिए रखा जाता है।"
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). CSP Level 3 और Reporting API के अनुसार ब्राउज़र जो भेजता है उसका प्राप्तकर्ता: हर पृष्ठ की नीति इसे report-uri और report-to में, Reporting-Endpoints हेडर के साथ, नामित करती है। केवल POST, कोई क्रेडेंशियल नहीं, अधिकतम 16 KiB और एक पते से प्रति मिनट 60 रिपोर्टें; यह निर्देश, क्वेरी के बिना पृष्ठ का पथ और अवरुद्ध मूल दर्ज करता है, STS-HTTP-0027 लॉग करता है और बिना बॉडी के 204 उत्तर देता है। फ़्रंट प्रोसेस उत्तर देती है (common/csp_reports.ts)।"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). साइन-इन स्क्रीन के कार्ड और भाषा चयनक के नियम, एक स्टाइलशीट के रूप में जिसे एक स्थैतिक सार्वजनिक सतह का शेल लिंक करता है (common/web_card_css.ts)। प्रत्येक लिसनर पर उत्तरित; इस बिल्ड का ?v= रखने वाला पता स्थायी रूप से कैश होता है।"
@@ -1742,6 +1746,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — /admin/pki/trust पर नियंत्रण। add `certificates` लेता है (एक या अधिक PEM ब्लॉक, प्रत्येक प्रवेश नियम से और प्रत्येक अस्वीकृति नामित), उन्हें सीमित करने के लिए `purposes` के साथ; remove एक `fingerprint` लेता है; recheck अभी ऑडिट चलाता है; set-row एक `pki.paranoid*` `setting` और उसका `value` लेता है, साधारण सेटिंग्स लेखन के माध्यम से। admin:write चाहिए। ou=signerTrustAnchors पर लिखा जाता है, इसलिए परिवर्तन पुनरारंभ के बाद भी रहता है।"
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "/admin/pki/trust के ट्रस्टस्टोर, उपयोग-मामले और सिस्टम ट्रस्टस्टोर टैब JSON के रूप में (#2118): हर ट्रस्टस्टोर जिसका नाम यह रीयल्म ले सकता है (अंतर्निहित, दृश्य, सेटिंग, SPIFFE बंडल या नामित) उसकी सामग्री की गिनती और उस पर भरोसा करने वाले उपयोग-मामलों के साथ, हर उपयोग-मामला वह जिस पर अभी भरोसा करता है और उसके डिफ़ॉल्ट के साथ, सीमाएँ, और node का डिफ़ॉल्ट स्टोर हर प्रमाणपत्र के विवरण के साथ, बिना PEM के।"
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — /admin/pki/trust के ट्रस्टस्टोर और उपयोग-मामले टैब के नियंत्रण (#2118)। show एक `name` (और `withPem`) लेता है और कुछ नहीं लिखता; create एक `name` और एक `description` लेता है; जब तक कोई उपयोग-मामला ट्रस्टस्टोर पर भरोसा करता है, delete अस्वीकार किया जाता है; add `certificates` लेता है, हर एक प्रवेश नियम से गुज़रता है और हर अस्वीकृति का नाम दिया जाता है; remove एक `fingerprint` लेता है; assign एक `useCase` और उसके क्रमबद्ध `truststores` लेता है, और unassign उपयोग-मामले को उसके डिफ़ॉल्ट पर लौटाता है। पूरी सेवा वाला उपयोग-मामला केवल डिफ़ॉल्ट रीयल्म से सौंपा जाता है। admin:write चाहिए। ou=truststores में लिखा जाता है, इसलिए बदलाव पुनरारंभ के बाद भी बना रहता है।"
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -2426,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). दूसरी सेल के निवासियों का एक पृष्ठ, उस सेल द्वारा केवल वहीं उत्तर दिया गया जहाँ उसकी रिलीज़ नीति अनुमति देती है।"
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). JSON के रूप में GET /admin/csp-reports: इस रीअल्म के लिए ब्राउज़रों द्वारा रिपोर्ट किए गए Content Security Policy उल्लंघन, इस नोड की फ़्रंट प्रोसेस द्वारा निर्देश के अनुसार गिने गए, और अग्रेषण सेटिंग। यह कुछ नहीं बदलता।"
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

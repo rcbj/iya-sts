@@ -30,6 +30,11 @@
       "text": "帳戶 {{username}} 的密碼已於 {{when}} 變更（{{how}}）。\n\n如果這不是您本人的操作，請立即聯絡您的帳戶管理員。\n",
       "html": "<p>帳戶 <strong>{{username}}</strong> 的密碼已於 {{when}} 變更（{{how}}）。</p><p>如果這不是您本人的操作，請立即聯絡您的帳戶管理員。</p>"
     },
+    "credential-changed": {
+      "subject": "您的 {{service}} 帳戶憑據已變更",
+      "text": "帳戶 {{username}} 的憑據於 {{when}} 被變更（{{by}}）：{{what}}。\n\n如果這不是您本人所為，也不是您要求的，請立即登入，檢查您的安全設定並登出其他工作階段，或聯絡管理您帳戶的人員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的憑據於 {{when}} 被變更（{{by}}）：{{what}}。</p><p>如果這不是您本人所為，也不是您要求的，請立即登入，檢查您的安全設定並登出其他工作階段，或聯絡管理您帳戶的人員。</p>"
+    },
     "account-disabled": {
       "subject": "您的 {{service}} 帳戶已被停用",
       "text": "帳戶 {{username}} 已於 {{when}} 被停用。{{why}}\n\n在重新啟用之前，任何人都無法登入此帳戶，且其所有工作階段均已結束。\n",
@@ -49,6 +54,16 @@
       "subject": "您的 {{service}} 帳戶已開始復原",
       "text": "帳戶 {{username}} 的復原已於 {{when}} 由 {{by}} 發起。\n\n如果這不是您本人或您委託的人所為，請立即聯絡您的帳戶管理員。\n",
       "html": "<p>帳戶 <strong>{{username}}</strong> 的復原已於 {{when}} 由 {{by}} 發起。</p><p>如果這不是您本人或您委託的人所為，請立即聯絡您的帳戶管理員。</p>"
+    },
+    "sign-in-alert": {
+      "subject": "您的 {{service}} 帳戶有一次異常登入",
+      "text": "有人於 {{when}} 登入了帳戶 {{username}}，看起來有異常：{{what}}。\n\n大致地點：{{place}}\n使用：{{device}}\n方式：{{method}}\n\n如果是您本人，無需任何操作。如果不是，請開啟您的最近登入紀錄並在那裡說明，這會登出您的所有工作階段，然後變更密碼：\n\n{{link}}\n",
+      "html": "<p>有人於 {{when}} 登入了帳戶 <strong>{{username}}</strong>，看起來有異常：{{what}}。</p><p>大致地點：{{place}}</p><p>使用：{{device}}</p><p>方式：{{method}}</p><p>如果是您本人，無需任何操作。如果不是，請<a href=\"{{link}}\">開啟您的最近登入紀錄</a>並在那裡說明，這會登出您的所有工作階段，然後變更密碼。</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "您的 {{service}} 帳戶有被拒絕的登入嘗試",
+      "text": "在 {{when}} 之前的 {{minutes}} 分鐘內，有 {{count}} 次使用錯誤密碼登入帳戶 {{username}} 的嘗試被拒絕。\n\n如果是您本人，無需任何操作。如果不是，可能有人在嘗試猜測您的密碼：請登入，查看您的最近登入紀錄，如果密碼可能已被他人知道，請變更密碼。\n\n{{link}}\n",
+      "html": "<p>在 {{when}} 之前的 {{minutes}} 分鐘內，有 {{count}} 次使用錯誤密碼登入帳戶 <strong>{{username}}</strong> 的嘗試被拒絕。</p><p>如果是您本人，無需任何操作。如果不是，可能有人在嘗試猜測您的密碼：請登入，<a href=\"{{link}}\">查看您的最近登入紀錄</a>，如果密碼可能已被他人知道，請變更密碼。</p>"
     },
     "address-changed": {
       "subject": "您的 {{service}} 帳戶的電子郵件地址已變更",

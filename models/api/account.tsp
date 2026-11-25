@@ -225,7 +225,7 @@ using IyaSts.Api.Common;
           `authorizationCode`:#{
             `authorizationUrl`:"/oauth2/authorize",
             `tokenUrl`:"/oauth2/token",
-            `scopes`:#{`account:manage`:"Read and manage your own account.",`ssh:certificate`:"List, issue and revoke your own SSH user certificates, and nothing else of your account."}
+            `scopes`:#{`account:manage`:"Read and manage your own account.",`account:read`:"Read your own account and change nothing: what the portal signs in with, taken by every GET (#2168).",`ssh:certificate`:"List, issue and revoke your own SSH user certificates, and nothing else of your account."}
           }
         }
       }

@@ -27,9 +27,20 @@ import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
 import WebAnnouncements = require('../common/web_announcements');
 import WebFooter = require('../common/web_footer');
+// A refusal's catalog message in the page's language (#2006), where the API
+// names one: the act budget's (#2167).
+import WebSaid = require('../common/web_said');
 
 const CLIENT_ID = 'sts-report';
-const SCOPE = 'openid profile email offline_access report:use report:admin';
+// READ SCOPES ONLY SINCE #2168 (ASVS 5.0.0 10.2.3, rcbj's decision):
+// `report:read` reads with whichever report role the person holds. The first
+// write `/report-api` refuses for want of `report:use` or `report:admin`
+// asks for them by a second authorization (`SpaClient.stepUp()`), silently
+// while the sign-on session holds; issuance narrows them to the roles held,
+// and reads keep the read token.
+const SCOPE = 'openid profile email offline_access report:read';
+// What a second authorization may add (#2168).
+const WRITE_SCOPES = ['report:use', 'report:admin'];
 const BASE = '/report';
 const API = '/report-api';
 const SIGNIN_KEY = 'sts-report-pkce';
@@ -887,6 +898,18 @@ function pagerHtml(t: any, path: string, pg: any, held?: boolean): string {
   return '<div class="pager">' + out.join('') + '</div>';
 }
 
+// What a refusal says: its catalog message in the page's language where it
+// carries one (`messages`, #2006), its `error_description` otherwise, then
+// its `error`; '' for no answer at all.
+function refusalSaid(t: any, json: any): string {
+  if (!json) {
+    return '';
+  }
+  const messages = Array.isArray(json.messages) ? json.messages : [];
+  return WebSaid.sentence(t, messages[0]) ||
+    String(json.error_description || json.error || '');
+}
+
 function problemHtml(t: any, text: string): string {
   return '<p class="err">' + esc(text || t.text('report.error')) + '</p>';
 }
@@ -1072,7 +1095,8 @@ class ReportRuntime extends SpaClient {
         '/report-api': 'data-sts-api',
         '/logout': 'data-sts-authn'
       },
-      accountKey: 'sts-report-account'
+      accountKey: 'sts-report-account',
+      writeScopes: WRITE_SCOPES
     });
     this.username = '';
     this.t = WebMessages.WebTranslator.fromData(null);
@@ -1377,7 +1401,8 @@ class ReportRuntime extends SpaClient {
       response_type: 'code',
       client_id: CLIENT_ID,
       redirect_uri: this.url(BASE + '/callback'),
-      scope: SCOPE,
+      // The read scope, or a second authorization's (#2168).
+      scope: (extra && extra.scope) || SCOPE,
       state: state,
       code_challenge: await this.sha256(verifier),
       code_challenge_method: 'S256',
@@ -1390,6 +1415,9 @@ class ReportRuntime extends SpaClient {
     }
     if (extra && extra.prompt) {
       params.prompt = String(extra.prompt);
+    }
+    if (extra && extra.max_age !== undefined && extra.max_age !== '') {
+      params.max_age = String(extra.max_age);
     }
     return this.authorizationRequestUrl(params);
   }
@@ -1435,6 +1463,11 @@ class ReportRuntime extends SpaClient {
   async finishSignIn(): Promise<void> {
     const query = await this.openAuthorizationResponse(
       this.callbackParameters());
+    // A SECOND AUTHORIZATION'S WINDOW (#2168) hands its answer back to the
+    // page whose write is waiting on it, and redeems nothing.
+    if (this.handBackStepUp(query, this.prefix + BASE + '/callback')) {
+      return;
+    }
     let saved: any = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -1542,9 +1575,13 @@ class ReportRuntime extends SpaClient {
       return NEEDS_SIGN_IN;
     }
     for (let attempt = 0; attempt < 3; attempt++) {
+      // THE READ TOKEN FOR A GET, AND A WRITE TOKEN FOR ANYTHING ELSE WHILE
+      // ONE IS HELD (#2168).
+      const token = this.tokenFor(method, this.resource());
+      const writing = token !== this.accessToken;
       const headers: any = {
-        'Authorization': 'DPoP ' + this.accessToken,
-        'DPoP': await this.proof(method, target, this.accessToken),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json, text/csv, application/pdf'
       };
       if (body !== undefined && body !== null) {
@@ -1577,6 +1614,12 @@ class ReportRuntime extends SpaClient {
       if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
         continue;
       }
+      // A WRITE TOKEN IS NEVER REFRESHED (#2168): one refused is dropped,
+      // and the write goes again on the read token.
+      if (writing) {
+        this.dropWriteToken(this.resource());
+        continue;
+      }
       if (/invalid_token/.test(challenge) && await this.refresh()) {
         continue;
       }
@@ -1584,6 +1627,69 @@ class ReportRuntime extends SpaClient {
     }
     this.accessToken = '';
     return NEEDS_SIGN_IN;
+  }
+
+  // THE REPORTS APPLICATION'S HALF OF A SECOND AUTHORIZATION (#2168,
+  // `SpaClient`'s `stepUp()`): its callback, where it goes when no window
+  // can be opened, and the bar's words in the reader's language.
+  /**
+   * The application's callback, a second authorization's `redirect_uri`.
+   *
+   * @returns the URL
+   */
+  callbackUrl(): string {
+    return this.url(BASE + '/callback');
+  }
+
+  /**
+   * Signs in on this page for a write scope. The change waiting is not
+   * sent: the reader makes it again when the page is back.
+   *
+   * @param scope - the scope to sign in with
+   * @param prompt - `login`, or '' for none
+   * @returns nothing
+   */
+  async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    await this.beginSignIn(this.here(), prompt
+      ? { scope: scope, prompt: prompt, max_age: '0' } : { scope: scope });
+  }
+
+  /**
+   * A write token carrying either report scope (#2168). `/report-api` names
+   * both, and either is enough for it: issuance narrows the pair to the
+   * roles the reader holds, so one comes back for a REPORT_USE holder.
+   *
+   * @param named - the scopes the refusal named
+   * @returns whether a write token carrying one of them is held
+   */
+  async stepUpAny(named: string[]): Promise<boolean> {
+    const resource = this.resource();
+    const carries = function (held: string[]): boolean {
+      return named.some(function (one: string): boolean {
+        return held.indexOf(one) >= 0;
+      });
+    };
+    if (carries(this.writeScopesHeld(resource))) {
+      return true;
+    }
+    await this.stepUp(resource, named);
+    return carries(this.writeScopesHeld(resource));
+  }
+
+  /**
+   * The step's bar's words, from the `report` catalog where it has them.
+   *
+   * @returns `SpaClient.stepWords()`'s shape
+   */
+  stepWords(): any {
+    const english = super.stepWords();
+    const t = this.t;
+    const out: any = {};
+    Object.keys(english).forEach(function (name: string) {
+      const key = 'report.step.' + name;
+      out[name] = t && t.has(key) ? t.text(key) : english[name];
+    });
+    return out;
   }
 
   /**
@@ -1596,7 +1702,21 @@ class ReportRuntime extends SpaClient {
    */
   async call(method: string, path: string, body?: any,
              options?: any): Promise<any> {
-    const res = await this.sendOnce(method, this.url(path), body);
+    const identity = this.identity;
+    let res = await this.sendOnce(method, this.url(path), body);
+    // A WRITE THE READ TOKEN CANNOT MAKE (#2168): the report API names
+    // `report:use report:admin`, the second authorization gets what the
+    // reader's roles allow, and the write is sent once more — the same
+    // closure, so it never leaves memory. A step that does not end with a
+    // write scope answers the refusal as it was.
+    const named = res && res !== ABORTED && res !== NEEDS_SIGN_IN
+      ? SpaClient.insufficientScopeOf(res) : [];
+    if (named.length && await this.stepUpAny(named)) {
+      if (identity !== this.identity) {
+        return null;
+      }
+      res = await this.sendOnce(method, this.url(path), body);
+    }
     if (res === ABORTED) {
       return null;
     }
@@ -2690,8 +2810,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (answer.status !== 200 || !answer.bytes) {
-      this.flash('err', (answer.json && (answer.json.error_description ||
-        answer.json.error)) ||
+      this.flash('err', refusalSaid(this.t, answer.json) ||
         this.t.text('report.downloadFailed',
           { status: String(answer.status || '') }));
       return;
@@ -2746,8 +2865,8 @@ class ReportRuntime extends SpaClient {
       return;
     }
     // A refusal keeps the form on the page and says why above it.
-    this.flash('err', (answer.json && (answer.json.error_description ||
-      answer.json.error)) || this.t.text('report.error'));
+    this.flash('err', refusalSaid(this.t, answer.json) ||
+      this.t.text('report.error'));
   }
 
   /**

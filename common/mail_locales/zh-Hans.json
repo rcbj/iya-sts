@@ -30,6 +30,11 @@
       "text": "账户 {{username}} 的密码已于 {{when}} 更改（{{how}}）。\n\n如果这不是您本人操作，请立即联系您的账户管理员。\n",
       "html": "<p>账户 <strong>{{username}}</strong> 的密码已于 {{when}} 更改（{{how}}）。</p><p>如果这不是您本人操作，请立即联系您的账户管理员。</p>"
     },
+    "credential-changed": {
+      "subject": "您的 {{service}} 账户凭据已更改",
+      "text": "账户 {{username}} 的凭据于 {{when}} 被更改（{{by}}）：{{what}}。\n\n如果这不是您本人所为，也不是您要求的，请立即登录，检查您的安全设置并注销其他会话，或联系管理您账户的人员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的凭据于 {{when}} 被更改（{{by}}）：{{what}}。</p><p>如果这不是您本人所为，也不是您要求的，请立即登录，检查您的安全设置并注销其他会话，或联系管理您账户的人员。</p>"
+    },
     "account-disabled": {
       "subject": "您的 {{service}} 账户已被停用",
       "text": "账户 {{username}} 已于 {{when}} 被停用。{{why}}\n\n在重新启用之前，任何人都无法登录此账户，并且其所有会话均已结束。\n",
@@ -49,6 +54,16 @@
       "subject": "您的 {{service}} 账户已开始恢复",
       "text": "账户 {{username}} 的恢复已于 {{when}} 由 {{by}} 发起。\n\n如果这不是您本人或您委托的人操作，请立即联系您的账户管理员。\n",
       "html": "<p>账户 <strong>{{username}}</strong> 的恢复已于 {{when}} 由 {{by}} 发起。</p><p>如果这不是您本人或您委托的人操作，请立即联系您的账户管理员。</p>"
+    },
+    "sign-in-alert": {
+      "subject": "您的 {{service}} 账户有一次异常登录",
+      "text": "有人于 {{when}} 登录了账户 {{username}}，看起来有异常：{{what}}。\n\n大致地点：{{place}}\n使用：{{device}}\n方式：{{method}}\n\n如果是您本人，无需任何操作。如果不是，请打开您的最近登录记录并在那里说明，这会注销您的所有会话，然后更改密码：\n\n{{link}}\n",
+      "html": "<p>有人于 {{when}} 登录了账户 <strong>{{username}}</strong>，看起来有异常：{{what}}。</p><p>大致地点：{{place}}</p><p>使用：{{device}}</p><p>方式：{{method}}</p><p>如果是您本人，无需任何操作。如果不是，请<a href=\"{{link}}\">打开您的最近登录记录</a>并在那里说明，这会注销您的所有会话，然后更改密码。</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "您的 {{service}} 账户有被拒绝的登录尝试",
+      "text": "在 {{when}} 之前的 {{minutes}} 分钟内，有 {{count}} 次使用错误密码登录账户 {{username}} 的尝试被拒绝。\n\n如果是您本人，无需任何操作。如果不是，可能有人在尝试猜测您的密码：请登录，查看您的最近登录记录，如果密码可能已被他人知道，请更改密码。\n\n{{link}}\n",
+      "html": "<p>在 {{when}} 之前的 {{minutes}} 分钟内，有 {{count}} 次使用错误密码登录账户 <strong>{{username}}</strong> 的尝试被拒绝。</p><p>如果是您本人，无需任何操作。如果不是，可能有人在尝试猜测您的密码：请登录，<a href=\"{{link}}\">查看您的最近登录记录</a>，如果密码可能已被他人知道，请更改密码。</p>"
     },
     "address-changed": {
       "subject": "您的 {{service}} 账户的电子邮件地址已更改",

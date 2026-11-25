@@ -2405,6 +2405,22 @@ the index. `tests/ldap_filter_matching.js` holds the matcher and both modes;
 reverting the handler to `req.filter.matches()` turns 22 of its assertions
 red.
 
+**A substring is never the library's, in either case (#2137, 2026-11-24).**
+Both this class and `@ldapjs/filter` matched one with
+`^initial.*any1.*...final$`, and a chain of `.*` backtracks: `(cn=*a*a*…*b)`
+against a long value was O(n^k) on the event loop (ASVS 5.0.0 1.3.12). Every
+substring assertion, exact-rule ones included, is now `substringMatches()`'s
+left-to-right `indexOf` scan, which answers as RFC 4517 section 4.2.29 does
+(the one difference from the regular expression: `.` did not cross a line
+break, and the scan does). The search handler refuses an assertion of more
+than `MAX_SUBSTRING_COMPONENTS` (32, a constant argued in the module) with
+adminLimitExceeded and `STS-LDAP-0226`, before any entry is read.
+`tests/ldap_substring_matching.js` holds the equivalence, the timing and the
+cap. **Not fixed, and the library's:** `parseFilter()` of a filter STRING
+keeps a substring's escaped characters escaped (`(cn=é*)` holds `\c3\a9`),
+so a search re-parsed in a request worker does not match a non-ASCII
+substring that the same search decoded from BER does.
+
 ### node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork
 
 **The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —

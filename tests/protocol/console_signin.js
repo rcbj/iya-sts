@@ -412,96 +412,113 @@ async function signInToTheConsole(base, user, log2, options) {
     "GET " + base + "/admin should answer the console's shell; it answered " +
     shell.status);
 
-  // THE AUTHORIZATION REQUEST, as the console's page sends it.
-  const verifier = b64u(crypto.randomBytes(32));
-  const state = b64u(crypto.randomBytes(16));
   const redirectUri = base + "/admin/callback";
   const resource = base + "/admin-api";
-  const authorize = base + "/oauth2/authorize?" + new URLSearchParams({
-    response_type: "code", client_id: "sts-admin-console",
-    redirect_uri: redirectUri,
-    // admin:security since #645, as the console's runtime asks.
-    scope: "openid admin:read admin:write admin:security admin:console",
-    state: state, code_challenge: b64u(crypto.createHash("sha256")
-      .update(verifier).digest()),
-    code_challenge_method: "S256", resource: resource,
-    // OpenID Connect's nonce, derived from the verifier as the runtime
-    // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
-    nonce: crypto.createHash("sha256").update("nonce:" + verifier)
-      .digest("base64url") }).toString();
-  const toScreen = await fetchKeeping(authorize);
-  const where = toScreen.headers.get("location") || "";
-  const authn = (where.match(/[?&#]authn=([^&]+)/) || [])[1];
-  assert.ok(authn,
-    "the console's authorization request should send a browser with no " +
-    "sign-on session to the sign-in screen carrying the id of the request " +
-    "waiting there; it answered " + toScreen.status + " to \"" + where +
-    "\". The console signs in as the seeded public client " +
-    "sts-admin-console, with PKCE.");
-
-  // THE SIGN-IN SCREEN, OVER `/authn-api` (#571), through the one helper:
-  // the shell, the view and the act, with this walk's cookies — and an
-  // administrator's OFFERED second factor (#246) ignored there, as rcbj
-  // asked ("update tests to just click ignore for the time being").
-  const signedIn = await authnSignin.signIn(base, fromLocation(where),
-    { action: "login", username: user, password: password },
-    { cookie: cookies.header() });
-  cookies.keep(signedIn);
-  if (signedIn.ignored) {
-    say("[console] " + user + " was offered a second factor and ignored it.");
-  }
-  assert.ok(signedIn.next === "redirect" && (cookies.get("sts_session") || cookies.get("__Host-sts_session")),
-    "signing in at /authn/login should set the sign-on session cookie and " +
-    "answer where to go; it answered " + signedIn.status + " " +
-    signedIn.next + " " + JSON.stringify(signedIn.errors));
-
-  // Back through the authorization endpoint — which now has a session —
-  // until it answers the callback with a code. Bounded, so a loop fails as
-  // a loop; the callback is the console's page and is not fetched.
-  let at = null;
-  let location = signedIn.location;
-  for (let i = 0; i < 5 && !/\/admin\/callback\?/.test(location) &&
-       (!at || at.status === 302 || at.status === 303); i++) {
-    at = await fetchKeeping(fromLocation(location));
-    location = at.headers.get("location") || "";
-  }
-  const back = new URL(fromLocation(location));
-  const code = back.searchParams.get("code");
-  assert.ok(/\/admin\/callback$/.test(back.pathname) && code &&
-            back.searchParams.get("state") === state,
-    "the authorization endpoint should answer the console's callback with " +
-    "a code and the state it was sent; it answered " +
-    (at ? at.status : signedIn.status) + " to \"" +
-    location + "\"");
-
-  // THE TOKEN REQUEST, DPoP-bound, retried once with a nonce.
   const tokenUrl = base + "/oauth2/token";
-  let tokenAnswer = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await fetch(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded",
-                 dpop: key.proof("POST", tokenUrl, "") },
-      body: new URLSearchParams({
-        grant_type: "authorization_code", code: code,
-        redirect_uri: redirectUri, client_id: "sts-admin-console",
-        code_verifier: verifier, resource: resource }).toString()
-    });
-    key.keepNonce(r);
-    tokenAnswer = { status: r.status, json: await r.json().catch(function () {
-      return {};
-    }) };
-    if (!(r.status === 400 && tokenAnswer.json.error === "use_dpop_nonce")) {
-      break;
+
+  // THE CODE FLOW, from the authorization request to the token. `fresh`
+  // (#2161) is the re-sign-in a family of /admin-api operations asks for
+  // with a 401 insufficient_user_authentication on a sign-in older than
+  // account.recentAuthMinutes: the screen is asked again with prompt=login,
+  // with the same password, and the new token's auth_time is now.
+  async function codeFlow(fresh) {
+    log.debug("Entering codeFlow().");
+    // THE AUTHORIZATION REQUEST, as the console's page sends it.
+    const verifier = b64u(crypto.randomBytes(32));
+    const state = b64u(crypto.randomBytes(16));
+    const authorize = base + "/oauth2/authorize?" + new URLSearchParams({
+      response_type: "code", client_id: "sts-admin-console",
+      redirect_uri: redirectUri,
+      // admin:security since #645, as the console's runtime asks.
+      scope: "openid admin:read admin:write admin:security admin:console",
+      state: state, code_challenge: b64u(crypto.createHash("sha256")
+        .update(verifier).digest()),
+      code_challenge_method: "S256", resource: resource,
+      // A FRESH SIGN-IN (#2161) asks the screen again whatever the session,
+      // as the console's popup does after insufficient_user_authentication.
+      prompt: fresh ? "login" : undefined,
+      // OpenID Connect's nonce, derived from the verifier as the runtime
+      // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
+      nonce: crypto.createHash("sha256").update("nonce:" + verifier)
+        .digest("base64url") }).toString().replace(/&prompt=undefined/, "");
+    const toScreen = await fetchKeeping(authorize);
+    const where = toScreen.headers.get("location") || "";
+    const authn = (where.match(/[?&#]authn=([^&]+)/) || [])[1];
+    assert.ok(authn,
+      "the console's authorization request should send a browser with no " +
+      "sign-on session to the sign-in screen carrying the id of the request " +
+      "waiting there; it answered " + toScreen.status + " to \"" + where +
+      "\". The console signs in as the seeded public client " +
+      "sts-admin-console, with PKCE.");
+
+    // THE SIGN-IN SCREEN, OVER `/authn-api` (#571), through the one helper:
+    // the shell, the view and the act, with this walk's cookies — and an
+    // administrator's OFFERED second factor (#246) ignored there, as rcbj
+    // asked ("update tests to just click ignore for the time being").
+    const signedIn = await authnSignin.signIn(base, fromLocation(where),
+      { action: "login", username: user, password: password },
+      { cookie: cookies.header() });
+    cookies.keep(signedIn);
+    if (signedIn.ignored) {
+      say("[console] " + user + " was offered a second factor and ignored it.");
     }
+    assert.ok(signedIn.next === "redirect" &&
+              (cookies.get("sts_session") ||
+               cookies.get("__Host-sts_session")),
+      "signing in at /authn/login should set the sign-on session cookie and " +
+      "answer where to go; it answered " + signedIn.status + " " +
+      signedIn.next + " " + JSON.stringify(signedIn.errors));
+
+    // Back through the authorization endpoint — which now has a session —
+    // until it answers the callback with a code. Bounded, so a loop fails as
+    // a loop; the callback is the console's page and is not fetched.
+    let at = null;
+    let location = signedIn.location;
+    for (let i = 0; i < 5 && !/\/admin\/callback\?/.test(location) &&
+         (!at || at.status === 302 || at.status === 303); i++) {
+      at = await fetchKeeping(fromLocation(location));
+      location = at.headers.get("location") || "";
+    }
+    const back = new URL(fromLocation(location));
+    const code = back.searchParams.get("code");
+    assert.ok(/\/admin\/callback$/.test(back.pathname) && code &&
+              back.searchParams.get("state") === state,
+      "the authorization endpoint should answer the console's callback with " +
+      "a code and the state it was sent; it answered " +
+      (at ? at.status : signedIn.status) + " to \"" +
+      location + "\"");
+
+    // THE TOKEN REQUEST, DPoP-bound, retried once with a nonce.
+    let tokenAnswer = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded",
+                   dpop: key.proof("POST", tokenUrl, "") },
+        body: new URLSearchParams({
+          grant_type: "authorization_code", code: code,
+          redirect_uri: redirectUri, client_id: "sts-admin-console",
+          code_verifier: verifier, resource: resource }).toString()
+      });
+      key.keepNonce(r);
+      tokenAnswer = { status: r.status, json: await r.json().catch(function () {
+        return {};
+      }) };
+      if (!(r.status === 400 && tokenAnswer.json.error === "use_dpop_nonce")) {
+        break;
+      }
+    }
+    assert.ok(tokenAnswer.status === 200 && tokenAnswer.json.access_token &&
+              /^dpop$/i.test(String(tokenAnswer.json.token_type || "")),
+      "the console's code should redeem for a DPoP-bound access token; the " +
+      "token endpoint answered " + tokenAnswer.status + " " +
+      JSON.stringify(tokenAnswer.json).slice(0, 300));
+    log.debug("Leaving codeFlow().");
+    return tokenAnswer.json;
   }
-  assert.ok(tokenAnswer.status === 200 && tokenAnswer.json.access_token &&
-            /^dpop$/i.test(String(tokenAnswer.json.token_type || "")),
-    "the console's code should redeem for a DPoP-bound access token; the " +
-    "token endpoint answered " + tokenAnswer.status + " " +
-    JSON.stringify(tokenAnswer.json).slice(0, 300));
-  let token = tokenAnswer.json.access_token;
-  let refreshToken = tokenAnswer.json.refresh_token || "";
+  const first = await codeFlow(false);
+  let token = first.access_token;
+  let refreshToken = first.refresh_token || "";
 
   // THE REFRESH GRANT WITH THE SAME KEY, as the console renews: the refresh
   // token rotated, the new access token taking the old one's place.
@@ -570,6 +587,18 @@ async function signInToTheConsole(base, user, log2, options) {
         if (renewed.status === 200) {
           continue;
         }
+      }
+      // A SIGN-IN TOO OLD FOR THIS OPERATION (#1538, #2161) is made again,
+      // as the console's popup makes it, and the request sent again.
+      if (r.status === 401 &&
+          /insufficient_user_authentication/.test(challenge) &&
+          attempt === 0) {
+        say("[console] " + user + " signs in again: " + method + " " +
+            path + " asks for a recent sign-in.");
+        const again = await codeFlow(true);
+        token = again.access_token;
+        refreshToken = again.refresh_token || refreshToken;
+        continue;
       }
       if (!(r.status === 401 && /use_dpop_nonce/.test(challenge))) {
         break;

@@ -1442,7 +1442,7 @@ lock and ends nothing.
 | A second factor | Asked as the authentication policy says | Required of everybody, administrators included, unless `authn.allowOptionalSecondFactor` is on |
 | A TOTP code | Accepted one step either side of now (`totp.window` 1) | Accepted in the current time step only (`totp.window` 0) |
 | An unused session | Lasts its lifetime | Ends after 30 idle minutes (`authn.sessionIdleTimeoutS`) |
-| Changing a factor on the portal, ending another session, an administrator changing a person's credentials | Not asked | Needs a sign-in within `account.recentAuthMinutes` (15) |
+| Changing a factor on the portal, ending another session, an administrator changing a person's credentials, granting or removing a role, changing a trust realm, the PKI, the keys or any setting | Not asked | Needs a sign-in within `account.recentAuthMinutes` (15) |
 | An administrator clearing a person's second factor or passkeys | No reason asked | Must say how the person was verified (`evidence`) |
 
 A second factor is asked for only at the sign-in screen. `GET /tls/sign-in`
@@ -1467,7 +1467,7 @@ asked at all. See [What is not checked](what-is-not-checked.md) and
 | `authn.unauthenticatedSessions` | `STS_AUTHN_UNAUTHENTICATED_SESSIONS` | `false` | yes | Show *Continue without signing in*, which starts an unauthenticated session. |
 | `authn.allowOptionalSecondFactor` | `STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR` | `false` | yes | Product mode only. On, the authentication policy decides who needs a second factor; off, everybody does. On, ASVS 5.0.0 requirement 6.3.3 is not met unless the policy requires one. |
 | `authn.sessionsEndedBefore` | `STS_AUTHN_SESSIONS_ENDED_BEFORE` | `0` | yes | Set by **End every session in this realm** on `/admin/sessions`. A sign-on session started before this instant, in milliseconds since 1970, has ended. |
-| `account.recentAuthMinutes` | `STS_ACCOUNT_RECENT_AUTH_MINUTES` | `15` in product mode, `0` in development mode | yes | How recent a sign-in must be to change a factor on the portal, end another session, or have an administrator change a person's credentials; `0` means it is not asked. |
+| `account.recentAuthMinutes` | `STS_ACCOUNT_RECENT_AUTH_MINUTES` | `15` in product mode, `0` in development mode | yes | How recent a sign-in must be to change a factor on the portal, end another session, or have an administrator change a person's credentials, grant or remove a role, create, change or remove a trust realm, act on the PKI, the signing keys, the key-encryption key or the secret push destinations, or change any setting; `0` means it is not asked. |
 | `security.passwordContextWords` | `STS_SECURITY_PASSWORD_CONTEXT_WORDS` | *(empty)* | yes | Extra words a new password may not contain ([Words a password may not contain](password-words.md)). |
 | `security.rateLimitWindowS` | `STS_SECURITY_RATE_WINDOW_S` | `60` | yes | The length of a fixed rate-limit window. |
 | `security.rateLimitPerIdentity` | `STS_SECURITY_RATE_PER_IDENTITY` | `5` | yes | Credential attempts one identity may make in a window, from any address. |

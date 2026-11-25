@@ -2214,6 +2214,18 @@ partner. Unchanged with the setting off. Federation's own Single Logout and
   It is `SameSite=None` because a SAML or `form_post` answer arrives as a
   cross-site POST that a Lax cookie would not ride. A context with no binding
   is one the mode did not bind, and passes (`STS-FED-0237`).
+  **Cleared with the answer, and at most eight (#2139).** None was ever
+  cleared, so repeated starts grew the Cookie header to node's 16 KiB and the
+  browser got 431. `consume()` puts the clear on whatever the ACS answers
+  for the flow its parameters name (`releaseFlowCookieAtAnswer()`), once,
+  rather than at each of the protocols' exits — AT THE FLUSH, because a
+  successful sign-in ends in `authn.ts`'s `setCookieHeader()`, which replaces
+  every Set-Cookie before it. A start that finds `MAX_LIVE_FLOW_COOKIES` (8)
+  live clears the oldest (the name carries the start time, base 36); refusing
+  the start instead would lock out a person whose cookies are abandoned
+  flows, which is the very failure. Not cleared: an answer refused before
+  the flow handle is read (federation off, the relationship unusable), which
+  the cookie's own Max-Age ends.
 * **The partner the flow was started for (#1498, every mode).** The state's
   relationship is compared with the one whose endpoint received the answer, and
   RFC 9207's `iss` with the partner's issuers wherever one is sent — it was
@@ -2742,7 +2754,12 @@ an OpenID Connect relationship, **off by default**, and each needs
   administrator's `register-partner` (console and `/admin-api`, rule 7). What
   is registered is the relationship: its ACS, response type and grant types,
   `fedTokenAuth`, the algorithms it pins, its sign-out and login-initiation
-  addresses, and for signed Request Objects ONE public key — the realm key
+  addresses, its `fedScope` as RFC 7591's `scope` (#2169: that member is the
+  client's declaration, and an OP that issues a client only what it
+  declared — this service's own in product, `openid` alone for a client
+  declaring none, #1589 — refused everything else; a FAPI profile's
+  `openid` included, nothing sent when `fedScope` is empty), and for signed
+  Request Objects ONE public key — the realm key
   that signs them, as `jwks` by value, so nothing else of the realm's key set
   (its post-quantum keys among them) is handed over. The answer's
   `client_id` and secret are written through `federation.update()`, so the

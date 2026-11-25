@@ -1339,37 +1339,57 @@ class HardwareTokens {
                   holderName: this.nameOfHolder(record.holder) };
     const retired: Json[] = [];
     const notRetired: Json[] = [];
-    for (const c of (marked.credentials || []) as TokenCredential[]) {
-      if (onlyHolder && c.holder && c.holder !== onlyHolder) {
-        notRetired.push({ kind: c.kind, ref: c.ref, errorCode:
-          'STS-HWTOKEN-0010', why: 'another person registered it' });
-        continue;
+    // ONE MAIL FOR THE TOKEN (#2163): every credential retired below is
+    // told to its holder as one notice, a line each; the CAEP events are
+    // still one per credential.
+    const retireAll = async (): Promise<void> => {
+      log.debug("Entering retireAll().");
+      for (const c of (marked.credentials || []) as TokenCredential[]) {
+        if (onlyHolder && c.holder && c.holder !== onlyHolder) {
+          notRetired.push({ kind: c.kind, ref: c.ref, errorCode:
+            'STS-HWTOKEN-0010', why: 'another person registered it' });
+          continue;
+        }
+        const retirer = this.retirers[c.kind];
+        if (!retirer) {
+          notRetired.push({ kind: c.kind, ref: c.ref,
+                            errorCode: 'STS-HWTOKEN-0009',
+                            why: 'no retirer is installed for ' + c.kind });
+          continue;
+        }
+        let answer: Json = null;
+        try {
+          answer = await retirer.retire(marked, c, Object.assign({}, ctx, {
+            username: this.nameOfHolder(c.holder || record.holder) }));
+        } catch (e) {
+          log.debug("Caught in HardwareTokens.markLost(): " +
+                    ((e && e.message) || e));
+          answer = { ok: false, errorCode: 'STS-HWTOKEN-0007',
+                     why: String((e && e.message) || e) };
+        }
+        const row = { kind: c.kind, ref: c.ref, label: retirer.label,
+                      ok: !!(answer && answer.ok),
+                      errorCode: answer && !answer.ok
+                        ? String(answer.errorCode || 'STS-HWTOKEN-0007') : '',
+                      why: answer && !answer.ok ? String(answer.why || '') : '',
+                      sessionsEnded: Number((answer && answer.sessionsEnded) ||
+                                            0) };
+        (row.ok ? retired : notRetired).push(row);
       }
-      const retirer = this.retirers[c.kind];
-      if (!retirer) {
-        notRetired.push({ kind: c.kind, ref: c.ref,
-                          errorCode: 'STS-HWTOKEN-0009',
-                          why: 'no retirer is installed for ' + c.kind });
-        continue;
-      }
-      let answer: Json = null;
-      try {
-        answer = await retirer.retire(marked, c, Object.assign({}, ctx, {
-          username: this.nameOfHolder(c.holder || record.holder) }));
-      } catch (e) {
-        log.debug("Caught in HardwareTokens.markLost(): " +
-                  ((e && e.message) || e));
-        answer = { ok: false, errorCode: 'STS-HWTOKEN-0007',
-                   why: String((e && e.message) || e) };
-      }
-      const row = { kind: c.kind, ref: c.ref, label: retirer.label,
-                    ok: !!(answer && answer.ok),
-                    errorCode: answer && !answer.ok
-                      ? String(answer.errorCode || 'STS-HWTOKEN-0007') : '',
-                    why: answer && !answer.ok ? String(answer.why || '') : '',
-                    sessionsEnded: Number((answer && answer.sessionsEnded) ||
-                                          0) };
-      (row.ok ? retired : notRetired).push(row);
+      log.debug("Leaving retireAll().");
+    };
+    let signals: Json = null;
+    try {
+      signals = this.deps.loadSignals();
+    } catch (e) {
+      log.debug("Caught in HardwareTokens.markLost(): " +
+                ((e && e.message) || e));
+      signals = null;
+    }
+    if (signals && typeof signals.batch === 'function') {
+      await signals.batch(retireAll);
+    } else {
+      await retireAll();
     }
     const done = JSON.parse(JSON.stringify(register.get(key) || marked));
     done.lost = Object.assign({}, done.lost || marked.lost, {

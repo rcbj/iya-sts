@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. El icono que un navegador solicita por sí solo en cada página: la marca cuadrada del logotipo (common/favicon.ico). Se responde en cada escucha; se conserva un día."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). El receptor de lo que CSP Level 3 y la Reporting API definen que envíe un navegador: la política de cada página lo nombra en report-uri y report-to, junto a una cabecera Reporting-Endpoints. Solo POST, sin credencial, como máximo 16 KiB y 60 informes por minuto desde una dirección; registra la directiva, la ruta de la página sin su consulta y el origen bloqueado, registra STS-HTTP-0027 y responde 204 sin cuerpo. Lo responde el proceso frontal (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Las reglas de la tarjeta de la pantalla de inicio de sesión y del selector de idioma, como una sola hoja de estilo que enlaza el shell de una superficie pública estática (common/web_card_css.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
@@ -1742,6 +1746,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — los controles de /admin/pki/trust. add toma `certificates` (uno o más bloques PEM, cada uno por la regla de admisión y con cada rechazo nombrado), con `purposes` para restringirlos; remove toma un `fingerprint`; recheck ejecuta la auditoría ahora; set-row toma un `setting` `pki.paranoid*` y su `value`, por la escritura ordinaria de ajustes. Requiere admin:write. Se escribe en ou=signerTrustAnchors, así que un cambio sobrevive a un reinicio."
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "Las pestañas Almacenes de confianza, Casos de uso y Almacén de confianza del sistema de /admin/pki/trust en JSON (#2118): cada almacén de confianza que este dominio puede nombrar (integrado, vista, ajuste, paquete SPIFFE o con nombre) con lo que contiene contado y los casos de uso que confían en él, cada caso de uso con aquello en que confía ahora y su predeterminado, los límites, y el almacén predeterminado de node descrito certificado por certificado sin PEM."
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — los controles de las pestañas Almacenes de confianza y Casos de uso de /admin/pki/trust (#2118). show toma un `name` (y `withPem`) y no escribe nada; create toma un `name` y una `description`; delete se rechaza mientras un caso de uso confíe en el almacén; add toma `certificates`, cada uno por la regla de admisión y con cada rechazo nombrado; remove toma una `fingerprint`; assign toma un `useCase` y sus `truststores` ordenados, y unassign devuelve el caso de uso a su predeterminado. Un caso de uso de todo el servicio solo se asigna desde el dominio predeterminado. Requiere admin:write. Se escribe en ou=truststores, así que un cambio sobrevive a un reinicio."
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -2426,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NO ESTÁNDAR (#98 D11). Una página de los residentes de otra celda, respondida por esa celda solo cuando su política de divulgación lo permite."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports en JSON: las infracciones de la Content Security Policy que los navegadores informaron para este reino, contadas por directiva por el proceso frontal de este nodo, y el ajuste de reenvío. No cambia nada."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

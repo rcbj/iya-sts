@@ -61,6 +61,9 @@
 import SpaClient = require('../common/web_spa_client');
 import WebSafeDom = require('../common/web_safe_dom');
 import WebMessages = require('../common/web_messages');
+// An answer's refusal in the page's language where it names a catalog
+// message (#2006; the write budget's, #2167), its English otherwise.
+import WebSaid = require('../common/web_said');
 import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
@@ -80,10 +83,16 @@ type Json = any;
 
 // The portal's client: public, DPoP-bound (`sender_constraints.js`).
 const CLIENT_ID = 'sts-user-portal';
-// An ID Token for who signed in, the one scope the account API takes, and an
-// owner's two on the management API (#607) — issued only to a person who
-// owns something, so a token without them is the ordinary case.
-const SCOPE = 'openid account:manage owner:read owner:write';
+// An ID Token for who signed in, the account API's read scope, and an
+// owner's read scope on the management API (#607) — issued only to a person
+// who owns something, so a token without it is the ordinary case. READ
+// SCOPES ONLY SINCE #2168 (ASVS 5.0.0 10.2.3, rcbj's decision): the first
+// write either API refuses for want of `account:manage` or `owner:write`
+// asks for it by a second authorization (`SpaClient.stepUp()`), silently
+// while the sign-on session holds; reads keep the read tokens.
+const SCOPE = 'openid account:read owner:read';
+// What a second authorization may add (#2168).
+const WRITE_SCOPES = ['account:manage', 'owner:write'];
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-portal-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
@@ -156,7 +165,8 @@ class PortalRuntime extends SpaClient {
       clientId: CLIENT_ID, scope: SCOPE,
       elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
                    '/logout': 'data-sts-authn' },
-      accountKey: ACCOUNT_KEY
+      accountKey: ACCOUNT_KEY,
+      writeScopes: WRITE_SCOPES
     });
     this.dirty = false;
     this.openSection = null;
@@ -244,6 +254,8 @@ class PortalRuntime extends SpaClient {
                      extra?: Json): Promise<string> {
     const params: Json = {
       response_type: 'code', client_id: CLIENT_ID,
+      // The read scopes; a second authorization's replace them below
+      // (#2168), as `extra` replaces anything it names.
       redirect_uri: this.url(kit.BASE + '/callback'), scope: SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
       // BOTH RESOURCES (#607, RFC 8707): the account API's token is redeemed
@@ -307,6 +319,11 @@ class PortalRuntime extends SpaClient {
     // A JARM answer is opened and checked first (`SpaClient`).
     const query = await this.openAuthorizationResponse(
       this.callbackParameters());
+    // A SECOND AUTHORIZATION'S WINDOW (#2168) hands its answer back to the
+    // page whose write is waiting on it, and redeems nothing.
+    if (this.handBackStepUp(query, this.prefix + kit.BASE + '/callback')) {
+      return;
+    }
     let saved: Json = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -465,6 +482,7 @@ class PortalRuntime extends SpaClient {
     // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and whatever
     // comes back after one is null, as a sign-in that began is.
     const identity = this.identity;
+    let stepped = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       const access = await this.ownerAccess();
       if (identity !== this.identity) {
@@ -478,9 +496,14 @@ class PortalRuntime extends SpaClient {
         return { status: 403, json: { ok: false, errors: [
           this.t.text('portalOwned.edit.noToken')] } };
       }
+      // THE OWNER'S WRITE TOKEN FOR ANYTHING BUT A GET, while one is held
+      // (#2168); the owner token, refreshed from the read grant, otherwise.
+      const written = method !== 'GET'
+        ? this.writeTokenFor(this.ownerResource()) : '';
+      const token = written || access.token;
       const headers: Json = {
-        'Authorization': 'DPoP ' + access.token,
-        'DPoP': await this.proof(method, target, access.token),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json',
         'Accept-Language': this.t.lang
       };
@@ -510,9 +533,28 @@ class PortalRuntime extends SpaClient {
         if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
           continue;
         }
-        // A token that stopped being one: drop it, and refresh once.
-        this.ownerToken = '';
+        // A token that stopped being one: drop it, and refresh once. A
+        // write token is never refreshed (#2168): it is dropped, and the
+        // write goes again on the owner token.
+        if (written) {
+          this.dropWriteToken(this.ownerResource());
+        } else {
+          this.ownerToken = '';
+        }
         if (attempt < 2) {
+          continue;
+        }
+      }
+      // A WRITE THE OWNER'S READ TOKEN CANNOT MAKE (#2168): the API names
+      // `owner:write`, the second authorization gets it, and the write goes
+      // once more, from memory.
+      if (!stepped && SpaClient.insufficientScopeOf(res).length) {
+        stepped = true;
+        if (await this.stepUp(this.ownerResource(),
+                              SpaClient.insufficientScopeOf(res))) {
+          if (identity !== this.identity) {
+            return null;
+          }
           continue;
         }
       }
@@ -564,9 +606,13 @@ class PortalRuntime extends SpaClient {
       return NEEDS_SIGN_IN;
     }
     for (let attempt = 0; attempt < 3; attempt++) {
+      // THE READ TOKEN FOR A GET, AND A WRITE TOKEN FOR ANYTHING ELSE WHILE
+      // ONE IS HELD (#2168).
+      const token = this.tokenFor(method, this.resource());
+      const writing = token !== this.accessToken;
       const headers: Json = {
-        'Authorization': 'DPoP ' + this.accessToken,
-        'DPoP': await this.proof(method, target, this.accessToken),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json'
       };
       if (body !== undefined && body !== null) {
@@ -597,6 +643,12 @@ class PortalRuntime extends SpaClient {
       if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
         continue;
       }
+      // A WRITE TOKEN IS NEVER REFRESHED (#2168): one refused is dropped,
+      // and the write goes again on the read token.
+      if (writing) {
+        this.dropWriteToken(this.resource());
+        continue;
+      }
       if (/invalid_token/.test(challenge) && await this.refresh()) {
         continue;
       }
@@ -604,6 +656,48 @@ class PortalRuntime extends SpaClient {
     }
     this.accessToken = '';
     return NEEDS_SIGN_IN;
+  }
+
+  // THE PORTAL'S HALF OF A SECOND AUTHORIZATION (#2168, `SpaClient`'s
+  // `stepUp()`): its callback, where it goes when no window can be opened,
+  // and the bar's words in the person's language.
+  /**
+   * The portal's callback, a second authorization's `redirect_uri`.
+   *
+   * @returns the URL
+   */
+  callbackUrl(): string {
+    return this.url(kit.BASE + '/callback');
+  }
+
+  /**
+   * Signs in on this page for a write scope. The change waiting is not
+   * sent: the person makes it again when the page is back.
+   *
+   * @param scope - the scope to sign in with
+   * @param prompt - `login`, or '' for none
+   * @returns nothing
+   */
+  async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    await this.beginSignIn(this.here() + String(this.env.location.hash || ''),
+      prompt ? { scope: scope, prompt: prompt, max_age: '0' }
+             : { scope: scope });
+  }
+
+  /**
+   * The step's bar's words, from the portal's catalog where it has them.
+   *
+   * @returns `SpaClient.stepWords()`'s shape
+   */
+  stepWords(): Json {
+    const english = super.stepWords();
+    const t = this.t;
+    const out: Json = {};
+    Object.keys(english).forEach(function (name: string) {
+      const key = 'portal.step.' + name;
+      out[name] = t && t.has(key) ? t.text(key) : english[name];
+    });
+    return out;
   }
 
   /**
@@ -618,7 +712,19 @@ class PortalRuntime extends SpaClient {
    */
   async apiJson(method: string, path: string, body?: Json): Promise<Json> {
     const identity = this.identity;
-    const res = await this.sendOnce(method, this.url(path), body);
+    let res = await this.sendOnce(method, this.url(path), body);
+    // A WRITE THE READ TOKEN CANNOT MAKE (#2168): the account API names
+    // `account:manage`, the second authorization gets it, and the write is
+    // sent once more — the same closure, so it never leaves memory. A step
+    // that does not end with the scope answers the refusal as it was.
+    const named = res && res !== ABORTED && res !== NEEDS_SIGN_IN
+      ? SpaClient.insufficientScopeOf(res) : [];
+    if (named.length && await this.stepUp(this.resource(), named)) {
+      if (identity !== this.identity) {
+        return null;
+      }
+      res = await this.sendOnce(method, this.url(path), body);
+    }
     if (res === ABORTED) {
       return null;
     }
@@ -931,7 +1037,11 @@ class PortalRuntime extends SpaClient {
       }
       this.view = { page: page, query: query, json: { owned: {
         status: loaded.status, answer: loaded.json || {},
-        canWrite: this.ownerMay('owner:write'), query: query } } };
+        // OWNER_WRITE is held on OWNER_READ's condition (`roles.js`), so an
+        // owner's read token says the write scope is one second
+        // authorization away (#2168); the write asks for it.
+        canWrite: this.ownerMay('owner:write') ||
+          this.ownerMay('owner:read'), query: query } } };
       this.drawView();
       return;
     }
@@ -968,7 +1078,7 @@ class PortalRuntime extends SpaClient {
     const own = json.view && (json.view.refused || json.view.notOffered ||
                               json.view.tooMany);
     if ((answer.status !== 200 || json.ok === false) && !own) {
-      this.flash = { error: (json.errors || []).join(' ') ||
+      this.flash = { error: WebSaid.saidWith(this.t, json) ||
                             'The account API answered ' + answer.status + '.' };
     }
     let drawn = json.view || json;
@@ -1214,7 +1324,7 @@ class PortalRuntime extends SpaClient {
     const v = json.view || {};
     const ownRefusal = !!(v.refused || v.notOffered || v.tooMany);
     const said = json.ok === false
-      ? (ownRefusal ? {} : { error: (json.errors || []).join(' ') ||
+      ? (ownRefusal ? {} : { error: WebSaid.saidWith(this.t, json) ||
                                     'Refused (' + answer.status + ').' })
       : { message: String(json.message || '') };
     if (Array.isArray(json.files) && json.files.length) {

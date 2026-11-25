@@ -379,6 +379,7 @@ const passkeyReport = require('../common/passkey_report');
 // The signer truststore (#1360), whose directory slot this module fills. A
 // library over `pki`, `realms` and `config`: a require moves no route.
 const signerTruststore = require('../common/signer_truststore');
+const truststores = require('../common/truststores');
 // The device register (#164), for `/admin/ldap/devices`: its schema and what
 // its entries mean. A library built before this module and loaded by it
 // already through `credentials`' neighbours — a cache hit, which moves no
@@ -988,6 +989,15 @@ function signerTrustAnchorsDn() {
   log.debug("Entering signerTrustAnchorsDn().");
   log.debug("Leaving signerTrustAnchorsDn().");
   return 'ou=signerTrustAnchors,' + baseDn();
+}
+
+// THE NAMED TRUSTSTORES (#2118): one entry per truststore under
+// `ou=truststores,<realm base>`, its certificates beneath it, and one entry
+// holding the realm's assignments. `common/truststores.ts` owns what each is.
+function truststoresDn() {
+  log.debug("Entering truststoresDn().");
+  log.debug("Leaving truststoresDn().");
+  return 'ou=truststores,' + baseDn();
 }
 
 // ou=passwordPolicies is the PASSWORD POLICY register (2026-09-12). A container
@@ -6057,6 +6067,9 @@ const directoryHooks = {
     if (isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
     }
+    if (isNamedTruststoreKey(realmId, key)) {
+      reapplyTlsTruststoresQuietly();
+    }
     // NOT THE IDENTITY REGISTER (#618 phase 2, 2026-10-14). Until then a
     // person another process made through a door was noted here as
     // `created` — in EVERY process, so each add cost every other process a
@@ -6102,6 +6115,9 @@ const directoryHooks = {
     }
     if (gone && isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
+    }
+    if (gone && isNamedTruststoreKey(realmId, key)) {
+      reapplyTlsTruststoresQuietly();
     }
     log.debug('Leaving removeEntry(). ' + (gone ? 'Removed.' : 'It was not ' +
         'here.'));
@@ -11696,6 +11712,25 @@ if (typeof tlsServer.setTrustAnchorStore === 'function') {
 // inside an applier that must not fail because a LISTENER could not take a new
 // context: the entry is stored either way, and `applyAnchors()` logs its own
 // failure.
+// The listeners' truststores re-applied after a change under
+// `ou=truststores` (#2118), with `reloadTrustAnchorsQuietly()`'s reason for
+// swallowing a failure.
+function reapplyTlsTruststoresQuietly() {
+  log.debug("Entering reapplyTlsTruststoresQuietly().");
+  if (typeof tlsServer.applyTruststores !== 'function') {
+    log.debug("Leaving reapplyTlsTruststoresQuietly().");
+    return;
+  }
+  try {
+    tlsServer.applyTruststores();
+  } catch (e) {
+    log.error(errorCodes.tag('STS-LDAP-0051') +
+              'ldap: the listeners\' truststores could not be re-applied ' +
+              'after a change to ou=truststores: ' + e.message);
+  }
+  log.debug("Leaving reapplyTlsTruststoresQuietly().");
+}
+
 function reloadTrustAnchorsQuietly() {
   log.debug("Entering reloadTrustAnchorsQuietly().");
   if (typeof tlsServer.reloadStoredAnchors !== 'function') {
@@ -15445,6 +15480,19 @@ signerTruststore.setDirectory({
   list: inRealmNamed(signerAnchorRows),
   put: inRealmNamed(writeSignerAnchor),
   remove: inRealmNamed(deleteSignerAnchor)
+});
+
+// THE NAMED TRUSTSTORES' SLOT (#2118, rule 3e): the signer truststore's
+// reason, one container along. Validated whole there.
+truststores.setDirectory({
+  listStores: inTruststoreRealm(truststoreRows, []),
+  putStore: inTruststoreRealm(writeTruststore, false),
+  removeStore: inTruststoreRealm(deleteTruststore, false),
+  listCerts: inTruststoreRealm(truststoreCertificateRows, []),
+  putCert: inTruststoreRealm(writeTruststoreCertificate, false),
+  removeCert: inTruststoreRealm(deleteTruststoreCertificate, false),
+  readAssignments: inTruststoreRealm(readTruststoreAssignments, {}),
+  writeAssignments: inTruststoreRealm(writeTruststoreAssignments, false)
 });
 
 if (typeof credentials.setDirectory === 'function') {
@@ -23242,6 +23290,25 @@ server.search('', function (req, res, next) {
     log.debug('Leaving the LDAP search handler. Not bound.');
     return next(readRefusal);
   }
+  // A SUBSTRING ASSERTION WIDER THAN THE CAP IS REFUSED BEFORE ANY ENTRY IS
+  // READ (#2137, ASVS 5.0.0 1.3.12). `ldap_matching.ts` matches a substring
+  // in one linear pass, so a wide one is no longer a backtracking bomb, but
+  // its cost is still components x value length for every value in scope,
+  // and nothing legitimate needs more than a handful; the constant is argued
+  // there. adminLimitExceeded (11) is RFC 4511's "a server-defined
+  // administrative limit", which this is, and the client is told the limit.
+  const widest = ldapMatching.widestSubstring(req.filter);
+  if (widest > ldapMatching.MAX_SUBSTRING_COMPONENTS) {
+    log.debug('Leaving the LDAP search handler. A substring assertion is ' +
+              'too wide.');
+    return next(ldapRefusal(req, 'STS-LDAP-0226', 'a search of ' + base +
+      ' was refused: a substring assertion held ' + widest +
+      ' components, over the limit of ' +
+      ldapMatching.MAX_SUBSTRING_COMPONENTS,
+      new ldap.AdminLimitExceededError('a substring assertion may hold at ' +
+        'most ' + ldapMatching.MAX_SUBSTRING_COMPONENTS + ' components'),
+      base));
+  }
   if (!inNamingContext(base)) {
     log.debug('Leaving the LDAP search handler. Outside the naming context.');
     return next(ldapRefusal(req, 'STS-LDAP-0003', 'a search based at ' + base +
@@ -26513,6 +26580,252 @@ function deleteSignerAnchor(fingerprint) {
   return gone;
 }
 
+// ----- The named truststores (#2118) ---------------------------------------
+
+// The container, seeded on the first write: a realm built before #2118 has
+// none, and an empty one is nothing worth seeding into every realm.
+function putTruststoresContainer() {
+  log.debug("Entering putTruststoresContainer().");
+  putEntry(truststoresDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'truststores',
+    description: 'NAMED TRUSTSTORES (#2118): one stsTruststore entry per ' +
+      'truststore an administrator created, its certificates beneath it as ' +
+      'stsSignerTrustAnchor entries, and cn=assignments, which says which ' +
+      'truststores each use case of this realm trusts. The default ' +
+      'realm\'s are service-wide. Writing here decides whose certificates ' +
+      'this service believes, so it is an administrative act. ' +
+      'common/truststores.ts owns what an entry is.'
+  }, { origin: 'seed' });
+  log.debug("Leaving putTruststoresContainer().");
+}
+
+function truststoreDn(name) {
+  log.debug("Entering truststoreDn().");
+  log.debug("Leaving truststoreDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + truststoresDn();
+}
+
+function hasClass(stored, wanted) {
+  log.debug("Entering hasClass().");
+  const found = (stored.attributes.objectclass || []).some(function (one) {
+    return String(one).toLowerCase() === wanted.toLowerCase();
+  });
+  log.debug("Leaving hasClass(). " + found);
+  return found;
+}
+
+function truststoreRows() {
+  log.debug("Entering truststoreRows().");
+  const container = normalizeDn(truststoresDn());
+  const rows = entriesUnder(truststoresDn()).filter(function (stored) {
+    return hasClass(stored, 'stsTruststore') &&
+      normalizeDn(stored.dn).endsWith(',' + container) &&
+      normalizeDn(stored.dn).split(',').length ===
+        container.split(',').length + 1;
+  }).map(function (stored) {
+    const a = stored.attributes;
+    return {
+      name: (a.cn || [])[0] || '',
+      description: (a.description || [])[0] || '',
+      kind: (a.ststruststorekind || [])[0] || 'x509',
+      addedBy: (a.ststrustanchoraddedby || [])[0] || '',
+      addedAt: stored.createdAt || ''
+    };
+  }).filter(function (row) {
+    return !!row.name;
+  });
+  log.debug("Leaving truststoreRows(). " + rows.length + ".");
+  return rows;
+}
+
+function writeTruststore(row) {
+  log.debug("Entering writeTruststore().");
+  const dn = truststoreDn(row.name);
+  if (!entries.get(normalizeDn(dn)) && cappedEntries() >= maxEntries()) {
+    log.debug("Leaving writeTruststore(). The directory is full.");
+    return false;
+  }
+  if (!entries.get(normalizeDn(truststoresDn()))) {
+    putTruststoresContainer();
+  }
+  const attributes = {
+    objectClass: ['top', 'stsTruststore'],
+    cn: String(row.name),
+    stsTruststoreKind: String(row.kind || 'x509'),
+    stsTrustAnchorAddedBy: String(row.addedBy || '')
+  };
+  if (row.description) {
+    attributes.description = String(row.description);
+  }
+  putEntry(dn, attributes, { origin: 'truststore' });
+  log.debug("Leaving writeTruststore().");
+  return true;
+}
+
+function deleteTruststore(name) {
+  log.debug("Entering deleteTruststore().");
+  const dn = truststoreDn(name);
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+  }
+  log.debug("Leaving deleteTruststore(). " + gone);
+  return gone;
+}
+
+function truststoreCertificateRows(name) {
+  log.debug("Entering truststoreCertificateRows().");
+  const parent = truststoreDn(name);
+  if (!entries.get(normalizeDn(parent))) {
+    log.debug("Leaving truststoreCertificateRows(). No such truststore.");
+    return [];
+  }
+  const rows = entriesUnder(parent).filter(function (stored) {
+    return hasClass(stored, 'stsSignerTrustAnchor');
+  }).map(function (stored) {
+    const a = stored.attributes;
+    return {
+      fingerprint: (a.ststrustanchorfingerprint || [])[0] || '',
+      pem: (a.ststrustanchorcertificate || [])[0] || '',
+      kind: (a.stssignertrustanchorkind || [])[0] || 'anchor',
+      addedBy: (a.ststrustanchoraddedby || [])[0] || '',
+      addedAt: stored.createdAt || ''
+    };
+  }).filter(function (row) {
+    return !!row.pem;
+  });
+  log.debug("Leaving truststoreCertificateRows(). " + rows.length + ".");
+  return rows;
+}
+
+function writeTruststoreCertificate(name, row) {
+  log.debug("Entering writeTruststoreCertificate().");
+  const parent = truststoreDn(name);
+  if (!entries.get(normalizeDn(parent))) {
+    log.debug("Leaving writeTruststoreCertificate(). No such truststore.");
+    return false;
+  }
+  const dn = 'cn=' + escapeDnValue(String(row.fingerprint)) + ',' + parent;
+  if (!entries.get(normalizeDn(dn)) && cappedEntries() >= maxEntries()) {
+    log.debug("Leaving writeTruststoreCertificate(). The directory is full.");
+    return false;
+  }
+  putEntry(dn, {
+    objectClass: ['top', 'stsSignerTrustAnchor'],
+    cn: String(row.fingerprint),
+    stsTrustAnchorFingerprint: String(row.fingerprint),
+    stsTrustAnchorCertificate: String(row.pem),
+    stsTrustAnchorAddedBy: String(row.addedBy || ''),
+    stsSignerTrustAnchorKind: String(row.kind)
+  }, { origin: 'truststore' });
+  if (realms.currentId() === realms.DEFAULT_ID) {
+    reapplyTlsTruststoresQuietly();
+  }
+  log.debug("Leaving writeTruststoreCertificate().");
+  return true;
+}
+
+function deleteTruststoreCertificate(name, fingerprint) {
+  log.debug("Entering deleteTruststoreCertificate().");
+  const dn = 'cn=' + escapeDnValue(String(fingerprint)) + ',' +
+             truststoreDn(name);
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+  }
+  if (gone && realms.currentId() === realms.DEFAULT_ID) {
+    reapplyTlsTruststoresQuietly();
+  }
+  log.debug("Leaving deleteTruststoreCertificate(). " + gone);
+  return gone;
+}
+
+function truststoreAssignmentsDn() {
+  log.debug("Entering truststoreAssignmentsDn().");
+  log.debug("Leaving truststoreAssignmentsDn().");
+  return 'cn=assignments,' + truststoresDn();
+}
+
+// `{ <use case>: [names] }` from values `<use case> <name>,<name>`: a use
+// case id has no space and a truststore name no comma, so one attribute
+// holds the whole map with no grammar beyond that.
+function readTruststoreAssignments() {
+  log.debug("Entering readTruststoreAssignments().");
+  const stored = entries.get(normalizeDn(truststoreAssignmentsDn()));
+  const out = {};
+  ((stored && stored.attributes.ststruststoreassignment) || [])
+    .forEach(function (value) {
+      const text = String(value);
+      const space = text.indexOf(' ');
+      if (space <= 0) {
+        return;
+      }
+      const names = text.slice(space + 1).split(',').map(function (one) {
+        return one.trim();
+      }).filter(Boolean);
+      if (names.length) {
+        out[text.slice(0, space)] = names;
+      }
+    });
+  log.debug("Leaving readTruststoreAssignments(). " +
+            Object.keys(out).length + ".");
+  return out;
+}
+
+function writeTruststoreAssignments(map) {
+  log.debug("Entering writeTruststoreAssignments().");
+  const dn = truststoreAssignmentsDn();
+  const values = Object.keys(map || {}).sort().filter(function (useCase) {
+    return (map[useCase] || []).length > 0;
+  }).map(function (useCase) {
+    return useCase + ' ' + map[useCase].join(',');
+  });
+  if (!values.length) {
+    const gone = entries.delete(normalizeDn(dn));
+    if (gone) {
+      touchDirectory(dn);
+    }
+    if (realms.currentId() === realms.DEFAULT_ID) {
+      reapplyTlsTruststoresQuietly();
+    }
+    log.debug("Leaving writeTruststoreAssignments(). Cleared.");
+    return true;
+  }
+  if (!entries.get(normalizeDn(dn)) && cappedEntries() >= maxEntries()) {
+    log.debug("Leaving writeTruststoreAssignments(). The directory is full.");
+    return false;
+  }
+  if (!entries.get(normalizeDn(truststoresDn()))) {
+    putTruststoresContainer();
+  }
+  putEntry(dn, {
+    objectClass: ['top', 'stsTruststoreAssignments'],
+    cn: 'assignments',
+    stsTruststoreAssignment: values
+  }, { origin: 'truststore' });
+  if (realms.currentId() === realms.DEFAULT_ID) {
+    reapplyTlsTruststoresQuietly();
+  }
+  log.debug("Leaving writeTruststoreAssignments(). " + values.length + ".");
+  return true;
+}
+
+// One of the functions above, in the realm named: the registry's slot takes
+// a realm id because a service-wide use case resolves in the default realm
+// whatever realm the request is in. An unknown realm answers `none`.
+function inTruststoreRealm(fn, none) {
+  log.debug("Entering inTruststoreRealm().");
+  log.debug("Leaving inTruststoreRealm().");
+  return function (realmId) {
+    const realm = realms.get(realmId);
+    const args = Array.prototype.slice.call(arguments, 1);
+    return realm ? realms.run(realm, function () {
+      return fn.apply(null, args);
+    }) : none;
+  };
+}
+
 // One of the three above, in the realm named: the store's slot takes a realm
 // id because the door's caller may be in a different one.
 function inRealmNamed(fn) {
@@ -26541,6 +26854,24 @@ function isTrustAnchorKey(realmId, key) {
   });
   const k = String(key || '');
   log.debug("Leaving isTrustAnchorKey().");
+  return k !== container &&
+         k.slice(-(container.length + 1)) === ',' + container;
+}
+
+// The same test for `ou=truststores` (#2118): a named truststore, its
+// certificates or the assignments, in the DEFAULT realm, whose truststores
+// are the service-wide ones a listener's `tls-client` may be assigned.
+function isNamedTruststoreKey(realmId, key) {
+  log.debug("Entering isNamedTruststoreKey().");
+  if (String(realmId || realms.DEFAULT_ID) !== realms.DEFAULT_ID) {
+    log.debug("Leaving isNamedTruststoreKey().");
+    return false;
+  }
+  const container = realms.run(realms.DEFAULT_REALM, function () {
+    return normalizeDn(truststoresDn());
+  });
+  const k = String(key || '');
+  log.debug("Leaving isNamedTruststoreKey().");
   return k !== container &&
          k.slice(-(container.length + 1)) === ',' + container;
 }
@@ -28595,6 +28926,114 @@ function startSelfVerification(stored, before) {
   log.debug('Leaving startSelfVerification().');
 }
 
+// ---------------------------------------------------------------------------
+// A CREDENTIAL HELD AS AN ATTRIBUTE, ADDED OR REMOVED (#2163, ASVS 5.0.0
+// 6.3.7). The person is mailed (`common/mail_uses.ts`'s
+// `credentialChanged()`) when an UPDATE of their entry adds or removes a
+// value of one of these. A created entry is told nothing — the account is
+// new — and a deleted one has nobody to tell. Who wrote it decides the
+// line's "by": the person themselves, or anybody else, who is an
+// administrator or a program acting for one; a write by the service's own
+// jobs (an actor of `system`) is not told. Several values in one write are
+// one notice (`batch()`). No CAEP event: a binding is not a certificate a
+// receiver could name, and a mail-encryption key signs nobody in. Lazily
+// required, for account_state's reason; never throws into the write.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_ATTRIBUTES = [
+  { kind: 'certificate-binding',
+    names: ['stscertificatebinding', 'stspivcarduuid'] },
+  { kind: 'smime',
+    names: ['usersmimecertificate', 'usersmimecertificate;binary'] },
+  { kind: 'openpgp', names: ['stsopenpgpfingerprint'], replaces: true }
+];
+
+/**
+ * Tells the person of every credential attribute value an update added or
+ * removed.
+ *
+ * @param dn - the entry
+ * @param before - its attributes before, lower-cased names
+ * @param after - and after
+ * @param options - the write's `{ actor }`, if it names one
+ * @returns how many lines were told
+ */
+function noteCredentialAttributes(dn, before, after, options) {
+  log.debug('Entering noteCredentialAttributes().');
+  const valuesAt = function (attributes, names) {
+    log.debug('Entering valuesAt().');
+    const out = [];
+    names.forEach(function (name) {
+      valuesOf((attributes || {})[name]).forEach(function (one) {
+        const value = String(one);
+        if (value && out.indexOf(value) < 0) {
+          out.push(value);
+        }
+      });
+    });
+    log.debug('Leaving valuesAt().');
+    return out;
+  };
+  const lines = [];
+  CREDENTIAL_ATTRIBUTES.forEach(function (held) {
+    const was = valuesAt(before, held.names);
+    const now = valuesAt(after, held.names);
+    const added = now.filter(function (v) {
+      return was.indexOf(v) < 0;
+    });
+    const removed = was.filter(function (v) {
+      return now.indexOf(v) < 0;
+    });
+    if (held.replaces && added.length && removed.length) {
+      lines.push({ kind: held.kind, change: 'changed' });
+      return;
+    }
+    added.forEach(function () {
+      lines.push({ kind: held.kind, change: 'added' });
+    });
+    removed.forEach(function () {
+      lines.push({ kind: held.kind, change: 'removed' });
+    });
+  });
+  if (!lines.length) {
+    log.debug('Leaving noteCredentialAttributes(). Nothing moved.');
+    return 0;
+  }
+  const username = canonicalUsernameOfDn(dn);
+  let actor = String((options && options.actor) || '');
+  try {
+    if (!actor) {
+      actor = String(require('../common/audit').currentActor() || '');
+    }
+    if (/^system\b/i.test(actor)) {
+      log.debug('Leaving noteCredentialAttributes(). The service\'s own.');
+      return 0;
+    }
+    // The person by name, by DN (an LDAP bind) or by subject (a token's
+    // `urn:uuid:` of their entryUUID).
+    const uuid = String(valuesOf((after || {}).entryuuid)[0] || '')
+      .toLowerCase();
+    const self = actor.toLowerCase() === String(username).toLowerCase() ||
+      (actor.indexOf('=') > 0 && normalizeDn(actor) === normalizeDn(dn)) ||
+      (!!uuid && actor.toLowerCase().replace(/^urn:uuid:/, '') === uuid);
+    const uses = require('../common/mail_uses');
+    realms.run(realmFor(dn), function () {
+      uses.batch(function () {
+        lines.forEach(function (line) {
+          uses.credentialChanged({ username: username, kind: line.kind,
+                                   change: line.change, label: '',
+                                   by: self ? 'user' : 'admin' });
+        });
+      });
+    });
+  } catch (e) {
+    log.warn(errorCodes.tag('STS-MAIL-0031') + 'ldap: a credential of ' + dn +
+             ' changed and the person could not be told: ' +
+             ((e && e.message) || e));
+  }
+  log.debug('Leaving noteCredentialAttributes(). ' + lines.length);
+  return lines.length;
+}
+
 function noteAccountChange(kind, dn, before, after, options) {
   log.debug('Entering noteAccountChange(). ' + kind + ' ' + dn);
   // A DELETED PERSON'S PHOTO GOES WITH THEM (#719). Its address has answered
@@ -28749,6 +29188,13 @@ function noteAccountChange(kind, dn, before, after, options) {
     log.error(errorCodes.tag('STS-LDAP-0225') + 'ldap: the credential ' +
               'attributes of ' + dn + ' could not be handed to their ' +
               'owners: ' + ((e && e.message) || e));
+  }
+  // THE CREDENTIALS HELD ONLY AS ATTRIBUTES, TOLD TO THE PERSON (#2163):
+  // certificate sign-in bindings, an S/MIME certificate, an OpenPGP key.
+  // Every door writes them here — the console, `/admin-api`, the portal,
+  // SCIM, an LDAP modify — so this is where they are told.
+  if (String(kind) === 'updated') {
+    noteCredentialAttributes(dn, before, after, options);
   }
   if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');

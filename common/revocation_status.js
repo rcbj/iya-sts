@@ -307,7 +307,9 @@ const pki = require('./pki');
 // Required for `isRevoked()` and the reason table, AND for its side effect:
 // it installs the Web Crypto engine pkijs verifies a CRL signature with.
 const pkiRevocation = require('./pki_revocation');
-const USER_AGENT = require('./version').userAgent('crl-fetch');
+// The outbound User-Agent's builder (a leaf). Asked per fetch since #2142:
+// product leaves the build out (`mode.publishesBuildDetail()`).
+const version = require('./version');
 
 /**
  * The values `pki.revocationCheck` may take.
@@ -1596,8 +1598,38 @@ function ocspRespondersOf(cert) {
 // answer; the list's own caIssuers address is the issuer's, and both are held
 // to the same authorisation before either is believed.
 // ---------------------------------------------------------------------------
+// A revocation fetch's TLS options: its use case's truststores where it is
+// assigned (#2118); unassigned, node's store and the CA file as before. Lazy,
+// `configuredCrlIssuers()`'s reason.
+function revocationTls(useCase, settingKey) {
+  log.debug("Entering revocationTls(). " + useCase);
+  const truststores = require('./truststores');
+  if (truststores.namesFor(useCase).assigned) {
+    const assigned = outboundTls().optionsFor(useCase);
+    if (!assigned.problem) {
+      log.debug("Leaving revocationTls(). Assigned.");
+      return assigned;
+    }
+    log.warn(errorCodes.tag('STS-PKI-0125') + 'revocation: ' +
+             assigned.problem.why + '. Nothing is taken from it.');
+  }
+  log.debug("Leaving revocationTls().");
+  return outboundTls().verifiedOptions(pemFileOf(settingKey).pems);
+}
+
 function configuredCrlIssuers() {
   log.debug("Entering configuredCrlIssuers().");
+  // The truststores `revocation-signer` is assigned (#2118), required
+  // lazily because they reach this module through `pki`; unassigned, the
+  // file exactly as before.
+  const truststores = require('./truststores');
+  if (truststores.namesFor('revocation-signer').assigned) {
+    const pems = truststores.configuredPems('revocation-signer');
+    log.debug("Leaving configuredCrlIssuers(). Assigned.");
+    return pems.map(x509Of).filter(function (one) {
+      return !!one;
+    });
+  }
   log.debug("Leaving configuredCrlIssuers().");
   return pemFileOf('pki.revocationCrlIssuersFile').certs;
 }
@@ -1768,7 +1800,9 @@ function fetchBytes(url, options) {
                            Number(config.value('pki.revocationFetchTimeoutMs')));
   const headers = { 'Accept': opts.accept || 'application/pkix-crl, ' +
                                              'application/octet-stream, */*',
-                    'User-Agent': opts.userAgent || USER_AGENT };
+                    'User-Agent': opts.userAgent ||
+                      version.userAgent('crl-fetch',
+                                        mode.publishesBuildDetail()) };
   if (opts.body) {
     headers['Content-Type'] = opts.contentType;
     headers['Content-Length'] = String(opts.body.length);
@@ -1803,8 +1837,8 @@ function fetchBytes(url, options) {
         // `pki.revocationHttpsCaFile`, RFC 9525's host check and the path
         // rules (`OutboundTls.verifiedOptions()`) — because an https address
         // is a claim about who answers, and a claim unchecked is none.
-        ...outboundTls().verifiedOptions(
-          pemFileOf('pki.revocationHttpsCaFile').pems),
+        ...revocationTls('outbound-revocation-http',
+          'pki.revocationHttpsCaFile'),
         // Not gated by `tls-server-outbound`: this fetch IS what that gate
         // asks, and gating it would ask for its own answer (#1360).
         ...(/** @type {any} */ ({ stsOutboundGate: false }))
@@ -2095,8 +2129,7 @@ function fetchLdap(url, want) {
     // `any`: the helper's type names what IT sets, and `servername` is set
     // below.
     const tlsOptions = /** @type {any} */ (Object.assign({},
-      outboundTls().verifiedOptions(
-      pemFileOf('pki.revocationLdapCaFile').pems)));
+      revocationTls('outbound-revocation-ldap', 'pki.revocationLdapCaFile')));
     // Node's store even when the file adds nothing: `ca` names the anchors.
     tlsOptions.ca = tlsOptions.ca || tls.rootCertificates.slice(0);
     // This fetch IS what the outbound gate asks (#1360).

@@ -122,6 +122,7 @@
   "nav.spiffe-trust-domain": "Domaine de confiance",
   "nav.tls": "TLS / TLS mutuel",
   "nav.tls-connection": "Connexion TLS",
+  "nav.csp-reports": "Rapports CSP",
   "nav.pki-trust": "Confiance PKI",
   "nav.tls-trust": "Magasin de confiance des certificats clients",
   "nav.users": "Utilisateurs",

@@ -1569,6 +1569,20 @@ hides from them, whether the roster is still open — this operation tells it.
   policy" and `write` the same for ADMIN_WRITE, which are held ∩ carried
   (#303). A second reading of the roster here could disagree with the gate
   that has just let the request in.
+* **`holds` IS THE OTHER HALF (#2168).** The console signs in with `admin:read
+  admin:console`, so `write` and `security` are false on its first token for
+  everybody; `holds` is held ∩ DECLARED — the roles the subject holds now
+  whose permission the client may still be issued, whatever this token
+  carries (`heldAdminRoles()`) — and the console draws forms from it and the
+  frame's banner (`consoleGateOf()`) says what the reader may do. It decides
+  nothing: the gate asks held ∩ carried of every call. Beside it the gate
+  names a missing scope on its two refusals a missing scope ends in —
+  `WWW-Authenticate: <scheme> error="insufficient_scope", scope="…"` on
+  STS-API-0005 (the operation's scope, `admin:write` too for a console form
+  helper, `owner:write` beside it for an owner's write) and STS-API-0138
+  (`admin:security`), status, code and body unchanged, and only where the
+  token LACKS the scope (`challengeMissingScope()`), so a subject who lost
+  the role is not sent round a second authorization that cannot help.
 * **THE ROSTER IS ASKED FOR WHAT ONLY IT KNOWS**: whether the console is open
   to anybody, and the bootstrap administrator's state (`console`). Asked for a
   person only, in the token's realm; one that cannot be read reports itself
@@ -1644,6 +1658,27 @@ has nobody to ask. **The same six acts are on that list since #1577**:
 recency, so the two widest removals were the two a stale sign-in could make.
 The console needs nothing per action — `web_runtime.ts` reads the challenge
 off any 401.
+
+**SINCE #2161 (ASVS 5.0.0 7.5.3, rcbj 2026-11-24) THE RECENCY IS ALSO ASKED BY
+FAMILY, AT THE CHOKE POINT.** `REAUTHENTICATED_ACTIONS` stays a list of action
+names that the two handlers check. The other sensitive acts are declared by
+family: `RECENT_SIGN_IN_TAGS` (Admin roles, Roles, Trust realms, PKI,
+Configuration), `RECENT_SIGN_IN_ROUTES` (`/keys`, `/encryption`,
+`/tls/trust`, `/secret-destinations`, whose `Service` or `Directory` tag also
+covers acts that are not sensitive), and `RECENT_SIGN_IN_ACTIONS` (the krbtgt
+rotations and `reset-person-keytab` on `/kerberos/principals`). Every request
+the gate classifies as a Security Administrator's change (#645, kept on
+`res.locals.securityChange`) is asked as well. `registerRoutes()` asks
+`AdminApi.recentSignInFamilyOf()` for every POST, after the body check and
+before the handler, so **a new action or route in one of those families is
+covered without an edit**. Only a `writesNothing` act is left out. **The
+settings are not split into security settings and the rest.** That would be
+a list a new security setting could be left off, so every `config/*` write
+is asked, `global.mode` among them. The window is the same setting, and
+`tests/admin_api_recent_sign_in.js` holds the table and one operation per
+family, stale and fresh. `tests/protocol/console_signin.js`'s `api()` signs
+in again with `prompt=login` on the 401, as the console's popup does, so a
+console job that runs longer than the window keeps working.
 
 
 ## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)

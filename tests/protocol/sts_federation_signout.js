@@ -715,6 +715,9 @@ async function setUp() {
     oauthRedirectUri: [view.endpoints.assertionConsumerService],
     oauthTokenEndpointAuthMethod: "none",
     oauthGrantType: ["implicit"], oauthResponseType: ["id_token"],
+    // The relationship's `fedScope`, declared (#2169): in product a client
+    // that declares none is issued `openid` alone (#1589).
+    oauthAllowedScope: ["openid", "profile", "email"],
     oauthFrontchannelLogoutUri: view.endpoints.frontchannelLogout,
     oauthFrontchannelLogoutSessionRequired: "TRUE" });
   const partnerView = await api(IDP, "GET", "/users?user=" +

@@ -515,6 +515,10 @@
     "en": "6a36418727489219",
     "text": "أيقونة الخدمة"
   },
+  "endpoints.route./web/csp-report.name": {
+    "en": "4c905dd496d09bb9",
+    "text": "تقارير مخالفات سياسة أمان المحتوى"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "ورقة أنماط بطاقات الأسطح العامة"
@@ -878,6 +882,14 @@
   "endpoints.route./admin-api/pki/trust/:action.name": {
     "en": "49eac4924ef09867",
     "text": "تغيير مخزن ثقة الموقّعين، أو صفًا متشكّكًا، أو إعادة فحص التثبيتات"
+  },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "مخازن الثقة المسمّاة وحالات الاستخدام التي تثق بها"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "تغيير مخزن ثقة مسمّى أو ما تثق به حالة استخدام"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -1418,6 +1430,10 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "قاطنو الخلية"
+  },
+  "endpoints.route./admin-api/csp-reports.name": {
+    "en": "ff0444716f951c5e",
+    "text": "تقارير مخالفات CSP"
   },
   "endpoints.route./admin-api/malware-scanning.name": {
     "en": "48adceb89b5e59c8",

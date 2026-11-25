@@ -11,6 +11,14 @@
   "by.administratorConsoleLogout": "isang administrator (ang admin console sa /admin/logout)",
   "act.credentialCompromised": "minarkahang nakompromiso ang credential",
   "act.accountDisabled": "na-disable ang account",
+  "signIn.kind": "{kind, select, new-device {isang device o browser na hindi pa nakikita} new-country {isang bansang hindi pa nakikita} anonymiser {isang network na nagtatago ng pagkakakilanlan gaya ng Tor} after-refusals {mga password na tinanggihan bago nito} unusual {isang antas ng panganib na kakaiba para sa account na ito} other {{kind}}}",
+  "signIn.method": "{kind, select, password {isang password} webauthn {isang passkey o security key} fido {isang passkey o security key} federation {ibang identity provider} kerberos {Kerberos} x509 {isang sertipiko} totp {isang authenticator app} backup-code {isang recovery code} wallet {isang digital wallet} yubico-otp {isang YubiKey OTP} ssh {isang SSH key} other {ibang paraan}}",
+  "signIn.device": "{browser} sa {os}",
+  "signIn.deviceUnknown": "isang browser o device na hindi nagpakilala",
+  "signIn.placeUnknown": "hindi alam",
   "rights.access": "access",
-  "address.none": "(wala)"
+  "address.none": "(wala)",
+  "credentialChange.item": "{kind, select, passkey {passkey o security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {mga recovery code} certificate {sertipiko} certificate-binding {pagbibigkis ng sertipiko sa pag-sign in} smime {S/MIME na sertipiko} openpgp {OpenPGP na key} other {kredensyal}}: {change, select, added {idinagdag} generated {ginawa} removed {inalis} other {binago}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {passkey o security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {mga recovery code} certificate {sertipiko} certificate-binding {pagbibigkis ng sertipiko sa pag-sign in} smime {S/MIME na sertipiko} openpgp {OpenPGP na key} other {kredensyal}} “{label}”: {change, select, added {idinagdag} generated {ginawa} removed {inalis} other {binago}}",
+  "credentialChange.by": "{entity, select, user {ninyo, sa portal o sa pag-sign in} other {ng isang administrator}}"
 }

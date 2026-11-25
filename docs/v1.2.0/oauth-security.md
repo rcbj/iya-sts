@@ -495,6 +495,7 @@ default**:
 | `oauth2.refreshTokenRequireMtls` | the same for a client certificate (section 7.1 still passes a certificate-authenticated client) |
 | `oauth2.accessTokenRequireDpop` | every protected resource refuses an access token that is not DPoP-bound and proved |
 | `oauth2.accessTokenRequireMtls` | the same for a certificate-bound token |
+| `oauth2.accessTokenRequireSenderConstraint` | no access token is minted unless the request binds it, by a DPoP proof or the connection's client certificate, either one; the authorization endpoint refuses a `token` response type (ASVS 5.0.0 10.3.5, 10.4.14) |
 
 * **The refresh settings refuse the whole token request**, access token
   included. Half a token set is worse than an error, because the client finds
@@ -1284,17 +1285,67 @@ nothing, so it carries the same framing clauses as every other page.
   text) carries a narrower policy: no `style-src` and no `img-src`, with
   `frame-ancestors` and `base-uri` kept. Only HTML pages keep the base
   policy's inline styles and `data:` images, which some of them use.
+- **`Cross-Origin-Resource-Policy: same-site`** on every response, so
+  another site cannot embed what this service answers in a page of its own.
+  `same-site` rather than `same-origin`, because this host's other listeners
+  are other origins of the same site. Profile photos and the realm's sign-in
+  logo are `cross-origin`, because mail clients and relying parties show
+  them (#2181).
+- **`Cross-Origin-Opener-Policy: same-origin`** on every HTML page except
+  the ones a relying party may open in a popup of its own: the authorization
+  endpoint, the sign-in and consent screens, the SAML, WS-Federation, GNAP
+  and federation pages, the identity-provider-initiated launch, sign-out and
+  the OP iframe. On those, COOP would cut the popup off from the window that
+  opened it, and the relying party would never get its answer (#2181).
 - **The console, the user portal and the reports application** answer
   `Cross-Origin-Opener-Policy: same-origin-allow-popups` and
   `Cross-Origin-Resource-Policy: same-origin`.
-  - `same-origin-allow-popups` rather than `same-origin`, so the console's
-    re-authentication window keeps working.
-  - The sign-in screens carry neither header, because a relying party may
-    open one in a popup.
+  `same-origin-allow-popups` rather than `same-origin` keeps the console's
+  re-authentication window working.
 - **No page of the console, the user portal or the reports application
   allows an inline style:** their policy is `style-src 'self'`. Their styles
   are stylesheet rules, and their charts are SVG, so a `style=""` attribute
   injected into their markup is not applied.
+
+### Content Security Policy violation reports
+
+Every page's policy ends with `report-uri /web/csp-report; report-to
+csp-endpoint`, and the page carries
+`Reporting-Endpoints: csp-endpoint="/web/csp-report"`, so a browser that
+blocks something on a page of this service tells the service. In a realm the
+path is the realm's (`/realm/acme/web/csp-report`). The directives are added
+when the response is sent, the same way `frame-ancestors` is checked, so a
+page that relaxes the policy carries them too. A response that is not a page
+(JSON, XML, plain text) does not.
+
+`POST /web/csp-report` takes a CSP Level 2 report
+(`application/csp-report`) or a Reporting API batch
+(`application/reports+json`). It needs no credential, because a browser
+sends none, so it trusts nothing in the body:
+
+- a body is at most 16 KiB (413), a compressed one is refused, and one
+  address may send 60 reports a minute to a node (429);
+- it records the directive, the page's path **without its query**, the
+  blocked resource's origin or keyword (`inline`, `eval`), and whether the
+  policy was enforced, and never the rest: no query string, sample, source
+  file or referrer, which can carry a code or a token;
+- it answers `204` with no body, and writes each report to the log under
+  `STS-HTTP-0027`.
+
+Monitoring → CSP reports (`/admin/csp-reports`, `GET /admin-api/csp-reports`)
+counts them by directive for the realm, since the node's front process
+started. A report says what some browser claims, and anybody can post one,
+so read the counts as signals: a run of reports for one directive after an
+upgrade or a branding change is a page that change broke, and a blocked
+origin nobody uses can be script a browser refused to run.
+
+**Forwarding is off by default.** Set `cspReports.forwardUrl` (a
+service-wide setting only a service administrator may change) to a collector
+that accepts JSON, and each accepted report is POSTed to it as the record
+above. It goes through the same outbound rules as federation's back
+channels: `federation.outbound`, the outbound TLS settings, no redirect, a
+timeout. A collector that fails is logged once (`STS-HTTP-0031`) until a
+forward succeeds again; the report is still counted here.
 
 ### In-browser communication (section 4.17)
 

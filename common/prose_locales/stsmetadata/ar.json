@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "بلا مواصفة. الأيقونة التي يطلبها المتصفح من تلقاء نفسه في كل صفحة: العلامة المربّعة للشعار (common/favicon.ico). تُجاب على كل مستمع؛ وتُحفَظ ليوم."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). مستقبِل ما يحدده CSP Level 3 وReporting API ليرسله المتصفح: تسمّيه سياسة كل صفحة في report-uri وreport-to، إلى جانب ترويسة Reporting-Endpoints. POST فقط، دون بيانات اعتماد، بحد أقصى 16 كيلوبايت و60 تقريرًا في الدقيقة من عنوان واحد؛ يسجّل التوجيه ومسار الصفحة دون استعلامها والأصل المحظور، ويسجّل STS-HTTP-0027 ويجيب 204 دون جسم. تجيب عليه العملية الأمامية (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "بلا مواصفة (#570). بطاقة شاشة تسجيل الدخول وقواعد منتقي اللغة، في ورقة أنماط واحدة تربطها صدفة واجهة عامة ثابتة (common/web_card_css.ts). تُجاب على كل مستمع؛ والعنوان الذي يحمل ?v= الخاص بهذا البناء يُخزَّن مؤقتًا إلى الأبد."
@@ -1742,6 +1746,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — عناصر التحكم في /admin/pki/trust. يأخذ add قيمة `certificates` (كتلة PEM واحدة أو أكثر، كل واحدة عبر قاعدة القبول وكل رفض مسمًّى)، مع `purposes` لتقييدها؛ ويأخذ remove قيمة `fingerprint` واحدة؛ ويشغّل recheck التدقيق الآن؛ ويأخذ set-row إعدادًا `setting` من النمط `pki.paranoid*` وقيمته `value`، عبر كتابة الإعدادات العادية. يحتاج admin:write. يُكتب إلى ou=signerTrustAnchors، فيبقى التغيير بعد إعادة التشغيل."
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "تبويبات مخازن الثقة وحالات الاستخدام ومخزن ثقة النظام في /admin/pki/trust عبر JSON (#2118): كل مخزن ثقة يستطيع نطاق الثقة هذا تسميته (مضمّن أو عرض أو إعداد أو حزمة SPIFFE أو مسمّى) مع عدّ ما يحويه وحالات الاستخدام التي تثق به، وكل حالة استخدام مع ما تثق به الآن وقائمتها الافتراضية، والحدود، والمخزن الافتراضي لـ node موصوفًا شهادةً شهادةً دون PEM."
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — عناصر التحكم في تبويبي مخازن الثقة وحالات الاستخدام في /admin/pki/trust (#2118). يأخذ show قيمة `name` (و`withPem`) ولا يكتب شيئًا؛ ويأخذ create قيمة `name` وقيمة `description`؛ ويُرفض delete ما دامت حالة استخدام تثق بالمخزن؛ ويأخذ add قيمة `certificates`، كل واحدة عبر قاعدة القبول وكل رفض مسمًّى؛ ويأخذ remove قيمة `fingerprint`؛ ويأخذ assign قيمة `useCase` و`truststores` مرتبة، ويعيد unassign حالة الاستخدام إلى قائمتها الافتراضية. حالة الاستخدام التي تسري على الخدمة كلها لا تُسنَد إلا من نطاق الثقة الافتراضي. يحتاج admin:write. يُكتب إلى ou=truststores، فيبقى التغيير بعد إعادة التشغيل."
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -2426,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). صفحة من قاطني خلية أخرى، تجيب عنها تلك الخلية فقط حيث تسمح سياسة الإفراج الخاصة بها."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports بصيغة JSON: مخالفات سياسة أمان المحتوى التي أبلغت عنها المتصفحات لهذا النطاق، معدودة حسب التوجيه بواسطة العملية الأمامية لهذه العقدة، وإعداد إعادة التوجيه. لا يغيّر شيئًا."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

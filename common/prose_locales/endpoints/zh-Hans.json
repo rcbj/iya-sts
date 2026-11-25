@@ -515,6 +515,10 @@
     "en": "6a36418727489219",
     "text": "服务的图标"
   },
+  "endpoints.route./web/csp-report.name": {
+    "en": "4c905dd496d09bb9",
+    "text": "内容安全策略违规报告"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "公共界面的卡片样式表"
@@ -878,6 +882,14 @@
   "endpoints.route./admin-api/pki/trust/:action.name": {
     "en": "49eac4924ef09867",
     "text": "更改签名者信任库、某一偏执行，或重新检查固定证书"
+  },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "命名信任库及信任它们的用例"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "更改命名信任库或用例所信任的内容"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -1418,6 +1430,10 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "单元驻留者"
+  },
+  "endpoints.route./admin-api/csp-reports.name": {
+    "en": "ff0444716f951c5e",
+    "text": "CSP 违规报告"
   },
   "endpoints.route./admin-api/malware-scanning.name": {
     "en": "48adceb89b5e59c8",

@@ -449,7 +449,11 @@ async function publicClient(realmBase, clientId, redirectUri) {
     fields: { oauthClientId: clientId, oauthRedirectUri: [redirectUri],
               oauthTokenEndpointAuthMethod: "none",
               oauthGrantType: ["authorization_code", "refresh_token"],
-              oauthScope: ["openid", "profile"] }
+              oauthScope: ["openid", "profile"],
+              // What `authorizeUrl()` asks for, declared (#2169): in product
+              // a client that declares none is issued `openid` alone
+              // (#1589).
+              oauthAllowedScope: ["openid", "profile"] }
   });
   assert.ok(created.status === 200 ||
             /already in this registry/i.test(created.raw),

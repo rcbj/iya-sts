@@ -1,0 +1,14 @@
+{
+  "intro": "Nag-uulat dito ang mga browser tuwing lumabag ang isang pahina ng realm na ito sa Content Security Policy nito: pinigilan ng patakaran ang isang script, frame, style o ibang resource na ma-load o tumakbo. Sinasabi ng isang ulat ang inaangkin ng isang browser, at kahit sino ay maaaring magpadala nito, kaya basahin ang mga ito bilang mga senyales: ang sunod-sunod na ulat para sa isang direktiba pagkatapos ng pagbabago ay isang pahinang sinira ng pagbabago, at ang isang na-block na origin na walang gumagamit dito ay maaaring isang injection na pinigilan ng browser.",
+  "tileTotal": "Mga ulat",
+  "tileDirectives": "Mga direktiba",
+  "since": "Binilang ng front process ng node na ito mula {since}; hindi itinatago ang mga bilang sa pag-restart.",
+  "none": "Walang browser na nag-ulat ng paglabag mula noon.",
+  "colDirective": "Direktiba",
+  "colCount": "Mga ulat",
+  "colLast": "Huling iniulat",
+  "limits": "Nag-uulat ang mga pahina sa <code>{path}</code>. Bumabasa ito ng body na hanggang {bytes} byte at {perMinute} ulat bawat minuto mula sa isang address, itinatala ang direktiba, ang path ng pahina nang walang query at ang na-block na origin, at isinusulat ang bawat ulat sa log ng serbisyo.",
+  "forwardOn": "Ipinapasa rin ang bawat tinanggap na ulat sa collector na itinakda sa ibaba.",
+  "forwardOff": "Hindi ipinapasa ang mga ulat. Itakda ang collector sa ibaba para maipasa ang mga ito.",
+  "notForwarded": "{count} ulat ang hindi naipasa dahil masyadong maraming pagpapasa ang naghihintay."
+}

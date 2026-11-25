@@ -2499,7 +2499,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.registeredClientIdPrefix` | `STS_OAUTH2_REGISTERED_CLIENT_ID_PREFIX` | `sts-client-` | yes | What a dynamically registered `client_id` starts with. |
 | `oauth2.registeredClientIdBytes` | `STS_OAUTH2_REGISTERED_CLIENT_ID_BYTES` | `8` | yes | How many random bytes follow that prefix. |
 | `oauth2.registeredSecretBytes` | `STS_OAUTH2_REGISTERED_SECRET_BYTES` | `48` | yes | How many random bytes make a registered client's secret and registration access token. 48 by default so a `client_secret_jwt` secret is long enough for HS512 (RFC 7518 section 3.2, enforced in product). **Below 24, even HS256 is refused in product.** |
-| `oauth2.clientSecretLifetimeDays` | `STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS` | `0` | yes | The lifetime, in days (0 to 730), of every new client secret, and the `client_secret_expires_at` published for a registered client; 0 is never. |
+| `oauth2.clientSecretLifetimeDays` | `STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS` | `365` | yes | The lifetime, in days (0 to 730), of every new client secret, and the `client_secret_expires_at` published for a registered client; 0 is never. |
 | `oauth2.clientSecretOverlapS` | `STS_OAUTH2_CLIENT_SECRET_OVERLAP_S` | `604800` | yes | How long a rotated-out client secret keeps working beside the new one; 0 ends it at once. |
 | `oauth2.clientSecretExpiryWarningDays` | `STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS` | `14` | yes | How many days before a client secret expires the daily job warns and the console marks it. |
 
@@ -2539,6 +2539,7 @@ on [OAuth security](oauth-security.md#configuration).
 |---|---|---|---|---|
 | `oauth2.pushedAuthorizationRequests` | `STS_OAUTH2_PUSHED_AUTHORIZATION_REQUESTS` | `true` | yes | Offer `POST /oauth2/par` and advertise it; off answers 404. |
 | `oauth2.requirePushedAuthorizationRequests` | `STS_OAUTH2_REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` | `false` | yes | Refuse any authorization request that was not pushed first; published as `require_pushed_authorization_requests`. |
+| `oauth2.authorizationDetailsRequirePar` | `STS_OAUTH2_AUTHORIZATION_DETAILS_REQUIRE_PAR` | `false` | yes | Off by default. On, the authorization endpoint refuses a request that carries RFC 9396 `authorization_details` and was not pushed (a 400 on this server, `STS-OAUTH-1015`), so a rich authorization request never travels in the browser's address (ASVS 5.0.0 10.4.15). A request with no `authorization_details` is unaffected. |
 | `oauth2.parRequestUriLifetimeS` | `STS_OAUTH2_PAR_REQUEST_URI_LIFETIME_S` | `60` | yes | How long a pushed `request_uri` lives — the whole sign-in, since it is read again on the way back. |
 | `oauth2.parMaxRequests` | `STS_OAUTH2_PAR_MAX_REQUESTS` | `10000` | yes | The most pushed requests a realm holds; a full store refuses the next push (503). |
 | `oauth2.parMaxBodyBytes` | `STS_OAUTH2_PAR_MAX_BODY_BYTES` | `65536` | yes | The largest body `/oauth2/par` accepts (413 otherwise). |

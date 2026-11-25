@@ -718,7 +718,22 @@ authentication policy's *PIV card authentication key* row lets it sign in.
 * MODP group 2;
 * SHA-1 in a signature or a certificate;
 * a request without a freshness token (`krb5.pkinitRequireFreshness`);
-* a client that offers no RFC 8636 KDF, unless `krb5.pkinitLegacyKdf` is set.
+* a client that offers no RFC 8636 KDF, unless `krb5.pkinitLegacyKdf` is set;
+* a paChecksum2 over SHA-1 in product mode, or over a digest Microsoft's
+  MS-PKCA does not list (below).
+
+**The request body's checksum, twice.** RFC 4556 requires a `paChecksum`, the
+SHA-1 of the request body, and the KDC still requires and checks it: every
+PKINIT client sends one, and the RFC fixes its algorithm. Windows 11 and
+Windows Server 2022 23H2 and later also send Microsoft's `paChecksum2`
+(MS-PKCA section 2.2.3), the same body's SHA-256, SHA-384 or SHA-512. When a
+client sends one the KDC checks it as well: a mismatch is refused
+`KRB_AP_ERR_MODIFIED` (`STS-KRB-0261`), and one over SHA-1 in product mode,
+or over a digest MS-PKCA does not list, `KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED`
+(`STS-KRB-0260`). Set `krb5.pkinitRequirePaChecksum2` to refuse a request
+that carries none (`STS-KRB-0262`); leave it off while any client is MIT
+Kerberos, which does not send one — anonymous PKINIT from `kinit -n`
+included.
 
 > **Warning.** Turning `krb5.pkinitRequireFreshness` off, or
 > `krb5.pkinitLegacyKdf` on, weakens PKINIT. Do it only for a client that
@@ -1059,6 +1074,7 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 | `krb5.retainedKeyTtlS` | `KRB5_RETAINED_KEY_TTL_S` | `0` | yes | How long a previous version is kept; `0` means the ticket lifetime plus the clock skew — for the `krbtgt`, the longer of the ticket and renew lifetimes plus the skew. |
 | `krb5.pkinit` | `KRB5_PKINIT` | `true` | yes | Whether the KDC takes PKINIT (RFC 4556) with a certificate this realm issued to the person; off, PA-PK-AS-REQ is neither offered nor read. |
 | `krb5.pkinitRequireFreshness` | `KRB5_PKINIT_REQUIRE_FRESHNESS` | `true` | yes | Whether a PKINIT request must carry an RFC 8070 freshness token. **Warning:** off weakens PKINIT. |
+| `krb5.pkinitRequirePaChecksum2` | `KRB5_PKINIT_REQUIRE_PA_CHECKSUM2` | `false` | yes | Whether a PKINIT request must carry MS-PKCA's paChecksum2 (SHA-256 or better over the request body); off, one that is sent is still checked. On refuses MIT clients, which do not send it. |
 | `krb5.pkinitLegacyKdf` | `KRB5_PKINIT_LEGACY_KDF` | `false` | yes | Whether a client offering no RFC 8636 KDF may use RFC 4556's own key derivation; off, it is refused `KDC_ERR_NO_ACCEPTABLE_KDF`. **Warning:** on weakens PKINIT. |
 | `krb5.pkinitKdcKeyAlgorithm` | `KRB5_PKINIT_KDC_KEY_ALGORITHM` | `ec-p256` | yes | The key the KDC signs PKINIT replies with (`ec-p256`, `ec-p384`, `rsa-2048`, `rsa-3072`); takes effect when the KDC certificate is next made. |
 | `krb5.anonymousPkinit` | `KRB5_ANONYMOUS_PKINIT` | `true` | yes | Whether the KDC issues RFC 8062 anonymous tickets (`kinit -n`) for FAST armor; needs `krb5.pkinit`. |

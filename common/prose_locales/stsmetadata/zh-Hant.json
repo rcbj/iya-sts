@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC。瀏覽器在每個頁面上自行請求的圖示：標誌的方形標記（common/favicon.ico）。在每個接聽程式上提供；快取一天。"
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). 接收 CSP Level 3 和 Reporting API 規定瀏覽器傳送的內容:每個頁面的政策在 report-uri 和 report-to 中指向它,並附帶 Reporting-Endpoints 標頭。僅限 POST,無需憑證,每個位址每分鐘最多 60 份報告、每份最多 16 KiB;它記錄指令、不含查詢的頁面路徑和被封鎖的來源,記錄 STS-HTTP-0027 日誌,並以無本文的 204 回應。由前端處理程序回應(common/csp_reports.ts)。"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登入畫面卡片與語言選擇器的規則，合為一個樣式表，供靜態公開介面的外殼連結（common/web_card_css.ts）。在每個接聽程式上提供；帶有此組建 ?v= 的位址會被永久快取。"
@@ -1742,6 +1746,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — /admin/pki/trust 上的控制項。add 接受 `certificates`（一個或多個 PEM 區塊，各自經過收納規則，並點名每項拒絕），並以 `purposes` 加以限制；remove 接受單一 `fingerprint`；recheck 立即執行稽核；set-row 接受 `pki.paranoid*` 的 `setting` 及其 `value`，透過一般的設定寫入。需要 admin:write。寫入 ou=signerTrustAnchors，因此變更在重新啟動後依然存在。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "以 JSON 形式提供的 /admin/pki/trust 的「信任庫」「使用情境」和「系統信任庫」分頁（#2118）：此領域可以指名的每個信任庫（內建、檢視、設定、SPIFFE 套件或具名），附帶其內容計數和信任它的使用情境；每個使用情境目前信任的內容及其預設值；各項限制；以及逐一憑證描述（不含 PEM）的 node 預設儲存區。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign——/admin/pki/trust 的「信任庫」和「使用情境」分頁上的控制項（#2118）。show 接受一個 `name`（及 `withPem`），不寫入任何內容；create 接受一個 `name` 和一個 `description`；只要有使用情境信任該信任庫，delete 就會被拒絕；add 接受 `certificates`，每個都經過准入規則，每次拒絕都會指明；remove 接受一個 `fingerprint`；assign 接受一個 `useCase` 及其有序的 `truststores`，unassign 將使用情境恢復為預設值。適用於整個服務的使用情境只能從預設領域指派。需要 admin:write。寫入 ou=truststores，因此變更在重新啟動後依然存在。"
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -2426,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "非規格端點（#98 D11）。另一個儲存格居民的一頁清單，僅在該儲存格的釋出原則允許時由該儲存格回應。"
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). 以 JSON 形式提供 GET /admin/csp-reports:瀏覽器為本領域回報的內容安全政策違規,由本節點的前端處理程序依指令計數,以及轉送設定。不做任何變更。"
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

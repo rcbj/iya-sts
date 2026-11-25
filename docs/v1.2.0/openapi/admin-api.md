@@ -56,7 +56,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [OpenID4VP](admin-api-openid4vp.html) | 1 |  |
 | [OpenPGP](admin-api-openpgp.html) | 1 | The OpenPGP settings (#2049): the algorithms a registered key may use, the post-quantum rules, the registration challenge and the Web Key Directory. A person's key is under Directory. |
 | [Ownership](admin-api-ownership.html) | 2 |  |
-| [PKI](admin-api-pki.html) | 26 |  |
+| [PKI](admin-api-pki.html) | 34 |  |
 | [Persistence](admin-api-persistence.html) | 1 |  |
 | [Policies](admin-api-policies.html) | 27 | The rules this realm holds a credential to — the password policy first: its minimum length, how many previous passwords may not be reused, and the symbol, uppercase and digit rules, stored as `cn=default,ou=passwordPolicies` in the directory and ENFORCED IN PRODUCT MODE at every door that sets a password. Not the XACML policy repository, which is under XACML. |
 | [RISC](admin-api-risc.html) | 5 |  |
@@ -69,7 +69,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [SCEP](admin-api-scep.html) | 8 | The Simple Certificate Enrolment Protocol (RFC 8894) server of this realm: its Issuing CA and RA certificate, the single-use challenge passwords that authorize an enrollment, registered host names, the certificates issued over it, and what it has done. |
 | [SCIM](admin-api-scim.html) | 13 | The SCIM 2.0 provisioning endpoints under /scim/v2 — what they have been asked to do, and what they will and will not do. READ-ONLY here, and that is the parity rule holding rather than a gap: the console page has no form on it either, because everything about SCIM that can be changed is a configuration row. What SCIM WROTE is under Users and Groups, since it provisions into the same directory and has no store of its own. |
 | [SPIFFE](admin-api-spiffe.html) | 16 |  |
-| [Service](admin-api-service.html) | 44 | What this API is, its document, and the explorer that calls it. |
+| [Service](admin-api-service.html) | 45 | What this API is, its document, and the explorer that calls it. |
 | [Sessions](admin-api-sessions.html) | 3 |  |
 | [Shared Signals](admin-api-shared-signals.html) | 14 |  |
 | [Sign-out](admin-api-sign-out.html) | 6 |  |

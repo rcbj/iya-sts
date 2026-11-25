@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. Ang icon na kusang hinihingi ng browser sa bawat pahina: ang parisukat na marka ng logo (common/favicon.ico). Sinasagot sa bawat listener; itinatago nang isang araw."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). Ang tumatanggap ng ipinapadala ng browser ayon sa CSP Level 3 at sa Reporting API: pinangangalanan ito ng patakaran ng bawat pahina sa report-uri at report-to, kasama ng header na Reporting-Endpoints. POST lamang, walang credential, hanggang 16 KiB at 60 ulat bawat minuto mula sa isang address; itinatala nito ang direktiba, ang path ng pahina nang walang query at ang na-block na origin, nagla-log ng STS-HTTP-0027 at sumasagot ng 204 nang walang body. Sinasagot ng front process (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Ang mga patakaran ng card ng sign-in screen at ng language chooser, bilang iisang stylesheet na nili-link ng shell ng isang static na pampublikong surface (common/web_card_css.ts). Sinasagot sa bawat listener; ang address na may ?v= ng build na ito ay naka-cache nang permanente."
@@ -1742,6 +1746,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — ang mga control sa /admin/pki/trust. Ang add ay tumatanggap ng `certificates` (isa o higit pang PEM block, bawat isa ay dumadaan sa admission rule at bawat pagtanggi ay pinangangalanan), na may `purposes` para limitahan ang mga ito; ang remove ay tumatanggap ng isang `fingerprint`; ang recheck ay agad na nagpapatakbo ng audit; ang set-row ay tumatanggap ng `pki.paranoid*` na `setting` at ang `value` nito, sa pamamagitan ng karaniwang pagsulat ng settings. Kailangan ng admin:write. Isinusulat sa ou=signerTrustAnchors, kaya nananatili ang pagbabago pagkatapos ng restart."
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "Ang mga tab na Mga truststore, Mga use case at System truststore ng /admin/pki/trust sa JSON (#2118): bawat truststore na maaaring pangalanan ng realm na ito (built-in, view, setting, SPIFFE bundle o pinangalanan) kasama ang bilang ng laman nito at ang mga use case na nagtitiwala rito, bawat use case kasama ang pinagkakatiwalaan nito ngayon at ang default nito, ang mga limitasyon, at ang default na store ng node na inilarawan bawat sertipiko nang walang PEM."
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — ang mga kontrol ng mga tab na Mga truststore at Mga use case ng /admin/pki/trust (#2118). Tumatanggap ang show ng `name` (at `withPem`) at walang isinusulat; tumatanggap ang create ng `name` at `description`; tinatanggihan ang delete habang may use case na nagtitiwala sa truststore; tumatanggap ang add ng `certificates`, bawat isa ay dumaraan sa patakaran ng pagtanggap at pinangangalanan ang bawat pagtanggi; tumatanggap ang remove ng `fingerprint`; tumatanggap ang assign ng `useCase` at ng nakaayos nitong `truststores`, at ibinabalik ng unassign ang use case sa default nito. Ang use case para sa buong serbisyo ay itinatalaga lamang mula sa default na realm. Nangangailangan ng admin:write. Isinusulat sa ou=truststores, kaya nananatili ang pagbabago pagkatapos ng restart."
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -2426,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Isang page ng mga residente ng ibang cell, sinasagot ng cell na iyon lang kung saan pinapahintulutan ng release policy nito."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports bilang JSON: ang mga paglabag sa Content Security Policy na iniulat ng mga browser para sa realm na ito, binilang ayon sa direktiba ng front process ng node na ito, at ang setting ng pagpapasa. Wala itong binabago."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",
