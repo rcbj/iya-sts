@@ -1040,6 +1040,15 @@ changed — the console page, or `POST /admin-api/config/set`.
   controller document list them all. A zcap token on a post-quantum suite is
   signed with the realm's ML-DSA-44 or SLH-DSA-SHA2-128s key, which rotates the
   same way.
+* **The macaroon root keys and the `jwt-encrypted` key survive a rotation.**
+  Both are derived from the realm's refresh-token secret, which every signing
+  rotation replaces. A token is minted under the current secret and verified
+  under it and under every replaced secret the rotation still keeps, which is
+  kept for at least the longest GNAP access-token lifetime. A resource
+  server's `gnapMacaroonKey` is rewritten when the first macaroon for it is
+  minted after a rotation. Keep the key you held until the macaroons issued
+  under it have expired. An emergency rotation keeps nothing, so every
+  macaroon and `jwt-encrypted` token issued before it is refused.
 
 Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a push to a finish URI the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside `gnap.pushCaFile`.
 

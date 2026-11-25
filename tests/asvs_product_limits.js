@@ -450,7 +450,9 @@ function childMain() {
     note(/fileRoots/.test(namedRefusal) && namedRefusal.indexOf('passwd') < 0,
          'product: a named file outside the directories is refused, and the ' +
          'sentence does not repeat the path', namedRefusal);
-    ['spiffe/spiffe_sigstore.ts', 'spiffe/spiffe_sigstore_tuf.ts',
+    // The TUF root is read through the truststores since #2152, whose
+    // readNamedFile() asks the rule for every setting's file.
+    ['spiffe/spiffe_sigstore.ts', 'common/truststores.ts',
       'spiffe/spiffe_attestor_k8s_psat.ts',
       'spiffe/spiffe_workload_attestor_k8s.ts',
       'spiffe/spiffe_attestor_azure_imds.ts',

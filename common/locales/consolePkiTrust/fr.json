@@ -126,5 +126,10 @@
   "createKindSsh": "Clés d'autorités de certification SSH",
   "createSshKeys": "Clés publiques de CA SSH, au format authorized_keys, une par ligne",
   "sshKeys": "{n} clé(s) de CA SSH",
-  "kindSshCa": "Clés de CA SSH"
+  "kindSshCa": "Clés de CA SSH",
+  "createKindCosign": "clés publiques cosign",
+  "createKindSigstoreRoot": "une racine de confiance Sigstore",
+  "createKindTufRoot": "une racine TUF",
+  "createDocument": "Un document (cosign, racine de confiance Sigstore ou racine TUF uniquement)",
+  "documentsHeld": "{n} document(s)"
 }

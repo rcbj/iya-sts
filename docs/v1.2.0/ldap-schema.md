@@ -54,6 +54,7 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=claimproviders                   stsClaimProvider            (#147)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
 ├── ou=signerTrustAnchors               stsSignerTrustAnchor        (#1360)
+├── ou=truststores                      stsTruststore, stsTruststoreAssignments (#2118)
 └── ou=crl                              cRLDistributionPoint        (created on first CRL)
 ```
 
@@ -497,6 +498,21 @@ becomes an identity. See [TLS](tls.md).
 (`anchor` or `intermediate`) and, where it is restricted,
 `stsSignerTrustAnchorPurpose` (multi-valued). An entry here decides whose signature
 the realm believes.
+
+`ou=truststores` exists in every realm and holds its
+[named truststores](truststores.md). Each truststore is one
+`objectClass: top, stsTruststore` entry, `cn=<name>`, with `description`,
+`stsTruststoreKind` (`x509`; `jwks` for a key set; `ssh` for SSH CA keys;
+`cosign`, `sigstore-root` or `tuf-root` for Sigstore trust material) and
+`stsTrustAnchorAddedBy`. A certificate truststore's certificates are
+`stsSignerTrustAnchor` entries beneath it, with the attributes above. A key
+set carries `stsTruststoreParty` (the one party its keys may verify, such as
+`client:<client_id>`) and either `stsTruststoreJwks` (its public keys) or
+`stsTruststoreJwksUri`. An SSH CA truststore carries its keys in
+`stsTruststoreSshKeys`, one per line, and a Sigstore truststore its document
+in `stsTruststoreDocument`. One `objectClass: top, stsTruststoreAssignments`
+entry, `cn=assignments`, holds the realm's use-case assignments in
+`stsTruststoreAssignment`. Nothing here is secret, so none of it is sealed.
 
 `ou=crl` holds `objectClass: top, cRLDistributionPoint` entries (`cn=<caId>`, `certificateRevocationList;binary`) once a CRL is published. They are a cache of the register, readable anonymously ([PKI](pki.md)).
 

@@ -126,5 +126,10 @@
   "createKindSsh": "SSH प्रमाणपत्र प्राधिकरण कुंजियाँ",
   "createSshKeys": "SSH CA सार्वजनिक कुंजियाँ, authorized_keys रूप में, प्रति पंक्ति एक",
   "sshKeys": "{n} SSH CA कुंजी",
-  "kindSshCa": "SSH CA कुंजियाँ"
+  "kindSshCa": "SSH CA कुंजियाँ",
+  "createKindCosign": "cosign सार्वजनिक कुंजियाँ",
+  "createKindSigstoreRoot": "एक Sigstore विश्वसनीय रूट",
+  "createKindTufRoot": "एक TUF रूट",
+  "createDocument": "एक दस्तावेज़ (केवल cosign, Sigstore विश्वसनीय रूट या TUF रूट)",
+  "documentsHeld": "{n} दस्तावेज़"
 }

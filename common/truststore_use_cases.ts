@@ -58,8 +58,10 @@ type Scope = 'service' | 'realm';
 // `jwks` (#2149): a JSON Web Signature verified against a key set bound to the
 // party that signed it, never against a pool.
 // `ssh` (#2151): an SSH certificate checked against SSH CA public keys.
+// `cosign`, `sigstore-root`, `tuf-root` (#2152): Sigstore trust material,
+// each a document.
 type Kind = 'x509' | 'spiffe' | 'pins' | 'fixed' | 'admission' | 'jwks' |
-  'ssh';
+  'ssh' | 'cosign' | 'sigstore-root' | 'tuf-root';
 
 interface UseCase {
   id: string;
@@ -275,6 +277,23 @@ const ROWS: UseCase[] = [
     title: 'A Security Event Token an SSF transmitter partner signed',
     sites: ['ssf/ssf_transmitters.ts'],
     defaults: ['registered-keys'] },
+  // #2152: the Docker workload attestor's Sigstore trust material.
+  { id: 'sigstore-cosign-key', scope: 'realm', kind: 'cosign',
+    direction: 'inbound',
+    title: 'A cosign public key an image signature is verified with',
+    sites: ['spiffe/spiffe_sigstore.ts trustMaterial'],
+    defaults: [setting('spiffe.dockerSigstorePublicKeyFiles')] },
+  { id: 'sigstore-trusted-root', scope: 'realm', kind: 'sigstore-root',
+    direction: 'inbound',
+    title: 'A pinned Sigstore trusted root (Fulcio, Rekor and CT log ' +
+      'keys), while TUF is off',
+    sites: ['spiffe/spiffe_sigstore.ts trustMaterial'],
+    defaults: [setting('spiffe.dockerSigstoreTrustedRootFile')] },
+  { id: 'sigstore-tuf-root', scope: 'realm', kind: 'tuf-root',
+    direction: 'inbound',
+    title: 'The TUF root the Sigstore trusted root is delivered under',
+    sites: ['spiffe/spiffe_sigstore_tuf.ts firstRoot'],
+    defaults: [setting('spiffe.dockerSigstoreTufRootFile')] },
   // #2151: SSH CA public keys, which pool like X.509 anchors.
   { id: 'spiffe-sshpop', scope: 'realm', kind: 'ssh', direction: 'inbound',
     title: 'An SSH host certificate a SPIFFE sshpop agent presents',
@@ -459,8 +478,8 @@ class TruststoreUseCases {
   static assignable(row: UseCase | null): boolean {
     log.debug("Entering TruststoreUseCases.assignable().");
     log.debug("Leaving TruststoreUseCases.assignable().");
-    return !!row && (row.kind === 'x509' || row.kind === 'spiffe' ||
-                     row.kind === 'jwks' || row.kind === 'ssh');
+    return !!row && ['x509', 'spiffe', 'jwks', 'ssh', 'cosign',
+                     'sigstore-root', 'tuf-root'].indexOf(row.kind) >= 0;
   }
 
   /**

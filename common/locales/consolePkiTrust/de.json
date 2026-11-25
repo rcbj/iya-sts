@@ -126,5 +126,10 @@
   "createKindSsh": "Schlüssel von SSH-Zertifizierungsstellen",
   "createSshKeys": "Öffentliche SSH-CA-Schlüssel im authorized_keys-Format, einer pro Zeile",
   "sshKeys": "{n} SSH-CA-Schlüssel",
-  "kindSshCa": "SSH-CA-Schlüssel"
+  "kindSshCa": "SSH-CA-Schlüssel",
+  "createKindCosign": "öffentliche cosign-Schlüssel",
+  "createKindSigstoreRoot": "ein Sigstore-Trusted-Root",
+  "createKindTufRoot": "ein TUF-Root",
+  "createDocument": "Ein Dokument (nur cosign, Sigstore-Trusted-Root oder TUF-Root)",
+  "documentsHeld": "{n} Dokument(e)"
 }

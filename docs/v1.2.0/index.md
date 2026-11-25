@@ -57,6 +57,8 @@ each.
 [Field-level access](field-access.md) ·
 [Communication inventory](communications.md) ·
 [File uploads](file-uploads.md) ·
+[Risky third-party components](risky-components.md) ·
+[Dangerous functionality](dangerous-functionality.md) ·
 [Authentication pathways](authentication-pathways.md) ·
 [Availability and resource limits](availability.md) ·
 [Conformance suites](conformance.md) ·

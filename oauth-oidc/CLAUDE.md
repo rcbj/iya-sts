@@ -1285,7 +1285,10 @@ so must `admin-ui/admin.ts`.
    told which KIND of party it is reading rather than trying every attribute
    name it knows, because the store is schemaless and a function that read both
    lists off whatever it was handed would accept an `oauthAssertionJwks`
-   somebody had put on a person.
+   somebody had put on a person. **For an application it also asks the
+   `client-jws` use case which sources count (#2149)**: the registration
+   (`registered-keys`, the default) and any key set bound to that client;
+   `common/CLAUDE.md`, *Named truststores*, argues the binding.
 
    **THE SIGNATURE IS VERIFIED BEFORE ANY CLAIM IS BELIEVED**, which is not the
    order RFC 7521 section 5.2 lists its checks in and is the order they have to

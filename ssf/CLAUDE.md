@@ -85,6 +85,9 @@ recorded before the switch, byte for byte, in four realms.
   receiver's own checks (issuer, `jwks_uri`, `configuration_endpoint`, `typ`,
   `iss`, `aud`, `jti`, `events`) still decide. This service's own receivers
   poll this service's own transmitter, whose answer is held at the route.
+  The keys a received SET is verified with are the `ssf-set` use case's
+  (#2149): by default the discovered `jwks_uri`, plus any key set bound to
+  `federation:<fedId>` (`common/CLAUDE.md`, *Named truststores*).
 
 ## Internal delivery is not applied in every process (2026-10-21, #820)
 

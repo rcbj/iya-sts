@@ -592,7 +592,9 @@ copied, and each is the place to look first:
   `oid4vp.trustedIssuerCertificates` is — so the console and `/admin-api`
   (rule 7) can set them. An attestor with none configured refuses every agent
   with FAILED_PRECONDITION (`STS-SPIFFE-0085`), which is SPIRE's "not
-  configured".
+  configured". **sshpop's are also a truststore use case (#2151)**,
+  `spiffe-sshpop`, whose default is that setting (`common/CLAUDE.md`,
+  *Named truststores*).
 * **THE STATUS CODES ARE SPIRE'S, EVEN WHERE THEY LOOK WRONG.** x509pop
   answers a bad path PERMISSION_DENIED; tpm_devid answers the same thing
   INVALID_ARGUMENT; sshpop answers almost everything INTERNAL, because
@@ -1544,7 +1546,11 @@ spellings are copied from SPIRE's source, as #40's were.
   signature under an SPKI with cosign's scheme — post-quantum keys included,
   beyond cosign) and `common/pki.js` (the Fulcio signer's facts and RFC 6962
   embedded-SCT verification; the path is `verifyPathToAnchors()` at the
-  certificate's own notBefore). Decided rather than copied:
+  certificate's own notBefore). **Its cosign keys, pinned trusted roots and
+  TUF root are truststore use cases (#2152)**, `sigstore-cosign-key`,
+  `sigstore-trusted-root` and `sigstore-tuf-root`, each defaulting to its
+  setting (`common/CLAUDE.md`, *Named truststores*). Decided rather than
+  copied:
   * **A FAILED SIGNATURE REFUSES THE CONNECTION** (`UNAVAILABLE` under
     `STS-SPIFFE-0111`, the specific cause 0126–0130 on the log line) — SPIRE's
     behaviour, never a missing selector.
