@@ -947,6 +947,9 @@ curl --cert alice-laptop-tls-client-chain.pem \
      https://localhost:8081/tls/sign-in
 ```
 
+**You are reminded before one expires** (#2247): 30, 7 and 1 days before by
+default, by mail, naming this page. See [Mail](mail.md#the-uses) (`mail.expiryReminders`).
+
 ## A TLS client certificate an administrator issues a person
 
 The same Issuing CA issues one from the person's `/admin/users` page,

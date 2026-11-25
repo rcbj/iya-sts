@@ -271,6 +271,14 @@
     "en": "76f7213ce5e8a506",
     "text": "删除已不再是成员的节点的镜像 LDAP 连接，以及已过有效期的注销指令。"
   },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "凭据到期提醒"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "向证书将在 mail.expiryReminderDays 某一天数内到期的每个人发送提醒，列出每个到期的证书：是什么、哪天到期以及如何续订，每人一封邮件，每个证书每个步骤一次。只读取到期索引中今天或过去三十天内到期的行，从不读取目录，但在索引建立之前已持有的证书登记完毕之前，每次运行会读取一部分人员。"
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "邮件发件箱投递"

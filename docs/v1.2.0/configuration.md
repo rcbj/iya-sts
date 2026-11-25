@@ -3238,6 +3238,9 @@ a field, read through `common/secrets.js` — never a value here), the outbox th
 | `mail.verificationTtlMinutes` | `STS_MAIL_VERIFICATION_TTL_MINUTES` | `1440` | yes | How long an address verification link works. |
 | `mail.securityNotices` | `STS_MAIL_SECURITY_NOTICES` | `true` | yes | Tell a person, at the address on their entry, when their account is disabled, their sessions are ended by an administrator, their password is changed or reset, their credential is marked compromised or recovery is started. |
 | `mail.notifyAdministrators` | `STS_MAIL_NOTIFY_ADMINISTRATORS` | `true` | yes | When the SERVICE, not a person, marks a credential compromised or disables an account (risk scoring), also mail every member of the realm's Admin Write roster that has an address. |
+| `mail.expiryReminders` | `STS_MAIL_EXPIRY_REMINDERS` | `true` | yes | Remind a person, at the address on their entry, before a certificate they hold expires: one issued over ACME, EST or SCEP, a PIV smart card certificate, an S/MIME certificate, a TLS client certificate, or one stored for certificate sign-in. Each is told once at each of mail.expiryReminderDays, every certificate due in one message, with when it expires and how to renew it. Nothing is sent while security notices are off or no transport is configured. |
+| `mail.expiryReminderDays` | `STS_MAIL_EXPIRY_REMINDER_DAYS` | `30,7,1` | yes | How many days before a certificate expires its holder is reminded, one reminder at each, from 90, 60, 45, 30, 21, 14, 10, 7, 5, 3, 2 and 1. A certificate first seen inside one of them is told at the nearest, and never at a step it has already passed. |
+| `mail.expiryReminderKinds` | `STS_MAIL_EXPIRY_REMINDER_KINDS` | `certificate,piv,smime,tls-client,signin-certificate` | yes | Which kinds of certificate an expiry reminder names. A kind left out is still followed, so putting it back reminds at its next step. |
 
 ### Reporting
 

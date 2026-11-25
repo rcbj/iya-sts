@@ -12875,6 +12875,30 @@
     "en": "29547122992cacaf",
     "text": "同一类登录提醒——新设备、新国家、匿名网络、被拒绝的密码——在多长时间内最多通知此人一次。发件箱即为记录，因此长于 mail.retentionS 的窗口实际只持续那么久。"
   },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "凭据到期提醒"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "在某人持有的证书到期前，按其条目上的地址提醒他：本领域通过 ACME、EST 或 SCEP 为其签发的证书、PIV 智能卡证书、S/MIME 证书、TLS 客户端证书，或为证书登录而存储的证书。每个证书在 mail.expiryReminderDays 的每一天各提醒一次，所有到期的证书合并为一封邮件，并说明到期时间和续订方法。安全通知关闭或未配置传输时不发送任何内容。"
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "凭据到期提醒天数"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "证书到期前多少天提醒其持有人，每个天数各提醒一次。首次出现时已处于其中某个天数之内的证书，在最近的那个提醒，绝不会在已经过去的步骤提醒。更改会在每个证书的下一次提醒时生效。"
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "到期提醒所列的凭据"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "到期提醒列出哪些类型的证书：certificate（通过 ACME、EST 或 SCEP 签发）、piv（PIV 插槽证书）、smime（邮件加密所用的 S/MIME 证书）、tls-client（在门户的“签名密钥”页面或由管理员签发的 TLS 客户端证书）和 signin-certificate（为证书登录存储在条目上的证书）。未列出的类型仍会被跟踪，因此重新加入后会在其下一个步骤提醒。"
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "同步报表行数上限"

@@ -53,6 +53,17 @@
 // (a cache hit that moves nothing), validated WHOLE: an attribute this file
 // lists and a `changed` function (STS-LDAP-0224).
 //
+// **A WATCHER IS NOT AN OWNER (#2247).** `register()` gives ONE module the
+// say over one attribute: it decides what a foreign write means. A module
+// that only needs to KNOW that a person's credentials changed — the
+// credential expiry index (`common/credential_expiry.ts`), whose rows say
+// when each certificate a person holds runs out — `watch()`es instead: it
+// names the attributes it reads, any of them, owned or not, and is handed
+// the whole entry before and after once per write that changed one of
+// them, after every owner. Several may watch the same attribute, and a
+// watcher can change nothing an owner decided: it is told what the write
+// left. Validated whole as a handler is (STS-MAIL-0247).
+//
 // A LIBRARY (rule 3): it registers no route and requires only `helpers` and
 // `error_codes`; `audit` is reached at the moment of use, for the actor.
 // ===========================================================================
@@ -84,6 +95,14 @@ interface Handler {
 }
 
 const handlers: Record<string, Handler> = {};
+
+// The watchers (header), by the id each registered under.
+interface Watcher {
+  attributes: string[];
+  changed(change: Json): void;
+}
+
+const watchers: Record<string, Watcher> = {};
 
 // The values of one attribute in a snapshot, under its RFC 4522 `;binary`
 // spelling too, lower-cased names (the store's).
@@ -133,6 +152,45 @@ class EntryObserver {
     handlers[attribute] = handler;
     helpers.log.debug("Leaving EntryObserver.register().");
     return true;
+  }
+
+  /**
+   * Registers a watcher (header): told, once per write of a person's entry
+   * that changed any of `attributes`, the whole entry before and after. A
+   * second registration under the same id replaces the first.
+   *
+   * @param id - the watcher's name, usually its module
+   * @param attributes - the attributes it reads, any of a person's
+   * @param handler - `{ changed(change) }`
+   * @returns true when registered
+   */
+  static watch(id: string, attributes: string[], handler: Json): boolean {
+    helpers.log.debug("Entering EntryObserver.watch(). " + id);
+    const names = (Array.isArray(attributes) ? attributes : [])
+      .map(String).filter(Boolean);
+    if (!id || !names.length || !handler ||
+        typeof handler.changed !== 'function') {
+      helpers.log.error(errorCodes.tag('STS-MAIL-0247') + 'entry observer: ' +
+        'the watcher "' + String(id) + '" was refused: it must have a name, ' +
+        'name at least one attribute and offer changed().');
+      helpers.log.debug("Leaving EntryObserver.watch(). Refused.");
+      return false;
+    }
+    watchers[String(id)] = { attributes: names,
+      changed: handler.changed.bind(handler) };
+    helpers.log.debug("Leaving EntryObserver.watch().");
+    return true;
+  }
+
+  /**
+   * The ids watchers are registered under.
+   *
+   * @returns their ids
+   */
+  static watching(): string[] {
+    helpers.log.debug("Entering EntryObserver.watching().");
+    helpers.log.debug("Leaving EntryObserver.watching().");
+    return Object.keys(watchers).sort();
   }
 
   /**
@@ -203,6 +261,37 @@ class EntryObserver {
           String(c.dn || '') + ': ' + ((e && e.message) || e));
       }
     });
+    // THE WATCHERS (header), after every owner, so each is told what the
+    // write left: the whole entry, once, when any attribute it reads moved.
+    Object.keys(watchers).forEach(function (id: string): void {
+      const w = watchers[id];
+      const moved = w.attributes.filter(function (attribute: string):
+          boolean {
+        const before = valuesIn(c.before || {}, attribute);
+        const after = valuesIn(c.after || {}, attribute);
+        return before.length !== after.length ||
+          before.some(function (one: string, i: number): boolean {
+            return one !== after[i];
+          });
+      });
+      if (!moved.length) {
+        return;
+      }
+      try {
+        w.changed({
+          attributes: moved, kind: String(c.kind || ''),
+          dn: String(c.dn || ''), username: String(c.username || ''),
+          subject: String(c.subject || ''), realm: String(c.realm || ''),
+          actor: actor, door: String(c.door || ''),
+          deleted: String(c.kind || '').indexOf('deleted') === 0,
+          before: c.before || {}, after: c.after || {}
+        });
+      } catch (e) {
+        helpers.log.error(errorCodes.tag('STS-MAIL-0247') + 'entry ' +
+          'observer: the watcher "' + id + '" threw on a write of ' +
+          String(c.dn || '') + ': ' + ((e && e.message) || e));
+      }
+    });
     helpers.log.debug("Leaving EntryObserver.entryChanged(). " +
                       told.length);
     return told;
@@ -234,6 +323,8 @@ export = {
   ATTRIBUTES: ATTRIBUTES,
   register: EntryObserver.register,
   registered: EntryObserver.registered,
+  watch: EntryObserver.watch,
+  watching: EntryObserver.watching,
   entryChanged: EntryObserver.entryChanged,
   valuesIn: EntryObserver.valuesIn
 };

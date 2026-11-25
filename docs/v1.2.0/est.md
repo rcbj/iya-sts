@@ -375,6 +375,9 @@ request asked for. The lifetime is `est.certificateLifetimeDays`.
   (draft-ietf-lamps-attestation-freshness section 3): none is defined, so a
   request naming one is answered `503`.
 
+**A person is reminded before a certificate issued to them expires** (#2247),
+as for ACME and SCEP. See [Mail](mail.md#the-uses).
+
 ## Configuration
 
 Every `est.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → EST**

@@ -12875,6 +12875,30 @@
     "en": "29547122992cacaf",
     "text": "同一類登入提醒——新裝置、新國家、匿名網路、被拒絕的密碼——在多長時間內最多通知此人一次。寄件匣即為紀錄，因此長於 mail.retentionS 的窗口實際只持續那麼久。"
   },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "認證資料到期提醒"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "在某人持有的憑證到期前，依其項目上的地址提醒對方：本領域透過 ACME、EST 或 SCEP 為其簽發的憑證、PIV 智慧卡憑證、S/MIME 憑證、TLS 用戶端憑證，或為憑證登入而儲存的憑證。每個憑證在 mail.expiryReminderDays 的每一天各提醒一次，所有到期的憑證合併為一封郵件，並說明到期時間與續約方式。安全通知關閉或未設定傳輸時不會傳送任何內容。"
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "認證資料到期提醒天數"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "憑證到期前多少天提醒其持有人，每個天數各提醒一次。首次出現時已在其中某個天數之內的憑證，會在最近的那一個提醒，絕不會在已經過去的步驟提醒。變更會在每個憑證的下一次提醒時生效。"
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "到期提醒列出的認證資料"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "到期提醒列出哪些類型的憑證：certificate（透過 ACME、EST 或 SCEP 簽發）、piv（PIV 插槽憑證）、smime（郵件加密所用的 S/MIME 憑證）、tls-client（在入口網站的「簽章金鑰」頁面或由管理員簽發的 TLS 用戶端憑證）及 signin-certificate（為憑證登入儲存在項目上的憑證）。未列出的類型仍會被追蹤，因此重新加入後會在其下一個步驟提醒。"
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "同步報表列數上限"

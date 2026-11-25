@@ -21410,6 +21410,18 @@ const CODES = [
       'passed and DNS does not answer the next selector with its key. ' +
       'Messages are signed with the current selector until it does.',
     spec: 'RFC 6376 section 3.6.1 (log only)' },
+  { code: 'STS-MAIL-0246',
+    summary: 'A credential expiry reminder could not be queued, or the ' +
+      'mail.credential-expiry job could not read the realm\'s expiry ' +
+      'index or record what it told; the next run tries again (#2247).',
+    spec: 'none — logged' },
+  { code: 'STS-MAIL-0247',
+    summary: 'The credential expiry index was not kept in step with a ' +
+      'write of a person\'s entry: its watcher was refused or threw, a ' +
+      'certificate on the entry could not be read, or the index row ' +
+      'could not be written. That person is not reminded of what changed ' +
+      'until their entry is next written (#2247).',
+    spec: 'none — logged' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +

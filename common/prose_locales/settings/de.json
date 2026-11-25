@@ -12875,6 +12875,30 @@
     "en": "29547122992cacaf",
     "text": "Wie lange eine Art von Anmeldewarnung – ein neues Gerät, ein neues Land, ein Anonymisierungsnetz, abgelehnte Passwörter – einer Person höchstens einmal gemeldet wird. Der Postausgang ist der Nachweis, daher wirkt ein Fenster, das länger als mail.retentionS ist, nur so lange."
   },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Erinnerungen an ablaufende Anmeldedaten"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Eine Person unter der Adresse in ihrem Eintrag erinnern, bevor ein Zertifikat abläuft, das sie besitzt: ein Zertifikat, das dieser Realm ihr über ACME, EST oder SCEP ausgestellt hat, ein PIV-Smartcard-Zertifikat, ein S/MIME-Zertifikat, ein TLS-Client-Zertifikat oder ein für die Zertifikatsanmeldung gespeichertes Zertifikat. Jedes wird an jedem Tag aus mail.expiryReminderDays einmal genannt, alle fälligen Zertifikate in einer Nachricht, mit dem Ablaufdatum und der Art der Erneuerung. Solange Sicherheitshinweise ausgeschaltet sind oder kein Transport konfiguriert ist, wird nichts gesendet."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Tage für Erinnerungen an ablaufende Anmeldedaten"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Wie viele Tage vor dem Ablauf eines Zertifikats sein Inhaber erinnert wird, je eine Erinnerung. Ein Zertifikat, das erst innerhalb eines dieser Zeiträume bekannt wird, wird beim nächstgelegenen genannt und nie bei einem Schritt, der bereits vorbei ist. Eine Änderung gilt für jedes Zertifikat ab seiner nächsten Erinnerung."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Anmeldedaten, die eine Ablauferinnerung nennt"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Welche Arten von Zertifikaten eine Ablauferinnerung nennt: certificate (über ACME, EST oder SCEP ausgestellt), piv (ein PIV-Slot-Zertifikat), smime (ein S/MIME-Zertifikat, an das Mails verschlüsselt werden), tls-client (ein TLS-Client-Zertifikat, auf der Portalseite „Signaturschlüssel“ oder von einem Administrator ausgestellt) und signin-certificate (ein im Eintrag für die Zertifikatsanmeldung gespeichertes Zertifikat). Eine weggelassene Art wird weiter verfolgt, sodass sie nach dem Wiederaufnehmen bei ihrem nächsten Schritt erinnert."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Zeilenobergrenze eines synchronen Berichts"
