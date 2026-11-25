@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Gaano katagal maghihintay sa service. May dagdag na isang segundo bawat mebibyte ang malaking file."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Mga sabay-sabay na scan"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Ilang file ang sabay-sabay na ipinapadala ng isang process sa scanner, bawat isa sa sarili nitong connection. Naghihintay ng kanilang turno ang iba."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Mga naghihintay na scan"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Ilang file ang maaaring maghintay ng scan bukod sa mga tumatakbo. Tinatanggihan ng 503 (STS-CORE-0182) ang file na lampas dito, gaya ng kapag hindi sumasagot ang scanner."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "CA file para sa icaps service"
@@ -1815,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Kung aling key ang pumipirma sa mga dc+sd-jwt at jwt_vc_json na credential ng realm na ito at sa kanilang mga Token Status List Token. Ang `dedicated` — ang default — ay sariling key nila, bawat pamilya ng algorithm, na hindi ginagamit sa anupaman, sa ilalim ng sertipiko na ang subjectAltName ay nagpapangalan bilang URI sa bawat identifier ng issuer na sinasagot ng realm (walang DNS name), na may extended key usage na id-kp-documentSigning (RFC 9336) at walang tatanggapin ng isang TLS stack, para maihambing ng wallet ang iss ng credential sa x5c nito (HAIP 1.0 seksiyon 6.1.1). Muling inilalabas ang sertipiko kapag nagbago ang mga identifier ng issuer (global.publicBaseUrl, tls.hostnames, isang listener). Pinipirmahan sila ng `realm-key` gamit ang pangkalahatang JOSE key ng realm, gaya ng ginawa ng 1.0.0, na ang sertipiko ay walang pinapangalanang issuer. Nananatiling mabeberipika ang mga credential na nailabas na alinman ang piliin. Hindi apektado ang ldp_vc at mso_mdoc."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "I-rotate ang credential signing key bawat (araw)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Gaano katagal pumipirma ang key ng isang dedicated credential signer (keys.credentialSigner dedicated) bago gumawa ang job na keys.credential-signer-rotate ng susunod na key ng family nito, na siyang pipirma mula noon. Ang key na pinapalitan nito ay wala nang pinipirmahan at nananatili sa JWKS at DID document ng credential issuer, kaya patuloy na nabe-verify ang bawat credential na pinirmahan nito. Binibilang mula nang unang makita ng job ang key. Pinapatay ng 0 ang iskedyul. Sa product mode lamang."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Mga post-quantum / hybrid na decryption key"
@@ -1822,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "Ang mga ML-KEM at HPKE JWE algorithm kung saan may hawak na decryption key ang realm na ito — isang key pair bawat algorithm, inilalathala sa JWKS ng realm (`use: enc`, may `alg`) at ina-advertise sa `request_object_encryption_alg_values_supported` at `assertion_encryption_alg_values_supported`, para makapag-encrypt ang isang client ng request object o RFC 7523 / 7522 assertion sa realm na ito gamit ang post-quantum o PQ/T hybrid key establishment. Ang HPKE-10-KE ay X-Wing (ML-KEM-768 + X25519). Walang kailangan dito ang pag-encrypt PARA SA client na nag-register ng isa sa mga algorithm na ito. **Walang laman bilang default, at pagpapasya ng administrator:** bawat isa sa mga algorithm na ito ay mula sa isang Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), at ang AKP key sa isang JWKS ay key type na hindi pa kayang i-parse ng mga JOSE library ng maraming client — tinatanggihan ng ilan ang buong key set. Magpangalan lang ng algorithm dito kung kilalang kaya ito ng mga client na nagbabasa ng JWKS ng realm na ito. Ang pag-alis ng isa ay tumitigil sa paglalathala at pagtanggap nito; ang muling pagpapangalan dito ay nagbabalik ng parehong key."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Palitan ang mga key sa pag-decrypt ng request bawat (araw)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Gaano katagal itinatabi ang mga encryption key ng request object, ang OpenID4VCI request-encryption key at ang mga KEM decryption key bago sila palitan ng job na keys.encryption-key-rotate. Agad na naka-publish ang bagong key (/oauth2/jwks, ang metadata ng credential issuer) at nagde-decrypt pa rin ang pinalitan sa loob ng keys.encryptionKeyOverlapDays. Binibilang mula nang unang makita ng job ang key. Pinapatay ng 0 ang iskedyul. Sa product mode lamang."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "Nagde-decrypt pa ang pinalitang key sa pag-decrypt ng request sa loob ng (araw)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Gaano katagal patuloy na binubuksan ng isang key sa pag-decrypt ng request na pinalitan ng keys.encryption-key-rotate ang na-encrypt ng client para dito bago nito nabasa ang bagong key. Hindi ito naka-publish kahit saan habang iyon, at tinatanggal ito ng signing.retire kapag lumipas na ito."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -2123,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Gaano katagal puwedeng maghintay ang alinmang probe sa likod ng /admin/secrets para sumagot ang isang secret store. Bawat isa sa mga ito ay PAGBASA ng metadata — isang stat ng key file, isang sys endpoint, isang KV version history, isang DescribeSecret — at wala sa mga ito ang kumukuha kailanman ng secret value. Narito ang limit para hindi kailanman ma-hang ang pagbukas ng isang console page sa store ng ibang tao; ang probe na naubusan ng oras ay ipinapakita bilang row na nagsasabi nito, eksakto gaya ng tinanggihan."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Timeout ng tawag sa secret store (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Gaano katagal maaaring maghintay ang isang pagtatangka ng tawag sa OpenBao o Vault, AWS KMS o Secrets Manager, Google Cloud KMS o Secret Manager, o Azure Key Vault; ibinibigay sa bawat SDK bilang sarili nitong timeout option."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Mga pagtatangka bawat tawag sa secret store"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Ilang beses sa kabuuan sinusubukan ang isang tawag sa secret store o key service: ang sariling retry bound ng mga cloud SDK, at para sa OpenBao o Vault, inuulit pagkatapos ng maikling pahinga ang tawag na walang natanggap na sagot, 5xx o 429 (STS-KEYS-0214 kapag nabigo ang bawat pagtatangka). Hindi kailanman inuulit ang 4xx."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS region"
@@ -2180,6 +2236,30 @@
     "text": "Ilang session ang pinakamaraming pinananatiling bukas ng bawat process at request worker sa isang token, na bawat isa ay nagpapatakbo ng isang HSM operation sa isang pagkakataon. May 16 na session sa kabuuan ang YubiHSM 2, na pinaghahatian ng bawat process ng bawat node: panatilihing mas mababa roon ang product nito, ng mga process at ng mga node."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "isang beses binubuksan ang token, sa pag-start"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Timeout ng HSM operation (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Gaano katagal maaaring tumagal ang isang HSM operation, at ang paghihintay ng session na pagpapatakbuhan nito, bago ito tanggihan (STS-KEYS-0216). Itinatapon ang session na ang operation ay lumampas dito kapag sumagot ang module. 0 para walang limit."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "isang beses binubuksan ang token, sa pag-start"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Mga naghihintay na HSM operation bawat token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Ilang HSM operation ang maaaring maghintay ng session ng isang token sa isang process o worker. Agad na tinatanggihan ang isang lampas dito (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "isang beses binubuksan ang token, sa pag-start"
   },
@@ -3464,16 +3544,16 @@
     "text": "Mga algorithm na tinatanggap"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Ang mga algorithm ng OpenPGP na maaaring gamitin ng isang key, ayon sa pagkakasunud-sunod ng preferensiya. Una ang mga composite ng RFC 9980: lumalagda ang ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, nag-e-encrypt ang ML-KEM-768+X25519 at ML-KEM-1024+X448. Pagkatapos ang mga classical na pangalan: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sa nistP256, nistP384 at nistP521, rsaSign at rsaEncryptSign, x25519, x448, ecdh sa curve25519Legacy at sa parehong mga NIST curve, at rsaEncrypt. Tinatanggihan sa pagrehistro at sa pag-verify ang pangalang wala sa listahang ito (STS-OPENPGP-0004). Hindi ipinatupad ang SLH-DSA. Pinangalanan ng default ang bawat isa sa mga ito."
+    "en": "f51a30de72243d25",
+    "text": "Ang mga OpenPGP algorithm na maaaring gamitin ng isang key, ayon sa pagkakasunod ng kagustuhan. Una ang mga post-quantum algorithm ng RFC 9980: pumipirma ang ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, gayundin ang SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f at SLH-DSA-SHAKE-256s sa isang v6 key; nag-e-encrypt ang ML-KEM-768+X25519 at ML-KEM-1024+X448. Pagkatapos ang mga klasikong pangalan: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sa nistP256, nistP384 at nistP521, rsaSign at rsaEncryptSign, x25519, x448, ecdh sa curve25519Legacy at sa parehong mga NIST curve, at rsaEncrypt. Ang pangalang wala sa listahang ito ay tinatanggihan sa pagrehistro at sa pag-verify (STS-OPENPGP-0004). Pinangangalanan ng default ang bawat isa sa mga ito."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "Magrehistro lamang ng post-quantum na key"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat gumamit ng post-quantum na algorithm na pinangalanan ng openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para sa signing key, at ML-KEM-768+X25519 o ML-KEM-1024+X448 kapag may encryption key. Pagrehistro lamang ang nililimitahan: ang classical na key na rehistrado na ay patuloy na bini-verify at tumatanggap pa rin ng mail. Hindi maaaring naka-on habang naka-on ang openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Naka-off bilang default."
+    "en": "b0c222dfa3cda337",
+    "text": "Kapag naka-on, ang bagong nirehistrong key ay dapat gumamit ng post-quantum algorithm na pinangalanan ng openpgp.algorithms: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 o isa sa tatlong SLH-DSA algorithm para sa signing key, at ML-KEM-768+X25519 o ML-KEM-1024+X448 kapag may encryption key ito. Pagrehistro lang ang nililimitahan nito: ang klasikong key na nakarehistro na ay nave-verify pa rin at tumatanggap pa rin ng mail. Hindi maaaring naka-on habang naka-on ang openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Naka-off bilang default."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",
@@ -4178,6 +4258,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Gaano katagal valid ang bawat Issuing CA kapag walang tagal na pinapangalanan ang build. Ang zero ay ang limang taon ng `issuing-ca` profile. Kina-clamp sa expiry ng Intermediate nito."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "I-renew ang mga CA certificate bago sila mag-expire"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Kung nire-renew ng araw-araw na job na pki.ca-renew ang Root, bawat Intermediate at bawat Issuing CA na nasa loob ng lead nito (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) gamit ang PAREHONG key at subject, kaya patuloy na nabe-verify ang bawat certificate na pinirmahan nito at nananatili ang pin sa key nito. Ang na-renew na Root ay naka-publish sa tabi ng pinalitan nito, sa /pki/ca/service/root-previous.cer, hanggang mag-expire iyon. Hindi kailanman nire-renew ang na-import na CA. Kapag naka-off, walang nagre-renew ng CA at nag-e-expire ito gaya bago ang 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "I-renew ang Root ganito katagal bago ito mag-expire (araw)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Gaano katagal bago mag-expire ang Root CA ito nire-renew ng pki.ca-renew, hindi lalampas sa kalahati ng buhay nito. Mahaba bilang default (tatlong taon), dahil ang na-renew na Root ay bagong trust anchor certificate na dapat maibigay sa bawat relying party bago mag-expire ang luma."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "I-renew ang Intermediate o Issuing CA ganito katagal bago ito mag-expire (araw)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Gaano katagal bago mag-expire ang isang Intermediate o Issuing CA ito nire-renew ng pki.ca-renew, hindi lalampas sa kalahati ng buhay nito. Hindi maaaring tumagal ang CA nang lampas sa parent nito, kaya ang CA na unang mag-e-expire ang parent ay naghihintay sa pag-renew ng parent."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -5639,6 +5743,38 @@
     "en": "6a4ac147d740738b",
     "text": "Gaano katagal maghihintay na sumagot ang isang partner bago sumuko. Mas mahalaga ito kaysa sa karaniwang timeout dahil NAGHIHINTAY dito ang browser — ang federated sign-in ay isang taong nakatingin sa blangkong tab habang nire-redeem ng serbisyong ito ang isang code — kaya sapat itong maikli para ang patay na partner ay magbunga ng error page sa halip na pagkabitin, at pinapangalanan ng error ang timeout. 5000 ito hanggang 2026-08-30, at ang nagbago ay ang partner dito ay KARANIWANG ANG PROCESS NA ITO: ang trust realm ay lohikal na kopya ng serbisyong ito, at ang unang hinihingi ng sinuman sa bagong-bagong realm ay ang JWKS nito — na siyang nagpapasilang sa labing-isang post-quantum key ng realm na iyon, isa rito ay SLH-DSA-SHAKE-128s key generation na mga limang segundo. Ang 5000 ay budget na gumana lang dahil DATING NAGBA-BLOCK ang serbisyong ito habang sumasagot: nakahinto ang event loop, kaya hindi makapag-fire ang timer na nagpapatupad ng budget na iyon hanggang nagawa na ang response. Binubuo na ngayon ang mga key sa thread pool ng libuv (common/pq_native.js) at pinapainit kapag ginawa ang isang realm, kaya millisecond na lang ang ordinaryong fetch — ito ang budget para sa dumarating habang isinisilang pa ang isang realm."
   },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Mga outbound connection bawat destinasyon"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Ilang connection ang sabay-sabay na pinananatiling bukas ng isang process sa isang destinasyon (isang partner, isang receiver, URL ng isang client), para sa bawat outbound na HTTP call. Naghihintay ng connection ang request na lampas dito, sa loob ng kabuuang deadline nito, at nagla-log ng babala kapag unang naghintay ang mga request (STS-HTTP-0032). Pinananatiling buhay at muling ginagamit ang mga connection."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Mga outbound connection sa kabuuan"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Ilang outbound na HTTP connection ang pinananatiling bukas ng isang process sa kabuuan. Naghihintay ng connection ang request na lampas dito, sa loob ng kabuuang deadline nito (STS-HTTP-0032). Hindi kailanman mas mababa sa federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Kabuuang deadline ng outbound (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Ang pinakamatagal na maaaring itagal ng anumang outbound na HTTP call sa kabuuan: ang paghihintay ng connection, ang pag-connect, ang handshake at ang buong sagot. Inactivity ang sinusukat ng ibang timeout, kaya ang peer na mabagal sumagot ay kung hindi ay mapapanatiling bukas ang call. Ang call na mas mahaba ang sariling timeout ay iyon ang makukuha. Sa deadline, nagtatapos ang call bilang timeout (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Timeout ng outbound connect (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Gaano katagal maaaring tumagal ang pag-connect ng bagong outbound connection, kasama ang TLS handshake nito. Hindi tinitiyempuhan ang connection na muling ginamit mula sa pool. Sa limit, nagtatapos ang call bilang timeout (STS-HTTP-0034)."
+  },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
     "text": "Payagan ang http:// sa isang partner (development lang)"
@@ -6562,6 +6698,22 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "Sa isang active-active cluster, sine-seal ng LDAPS listener at main port ng bawat node (maliban kung naka-off ang tls.mainPortSharedTickets) ang mga session ticket sa ilalim ng iisang shared key, para ang ticket na iniisyu ng isang node ay maipagpatuloy sa iba (may key bawat node ang listener ng debugger). Ito kung gaano kadalas, sa segundo, pinapalitan ito ng tls.ticket-key-rotate job; binubura ang key na pinapalitan nito, kaya mababawi ang mga secret ng ipinagpatuloy na session mula sa nakuhang ticket habang buhay lang ang key nito, at ang client na mas luma ang ticket ay gumagawa ng buong handshake. Itinatago ang key sa store, naka-seal sa ilalim ng key-encryption key. Ino-off ng 0 ang pagbabahagi, at sa labas ng active-active mode walang ibinabahagi: ang iisang node na sumasagot ay nagpapatuloy gamit ang sariling per-listener key ng OpenSSL, na hindi kailanman umaalis sa process."
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "I-renew ang certificate ng listener nang walang restart"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Kung nire-renew ng oras-oras na job na tls.server-certificate-renew ang certificate na ipinapakita ng main port, LDAPS at debugger, gamit ang parehong key, kapag kulang na sa ikatlo ng validity nito ang natitira (o nasa loob ito ng tls.serverCertificateRenewLeadDays), at inilalagay ito sa bawat socket nang walang restart. Nire-renew ng bawat node ang sarili nito. Kapag naka-off, nire-renew lamang ito sa pag-start at sa Renew ng console. Ikaw ang magre-renew ng certificate na ibinibigay mo sa tls.certificateFile."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "I-renew ang certificate ng listener ganito katagal bago ito mag-expire (araw, 0 = sa ikatlo ng validity nito)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "I-renew ang certificate ng listener ganitong bilang ng araw bago ito mag-expire, kung mas maaga iyon kaysa sa puntong ikatlo na lamang ng validity nito ang natitira. Pinapanatili ng 0, ang default, ang ikatlo."
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7922,6 +8074,14 @@
   "krb5.krbtgtRotationIntervalDays|description": {
     "en": "0ef945c098a1eeac",
     "text": "Gaano katagal nananatiling kasalukuyan ang krbtgt key ng isang trust realm — ang key kung saan naka-seal ang bawat Ticket-Granting Ticket — bago ito palitan ng krb5.krbtgt-rotate job ng bagong random na key sa susunod na kvno. Iniingatan ang key na pinapalitan nito (krb5.retainedKeyVersions, sa loob ng krb5.retainedKeyTtlS) para gumana pa rin ang TGT na na-issue isang iglap bago ang rotation hanggang mag-expire ito, at hindi kailanman nagro-rotate ang job habang bukas ang window na iyon. Ang 180 araw ang karaniwang gabay ng Active Directory. Pinapatay ng 0 ang naka-schedule na rotation; gumagana pa rin ang manual na rotation (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt). Product mode lang. Kapag 0 ang krb5.retainedKeyVersions, naka-off din ang job, dahil ang rotation na walang iniingatan ay magsa-sign out sa bawat Kerberos user sa realm nang walang pasabi."
+  },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "I-rotate ang sariling acceptor key ng serbisyong ito bawat (araw)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Gaano katanda maaaring maging ang isang service principal key bago ito palitan ng job na krb5.service-key-rotate ng bagong random key sa susunod na kvno, itinatabi ang pinalitan (krb5.retainedKeyVersions, sa loob ng krb5.retainedKeyTtlS) para patuloy na gumana ang mga ticket na naibigay na, at hindi kailanman habang bukas ang window na iyon. Ang key lamang na ginawa ng serbisyong ito para sa sarili nitong acceptor ang nire-rotate: ang key na naibigay ang keytab sa ibang serbisyo ay iniuulat na due sa /admin/scheduler, at ang pag-rotate dito, na nagbibigay ng bagong keytab, ay nananatiling gawain ng operator. Binibilang mula sa huling rotation ng key o sa paggawa nito. Pinapatay ng 0 ang iskedyul. Sa product mode lamang."
   },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
@@ -11407,6 +11567,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Gaano katagal maaaring tumakbo ang alinmang statement sa likod ng /admin/database, bilang sariling statement_timeout ng PostgreSQL sa nag-iisang connection na hinihiram ng pahinang iyon. Bawat isa ay pagbasa ng isang catalog view; nariyan ang limit para hindi kailanman ma-pin ng pagbubukas ng console page ang isang connection mula sa pool na pinagsasagutan ng serbisyong ito ng protocol traffic. Itinatakda ito sa server sa halip na bilang timer dito, dahil iiwan ng timer ang promise at iiwan ang statement at ang connection kung nasaan sila mismo."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Mga database connection bawat process"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Ilang connection sa database ang pinananatili ng bawat process sa pool nito. Ang 0, ang default, ay doble ng mga request worker ng node at hindi kailanman mas mababa sa apat. Naghihintay ng bakanteng connection ang caller na lampas dito nang hanggang persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Paghihintay ng database connection (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Gaano katagal maghihintay ang isang caller ng bakanteng connection sa pool bago ito mabigo. Sinasagot ng 503 (STS-STORE-0066) ang write na nabigo nang ganito at sinusubukang muli ang flush nito."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Timeout ng database connect (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Gaano katagal maaaring tumagal ang paggawa ng bagong database connection."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Tagal ng pagpapanatili ng idle na database connection (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Gaano katagal nananatili sa pool ang idle na connection bago ito isara."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Statement timeout ng database (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Ang pinakamatagal na maaaring tumakbo ang isang ordinaryong database statement bago ito kanselahin ng server (statement_timeout ng PostgreSQL, max_statement_time ng MariaDB), na nila-log bilang STS-STORE-0178. 0 para wala. Hindi saklaw nito ang pagbubukas ng store, ang mga migration nito, ang restore sa pag-start at ang mga online index build; tumatakbo ang mga backfill sa maliliit na batch."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "itinatakda ito sa pool kapag nabuksan at nabasa na ang store"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Data directory"
@@ -11827,6 +12047,14 @@
     "en": "839a4a009d203829",
     "text": "Gaano katagal maaaring tumagal ang request na ni-relay sa ibang cell, o isang call sa inter-cell channel, bago ito sagutin bilang hindi maabot ang ibang cell (at hawakan ayon sa sinasabi ng `cells.homeUnreachable`)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Pinakamalaking inter-cell na sagot (bytes)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Ang pinakamalaking maaaring isagot ng isang synchronous na call sa ibang cell. Kapag lumampas, isinasara ang connection at nabibigo ang call (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Mga pagtatangka ng inter-cell delivery"
@@ -12058,6 +12286,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Ilang tao ang binabasa ng bawat attribute source kada pagtakbo ng naka-iskedyul na refresh (attribute-sources.refresh, bawat minuto), at itinutuloy mula sa huli sa susunod. Ang mas malaki ay mas maagang natatapos ang isang pass at mas matagal na hinahawakan ang isang node kada pagtakbo."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Mga connection bawat source"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Ilang connection ang pinananatili ng bawat process sa isang attribute source. Naghihintay ng connection ang lookup na lampas dito sa loob ng sariling timeout ng source. Nagkakabisa ang pagbabago sa susunod na lookup ng bawat source."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12368,8 +12604,8 @@
     "text": "Mga sabay-sabay na pagpapadala"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Ilang mensahe ang sabay-sabay na ipinapadala ng isang process mula sa isang sweep."
+    "en": "d6de0478b866cf8b",
+    "text": "Ilang mensahe ang sabay-sabay na ipinapadala ng isang process, mula sa isang sweep at sa unang pagtatangka pagkatapos ma-queue ang isang mensahe. Naghihintay ng susunod na sweep ang mensaheng walang makitang bakante."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12384,8 +12620,8 @@
     "text": "Mga row ng outbox kada realm"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Ang limit sa outbox, kada realm: unang inaalis ang pinakalumang TAPOS na row, at hindi kailanman ang nakabinbin."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Ang limit sa outbox, kada realm: unang inaalis ang pinakalumang TAPOS na row, at hindi kailanman ang nakabinbin. Tinatanggihan ang mensaheng magpapalampas sa mga NAKABINBING row dito (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

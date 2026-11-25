@@ -53,5 +53,19 @@
   "done.mail.openpgp": "Ihre E-Mails werden jetzt mit Ihrem OpenPGP-Schlüssel verschlüsselt.",
   "done.mail.smime": "Ihre E-Mails werden jetzt mit Ihrem S/MIME-Zertifikat verschlüsselt.",
   "done.smimeSet": "Ihr S/MIME-Zertifikat ist festgelegt.",
-  "done.smimeRemoved": "Ihr S/MIME-Zertifikat wurde entfernt."
+  "done.smimeRemoved": "Ihr S/MIME-Zertifikat wurde entfernt.",
+  "kem.heading": "Ein ML-KEM-Zertifikat von diesem Dienst",
+  "kem.intro": "Dieser Dienst kann Ihnen ein Post-Quanten-S/MIME-Zertifikat für {mail} ausstellen. Ein ML-KEM-Schlüssel kann keine Anfrage signieren, daher beweisen Sie auf andere Weise, dass er Ihnen gehört: Dieser Dienst verschlüsselt ein Geheimnis an ihn, und Sie senden das Geheimnis zurück.",
+  "kem.step1": "Erzeugen Sie mit OpenSSL 3.5 oder neuer einen ML-KEM-Schlüssel, behalten Sie den privaten Schlüssel und fügen Sie den öffentlichen Schlüssel unten ein.",
+  "kem.key": "Ihr öffentlicher ML-KEM-Schlüssel (-----BEGIN PUBLIC KEY-----)",
+  "kem.ask": "Schlüssel senden",
+  "kem.step2": "Entkapseln Sie diesen {algorithm}-Chiffretext vor {at} mit Ihrem privaten Schlüssel und fügen Sie das ausgegebene Geheimnis unten ein.",
+  "kem.secret": "Das Geheimnis (64 Hexadezimalzeichen)",
+  "kem.issue": "Zertifikat ausstellen",
+  "kem.again": "Mit einem anderen Schlüssel neu beginnen",
+  "kem.issuedHeading": "Ihr neues S/MIME-Zertifikat",
+  "kem.issuedSub": "Ein {algorithm}-Zertifikat mit der Seriennummer {serial} ist jetzt Ihr S/MIME-Zertifikat. Speichern Sie es und importieren Sie es mit Ihrem privaten Schlüssel in Ihr E-Mail-Programm.",
+  "kem.save": "Zertifikat speichern",
+  "done.kemChallenge": "Ihr {algorithm}-Schlüssel wurde angenommen. Entkapseln Sie die Challenge unten und senden Sie das Geheimnis zurück.",
+  "done.kemIssued": "Ihr {algorithm}-S/MIME-Zertifikat {serial} ist ausgestellt und gesetzt."
 }

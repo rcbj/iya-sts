@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "عُيّنت شهادة S/MIME لشخص أو أُزيلت"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "صدر تحدٍّ لإثبات حيازة مفتاح S/MIME من نوع ML-KEM"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "لم تصدر شهادة S/MIME من نوع ML-KEM"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "احتُفظ بمفتاح OpenPGP تقليدي بجانب مفتاح ما بعد الكم الذي حلّ محله"

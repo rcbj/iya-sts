@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "किसी व्यक्ति का S/MIME प्रमाणपत्र सेट किया गया या हटाया गया"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "एक ML-KEM S/MIME स्वामित्व-प्रमाण चुनौती जारी की गई"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "एक ML-KEM S/MIME प्रमाणपत्र जारी नहीं किया गया"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "एक क्लासिकल OpenPGP कुंजी को उसकी जगह लेने वाली पोस्ट-क्वांटम कुंजी के साथ रखा गया"

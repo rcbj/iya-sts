@@ -1375,10 +1375,11 @@ function hsmKeyReport() {
     place(one.publicJwk && one.publicJwk.crv && one.alg === 'EdDSA'
       ? 'EdDSA (' + one.publicJwk.crv + ')' : one.alg, one.privateKey);
   });
-  // The published post-quantum set stays in software even when the token
-  // offers CKM_ML_DSA. An ML-DSA key in the HSM is generated on its own.
+  // The published post-quantum set (#2220): each key where it was made —
+  // the ML-DSA and SLH-DSA keys in the token where it offers CKM_ML_DSA or
+  // CKM_SLH_DSA, the composites always in software.
   (keys.pqKeys || []).forEach(function (one) {
-    inSoftware.push(one.alg);
+    place(one.alg, one.privateKey);
   });
   const held = require('./secrets').heldSigningToken();
   log.debug("Leaving hsmKeyReport().");
@@ -2179,6 +2180,33 @@ function generationsView(realmId, stored, privateOf) {
     }
     return entry;
   });
+  // The retired request-decryption keys (#2220): the same rule again.
+  const retiredEnc = (stored.retiredEnc || []).map(function (one) {
+    const entry = /** @type {any} */ ({ kind: one.kind, kid: one.kid,
+                                        retiredAt: one.retiredAt,
+                                        retiredUntil: one.retiredUntil });
+    const kid = one.kid;
+    if (typeof privateOf === 'function') {
+      Object.defineProperty(entry, 'keys', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          const held = privateOf();
+          const own = held && held.retiredEnc && held.retiredEnc.get(kid);
+          if (!own) {
+            throw new Error('the "' + realmId + '" realm\'s retired ' +
+              'request-decryption key ' + kid + ' is held encrypted and ' +
+              'could not be decrypted; see the keystore errors above.');
+          }
+          log.debug("Leaving get().");
+          return own;
+        }
+      });
+    } else {
+      entry.keys = one.keys;
+    }
+    return entry;
+  });
   const parentCerts = (stored.parentCerts || []).filter(function (one) {
     return typeof one === 'string' && one.length > 0;
   });
@@ -2186,7 +2214,8 @@ function generationsView(realmId, stored, privateOf) {
   return { generation: Number(stored.generation) || 0,
            rotated: Object.assign({}, stored.rotated || {}),
            parentCerts: parentCerts,
-           standby: standby, retiredRefresh: retiredRefresh };
+           standby: standby, retiredRefresh: retiredRefresh,
+           retiredEnc: retiredEnc };
 }
 
 // ---------------------------------------------------------------------------
@@ -6645,7 +6674,10 @@ async function mintStandbyKey(unitRow, role, realmId) {
       kid: kid, privateKey: Buffer.from(pair.secretKey),
       publicKeyB64: Buffer.from(pair.publicKey).toString('base64') });
   }
-  const pq = pqKeyFrom(unitRow.alg, await pqJose.generateAsync(unitRow.alg));
+  // In the token where it offers the algorithm, as the current key was
+  // (#2220); a composite, and a token without the mechanism, in software.
+  const pq = pqKeyFrom(unitRow.alg, await pqPairForAsync(unitRow.alg, hsm,
+    realmId === undefined ? realms.currentId() : realmId));
   log.debug("Leaving mintStandbyKey(). Post-quantum " + pq.publicJwk.kid);
   return Object.assign(base, { kid: pq.publicJwk.kid,
                                privateKey: pq.privateKey,
@@ -6776,7 +6808,13 @@ function plainCopyOf(keys, overrides) {
         return copy;
       }),
       retiredRefresh: ((keys.generations && keys.generations.retiredRefresh) ||
-                       []).slice()
+                       []).slice(),
+      // The retired request-decryption keys (#2220), each read once.
+      retiredEnc: ((keys.generations && keys.generations.retiredEnc) || [])
+        .map(function (one) {
+          return { kind: one.kind, kid: one.kid, retiredAt: one.retiredAt,
+                   retiredUntil: one.retiredUntil, keys: one.keys };
+        })
     }
   };
   log.debug("Leaving plainCopyOf().");
@@ -7168,7 +7206,12 @@ function retireExpiredGenerations(realmId, nowMs) {
     .filter(function (one) {
       return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
     });
-  if (!expired.length && !refreshGone.length) {
+  // And the retired request-decryption keys past theirs (#2220).
+  const encGone = ((keys.generations && keys.generations.retiredEnc) || [])
+    .filter(function (one) {
+      return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
+    });
+  if (!expired.length && !refreshGone.length && !encGone.length) {
     log.debug("Leaving retireExpiredGenerations(). Nothing due.");
     return { ok: true, dropped: [],
              generation: Number(keys.generations &&
@@ -7188,8 +7231,16 @@ function retireExpiredGenerations(realmId, nowMs) {
     .filter(function (one) {
       return refreshKids.indexOf(one.kid) < 0;
     });
+  const encKids = encGone.map(function (one) {
+    return one.kid;
+  });
+  copy.generations.retiredEnc = copy.generations.retiredEnc
+    .filter(function (one) {
+      return encKids.indexOf(one.kid) < 0;
+    });
   const answer = replaceGeneration(id, copy, (gone.length +
-    refreshKids.length) + ' retired key(s) past their grace dropped');
+    refreshKids.length + encKids.length) +
+    ' retired key(s) past their grace dropped');
   log.debug("Leaving retireExpiredGenerations(). " + gone.length +
             " signing and " + refreshKids.length + " refresh set(s) dropped.");
   return { ok: answer.ok, generation: answer.generation, why: answer.reason,
@@ -7198,6 +7249,9 @@ function retireExpiredGenerations(realmId, nowMs) {
                       slot: one.slot, role: 'retired' };
            }).concat(refreshGone.map(function (one) {
              return { unit: 'refresh:enc', kid: one.kid, useCase: 'refresh',
+                      slot: '', role: 'retired' };
+           })).concat(encGone.map(function (one) {
+             return { unit: 'request:enc', kid: one.kid, useCase: one.kind,
                       slot: '', role: 'retired' };
            })) : [] };
 }
@@ -7266,6 +7320,197 @@ function retiredRefreshTokenKeysFor(keySet) {
       return one.keys;
     });
   log.debug("Leaving retiredRefreshTokenKeysFor(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE REQUEST-DECRYPTION KEYS, REPLACED ON A SCHEDULE (#2220, ASVS 5.0.0 L3;
+// key-management.md's Known gaps).
+//
+// The request object encryption keys (RFC 9101), the OpenID4VCI
+// request-encryption key and the KEM decryption keys (#82) were carried over
+// every signing rotation (`plainCopyOf()`) and never replaced, so one of them
+// leaked opened every request a client ever encrypted to it. They are now
+// replaced by `rotateEncryptionKeys()` — what the `keys.encryption-key-rotate`
+// job in `common/key_renewal.ts` calls — and the key replaced is RETIRED, as
+// a refresh-token set is (D7): kept in `generations.retiredEnc` only to
+// DECRYPT what a client encrypted to it before it read the new one, until
+// `retiredUntil`, and published nowhere. `signing.retire`'s
+// `retireExpiredGenerations()` drops it then.
+//
+// **THE NEW KEY IS PUBLISHED FIRST.** It is in `/oauth2/jwks` and the
+// credential issuer metadata from the moment of the rotation, before the key
+// it replaces stops opening anything: a client that refreshes its copy within
+// the overlap (`keys.encryptionKeyOverlapDays`) never encrypts to a key this
+// service cannot open. Only the kinds a set already holds are replaced; a
+// member a set lacks is still made lazily, as before.
+// ---------------------------------------------------------------------------
+/** The kinds of request-decryption key `rotateEncryptionKeys()` replaces. */
+const ENCRYPTION_KEY_KINDS = Object.freeze(['ro', 'vci', 'kem']);
+
+// One KEM decryption key pair for `alg`, as `kemEncryptionKeysFor()` makes
+// one: the kid from the public key's thumbprint.
+function makeKemKey(alg) {
+  log.debug("Entering makeKemKey(). " + alg);
+  const pair = stsCrypto.generateJweKemKeyPair(alg);
+  const kid = 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '') +
+              '-' + stsCrypto.jwkThumbprint(
+                stsCrypto.publicJweKemJwk(pair.publicJwk), { truncate: 16 });
+  pair.publicJwk.kid = kid;
+  pair.privateJwk.kid = kid;
+  log.debug("Leaving makeKemKey(). " + kid);
+  return { alg: alg, publicJwk: pair.publicJwk, privateJwk: pair.privateJwk };
+}
+
+/**
+ * The current request-decryption keys of a set, one row per key, as the
+ * rotation and its clock read them: `{ kind, kid, keys }`.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the rows
+ */
+function encryptionKeysHeld(keySet) {
+  log.debug("Entering encryptionKeysHeld().");
+  const keys = keySet || stsKeysFor();
+  const out = [];
+  const ro = keys.requestObjectEncKeys;
+  if (ro && ro.rsa && ro.rsa.publicJwk) {
+    out.push({ kind: 'ro', kid: ro.rsa.publicJwk.kid, keys: ro });
+  }
+  const vci = keys.vciRequestEncKey;
+  if (vci && vci.publicJwk) {
+    out.push({ kind: 'vci', kid: vci.publicJwk.kid, keys: vci });
+  }
+  (keys.kemEncKeys || []).forEach(function (one) {
+    if (one && one.publicJwk) {
+      out.push({ kind: 'kem', kid: one.publicJwk.kid, keys: one });
+    }
+  });
+  log.debug("Leaving encryptionKeysHeld(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Replaces a realm's request-decryption keys of the kinds named, the new
+ * ones made off the event loop; each key replaced is retired, kept only to
+ * decrypt until `overlapMs` has passed.
+ *
+ * @param realmId - the realm
+ * @param kinds - a subset of `ENCRYPTION_KEY_KINDS`
+ * @param overlapMs - how long a replaced key still decrypts
+ * @param why - the reason, for the log
+ * @returns a promise of `{ ok, why, generation, rotated: [{ kind, from,
+ *   to }] }`
+ */
+async function rotateEncryptionKeys(realmId, kinds, overlapMs, why) {
+  log.debug("Entering rotateEncryptionKeys(). realm=" + realmId + " " +
+            (kinds || []).join(','));
+  const id = String(realmId || '');
+  const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
+  const wanted = (kinds || []).filter(function (one) {
+    return ENCRYPTION_KEY_KINDS.indexOf(one) >= 0;
+  });
+  const keys = stsKeysFor.of(id);
+  const held = encryptionKeysHeld(keys).filter(function (one) {
+    return wanted.indexOf(one.kind) >= 0;
+  });
+  if (!held.length) {
+    log.debug("Leaving rotateEncryptionKeys(). Nothing held to replace.");
+    return { ok: true, rotated: [], generation: 0, why: 'none held' };
+  }
+  const bits = realms.run(realm, function () {
+    return { ro: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits'),
+             vci: rsaBitsFor('oid4vci.requestEncryptionKeyBits') };
+  });
+  const overrides = {};
+  const rotated = [];
+  const has = function (kind) {
+    log.debug("Entering has().");
+    log.debug("Leaving has().");
+    return held.some(function (one) {
+      return one.kind === kind;
+    });
+  };
+  if (has('ro')) {
+    const pair = await generateRsaPairAsync(bits.ro);
+    overrides.requestObjectEncKeys = realms.run(realm, function () {
+      return makeRequestObjectEncryptionKeys(pair);
+    });
+  }
+  if (has('vci')) {
+    const pair = await generateRsaPairAsync(bits.vci);
+    overrides.vciRequestEncKey = realms.run(realm, function () {
+      return makeRequestEncryptionKey(pair);
+    });
+  }
+  if (has('kem')) {
+    overrides.kemEncKeys = (keys.kemEncKeys || []).map(function (one) {
+      return makeKemKey(one.alg);
+    });
+  }
+  const now = Date.now();
+  const until = now + Math.max(0, Number(overlapMs) || 0);
+  const retired = held.map(function (one) {
+    let to = '';
+    if (one.kind === 'ro') {
+      to = overrides.requestObjectEncKeys.rsa.publicJwk.kid;
+    } else if (one.kind === 'vci') {
+      to = overrides.vciRequestEncKey.publicJwk.kid;
+    } else {
+      to = (overrides.kemEncKeys.filter(function (fresh) {
+        return fresh.alg === one.keys.alg;
+      })[0] || { publicJwk: {} }).publicJwk.kid || '';
+    }
+    rotated.push({ kind: one.kind, from: one.kid, to: to });
+    // Read ONCE, here, on the leader: the copy below is written sealed.
+    const material = one.kind === 'ro'
+      ? { rsa: { privateKey: one.keys.rsa.privateKey,
+                 publicJwk: one.keys.rsa.publicJwk },
+          ec: { privateKey: one.keys.ec.privateKey,
+                publicJwk: one.keys.ec.publicJwk } }
+      : one.kind === 'vci'
+        ? { privateKey: one.keys.privateKey, publicJwk: one.keys.publicJwk }
+        : { alg: one.keys.alg, publicJwk: one.keys.publicJwk,
+            privateJwk: one.keys.privateJwk };
+    return { kind: one.kind, kid: one.kid, retiredAt: now,
+             retiredUntil: until, keys: material };
+  });
+  const copy = plainCopyOf(keys, overrides);
+  copy.generations.retiredEnc = (copy.generations.retiredEnc || [])
+    .concat(retired);
+  wanted.forEach(function (kind) {
+    copy.generations.rotated['enc:' + kind] = now;
+  });
+  const answer = replaceGeneration(id, copy, why ||
+                                   'a rotation of the request-decryption keys');
+  log.debug("Leaving rotateEncryptionKeys(). " + JSON.stringify(answer));
+  return { ok: answer.ok, why: answer.reason, generation: answer.generation,
+           rotated: answer.ok ? rotated : [] };
+}
+
+/**
+ * The retired request-decryption keys of one kind still inside their
+ * overlap, newest first — what a decrypt site tries after the current key.
+ *
+ * @param kind - 'ro', 'vci' or 'kem'
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the keys, each in its kind's own shape
+ */
+function retiredEncryptionKeysFor(kind, keySet) {
+  log.debug("Entering retiredEncryptionKeysFor(). " + kind);
+  const keys = keySet || stsKeysFor();
+  const now = Date.now();
+  const out = ((keys.generations && keys.generations.retiredEnc) || [])
+    .filter(function (one) {
+      return one.kind === kind &&
+             !(Number(one.retiredUntil) > 0 &&
+               Number(one.retiredUntil) <= now);
+    }).sort(function (a, b) {
+      return (Number(b.retiredAt) || 0) - (Number(a.retiredAt) || 0);
+    }).map(function (one) {
+      return one.keys;
+    }).filter(Boolean);
+  log.debug("Leaving retiredEncryptionKeysFor(). " + out.length + ".");
   return out;
 }
 
@@ -7881,6 +8126,98 @@ function oauthError(res, status, error, description) {
 // be far worse — a client that cached it would be missing the key it needs —
 // which is why the JWKS triggers the whole set rather than one at a time.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PUBLISHED SET IN THE HSM, WHERE THE TOKEN OFFERS IT (#2220).
+//
+// A realm that keeps its signing keys in the HSM (`keys.signingKeyStore`
+// `pkcs11`) made its RSA and curve keys there and these eleven in software
+// until #2220. Now each of the five pure keys — ML-DSA-44, -65 and -87 and
+// SLH-DSA-SHA2-128s and -SHAKE-128s — is made in the token when it lists
+// PKCS#11 3.2's generation mechanism and CKM_ML_DSA or CKM_SLH_DSA with
+// CKF_SIGN (`Pkcs11Token.canGenerate()`), and in software only when it does
+// not; the six composites stay in software, because no PKCS#11 mechanism
+// signs one. `hsmKeyReport()` says which went where, per key.
+//
+// The private key of a key made in the token is its REFERENCE (a string,
+// `pkcs11-key:v1:…`), which every signing door asks `isHsmKey()` of; the
+// keystore stores it as the reference (`keystore.js`'s `pqKeys`). A
+// generation the token refuses for want of the mechanism (STS-KEYS-0207) is
+// made in software, logged, as a curve key is (`curveInSoftware()`).
+// Anything else the HSM answers is thrown, as it is for every other key.
+// ---------------------------------------------------------------------------
+// The realm's token where its keys are in the HSM; null in software, or
+// where the realm's store cannot be had (the classical keys refused that
+// already, with STS-KEYS-0206, so the published set is not where it shows).
+function pqHsmFor(keys) {
+  log.debug("Entering pqHsmFor().");
+  let hsm = null;
+  try {
+    hsm = hsmSigningFor(keys.realm);
+  } catch (e) {
+    log.debug("Caught in pqHsmFor(): " + ((e && e.message) || e));
+    hsm = null;
+  }
+  log.debug("Leaving pqHsmFor(). " + (hsm ? hsm.uri : 'software'));
+  return hsm;
+}
+
+// What `pq_jose.js` makes, from a key pair made in the token: the raw
+// public key and the private key's reference.
+function pqPairFromHsm(made) {
+  log.debug("Entering pqPairFromHsm().");
+  log.debug("Leaving pqPairFromHsm().");
+  return { pub: Buffer.from(made.publicKey.raw),
+           priv: made.privateKey.ref };
+}
+
+// One key of the published set: in the token where it offers the
+// algorithm, in software otherwise. Synchronous (`pqKeysFor()`'s door).
+function pqPairFor(alg, hsm, realmId) {
+  log.debug("Entering pqPairFor(). " + alg);
+  const spec = { kty: 'AKP', alg: alg };
+  if (hsm && hsm.token.canGenerate(spec)) {
+    try {
+      const made = realms.run(realmForKeys(realmId), function () {
+        return stsCrypto.generatePkcs11KeyPair(hsm.token, hsm.uri, spec,
+                                               hsmLabel(alg.toLowerCase()));
+      });
+      log.debug("Leaving pqPairFor(). In the HSM.");
+      return pqPairFromHsm(made);
+    } catch (e) {
+      log.debug("Caught in pqPairFor(): " + ((e && e.message) || e));
+      realms.run(realmForKeys(realmId), function () {
+        curveInSoftware({ alg: alg }, e);
+      });
+    }
+  }
+  log.debug("Leaving pqPairFor(). Software.");
+  return pqJose.generate(alg);
+}
+
+// The same off the event loop: the token's async generation, or the
+// child processes `pq_jose.js` makes the rest in.
+function pqPairForAsync(alg, hsm, realmId) {
+  log.debug("Entering pqPairForAsync(). " + alg);
+  const spec = { kty: 'AKP', alg: alg };
+  if (hsm && hsm.token.canGenerate(spec)) {
+    const label = realms.run(realmForKeys(realmId), function () {
+      return hsmLabel(alg.toLowerCase());
+    });
+    log.debug("Leaving pqPairForAsync(). In the HSM.");
+    return stsCrypto.generatePkcs11KeyPairAsync(hsm.token, hsm.uri, spec,
+                                                label)
+      .then(pqPairFromHsm, function (e) {
+        log.debug("Caught in pqPairForAsync(): " + ((e && e.message) || e));
+        realms.run(realmForKeys(realmId), function () {
+          curveInSoftware({ alg: alg }, e);
+        });
+        return pqJose.generateAsync(alg);
+      });
+  }
+  log.debug("Leaving pqPairForAsync(). Software.");
+  return pqJose.generateAsync(alg);
+}
+
 function pqKeysFor(keys) {
   log.debug("Entering pqKeysFor().");
   if (keys.pqKeys) {
@@ -7888,8 +8225,9 @@ function pqKeysFor(keys) {
   } else {
     pqKeysCount.miss();
     const started = Date.now();
+    const hsm = pqHsmFor(keys);
     keys.pqKeys = pqJose.PQ_ALGS.map(function (alg) {
-      return pqKeyFrom(alg, pqJose.generate(alg));
+      return pqKeyFrom(alg, pqPairFor(alg, hsm, keys.realm));
     });
     log.info('The post-quantum signing keys were generated for the "' +
              keys.realm + '" realm: ' + keys.pqKeys.length + ' key(s) in ' +
@@ -7988,8 +8326,9 @@ function pqKeysForAsync(keys) {
     pqKeysCount.hit();
   } else {
     pqKeysCount.miss();
+    const hsm = pqHsmFor(keys);
     generation = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
-      return pqJose.generateAsync(alg).then(function (pair) {
+      return pqPairForAsync(alg, hsm, keys.realm).then(function (pair) {
         return pqKeyFrom(alg, pair);
       });
     }));
@@ -10348,6 +10687,13 @@ module.exports = {
   refreshTokenKeysFor: refreshTokenKeysFor,
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
+  // The request-decryption keys on a schedule (#2220).
+  ENCRYPTION_KEY_KINDS: ENCRYPTION_KEY_KINDS,
+  encryptionKeysHeld: encryptionKeysHeld,
+  rotateEncryptionKeys: rotateEncryptionKeys,
+  retiredEncryptionKeysFor: retiredEncryptionKeysFor,
+  // The curve keys' table, for the credential signers' rotation (#2220).
+  CURVE_KEY_SPECS: CURVE_KEY_SPECS,
   requestObjectKeysFor: requestObjectKeysFor,
   kemEncryptionKeysFor: kemEncryptionKeysFor,
   kemDecryptionKeyFor: kemDecryptionKeyFor,
@@ -10368,6 +10714,10 @@ module.exports = {
   kidOf: kidOf,
   groupKidOf: groupKidOf,
   pqKeyFrom: pqKeyFrom,
+  // One key of the published post-quantum set, in the token where it offers
+  // the algorithm (#2220) — for the test that plays a token.
+  pqPairFor: pqPairFor,
+  pqPairForAsync: pqPairForAsync,
   curveKeyFrom: curveKeyFrom,
   listedSigningAlgs: listedSigningAlgs,
   withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,

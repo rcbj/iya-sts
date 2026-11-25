@@ -167,6 +167,14 @@
     "en": "bbcb6fbdb123f2c7",
     "text": "Schreibt das Hardware-Token-Register und die OATH- und YubiKey-OTP-Bestände aus den Token auf den Einträgen der Personen neu, die maßgeblich sind: von Hand nach einer Wiederherstellung auszuführen oder wenn ein Index einem Eintrag widerspricht."
   },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "Rotation des Credential-Signaturschlüssels"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "Lässt die Schlüsselfamilie jedes dedizierten Credential-Signierers auf einen neuen Schlüssel übergehen, sobald ihr Schlüssel keys.credentialSignerRotationIntervalDays alt ist. Der ersetzte Schlüssel signiert nichts mehr und bleibt veröffentlicht, sodass jedes von ihm signierte Credential weiterhin verifiziert wird."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Wertanzahlen der Datenverschlüsselungsschlüssel"
@@ -199,6 +207,14 @@
     "en": "a4d23163545ebff6",
     "text": "Rotiert jetzt jeden gespeicherten Datenverschlüsselungsschlüssel — oder die eines Vertrauensbereichs oder die einer Klasse; die Schlüssel, die sie ersetzen, öffnen weiter, was sie versiegelt haben, bis es neu versiegelt ist."
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "Rotation der Anfrage-Entschlüsselungsschlüssel"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "Ersetzt die Verschlüsselungsschlüssel für Request Objects, den OpenID4VCI-Anfrageverschlüsselungsschlüssel und die KEM-Entschlüsselungsschlüssel, sobald sie keys.encryptionKeyRotationIntervalDays alt sind. Der neue Schlüssel wird sofort veröffentlicht; der ersetzte entschlüsselt noch für keys.encryptionKeyOverlapDays."
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "Rotation des Schlüsselverschlüsselungsschlüssels, von Hand"
@@ -222,6 +238,14 @@
   "sched.jobs.krb5.krbtgt-rotate-now.describe": {
     "en": "6fffa44535aa160d",
     "text": "Rotiert den krbtgt-Schlüssel des Vertrauensbereichs jetzt. Mit invalidate wird keine vorherige Version behalten: jedes zuvor ausgestellte TGT wird abgelehnt, und ein Shared Signals-Ereignis meldet das."
+  },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "Rotation der Kerberos-Dienstschlüssel"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "Ersetzt den Schlüssel, den dieser Dienst für seinen eigenen Akzeptor erzeugt hat, durch einen neuen Zufallsschlüssel mit der nächsten kvno, sobald er krb5.serviceKeyRotationIntervalDays alt ist; der ersetzte bleibt so lange erhalten, wie ein Ticket unter ihm gültig sein kann, und nie wird rotiert, solange dieses Fenster offen ist. Ein Schlüssel, dessen Keytab ausgegeben wurde, wird als fällig gemeldet statt rotiert: sein Dienst braucht die neue Keytab installiert."
   },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
@@ -406,6 +430,14 @@
   "sched.jobs.persistence.tombstone-purge-global.describe": {
     "en": "98370fb755b4ba95",
     "text": "Löscht bei einem als Zellen bereitgestellten Dienst aus der Datenbank der globalen Stufe die Tombstones beendeter geprägter Zeilen, die älter als persistence.mintedRetention sind, in denselben Stapeln; sein Lauf wird in der globalen Stufe beansprucht, sodass eine Zelle jeden Slot ausführt. Aus bei einem Dienst mit einer Datenbank, wo die andere Bereinigung das abdeckt."
+  },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "Erneuerung der CA-Zertifikate"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "Erneuert die Root, dann jede Intermediate, dann jede Issuing CA innerhalb ihrer Vorlaufzeit (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) mit demselben Schlüssel und Subject, sodass alles, was sie signiert hat, weiterhin verifiziert wird. Eine erneuerte Root wird neben der ersetzten veröffentlicht, bis diese abläuft. Eine importierte CA erneuert ihr Betreiber."
   },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
@@ -702,6 +734,14 @@
   "sched.jobs.ssh-user-ca.krl.describe": {
     "en": "c84b42d3aab3bdde",
     "text": "Aktualisiert die KRL der OpenSSH-Benutzer-CA jedes Vertrauensbereichs nach Widerrufen ausgestellter Zertifikate und entfernt abgelaufene Widerrufe."
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "Erneuerung des Listener-Zertifikats"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "Erneuert das Zertifikat, das der Hauptport, LDAPS und der Debugger dieses Prozesses präsentieren, mit demselben Schlüssel, sobald weniger als ein Drittel seiner Gültigkeit übrig ist oder es innerhalb von tls.serverCertificateRenewLeadDays liegt, und setzt es ohne Neustart auf jeden Socket. Läuft im Front-Prozess jedes Knotens, der das erneuerte Zertifikat an seine Request-Worker weitergibt."
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

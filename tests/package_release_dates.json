@@ -1,0 +1,1760 @@
+{
+  "//": "Written by tests/tools/release-dates.js; read by tests/long_unreleased_packages.js. Do not edit by hand.",
+  "asOf": "2026-11-25",
+  "lockfiles": [
+    "package-lock.json",
+    "sdk/package-lock.json"
+  ],
+  "fork": {
+    "path": "node-ldapjs",
+    "commit": "ba3ab95a9126367f62c96851f6697f5d3cdad490",
+    "committed": "2026-11-14",
+    "version": "3.0.7"
+  },
+  "packages": {
+    "@aws-sdk/client-auto-scaling": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-ec2": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-ecs": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-eks": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-elastic-load-balancing-v2": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-iam": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-kms": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-organizations": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-secrets-manager": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/client-sesv2": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/core": {
+      "lastRelease": "2026-11-24",
+      "version": "3.981.2"
+    },
+    "@aws-sdk/credential-provider-cognito-identity": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.85"
+    },
+    "@aws-sdk/credential-provider-env": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.86"
+    },
+    "@aws-sdk/credential-provider-http": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.88"
+    },
+    "@aws-sdk/credential-provider-ini": {
+      "lastRelease": "2026-11-24",
+      "version": "3.973.32"
+    },
+    "@aws-sdk/credential-provider-login": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.94"
+    },
+    "@aws-sdk/credential-provider-node": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.99"
+    },
+    "@aws-sdk/credential-provider-process": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.86"
+    },
+    "@aws-sdk/credential-provider-sso": {
+      "lastRelease": "2026-11-24",
+      "version": "3.973.30"
+    },
+    "@aws-sdk/credential-provider-web-identity": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.92"
+    },
+    "@aws-sdk/credential-providers": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/middleware-sdk-ec2": {
+      "lastRelease": "2026-11-24",
+      "version": "3.972.74"
+    },
+    "@aws-sdk/nested-clients": {
+      "lastRelease": "2026-11-24",
+      "version": "3.998.5"
+    },
+    "@aws-sdk/signature-v4-multi-region": {
+      "lastRelease": "2026-11-09",
+      "version": "3.996.52"
+    },
+    "@aws-sdk/token-providers": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1177.0"
+    },
+    "@aws-sdk/types": {
+      "lastRelease": "2026-11-09",
+      "version": "3.975.1"
+    },
+    "@aws-sdk/xml-builder": {
+      "lastRelease": "2026-11-09",
+      "version": "3.972.43"
+    },
+    "@aws/lambda-invoke-store": {
+      "lastRelease": "2026-07-01",
+      "version": "0.3.0"
+    },
+    "@azure-rest/core-client": {
+      "lastRelease": "2026-09-03",
+      "version": "2.9.0"
+    },
+    "@azure/abort-controller": {
+      "lastRelease": "2026-07-13",
+      "version": "2.2.0"
+    },
+    "@azure/arm-compute": {
+      "lastRelease": "2026-10-17",
+      "version": "25.3.0"
+    },
+    "@azure/arm-resourcegraph": {
+      "lastRelease": "2026-08-03",
+      "version": "5.0.0"
+    },
+    "@azure/communication-common": {
+      "lastRelease": "2026-08-04",
+      "version": "2.5.0"
+    },
+    "@azure/communication-email": {
+      "lastRelease": "2026-02-11",
+      "version": "1.1.0-alpha.20260211.1"
+    },
+    "@azure/core-auth": {
+      "lastRelease": "2026-07-13",
+      "version": "1.11.0"
+    },
+    "@azure/core-client": {
+      "lastRelease": "2026-11-07",
+      "version": "1.11.2"
+    },
+    "@azure/core-lro": {
+      "lastRelease": "2026-11-07",
+      "version": "3.4.2"
+    },
+    "@azure/core-paging": {
+      "lastRelease": "2026-07-13",
+      "version": "1.7.0"
+    },
+    "@azure/core-process": {
+      "lastRelease": "2026-08-13",
+      "version": "1.0.0"
+    },
+    "@azure/core-rest-pipeline": {
+      "lastRelease": "2026-11-08",
+      "version": "1.25.1"
+    },
+    "@azure/core-tracing": {
+      "lastRelease": "2026-07-13",
+      "version": "1.4.0"
+    },
+    "@azure/core-util": {
+      "lastRelease": "2026-07-13",
+      "version": "1.14.0"
+    },
+    "@azure/identity": {
+      "lastRelease": "2026-11-04",
+      "version": "4.15.0-beta.2"
+    },
+    "@azure/keyvault-common": {
+      "lastRelease": "2026-10-31",
+      "version": "2.1.1"
+    },
+    "@azure/keyvault-keys": {
+      "lastRelease": "2026-07-08",
+      "version": "4.11.0-beta.1"
+    },
+    "@azure/keyvault-secrets": {
+      "lastRelease": "2026-10-27",
+      "version": "4.12.0"
+    },
+    "@azure/logger": {
+      "lastRelease": "2026-07-13",
+      "version": "1.4.0"
+    },
+    "@azure/msal-browser": {
+      "lastRelease": "2026-11-18",
+      "version": "5.30.0"
+    },
+    "@azure/msal-common": {
+      "lastRelease": "2026-11-18",
+      "version": "16.17.0"
+    },
+    "@azure/msal-node": {
+      "lastRelease": "2026-11-18",
+      "version": "7.2.3"
+    },
+    "@biscuit-auth/biscuit-wasm": {
+      "lastRelease": "2025-09-26",
+      "version": "0.6.0"
+    },
+    "@dagrejs/dagre": {
+      "lastRelease": "2026-11-24",
+      "version": "3.1.4"
+    },
+    "@dagrejs/graphlib": {
+      "lastRelease": "2026-11-24",
+      "version": "4.0.8"
+    },
+    "@digitalbazaar/bbs-signatures": {
+      "lastRelease": "2026-06-02",
+      "version": "3.1.0"
+    },
+    "@digitalbazaar/ed25519-multikey": {
+      "lastRelease": "2025-01-26",
+      "version": "1.3.1"
+    },
+    "@digitalbazaar/ed25519-signature-2020": {
+      "lastRelease": "2024-08-01",
+      "version": "5.4.0"
+    },
+    "@digitalbazaar/ed25519-verification-key-2020": {
+      "lastRelease": "2024-10-03",
+      "version": "4.2.0"
+    },
+    "@digitalbazaar/http-client": {
+      "lastRelease": "2026-08-06",
+      "version": "4.4.0"
+    },
+    "@digitalbazaar/security-context": {
+      "lastRelease": "2023-06-13",
+      "version": "1.0.1"
+    },
+    "@digitalbazaar/zcap": {
+      "lastRelease": "2026-09-17",
+      "version": "9.0.3"
+    },
+    "@digitalbazaar/zcap-context": {
+      "lastRelease": "2024-11-14",
+      "version": "2.0.1"
+    },
+    "@fingerprintjs/fingerprintjs": {
+      "lastRelease": "2026-10-07",
+      "version": "5.3.0"
+    },
+    "@google-cloud/compute": {
+      "lastRelease": "2026-11-09",
+      "version": "7.10.0"
+    },
+    "@google-cloud/kms": {
+      "lastRelease": "2026-10-12",
+      "version": "6.3.0"
+    },
+    "@google-cloud/secret-manager": {
+      "lastRelease": "2026-11-09",
+      "version": "8.0.0"
+    },
+    "@googleapis/gmail": {
+      "lastRelease": "2026-11-12",
+      "version": "22.1.0"
+    },
+    "@grpc/grpc-js": {
+      "lastRelease": "2026-10-29",
+      "version": "1.14.7"
+    },
+    "@grpc/proto-loader": {
+      "lastRelease": "2026-05-07",
+      "version": "0.8.1"
+    },
+    "@isaacs/fs-minipass": {
+      "lastRelease": "2024-04-18",
+      "version": "4.0.1"
+    },
+    "@js-sdsl/ordered-map": {
+      "lastRelease": "2023-07-21",
+      "version": "4.4.2"
+    },
+    "@ldapjs/asn1": {
+      "lastRelease": "2023-02-22",
+      "version": "2.0.0"
+    },
+    "@ldapjs/change": {
+      "lastRelease": "2023-02-22",
+      "version": "1.0.0"
+    },
+    "@ldapjs/protocol": {
+      "lastRelease": "2022-12-17",
+      "version": "1.2.1"
+    },
+    "@noble/curves": {
+      "lastRelease": "2026-08-27",
+      "version": "2.4.0"
+    },
+    "@noble/ed25519": {
+      "lastRelease": "2026-08-27",
+      "version": "3.2.0"
+    },
+    "@noble/hashes": {
+      "lastRelease": "2026-08-27",
+      "version": "2.4.0"
+    },
+    "@noble/post-quantum": {
+      "lastRelease": "2026-08-27",
+      "version": "0.7.1"
+    },
+    "@nornagon/put": {
+      "lastRelease": "2019-04-18",
+      "version": "0.0.8"
+    },
+    "@opentelemetry/api": {
+      "lastRelease": "2026-10-20",
+      "version": "1.10.0"
+    },
+    "@protobufjs/aspromise": {
+      "lastRelease": "2017-04-24",
+      "version": "1.1.2"
+    },
+    "@protobufjs/base64": {
+      "lastRelease": "2017-06-09",
+      "version": "1.1.2"
+    },
+    "@protobufjs/codegen": {
+      "lastRelease": "2026-04-27",
+      "version": "2.0.5"
+    },
+    "@protobufjs/eventemitter": {
+      "lastRelease": "2026-05-22",
+      "version": "1.1.1"
+    },
+    "@protobufjs/fetch": {
+      "lastRelease": "2026-05-17",
+      "version": "1.1.1"
+    },
+    "@protobufjs/float": {
+      "lastRelease": "2017-04-02",
+      "version": "1.0.2"
+    },
+    "@protobufjs/path": {
+      "lastRelease": "2017-02-23",
+      "version": "1.1.2"
+    },
+    "@protobufjs/pool": {
+      "lastRelease": "2017-01-25",
+      "version": "1.1.0"
+    },
+    "@protobufjs/utf8": {
+      "lastRelease": "2026-07-05",
+      "version": "1.1.2"
+    },
+    "@smithy/core": {
+      "lastRelease": "2026-11-23",
+      "version": "3.41.1"
+    },
+    "@smithy/credential-provider-imds": {
+      "lastRelease": "2026-08-15",
+      "version": "4.5.2"
+    },
+    "@smithy/fetch-http-handler": {
+      "lastRelease": "2026-11-05",
+      "version": "5.8.1"
+    },
+    "@smithy/node-http-handler": {
+      "lastRelease": "2026-11-04",
+      "version": "4.14.2"
+    },
+    "@smithy/signature-v4": {
+      "lastRelease": "2026-10-29",
+      "version": "5.7.5"
+    },
+    "@smithy/types": {
+      "lastRelease": "2026-11-04",
+      "version": "4.20.0"
+    },
+    "@types/node": {
+      "lastRelease": "2026-11-25",
+      "version": "24.19.3"
+    },
+    "@types/readable-stream": {
+      "lastRelease": "2026-09-28",
+      "version": "4.0.25"
+    },
+    "@typespec/ts-http-runtime": {
+      "lastRelease": "2026-11-17",
+      "version": "0.3.11"
+    },
+    "@xmldom/xmldom": {
+      "lastRelease": "2026-08-21",
+      "version": "0.9.12"
+    },
+    "abbrev": {
+      "lastRelease": "2026-05-08",
+      "version": "5.0.0"
+    },
+    "abort-controller": {
+      "lastRelease": "2019-03-30",
+      "version": "3.0.0"
+    },
+    "abstract-logging": {
+      "lastRelease": "2020-10-17",
+      "version": "2.0.1"
+    },
+    "accepts": {
+      "lastRelease": "2024-08-31",
+      "version": "2.0.0"
+    },
+    "agent-base": {
+      "lastRelease": "2026-04-01",
+      "version": "9.0.0"
+    },
+    "ajv": {
+      "lastRelease": "2026-04-24",
+      "version": "8.20.0"
+    },
+    "ajv-formats": {
+      "lastRelease": "2024-03-30",
+      "version": "3.0.1"
+    },
+    "ansi-regex": {
+      "lastRelease": "2026-11-08",
+      "version": "6.6.0"
+    },
+    "ansi-styles": {
+      "lastRelease": "2026-07-26",
+      "version": "7.0.0"
+    },
+    "array-flatten": {
+      "lastRelease": "2019-11-21",
+      "version": "3.0.0"
+    },
+    "asn1js": {
+      "lastRelease": "2026-11-19",
+      "version": "4.1.0"
+    },
+    "assert-plus": {
+      "lastRelease": "2016-01-27",
+      "version": "1.0.0"
+    },
+    "asynckit": {
+      "lastRelease": "2025-12-18",
+      "version": "0.5.0"
+    },
+    "aws-ssl-profiles": {
+      "lastRelease": "2024-08-30",
+      "version": "1.1.2"
+    },
+    "axios": {
+      "lastRelease": "2026-11-09",
+      "version": "1.21.1"
+    },
+    "backoff": {
+      "lastRelease": "2016-03-12",
+      "version": "2.5.0"
+    },
+    "balanced-match": {
+      "lastRelease": "2026-10-16",
+      "version": "5.0.0"
+    },
+    "base58-universal": {
+      "lastRelease": "2022-05-14",
+      "version": "2.0.0"
+    },
+    "base64-js": {
+      "lastRelease": "2020-11-11",
+      "version": "1.5.1"
+    },
+    "base64url": {
+      "lastRelease": "2018-11-26",
+      "version": "3.0.1"
+    },
+    "base64url-universal": {
+      "lastRelease": "2022-06-02",
+      "version": "2.0.0"
+    },
+    "bignumber.js": {
+      "lastRelease": "2026-07-05",
+      "version": "11.1.5"
+    },
+    "bindings": {
+      "lastRelease": "2019-02-27",
+      "version": "1.5.0"
+    },
+    "bl": {
+      "lastRelease": "2026-11-25",
+      "version": "7.0.19"
+    },
+    "body-parser": {
+      "lastRelease": "2026-10-22",
+      "version": "2.4.0"
+    },
+    "bowser": {
+      "lastRelease": "2026-11-21",
+      "version": "2.15.1"
+    },
+    "brace-expansion": {
+      "lastRelease": "2026-11-23",
+      "version": "5.1.0"
+    },
+    "buffer": {
+      "lastRelease": "2020-11-23",
+      "version": "6.0.3"
+    },
+    "buffer-equal-constant-time": {
+      "lastRelease": "2013-12-16",
+      "version": "1.0.1"
+    },
+    "bundle-name": {
+      "lastRelease": "2026-09-25",
+      "version": "4.1.1"
+    },
+    "bunyan": {
+      "lastRelease": "2021-01-08",
+      "version": "2.0.5"
+    },
+    "busboy": {
+      "lastRelease": "2022-04-19",
+      "version": "1.6.0"
+    },
+    "bytes": {
+      "lastRelease": "2022-01-28",
+      "version": "3.1.2"
+    },
+    "bytestreamjs": {
+      "lastRelease": "2026-10-16",
+      "version": "3.0.0"
+    },
+    "call-bind-apply-helpers": {
+      "lastRelease": "2025-02-12",
+      "version": "1.0.2"
+    },
+    "call-bound": {
+      "lastRelease": "2025-03-03",
+      "version": "1.0.4"
+    },
+    "camelcase": {
+      "lastRelease": "2026-10-12",
+      "version": "10.0.0"
+    },
+    "canonicalize": {
+      "lastRelease": "2026-09-18",
+      "version": "5.1.0"
+    },
+    "chownr": {
+      "lastRelease": "2024-04-06",
+      "version": "3.0.0"
+    },
+    "cliui": {
+      "lastRelease": "2025-03-17",
+      "version": "9.0.1"
+    },
+    "color-convert": {
+      "lastRelease": "2025-11-14",
+      "version": "3.1.3"
+    },
+    "color-name": {
+      "lastRelease": "2026-07-22",
+      "version": "2.1.1"
+    },
+    "colorette": {
+      "lastRelease": "2023-04-16",
+      "version": "2.0.20"
+    },
+    "combined-stream": {
+      "lastRelease": "2019-05-12",
+      "version": "1.0.8"
+    },
+    "commander": {
+      "lastRelease": "2026-11-07",
+      "version": "15.1.0"
+    },
+    "concat-map": {
+      "lastRelease": "2022-10-12",
+      "version": "0.0.2"
+    },
+    "content-disposition": {
+      "lastRelease": "2026-11-18",
+      "version": "3.1.0"
+    },
+    "content-type": {
+      "lastRelease": "2026-09-17",
+      "version": "3.1.1"
+    },
+    "cookie": {
+      "lastRelease": "2026-11-05",
+      "version": "2.0.2"
+    },
+    "cookie-signature": {
+      "lastRelease": "2024-10-29",
+      "version": "1.2.2"
+    },
+    "core-util-is": {
+      "lastRelease": "2021-08-31",
+      "version": "1.0.3"
+    },
+    "croner": {
+      "lastRelease": "2026-11-14",
+      "version": "11.0.1"
+    },
+    "crypto-ld": {
+      "lastRelease": "2022-06-02",
+      "version": "7.0.0"
+    },
+    "data-uri-to-buffer": {
+      "lastRelease": "2026-04-01",
+      "version": "8.0.0"
+    },
+    "dayjs": {
+      "lastRelease": "2026-08-17",
+      "version": "1.11.23"
+    },
+    "dbus-next": {
+      "lastRelease": "2021-10-10",
+      "version": "0.10.2"
+    },
+    "debug": {
+      "lastRelease": "2025-09-13",
+      "version": "4.4.3"
+    },
+    "decamelize": {
+      "lastRelease": "2026-10-13",
+      "version": "7.0.0"
+    },
+    "default-browser": {
+      "lastRelease": "2026-08-16",
+      "version": "5.5.1"
+    },
+    "default-browser-id": {
+      "lastRelease": "2025-11-14",
+      "version": "5.0.1"
+    },
+    "define-lazy-prop": {
+      "lastRelease": "2021-04-14",
+      "version": "3.0.0"
+    },
+    "delayed-stream": {
+      "lastRelease": "2015-04-30",
+      "version": "1.0.0"
+    },
+    "depd": {
+      "lastRelease": "2018-10-26",
+      "version": "2.0.0"
+    },
+    "destroy": {
+      "lastRelease": "2022-03-20",
+      "version": "1.2.0"
+    },
+    "dijkstrajs": {
+      "lastRelease": "2023-04-15",
+      "version": "1.0.3"
+    },
+    "dom-serializer": {
+      "lastRelease": "2026-05-02",
+      "version": "3.1.1"
+    },
+    "domelementtype": {
+      "lastRelease": "2026-03-17",
+      "version": "3.0.0"
+    },
+    "domhandler": {
+      "lastRelease": "2026-03-17",
+      "version": "6.0.1"
+    },
+    "domutils": {
+      "lastRelease": "2026-03-18",
+      "version": "4.0.2"
+    },
+    "dtrace-provider": {
+      "lastRelease": "2019-08-17",
+      "version": "0.8.8"
+    },
+    "dunder-proto": {
+      "lastRelease": "2024-12-17",
+      "version": "1.0.1"
+    },
+    "duplexer": {
+      "lastRelease": "2020-08-12",
+      "version": "0.1.2"
+    },
+    "duplexify": {
+      "lastRelease": "2024-03-06",
+      "version": "4.1.3"
+    },
+    "ecdsa-sig-formatter": {
+      "lastRelease": "2019-01-25",
+      "version": "1.0.11"
+    },
+    "ed25519-signature-2020-context": {
+      "lastRelease": "2021-04-22",
+      "version": "1.1.0"
+    },
+    "ee-first": {
+      "lastRelease": "2015-05-25",
+      "version": "1.1.1"
+    },
+    "emoji-regex": {
+      "lastRelease": "2026-09-15",
+      "version": "11.0.0"
+    },
+    "encodeurl": {
+      "lastRelease": "2026-11-12",
+      "version": "2.0.3"
+    },
+    "end-of-stream": {
+      "lastRelease": "2025-06-16",
+      "version": "1.4.5"
+    },
+    "entities": {
+      "lastRelease": "2026-10-29",
+      "version": "9.0.0"
+    },
+    "env-paths": {
+      "lastRelease": "2026-01-24",
+      "version": "4.0.0"
+    },
+    "es-define-property": {
+      "lastRelease": "2024-12-06",
+      "version": "1.0.1"
+    },
+    "es-errors": {
+      "lastRelease": "2024-02-05",
+      "version": "1.3.0"
+    },
+    "es-object-atoms": {
+      "lastRelease": "2026-05-22",
+      "version": "1.1.2"
+    },
+    "es-set-tostringtag": {
+      "lastRelease": "2025-01-02",
+      "version": "2.1.0"
+    },
+    "escalade": {
+      "lastRelease": "2024-08-29",
+      "version": "3.2.0"
+    },
+    "escape-html": {
+      "lastRelease": "2015-09-01",
+      "version": "1.0.3"
+    },
+    "escape-string-regexp": {
+      "lastRelease": "2021-04-17",
+      "version": "5.0.0"
+    },
+    "esm": {
+      "lastRelease": "2019-05-17",
+      "version": "3.2.25"
+    },
+    "etag": {
+      "lastRelease": "2026-11-21",
+      "version": "2.0.0"
+    },
+    "event-stream": {
+      "lastRelease": "2018-09-29",
+      "version": "4.0.1"
+    },
+    "event-target-shim": {
+      "lastRelease": "2021-01-07",
+      "version": "6.0.2"
+    },
+    "events": {
+      "lastRelease": "2021-02-27",
+      "version": "3.3.0"
+    },
+    "exponential-backoff": {
+      "lastRelease": "2025-10-10",
+      "version": "3.1.3"
+    },
+    "express": {
+      "lastRelease": "2026-10-09",
+      "version": "5.3.0"
+    },
+    "extend": {
+      "lastRelease": "2018-07-19",
+      "version": "2.0.2"
+    },
+    "extsprintf": {
+      "lastRelease": "2021-11-02",
+      "version": "1.4.1"
+    },
+    "fast-deep-equal": {
+      "lastRelease": "2020-06-08",
+      "version": "3.1.3"
+    },
+    "fast-uri": {
+      "lastRelease": "2026-11-24",
+      "version": "4.2.4"
+    },
+    "fdir": {
+      "lastRelease": "2025-08-14",
+      "version": "6.5.0"
+    },
+    "fetch-blob": {
+      "lastRelease": "2023-05-18",
+      "version": "4.0.0"
+    },
+    "file-uri-to-path": {
+      "lastRelease": "2019-10-11",
+      "version": "2.0.0"
+    },
+    "finalhandler": {
+      "lastRelease": "2025-12-01",
+      "version": "2.1.1"
+    },
+    "find-up": {
+      "lastRelease": "2025-09-16",
+      "version": "8.0.0"
+    },
+    "follow-redirects": {
+      "lastRelease": "2026-11-08",
+      "version": "1.16.3"
+    },
+    "form-data": {
+      "lastRelease": "2026-06-12",
+      "version": "2.5.6"
+    },
+    "formdata-polyfill": {
+      "lastRelease": "2021-09-30",
+      "version": "4.0.10"
+    },
+    "forwarded": {
+      "lastRelease": "2021-05-31",
+      "version": "0.2.0"
+    },
+    "fresh": {
+      "lastRelease": "2024-09-04",
+      "version": "2.0.0"
+    },
+    "from": {
+      "lastRelease": "2017-03-11",
+      "version": "0.1.7"
+    },
+    "function-bind": {
+      "lastRelease": "2023-10-12",
+      "version": "1.1.2"
+    },
+    "gaxios": {
+      "lastRelease": "2026-11-13",
+      "version": "8.3.3"
+    },
+    "gcp-metadata": {
+      "lastRelease": "2026-10-29",
+      "version": "9.2.3"
+    },
+    "generate-function": {
+      "lastRelease": "2018-08-31",
+      "version": "2.3.1"
+    },
+    "get-caller-file": {
+      "lastRelease": "2019-03-09",
+      "version": "2.0.5"
+    },
+    "get-intrinsic": {
+      "lastRelease": "2025-09-29",
+      "version": "1.3.1"
+    },
+    "get-package-type": {
+      "lastRelease": "2020-05-19",
+      "version": "0.1.0"
+    },
+    "get-proto": {
+      "lastRelease": "2025-01-02",
+      "version": "1.0.1"
+    },
+    "getopts": {
+      "lastRelease": "2021-02-15",
+      "version": "2.3.0"
+    },
+    "glob": {
+      "lastRelease": "2026-11-12",
+      "version": "14.0.6"
+    },
+    "google-auth-library": {
+      "lastRelease": "2026-11-09",
+      "version": "11.3.4"
+    },
+    "google-gax": {
+      "lastRelease": "2026-11-09",
+      "version": "6.17.0"
+    },
+    "google-logging-utils": {
+      "lastRelease": "2026-11-09",
+      "version": "2.2.0"
+    },
+    "googleapis-common": {
+      "lastRelease": "2026-10-15",
+      "version": "9.3.1"
+    },
+    "gopd": {
+      "lastRelease": "2024-12-04",
+      "version": "1.2.0"
+    },
+    "graceful-fs": {
+      "lastRelease": "2026-11-12",
+      "version": "4.2.12"
+    },
+    "has-symbols": {
+      "lastRelease": "2024-12-02",
+      "version": "1.1.0"
+    },
+    "has-tostringtag": {
+      "lastRelease": "2024-02-01",
+      "version": "1.0.2"
+    },
+    "hasown": {
+      "lastRelease": "2026-05-28",
+      "version": "2.0.4"
+    },
+    "hexy": {
+      "lastRelease": "2026-02-08",
+      "version": "0.4.0"
+    },
+    "htmlparser2": {
+      "lastRelease": "2026-03-20",
+      "version": "12.0.0"
+    },
+    "http-errors": {
+      "lastRelease": "2025-11-20",
+      "version": "2.0.1"
+    },
+    "http-proxy-agent": {
+      "lastRelease": "2026-06-08",
+      "version": "9.1.0"
+    },
+    "https-proxy-agent": {
+      "lastRelease": "2026-06-08",
+      "version": "9.1.0"
+    },
+    "iconv-lite": {
+      "lastRelease": "2026-11-08",
+      "version": "1.0.0-beta.1"
+    },
+    "ieee754": {
+      "lastRelease": "2020-10-27",
+      "version": "1.2.1"
+    },
+    "inflight": {
+      "lastRelease": "2016-10-13",
+      "version": "1.0.6"
+    },
+    "inherits": {
+      "lastRelease": "2019-06-19",
+      "version": "2.0.4"
+    },
+    "interpret": {
+      "lastRelease": "2022-06-29",
+      "version": "3.1.1"
+    },
+    "ipaddr.js": {
+      "lastRelease": "2026-08-04",
+      "version": "2.5.0"
+    },
+    "is-core-module": {
+      "lastRelease": "2026-11-03",
+      "version": "2.18.0"
+    },
+    "is-docker": {
+      "lastRelease": "2025-09-15",
+      "version": "4.0.0"
+    },
+    "is-fullwidth-code-point": {
+      "lastRelease": "2025-08-31",
+      "version": "5.1.0"
+    },
+    "is-in-ssh": {
+      "lastRelease": "2025-11-12",
+      "version": "1.0.0"
+    },
+    "is-inside-container": {
+      "lastRelease": "2023-02-15",
+      "version": "1.0.0"
+    },
+    "is-plain-object": {
+      "lastRelease": "2026-08-21",
+      "version": "5.1.0"
+    },
+    "is-property": {
+      "lastRelease": "2014-12-25",
+      "version": "1.0.2"
+    },
+    "is-wsl": {
+      "lastRelease": "2026-02-15",
+      "version": "3.1.1"
+    },
+    "isbot": {
+      "lastRelease": "2026-11-24",
+      "version": "5.2.4"
+    },
+    "isexe": {
+      "lastRelease": "2026-02-09",
+      "version": "4.0.0"
+    },
+    "js-md4": {
+      "lastRelease": "2026-11-18",
+      "version": "0.5.0"
+    },
+    "jsbi": {
+      "lastRelease": "2025-03-31",
+      "version": "4.3.2"
+    },
+    "json-bigint": {
+      "lastRelease": "2020-07-14",
+      "version": "1.0.0"
+    },
+    "json-schema-traverse": {
+      "lastRelease": "2020-12-13",
+      "version": "1.0.0"
+    },
+    "jsonld": {
+      "lastRelease": "2025-11-21",
+      "version": "9.0.0"
+    },
+    "jsonld-signatures": {
+      "lastRelease": "2026-02-05",
+      "version": "11.6.0"
+    },
+    "jsonwebtoken": {
+      "lastRelease": "2025-12-04",
+      "version": "9.0.3"
+    },
+    "jwa": {
+      "lastRelease": "2025-05-07",
+      "version": "1.4.2"
+    },
+    "jws": {
+      "lastRelease": "2025-12-04",
+      "version": "4.0.1"
+    },
+    "jwt-decode": {
+      "lastRelease": "2023-10-27",
+      "version": "4.0.0"
+    },
+    "knex": {
+      "lastRelease": "2026-06-26",
+      "version": "3.3.0"
+    },
+    "ky": {
+      "lastRelease": "2026-10-09",
+      "version": "2.2.0"
+    },
+    "launder": {
+      "lastRelease": "2026-09-30",
+      "version": "1.7.2"
+    },
+    "locate-path": {
+      "lastRelease": "2025-09-15",
+      "version": "8.0.0"
+    },
+    "lodash": {
+      "lastRelease": "2026-04-01",
+      "version": "4.18.1"
+    },
+    "lodash.camelcase": {
+      "lastRelease": "2016-08-13",
+      "version": "4.3.0"
+    },
+    "lodash.includes": {
+      "lastRelease": "2016-08-13",
+      "version": "4.3.0"
+    },
+    "lodash.isboolean": {
+      "lastRelease": "2016-02-03",
+      "version": "3.0.3"
+    },
+    "lodash.isinteger": {
+      "lastRelease": "2016-08-13",
+      "version": "4.0.4"
+    },
+    "lodash.isnumber": {
+      "lastRelease": "2016-02-03",
+      "version": "3.0.3"
+    },
+    "lodash.isplainobject": {
+      "lastRelease": "2016-08-13",
+      "version": "4.0.6"
+    },
+    "lodash.isstring": {
+      "lastRelease": "2016-02-03",
+      "version": "4.0.1"
+    },
+    "lodash.once": {
+      "lastRelease": "2016-08-13",
+      "version": "4.1.1"
+    },
+    "long": {
+      "lastRelease": "2025-04-17",
+      "version": "5.3.2"
+    },
+    "lru-cache": {
+      "lastRelease": "2026-09-18",
+      "version": "11.5.3"
+    },
+    "lru.min": {
+      "lastRelease": "2026-09-01",
+      "version": "1.1.5"
+    },
+    "macaroon": {
+      "lastRelease": "2019-01-09",
+      "version": "3.0.4"
+    },
+    "map-stream": {
+      "lastRelease": "2017-03-19",
+      "version": "0.0.7"
+    },
+    "math-intrinsics": {
+      "lastRelease": "2024-12-19",
+      "version": "1.1.0"
+    },
+    "media-typer": {
+      "lastRelease": "2026-07-23",
+      "version": "1.1.1"
+    },
+    "merge-descriptors": {
+      "lastRelease": "2023-11-16",
+      "version": "2.0.0"
+    },
+    "methods": {
+      "lastRelease": "2016-01-18",
+      "version": "1.1.2"
+    },
+    "mime": {
+      "lastRelease": "2026-10-27",
+      "version": "4.1.2"
+    },
+    "mime-db": {
+      "lastRelease": "2025-03-18",
+      "version": "1.54.0"
+    },
+    "mime-types": {
+      "lastRelease": "2025-11-20",
+      "version": "3.0.2"
+    },
+    "minimatch": {
+      "lastRelease": "2026-11-16",
+      "version": "11.0.9"
+    },
+    "minimist": {
+      "lastRelease": "2023-02-25",
+      "version": "0.2.4"
+    },
+    "minipass": {
+      "lastRelease": "2026-02-19",
+      "version": "7.1.3"
+    },
+    "minizlib": {
+      "lastRelease": "2025-09-21",
+      "version": "3.1.0"
+    },
+    "mkdirp": {
+      "lastRelease": "2023-04-24",
+      "version": "3.0.1"
+    },
+    "moment": {
+      "lastRelease": "2026-09-15",
+      "version": "2.31.0"
+    },
+    "ms": {
+      "lastRelease": "2025-08-27",
+      "version": "4.0.0-nightly.202508271359"
+    },
+    "mustache": {
+      "lastRelease": "2021-03-28",
+      "version": "4.2.0"
+    },
+    "mv": {
+      "lastRelease": "2015-06-22",
+      "version": "2.1.1"
+    },
+    "mysql2": {
+      "lastRelease": "2026-11-23",
+      "version": "3.24.7-canary.727c412"
+    },
+    "named-placeholders": {
+      "lastRelease": "2025-12-15",
+      "version": "1.1.6"
+    },
+    "nan": {
+      "lastRelease": "2026-10-18",
+      "version": "2.30.0"
+    },
+    "nanoid": {
+      "lastRelease": "2026-10-05",
+      "version": "6.0.2"
+    },
+    "native-duplexpair": {
+      "lastRelease": "2018-05-10",
+      "version": "1.0.0"
+    },
+    "ncp": {
+      "lastRelease": "2015-02-22",
+      "version": "2.0.0"
+    },
+    "negotiator": {
+      "lastRelease": "2026-08-20",
+      "version": "1.1.0"
+    },
+    "node-domexception": {
+      "lastRelease": "2025-04-19",
+      "version": "2.0.2"
+    },
+    "node-fetch": {
+      "lastRelease": "2023-08-23",
+      "version": "2.7.0"
+    },
+    "node-forge": {
+      "lastRelease": "2026-11-23",
+      "version": "1.4.4"
+    },
+    "node-gyp": {
+      "lastRelease": "2026-10-02",
+      "version": "13.1.0"
+    },
+    "node-vault": {
+      "lastRelease": "2026-10-11",
+      "version": "0.13.0"
+    },
+    "nodemailer": {
+      "lastRelease": "2026-11-20",
+      "version": "10.6.1"
+    },
+    "nopt": {
+      "lastRelease": "2026-06-04",
+      "version": "10.0.1"
+    },
+    "object-hash": {
+      "lastRelease": "2022-02-18",
+      "version": "3.0.0"
+    },
+    "object-inspect": {
+      "lastRelease": "2026-11-18",
+      "version": "1.14.0"
+    },
+    "on-finished": {
+      "lastRelease": "2026-10-22",
+      "version": "2.4.2"
+    },
+    "once": {
+      "lastRelease": "2016-09-06",
+      "version": "1.4.0"
+    },
+    "open": {
+      "lastRelease": "2026-09-14",
+      "version": "11.0.4"
+    },
+    "openpgp": {
+      "lastRelease": "2026-11-20",
+      "version": "6.3.3"
+    },
+    "oracledb": {
+      "lastRelease": "2026-10-09",
+      "version": "26.0.0"
+    },
+    "p-limit": {
+      "lastRelease": "2026-09-18",
+      "version": "7.3.3"
+    },
+    "p-locate": {
+      "lastRelease": "2026-02-03",
+      "version": "7.0.0"
+    },
+    "p-try": {
+      "lastRelease": "2021-10-04",
+      "version": "3.0.0"
+    },
+    "parse-srcset": {
+      "lastRelease": "2016-12-10",
+      "version": "1.0.2"
+    },
+    "parseurl": {
+      "lastRelease": "2019-04-16",
+      "version": "1.3.3"
+    },
+    "path-exists": {
+      "lastRelease": "2021-08-12",
+      "version": "5.0.0"
+    },
+    "path-is-absolute": {
+      "lastRelease": "2018-11-08",
+      "version": "2.0.0"
+    },
+    "path-parse": {
+      "lastRelease": "2021-05-25",
+      "version": "1.0.7"
+    },
+    "path-to-regexp": {
+      "lastRelease": "2026-10-22",
+      "version": "9.0.0"
+    },
+    "pause-stream": {
+      "lastRelease": "2013-09-20",
+      "version": "0.0.11"
+    },
+    "pend": {
+      "lastRelease": "2014-11-23",
+      "version": "1.2.0"
+    },
+    "pg": {
+      "lastRelease": "2026-09-30",
+      "version": "8.23.1"
+    },
+    "pg-cloudflare": {
+      "lastRelease": "2026-09-30",
+      "version": "1.4.1"
+    },
+    "pg-connection-string": {
+      "lastRelease": "2026-09-30",
+      "version": "2.14.1"
+    },
+    "pg-int8": {
+      "lastRelease": "2017-11-14",
+      "version": "1.0.1"
+    },
+    "pg-pool": {
+      "lastRelease": "2026-05-18",
+      "version": "3.14.0"
+    },
+    "pg-protocol": {
+      "lastRelease": "2026-09-30",
+      "version": "1.16.1"
+    },
+    "pg-types": {
+      "lastRelease": "2025-07-30",
+      "version": "4.1.0"
+    },
+    "pgpass": {
+      "lastRelease": "2026-06-20",
+      "version": "1.0.6"
+    },
+    "picocolors": {
+      "lastRelease": "2024-10-16",
+      "version": "1.1.1"
+    },
+    "picomatch": {
+      "lastRelease": "2026-08-24",
+      "version": "4.0.7"
+    },
+    "pkcs11js": {
+      "lastRelease": "2026-07-28",
+      "version": "2.1.7"
+    },
+    "pkijs": {
+      "lastRelease": "2026-10-27",
+      "version": "4.0.1"
+    },
+    "pngjs": {
+      "lastRelease": "2023-02-20",
+      "version": "7.0.0"
+    },
+    "postcss": {
+      "lastRelease": "2026-11-13",
+      "version": "8.5.33"
+    },
+    "postgres-array": {
+      "lastRelease": "2025-03-06",
+      "version": "3.0.4"
+    },
+    "postgres-bytea": {
+      "lastRelease": "2025-12-17",
+      "version": "1.0.1"
+    },
+    "postgres-date": {
+      "lastRelease": "2021-12-08",
+      "version": "2.1.0"
+    },
+    "postgres-interval": {
+      "lastRelease": "2026-06-30",
+      "version": "4.1.0"
+    },
+    "powershell-utils": {
+      "lastRelease": "2026-08-29",
+      "version": "0.2.1"
+    },
+    "precond": {
+      "lastRelease": "2014-06-21",
+      "version": "0.2.3"
+    },
+    "proc-log": {
+      "lastRelease": "2026-05-08",
+      "version": "7.0.0"
+    },
+    "process": {
+      "lastRelease": "2017-04-26",
+      "version": "0.11.10"
+    },
+    "process-warning": {
+      "lastRelease": "2026-10-10",
+      "version": "5.1.1"
+    },
+    "proto3-json-serializer": {
+      "lastRelease": "2026-10-12",
+      "version": "4.1.0"
+    },
+    "protobufjs": {
+      "lastRelease": "2026-10-11",
+      "version": "8.8.1"
+    },
+    "proxy-addr": {
+      "lastRelease": "2026-09-15",
+      "version": "2.0.8"
+    },
+    "proxy-from-env": {
+      "lastRelease": "2026-03-14",
+      "version": "2.1.0"
+    },
+    "pvtsutils": {
+      "lastRelease": "2024-11-22",
+      "version": "1.3.6"
+    },
+    "pvutils": {
+      "lastRelease": "2026-10-15",
+      "version": "2.0.0"
+    },
+    "qrcode": {
+      "lastRelease": "2024-08-05",
+      "version": "1.5.4"
+    },
+    "qs": {
+      "lastRelease": "2026-10-28",
+      "version": "6.17.1"
+    },
+    "range-parser": {
+      "lastRelease": "2026-11-18",
+      "version": "2.0.0"
+    },
+    "raw-body": {
+      "lastRelease": "2026-07-12",
+      "version": "4.0.0"
+    },
+    "rdf-canonize": {
+      "lastRelease": "2025-11-20",
+      "version": "5.0.0"
+    },
+    "readable-stream": {
+      "lastRelease": "2026-10-08",
+      "version": "4.8.0"
+    },
+    "rechoir": {
+      "lastRelease": "2026-10-13",
+      "version": "1.0.0"
+    },
+    "require-directory": {
+      "lastRelease": "2015-05-28",
+      "version": "2.1.1"
+    },
+    "require-from-string": {
+      "lastRelease": "2018-04-09",
+      "version": "2.0.2"
+    },
+    "require-main-filename": {
+      "lastRelease": "2019-01-28",
+      "version": "2.0.0"
+    },
+    "resolve": {
+      "lastRelease": "2026-11-03",
+      "version": "1.22.14"
+    },
+    "resolve-from": {
+      "lastRelease": "2019-04-15",
+      "version": "5.0.0"
+    },
+    "retry-request": {
+      "lastRelease": "2026-10-12",
+      "version": "9.1.0"
+    },
+    "rimraf": {
+      "lastRelease": "2026-11-03",
+      "version": "6.1.4"
+    },
+    "run-applescript": {
+      "lastRelease": "2025-09-09",
+      "version": "7.1.0"
+    },
+    "safe-buffer": {
+      "lastRelease": "2020-05-10",
+      "version": "5.2.1"
+    },
+    "safe-json-stringify": {
+      "lastRelease": "2018-05-24",
+      "version": "1.2.0"
+    },
+    "safer-buffer": {
+      "lastRelease": "2018-04-08",
+      "version": "2.1.2"
+    },
+    "sanitize-html": {
+      "lastRelease": "2026-11-11",
+      "version": "2.18.2"
+    },
+    "sax": {
+      "lastRelease": "2026-07-24",
+      "version": "1.6.1"
+    },
+    "scimmy": {
+      "lastRelease": "2025-03-05",
+      "version": "1.3.5"
+    },
+    "semver": {
+      "lastRelease": "2026-11-02",
+      "version": "5.7.3"
+    },
+    "send": {
+      "lastRelease": "2025-12-15",
+      "version": "1.2.1"
+    },
+    "serialize-error": {
+      "lastRelease": "2026-11-02",
+      "version": "13.1.0"
+    },
+    "serve-static": {
+      "lastRelease": "2025-12-15",
+      "version": "2.2.1"
+    },
+    "set-blocking": {
+      "lastRelease": "2016-05-17",
+      "version": "2.0.0"
+    },
+    "setimmediate": {
+      "lastRelease": "2016-09-12",
+      "version": "1.0.5"
+    },
+    "setprototypeof": {
+      "lastRelease": "2019-07-18",
+      "version": "1.2.0"
+    },
+    "side-channel": {
+      "lastRelease": "2026-06-08",
+      "version": "1.1.1"
+    },
+    "side-channel-list": {
+      "lastRelease": "2026-04-08",
+      "version": "1.0.1"
+    },
+    "side-channel-map": {
+      "lastRelease": "2024-12-11",
+      "version": "1.0.1"
+    },
+    "side-channel-weakmap": {
+      "lastRelease": "2024-12-11",
+      "version": "1.0.2"
+    },
+    "sjcl": {
+      "lastRelease": "2026-03-18",
+      "version": "1.0.9"
+    },
+    "source-map-js": {
+      "lastRelease": "2026-11-19",
+      "version": "1.2.4"
+    },
+    "split": {
+      "lastRelease": "2017-08-03",
+      "version": "1.0.1"
+    },
+    "split2": {
+      "lastRelease": "2023-03-26",
+      "version": "4.2.0"
+    },
+    "sql-escaper": {
+      "lastRelease": "2026-11-18",
+      "version": "1.9.1"
+    },
+    "statuses": {
+      "lastRelease": "2025-06-06",
+      "version": "2.0.2"
+    },
+    "stream-combiner": {
+      "lastRelease": "2015-06-05",
+      "version": "0.2.2"
+    },
+    "stream-shift": {
+      "lastRelease": "2024-01-17",
+      "version": "1.0.3"
+    },
+    "streamsearch": {
+      "lastRelease": "2021-12-19",
+      "version": "1.1.0"
+    },
+    "string-width": {
+      "lastRelease": "2026-11-11",
+      "version": "9.0.0"
+    },
+    "string_decoder": {
+      "lastRelease": "2019-08-07",
+      "version": "1.3.0"
+    },
+    "strip-ansi": {
+      "lastRelease": "2026-02-26",
+      "version": "7.2.0"
+    },
+    "supports-preserve-symlinks-flag": {
+      "lastRelease": "2022-01-03",
+      "version": "1.0.0"
+    },
+    "tar": {
+      "lastRelease": "2026-11-11",
+      "version": "7.5.23"
+    },
+    "tarn": {
+      "lastRelease": "2026-07-08",
+      "version": "3.1.2"
+    },
+    "tedious": {
+      "lastRelease": "2026-11-23",
+      "version": "20.4.3"
+    },
+    "through": {
+      "lastRelease": "2015-07-03",
+      "version": "2.3.8"
+    },
+    "tildify": {
+      "lastRelease": "2021-08-12",
+      "version": "3.0.0"
+    },
+    "tinyglobby": {
+      "lastRelease": "2026-05-30",
+      "version": "0.2.17"
+    },
+    "toidentifier": {
+      "lastRelease": "2021-11-14",
+      "version": "1.0.1"
+    },
+    "tslib": {
+      "lastRelease": "2026-10-30",
+      "version": "2.9.1"
+    },
+    "tv4": {
+      "lastRelease": "2017-03-20",
+      "version": "1.3.0"
+    },
+    "tweetnacl": {
+      "lastRelease": "2020-02-10",
+      "version": "1.0.3"
+    },
+    "tweetnacl-util": {
+      "lastRelease": "2020-01-29",
+      "version": "0.15.1"
+    },
+    "type-fest": {
+      "lastRelease": "2026-11-19",
+      "version": "6.0.3"
+    },
+    "type-is": {
+      "lastRelease": "2026-09-21",
+      "version": "3.0.0"
+    },
+    "undici": {
+      "lastRelease": "2026-11-20",
+      "version": "8.13.1"
+    },
+    "undici-types": {
+      "lastRelease": "2026-11-20",
+      "version": "8.13.1"
+    },
+    "unpipe": {
+      "lastRelease": "2015-06-14",
+      "version": "1.0.0"
+    },
+    "url-template": {
+      "lastRelease": "2023-12-13",
+      "version": "3.1.1"
+    },
+    "usocket": {
+      "lastRelease": "2026-07-20",
+      "version": "1.1.0"
+    },
+    "util-deprecate": {
+      "lastRelease": "2015-10-07",
+      "version": "1.0.2"
+    },
+    "utils-merge": {
+      "lastRelease": "2017-09-20",
+      "version": "1.0.1"
+    },
+    "vary": {
+      "lastRelease": "2026-11-24",
+      "version": "2.0.0"
+    },
+    "vasync": {
+      "lastRelease": "2021-11-04",
+      "version": "2.2.1"
+    },
+    "verror": {
+      "lastRelease": "2021-11-02",
+      "version": "1.10.1"
+    },
+    "web-streams-polyfill": {
+      "lastRelease": "2026-11-06",
+      "version": "4.5.1"
+    },
+    "which": {
+      "lastRelease": "2026-05-08",
+      "version": "7.0.0"
+    },
+    "which-module": {
+      "lastRelease": "2023-04-21",
+      "version": "2.0.1"
+    },
+    "wrap-ansi": {
+      "lastRelease": "2026-09-21",
+      "version": "10.0.2"
+    },
+    "wrappy": {
+      "lastRelease": "2021-04-22",
+      "version": "0.0.0"
+    },
+    "wsl-utils": {
+      "lastRelease": "2026-09-30",
+      "version": "1.0.1"
+    },
+    "xml2js": {
+      "lastRelease": "2023-07-26",
+      "version": "0.6.2"
+    },
+    "xmlbuilder": {
+      "lastRelease": "2020-04-08",
+      "version": "15.1.1"
+    },
+    "xtend": {
+      "lastRelease": "2019-07-08",
+      "version": "4.0.2"
+    },
+    "y18n": {
+      "lastRelease": "2021-04-07",
+      "version": "5.0.8"
+    },
+    "yallist": {
+      "lastRelease": "2024-04-09",
+      "version": "5.0.0"
+    },
+    "yargs": {
+      "lastRelease": "2026-09-20",
+      "version": "18.2.0"
+    },
+    "yargs-parser": {
+      "lastRelease": "2025-05-26",
+      "version": "22.0.0"
+    },
+    "yauzl": {
+      "lastRelease": "2026-06-07",
+      "version": "3.4.0"
+    },
+    "zod": {
+      "lastRelease": "2026-10-12",
+      "version": "4.6.7"
+    }
+  }
+}

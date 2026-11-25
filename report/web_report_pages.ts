@@ -22,6 +22,7 @@
 import SpaClient = require('../common/web_spa_client');
 import WebSafeDom = require('../common/web_safe_dom');
 import WebI18n = require('../common/web_i18n');
+import WebPageState = require('../common/web_page_state');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
@@ -44,6 +45,9 @@ const WRITE_SCOPES = ['report:use', 'report:admin'];
 const BASE = '/report';
 const API = '/report-api';
 const SIGNIN_KEY = 'sts-report-pkce';
+// What a page held when a step had to leave it (#2220,
+// `common/web_page_state.ts`), the console's #508 arrangement.
+const RESTORE_KEY = 'sts-report-restore';
 const ACCOUNTS_ID = 'sts-report-accounts';
 const REFRESH_EARLY = 30;
 // The most filter rows the form reads: what an `and` may carry (#986).
@@ -1524,8 +1528,27 @@ class ReportRuntime extends SpaClient {
     this.env.history.replaceState(null, '',
       this.prefix + String(saved.returnTo || BASE));
     await this.route();
+    // What the page held when a step had to leave it (#2220).
+    this.restorePageState();
     if (saved.another || (before && before.sub !== this.subject)) {
       this.announceAccounts('added');
+    }
+  }
+
+  /**
+   * After a sign-in that left the page: puts its choices back for the same
+   * realm, page and reader, and says in a bubble that nothing was sent
+   * (#2220, `common/web_page_state.ts`).
+   *
+   * @returns nothing
+   */
+  restorePageState(): void {
+    const done = WebPageState.take(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
+    if (done.state === 'other') {
+      this.flash('err', this.t.text('browser.stateOtherPerson'));
+    } else if (done.state === 'restored') {
+      this.flash('ok', this.t.text('browser.stateRestored'));
     }
   }
 
@@ -1645,13 +1668,17 @@ class ReportRuntime extends SpaClient {
 
   /**
    * Signs in on this page for a write scope. The change waiting is not
-   * sent: the reader makes it again when the page is back.
+   * sent: the reader makes it again when the page is back, with the page's
+   * choices put back.
    *
    * @param scope - the scope to sign in with
    * @param prompt - `login`, or '' for none
    * @returns nothing
    */
   async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    // THE PAGE'S CHOICES GO FIRST (#2220), as the console's do (#508).
+    WebPageState.save(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
     await this.beginSignIn(this.here(), prompt
       ? { scope: scope, prompt: prompt, max_age: '0' } : { scope: scope });
   }
@@ -3265,7 +3292,15 @@ class ReportRuntime extends SpaClient {
     // language and chrome, as a refused sign-in is drawn.
     if (SpaClient.webCryptoMissing(this.env)) {
       await this.ensureLanguage();
-      this.paint(problemHtml(this.t, this.t.text('report.noWebCrypto.text')));
+      this.paint(problemHtml(this.t, this.t.text('report.noWebCrypto.text')) +
+                 SpaClient.browserSupportHtml(this.t));
+      return;
+    }
+    // NO SESSION STORAGE, NO SIGN-IN (#2220): the same, in its words.
+    if (SpaClient.sessionStorageMissing(this.env)) {
+      await this.ensureLanguage();
+      this.paint(problemHtml(this.t, this.t.text('browser.noStorage.text')) +
+                 SpaClient.browserSupportHtml(this.t));
       return;
     }
     const self = this;

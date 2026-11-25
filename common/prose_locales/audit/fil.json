@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "Naitakda o naalis ang S/MIME certificate ng isang tao"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "Nag-issue ng ML-KEM S/MIME na challenge para sa patunay ng pag-aari"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "Hindi na-issue ang isang ML-KEM S/MIME certificate"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "Isang klasikong OpenPGP key ang itinabi sa tabi ng post-quantum key na pumalit dito"

@@ -737,6 +737,23 @@ const CODES = [
       'or the outbound rules refused the URL. Logged when forwarding ' +
       'starts failing, not per report; the report is still recorded here.',
     spec: 'none — the report was answered 204 and counted' },
+  { code: 'STS-HTTP-0032',
+    summary: 'Outbound HTTP requests are waiting for a connection: the ' +
+      'shared agent\'s cap per destination (federation.outboundMaxSockets) ' +
+      'or in all (federation.outboundMaxTotalSockets) is reached. They wait ' +
+      'within their overall deadline. Logged when requests first queue, ' +
+      'and again only after the queue has drained (#2220).',
+    spec: 'none — the requests wait; nothing is refused for the cap' },
+  { code: 'STS-HTTP-0033',
+    summary: 'An outbound request did not finish within its overall deadline ' +
+      '(federation.outboundDeadlineMs, or its own timeout where longer): ' +
+      'it was ended, and the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
+  { code: 'STS-HTTP-0034',
+    summary: 'An outbound connection was not made within the connect timeout ' +
+      '(federation.outboundConnectTimeoutMs): the request was ended, and ' +
+      'the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -1394,6 +1411,12 @@ const CODES = [
       'Turn on security.hstsIncludeSubDomains, or turn off ' +
       'security.hstsPreload.',
     spec: 'none — a warning; the header is still sent, without preload' },
+  { code: 'STS-CORE-0182',
+    summary: 'A file was not scanned because malwareScan.concurrency scans ' +
+      'were running and malwareScan.queueLimit more were waiting: it is ' +
+      'refused as a file the scanner could not answer for is. The warning ' +
+      'is logged when the queue first fills (#2220).',
+    spec: 'HTTP 503' },
   { code: 'STS-CORE-0183',
     summary: 'A setting that holds a list of regular expressions ' +
       '(spiffe.httpChallengeAllowedDnsPatterns, ' +
@@ -2328,6 +2351,12 @@ const CODES = [
       'waits for that flush to settle until ten times the bound after it ' +
       'began, so a flush that is only slow keeps its writes.',
     spec: 'Log line' },
+  { code: 'STS-STORE-0178',
+    summary: 'A database statement was cancelled by the server at its ' +
+      'statement timeout (persistence.statementTimeoutMs, unless it set ' +
+      'its own). The caller\'s own failure path decides what follows: a ' +
+      'refused request, or a retried flush (#2220).',
+    spec: '' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2927,6 +2956,11 @@ const CODES = [
       'every cell (#727): it is answered 503 and its once-ever claim is ' +
       'released, so the provider\'s retry is accepted and fanned out again.',
     spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-CELL-0212',
+    summary: 'A synchronous call to another cell answered more than ' +
+      'cells.maxAnswerBytes: the connection was closed and the call ' +
+      'failed without reading the answer (#2220).',
+    spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
@@ -4089,6 +4123,30 @@ const CODES = [
       'thread waiting for it takes it over and initialises the module ' +
       'again itself (#1955).',
     spec: '' },
+  { code: 'STS-KEYS-0214',
+    summary: 'A call to the OpenBao or Vault secret store still failed after ' +
+      'keys.storeAttempts attempts (no answer, a timeout, a 5xx or a 429 ' +
+      'each time); the failure is the caller\'s (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0215',
+    summary: 'An HSM operation was refused because keys.pkcs11QueueLimit ' +
+      'operations were already waiting for a session of the token in this ' +
+      'thread (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0216',
+    summary: 'An HSM operation, or the wait for a session to run it on, took ' +
+      'longer than keys.pkcs11TimeoutMs: it is refused, and a session ' +
+      'whose operation outlived its caller is discarded when the module ' +
+      'answers (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0217',
+    summary: 'The keys.encryption-key-rotate job could not replace a ' +
+      'realm\'s request-decryption keys (#2220): the key set could not ' +
+      'be replaced (a newer generation was already held, or the store ' +
+      'refused the write). The keys go on as they are and the next run ' +
+      'tries again.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -5682,6 +5740,24 @@ const CODES = [
       'certificates were confused the same way (#2151).',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0310',
+    summary: 'A CA certificate inside its renewal lead could not be ' +
+      'renewed over the same key by the pki.ca-renew job (#2220): the ' +
+      'encoder refused, or its parent could not sign. The CA goes on as ' +
+      'it is and expires on its old date.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
+  { code: 'STS-PKI-0311',
+    summary: 'A CA certificate renewal was refused because the renewed ' +
+      'certificate\'s subject was not the subject it renews (#2220): a ' +
+      'renewal must keep the name every child names as its issuer.',
+    spec: 'an error log line and a failure audit row; nothing is stored' },
+  { code: 'STS-PKI-0312',
+    summary: 'A dedicated credential signer\'s key family could not be ' +
+      'moved on to its next generation by the scheduled rotation ' +
+      '(#2220). The current key goes on signing.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -16441,6 +16517,11 @@ const CODES = [
       'which krb5.pkinitRequirePaChecksum2 requires (#2125).',
     spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
       'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
+  { code: 'STS-KRB-0263',
+    summary: 'The krb5.service-key-rotate job could not rotate a service ' +
+      'principal key that was due (#2220): it could not be sealed or ' +
+      'written. The key goes on as it is.',
+    spec: 'an error log line; the scheduler run fails with this code' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -19168,6 +19249,13 @@ const CODES = [
       'a sha256: prefix allowed) nor spki: followed by the SHA-256 of a ' +
       'SubjectPublicKeyInfo in the same form (#2012).',
     spec: '' },
+  { code: 'STS-TLS-0078',
+    summary: 'The listener certificate was due for renewal (less than a ' +
+      'third of its validity left, or inside ' +
+      'tls.serverCertificateRenewLeadDays) and the ' +
+      'tls.server-certificate-renew job could not re-issue it (#2220). ' +
+      'The socket goes on presenting the certificate it has.',
+    spec: 'a warning or error log line and a failure audit row' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -21289,6 +21377,11 @@ const CODES = [
       '(the stored key or certificate no longer reads); it is a ' +
       'dead letter, never sent in the clear (#1955).',
     spec: 'log only' },
+  { code: 'STS-MAIL-0244',
+    summary: 'A message was not queued because the realm\'s outbox already ' +
+      'holds mail.maxRows unsent messages; nothing already queued is ' +
+      'dropped to make room (#2220).',
+    spec: 'none — the sender is told the message was refused' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -24314,6 +24407,38 @@ const CODES = [
       'again and audited with the writer: an S/MIME certificate on the ' +
       'entry is the master mail is encrypted to (#2050).',
     spec: 'none — audited' },
+  { code: 'STS-OPENPGP-0035',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) with a ' +
+      'public key that is not an RFC 9935 ML-KEM key: not a PEM ' +
+      'SubjectPublicKeyInfo, another algorithm, parameters present, or a ' +
+      'public key of the wrong length. Nothing was encapsulated.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0036',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) where ' +
+      'this runtime cannot encapsulate to ML-KEM ' +
+      '(`crypto.smimeKemAvailable()`), so no proof of possession could ' +
+      'be asked for and nothing was issued.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0037',
+    summary: 'An ML-KEM S/MIME certificate was asked to be issued (#2220) ' +
+      'with no outstanding proof-of-possession challenge for the person, ' +
+      'or one that lapsed (`openpgp.challengeLifetimeS`), or one already ' +
+      'answered. Ask for a new challenge.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0038',
+    summary: 'The secret sent back for an ML-KEM S/MIME proof of ' +
+      'possession (#2220) is not the one this service encapsulated to the ' +
+      'key — it was not recovered with the private key (`openssl pkeyutl ' +
+      '-decap`), or is not 32 octets of hex or base64. The challenge is ' +
+      'spent; nothing was issued. Audited.',
+    spec: 'none (HTTP 400 from /account-api) — audited' },
+  { code: 'STS-OPENPGP-0039',
+    summary: 'The realm\'s EST Issuing CA did not issue the ML-KEM S/MIME ' +
+      'certificate a person proved possession of (#2220): the email ' +
+      'profile is not in est.allowedProfiles, the entry holds ' +
+      'pki.enrollmentMaxCertificatesPerEntry certificates, or the ' +
+      'authority refused. The refusal\'s own sentence says which.',
+    spec: 'none (HTTP 400 from /account-api)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

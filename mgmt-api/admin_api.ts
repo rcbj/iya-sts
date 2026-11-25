@@ -9710,6 +9710,24 @@ class AdminApi {
         ] }),
 
       // -----------------------------------------------------------------------
+      // WHICH KEY EXCHANGE CLIENTS NEGOTIATED (#2220): the completed TLS
+      // handshakes on this node's listeners since its front process
+      // started, counted per listener and group, and how many were
+      // post-quantum — `tls/key_exchange.ts`. `/admin/crypto-metadata`'s
+      // Post-quantum tab composes it. PINNED TO THE FRONT PROCESS
+      // (`request_pool.js`'s NEVER_DISPATCHED), which holds every listener
+      // and so the counts: a worker's copy of the module counted nothing.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/tls/key-exchange', tag: 'TLS',
+        operationId: 'getTlsKeyExchange',
+        mirrors: 'GET /admin/crypto-metadata',
+        handler: function (req, res) {
+          log.debug("Entering the management API key exchange endpoint.");
+          self.sendJson(res, 200, require('../tls/key_exchange').report());
+          log.debug("Leaving the management API key exchange endpoint.");
+        } },
+
+      // -----------------------------------------------------------------------
       // MONITORING → TLS CONNECTION (#597, rcbj's decision 3 on #591): what
       // `GET /tls` and `GET /tls/forwarded` showed anybody in development,
       // as a read behind this API's gate, in both modes. The view is

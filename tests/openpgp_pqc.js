@@ -154,7 +154,7 @@ function checkPolicy(t) {
           'SLH-DSA-128+Ed25519 is not an OpenPGP signing algorithm this ' +
           'service accepts (' + crypto.OPENPGP_SIGNING_ALGORITHMS.join(', ') +
           ')',
-          '5c. SLH-DSA is not on the universe');
+          '5c. an invented composite name is not on the universe');
   const classical = {
     primary: { algorithm: 'ed25519', curve: '', bits: 0 },
     signing: { algorithm: 'ed25519', curve: '', bits: 0 },
@@ -482,12 +482,167 @@ function checkAppended(t, leaf) {
   log.debug("Leaving checkAppended().");
 }
 
+// ---------------------------------------------------------------------------
+// 10. SLH-DSA (#2220): RFC 9980 section 7's standalone signing algorithms,
+// 32 (SLH-DSA-SHAKE-128s), 33 (-128f) and 34 (-256s), v6 keys only, over
+// any digest of at least 256 bits (section 6.2.1) — SHA2-256 as well as
+// SHA3 — and never a smaller one. A key is made here, signed with
+// node's SLH-DSA through `pqc.js`, and read back.
+// ---------------------------------------------------------------------------
+// A v6 SLH-DSA primary of algorithm `id`, its secret kept by the test.
+function slhPrimary(created, id, name) {
+  log.debug("Entering slhPrimary(). " + name);
+  const pqc = require('../common/crypto_impl/pqc');
+  const kp = pqc.generateAkpKeyPair(name);
+  log.debug("Leaving slhPrimary().");
+  return { body: keyBody(created, id, Buffer.from(kp.pub)), priv: kp.priv,
+           created: created, id: id, name: name };
+}
+
+// OpenPGP hash ids (RFC 9580 section 9.5) this test signs over: node's
+// name and the v6 salt (Table 23; SHA-1 has none in v6, 16 is used so the
+// packet is well formed and the digest rule is what refuses it).
+const TEST_HASHES = { 2: ['sha1', 16], 8: ['sha256', 16],
+                      10: ['sha512', 32], 11: ['sha224', 16],
+                      12: ['sha3-256', 16], 14: ['sha3-512', 32] };
+
+// RFC 9580 section 5.2.4's dataDigest, for any hash: the reader's own
+// `dataDigest()` knows only the digests it accepts.
+function anyDigest(hashAlg, salt, over, signatureData) {
+  log.debug("Entering anyDigest(). " + hashAlg);
+  const trailer = Buffer.alloc(6);
+  trailer[0] = 6;
+  trailer[1] = 0xff;
+  trailer.writeUInt32BE(signatureData.length, 2);
+  const out = require('crypto').createHash(TEST_HASHES[hashAlg][0])
+    .update(salt).update(over).update(signatureData).update(trailer)
+    .digest();
+  log.debug("Leaving anyDigest().");
+  return out;
+}
+
+// A v6 SLH-DSA signature of `type` over `subject`, made over `hashAlg`
+// (a TEST_HASHES id).
+function slhSignature(leaf, primary, type, subject, hashAlg, opts) {
+  log.debug("Entering slhSignature(). " + type);
+  const o = opts || {};
+  const pqc = require('../common/crypto_impl/pqc');
+  const parts = [sub(2, u32(o.created || primary.created + 10))];
+  if (o.flags !== undefined) {
+    parts.push(sub(27, Buffer.from([o.flags])));
+  }
+  const hashed = Buffer.concat(parts);
+  const signatureData = Buffer.concat([
+    Buffer.from([6, type, primary.id, hashAlg]), u32(hashed.length), hashed]);
+  const salt = require('crypto').randomBytes(TEST_HASHES[hashAlg][1]);
+  const over = leaf.toSign(type, primary.body, subject, 6);
+  const digest = anyDigest(hashAlg, salt, over, signatureData);
+  const params = Buffer.from(pqc.signWithPriv(primary.name, digest,
+                                              primary.priv));
+  const body = Buffer.concat([signatureData, u32(0), digest.subarray(0, 2),
+                              Buffer.from([salt.length]), salt, params]);
+  log.debug("Leaving slhSignature().");
+  return packet(2, body);
+}
+
+async function checkSlhDsa(t, leaf) {
+  log.debug("Entering checkSlhDsa().");
+  t.log.info('=== 10. SLH-DSA (#2220) ===');
+  const crypto = require('../common/crypto');
+  const codes = require('../common/error_codes');
+  const now = Math.floor(Date.now() / 1000);
+  const at = new Date();
+  ['SLH-DSA-SHAKE-128s', 'SLH-DSA-SHAKE-128f', 'SLH-DSA-SHAKE-256s']
+    .forEach(function (name) {
+      t.check(crypto.OPENPGP_SIGNING_ALGORITHMS.indexOf(name) >= 0 &&
+              crypto.OPENPGP_PQ_NAMES.indexOf(name) >= 0,
+              '10a. ' + name + ' is an accepted, post-quantum signing ' +
+              'algorithm');
+    });
+  t.equal(leaf.ALGS[32].name, 'SLH-DSA-SHAKE-128s',
+          '10b. algorithm 32 is SLH-DSA-SHAKE-128s (RFC 9980 Table 8)');
+  const primary = slhPrimary(now - 1000, 32, 'SLH-DSA-SHAKE-128s');
+  const uid = Buffer.from('SLH test <slh-' + now + '@example.org>');
+  const cert = slhSignature(leaf, primary, 0x13, uid, 12,
+                            { created: now - 990, flags: 0x03 });
+  const bound = compositeSubkey(now - 980);
+  const binding = slhSignature(leaf, primary, 0x18, bound, 12,
+                               { created: now - 970, flags: 0x0c });
+  const whole = Buffer.concat([packet(6, primary.body), packet(13, uid),
+                               cert, packet(14, bound), binding]);
+  const read = leaf.readPublicKey(whole, at);
+  if (!read.ok && read.reason === 'unchecked') {
+    t.check(true, '10c. (SLH-DSA cannot be verified on this runtime: ' +
+            'the key is unchecked, never accepted)', read.why);
+    log.debug("Leaving checkSlhDsa(). Unchecked here.");
+    return;
+  }
+  t.check(read.ok && read.description.primary.algorithm ===
+          'SLH-DSA-SHAKE-128s',
+          '10c. a v6 SLH-DSA-SHAKE-128s key with an ML-KEM subkey reads',
+          (read.reason || '') + ' ' + (read.why || ''));
+  t.equal(read.description && read.description.encryption &&
+          read.description.encryption.fingerprint, leaf.fingerprintOf(bound),
+          '10d. its bound ML-KEM-768+X25519 subkey is chosen');
+  const policy = await crypto.openpgpReadKey(whole, {
+    at: at, registration: true, pqcOnly: true });
+  t.check(policy.ok === true,
+          '10e. openpgp.pqcOnly accepts it: SLH-DSA is post-quantum',
+          policy.error || '');
+  const narrowed = await crypto.openpgpReadKey(whole, {
+    at: at, accept: 'ML-DSA-65+Ed25519,ML-KEM-768+X25519' });
+  t.equal(codes.codeOf(narrowed), 'STS-OPENPGP-0004',
+          '10f. a realm whose openpgp.algorithms leaves SLH-DSA out ' +
+          'refuses it');
+  const overHash = function (hashAlg) {
+    return leaf.readPublicKey(Buffer.concat([
+      packet(6, primary.body), packet(13, uid),
+      slhSignature(leaf, primary, 0x13, uid, hashAlg,
+                   { created: now - 990, flags: 0x03 })]), at);
+  };
+  const sha256 = overHash(8);
+  t.check(sha256.ok === true,
+          '10g. an SLH-DSA-SHAKE-128s self-signature over SHA2-256 is ' +
+          'accepted: RFC 9980 section 6.2.1 asks only for 256 bits or more',
+          (sha256.reason || '') + ' ' + (sha256.why || ''));
+  const sha224 = overHash(11);
+  t.check(!sha224.ok && sha224.reason === 'bad-signature',
+          '10g2. one over SHA2-224, under 256 bits, is not believed',
+          sha224.reason);
+  const sha1 = overHash(2);
+  t.check(!sha1.ok && sha1.reason === 'bad-signature',
+          '10g3. nor one over SHA-1', sha1.reason);
+  const old = leaf.readPublicKey(Buffer.concat([packet(6, Buffer.concat([
+    Buffer.from([4]), u32(primary.created), Buffer.from([32]),
+    primary.body.subarray(10)])), packet(13, uid), cert]), at);
+  t.check(!old.ok && /v6/.test(String(old.why)),
+          '10h. SLH-DSA on a v4 key is refused (RFC 9980 section 7)',
+          String(old.why));
+  const doc = Buffer.from('signed by SLH-DSA');
+  const detached = slhSignature(leaf, primary, 0x00, doc, 12);
+  t.equal(leaf.verifyDetached(detached, doc, read.key).ok, true,
+          '10i. a detached SLH-DSA signature verifies');
+  t.equal(leaf.verifyDetached(detached, Buffer.from('other'), read.key).ok,
+          false, '10j. and not over other bytes');
+  const big = slhPrimary(now - 1000, 34, 'SLH-DSA-SHAKE-256s');
+  const bigUid = Buffer.from('SLH256 <slh256-' + now + '@example.org>');
+  const bigRead = leaf.readPublicKey(Buffer.concat([
+    packet(6, big.body), packet(13, bigUid),
+    slhSignature(leaf, big, 0x13, bigUid, 14, { created: now - 990,
+                                                flags: 0x03 })]), at);
+  t.check(bigRead.ok === true,
+          '10k. SLH-DSA-SHAKE-256s over SHA3-512 reads',
+          (bigRead.reason || '') + ' ' + (bigRead.why || ''));
+  log.debug("Leaving checkSlhDsa().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const leaf = require('../common/crypto_impl/openpgp_pqc');
   checkReader(t, leaf);
   checkAppended(t, leaf);
   await checkPolicy(t);
+  await checkSlhDsa(t, leaf);
   log.debug("Leaving run().");
 }
 

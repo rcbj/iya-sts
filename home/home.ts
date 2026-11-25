@@ -725,6 +725,8 @@ class Home {
     const { realms } = this.deps;
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Home.shellDocument().");
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const said = ShellDocument.translator();
     const html = ShellDocument.document({
       title: 'IYA STS',
       attributes: [['data-sts-prefix', realms.currentPrefix()],
@@ -738,11 +740,16 @@ class Home {
       // SCRIPT IS REQUIRED (#569), so a browser without it is told what
       // this is and where the documentation is — which is the one link
       // that works without this service drawing anything.
-      noscript: '<div class="warn">This front page is a script that runs ' +
+      // IN THE REQUEST'S LANGUAGE SINCE #2220, from `browser`.
+      noscript: '<div class="warn">' + ShellDocument.said(said,
+        'browser.noscript.home', 'This front page is a script that runs ' +
         'in your browser and draws itself from <code>' + API_BASE +
-        '</code>; with scripts blocked there is nothing it can show. The ' +
-        'documentation is at <a href="' + xmlEscape(DOCS_URL) + '">' +
-        xmlEscape(DOCS_URL) + '</a>.</div>',
+        '</code>; with scripts blocked there is nothing it can show.',
+        { api: API_BASE }) + ' ' + ShellDocument.said(said,
+        'browser.noscript.home.docs', 'The documentation is at') +
+        ' <a href="' + xmlEscape(DOCS_URL) + '">' + xmlEscape(DOCS_URL) +
+        '</a>.</div>',
+      translator: said,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     log.debug("Leaving Home.shellDocument().");

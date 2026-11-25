@@ -8424,6 +8424,16 @@ Scope: `account:manage`.
 | `mailEncryption.smimeCertificate.subject` | string | yes |  |
 | `mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
 | `mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `smimeKemChallenge` | object, or null | yes | An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates. |
+| `smimeKemChallenge.algorithm` | string | yes | `ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`. |
+| `smimeKemChallenge.cipherText` | string | yes | The ML-KEM ciphertext, base64. |
+| `smimeKemChallenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `smimeKemIssued` | object |  | In the answer of `smime-kem-issue` only: the certificate just issued, drawn once. |
+| `smimeKemIssued.algorithm` | string | yes |  |
+| `smimeKemIssued.certificate` | string | yes | The certificate, PEM. |
+| `smimeKemIssued.chain` | list | yes | The certificate and the chain above it, PEM, leaf first; the Root excluded. |
+| `smimeKemIssued.chain[]` | string |  |  |
+| `smimeKemIssued.serial` | string | yes |  |
 | `wkd` | object | yes | The person's Web Key Directory publication (#1955). |
 | `wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
 | `wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
@@ -8492,7 +8502,7 @@ Scope: `account:manage`.
 
 **Registers, removes or publishes your OpenPGP key, or sets your mail encryption**
 
-`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an algorithm `openpgp.algorithms` names (including an RFC 9980 composite), carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `openpgp.pqcOnly` narrows a new registration to a post-quantum composite. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.
+`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an algorithm `openpgp.algorithms` names (including an RFC 9980 composite), carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `openpgp.pqcOnly` narrows a new registration to a post-quantum composite. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). `smime-kem-challenge` takes `publicKey`, an ML-KEM public key (RFC 9935; the PEM `openssl pkey -pubout` writes), and answers in the view's `smimeKemChallenge` a ciphertext encapsulated to it (#2220). `smime-kem-issue` takes `secret`, the 32-octet shared secret `openssl pkeyutl -decap` recovers from it with the private key, hex or base64: on a match the realm's EST Issuing CA issues an ML-KEM S/MIME certificate naming your address (the `email` profile, `keyEncipherment` only), it becomes your S/MIME certificate, and the answer's `view.smimeKemIssued` carries it with its chain. The challenge is spent whatever the answer. It asks for a recent sign-in. A refusal carries the page's `view`.
 
 The door of the portal's `POST /portal/openpgp`.
 
@@ -8509,10 +8519,11 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | one of `challenge`, `register`, `remove`, `publish`, `withdraw`, `mail-encryption`, `smime` | yes | What to do. |
+| `action` | one of `challenge`, `register`, `remove`, `publish`, `withdraw`, `mail-encryption`, `smime`, `smime-kem-challenge`, `smime-kem-issue` | yes | What to do. |
 | `certificate` | string |  | `smime`: a PEM or base64 DER certificate; empty removes it. |
 | `choice` | string |  | `mail-encryption`: `none`, `openpgp` or `smime`. |
-| `publicKey` | string |  | `register`: the armored OpenPGP public key. |
+| `publicKey` | string |  | `register`: the armored OpenPGP public key. `smime-kem-challenge`: the ML-KEM public key, PEM. |
+| `secret` | string |  | `smime-kem-issue`: the shared secret decapsulated from the challenge, hex or base64. |
 | `signed` | string |  | `register`: the challenge signed with `gpg --clearsign`. |
 
 **200**: The answer.
@@ -8546,6 +8557,16 @@ Scope: `account:manage`.
 | `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
 | `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
 | `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.smimeKemChallenge` | object, or null | yes | An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates. |
+| `view.smimeKemChallenge.algorithm` | string | yes | `ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`. |
+| `view.smimeKemChallenge.cipherText` | string | yes | The ML-KEM ciphertext, base64. |
+| `view.smimeKemChallenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.smimeKemIssued` | object |  | In the answer of `smime-kem-issue` only: the certificate just issued, drawn once. |
+| `view.smimeKemIssued.algorithm` | string | yes |  |
+| `view.smimeKemIssued.certificate` | string | yes | The certificate, PEM. |
+| `view.smimeKemIssued.chain` | list | yes | The certificate and the chain above it, PEM, leaf first; the Root excluded. |
+| `view.smimeKemIssued.chain[]` | string |  |  |
+| `view.smimeKemIssued.serial` | string | yes |  |
 | `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
 | `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
 | `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
@@ -8587,6 +8608,16 @@ Scope: `account:manage`.
 | `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
 | `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
 | `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.smimeKemChallenge` | object, or null | yes | An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates. |
+| `view.smimeKemChallenge.algorithm` | string | yes | `ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`. |
+| `view.smimeKemChallenge.cipherText` | string | yes | The ML-KEM ciphertext, base64. |
+| `view.smimeKemChallenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.smimeKemIssued` | object |  | In the answer of `smime-kem-issue` only: the certificate just issued, drawn once. |
+| `view.smimeKemIssued.algorithm` | string | yes |  |
+| `view.smimeKemIssued.certificate` | string | yes | The certificate, PEM. |
+| `view.smimeKemIssued.chain` | list | yes | The certificate and the chain above it, PEM, leaf first; the Root excluded. |
+| `view.smimeKemIssued.chain[]` | string |  |  |
+| `view.smimeKemIssued.serial` | string | yes |  |
 | `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
 | `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
 | `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
@@ -8664,6 +8695,16 @@ Scope: `account:manage`.
 | `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
 | `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
 | `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.smimeKemChallenge` | object, or null | yes | An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates. |
+| `view.smimeKemChallenge.algorithm` | string | yes | `ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`. |
+| `view.smimeKemChallenge.cipherText` | string | yes | The ML-KEM ciphertext, base64. |
+| `view.smimeKemChallenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.smimeKemIssued` | object |  | In the answer of `smime-kem-issue` only: the certificate just issued, drawn once. |
+| `view.smimeKemIssued.algorithm` | string | yes |  |
+| `view.smimeKemIssued.certificate` | string | yes | The certificate, PEM. |
+| `view.smimeKemIssued.chain` | list | yes | The certificate and the chain above it, PEM, leaf first; the Root excluded. |
+| `view.smimeKemIssued.chain[]` | string |  |  |
+| `view.smimeKemIssued.serial` | string | yes |  |
 | `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
 | `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
 | `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
@@ -8705,6 +8746,16 @@ Scope: `account:manage`.
 | `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
 | `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
 | `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.smimeKemChallenge` | object, or null | yes | An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates. |
+| `view.smimeKemChallenge.algorithm` | string | yes | `ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`. |
+| `view.smimeKemChallenge.cipherText` | string | yes | The ML-KEM ciphertext, base64. |
+| `view.smimeKemChallenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.smimeKemIssued` | object |  | In the answer of `smime-kem-issue` only: the certificate just issued, drawn once. |
+| `view.smimeKemIssued.algorithm` | string | yes |  |
+| `view.smimeKemIssued.certificate` | string | yes | The certificate, PEM. |
+| `view.smimeKemIssued.chain` | list | yes | The certificate and the chain above it, PEM, leaf first; the Root excluded. |
+| `view.smimeKemIssued.chain[]` | string |  |  |
+| `view.smimeKemIssued.serial` | string | yes |  |
 | `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
 | `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
 | `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |

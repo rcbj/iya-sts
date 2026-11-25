@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "等待服务的时长。大文件每 MiB 额外增加一秒。"
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "同时扫描数"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "一个进程同时向扫描器发送多少个文件，每个文件使用各自的连接。其余文件排队等候。"
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "等待扫描数"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "除正在扫描的文件外，最多可有多少个文件等待扫描。超出的文件以 503 拒绝（STS-CORE-0182），与扫描器无响应时相同。"
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "icaps 服务的 CA 文件"
@@ -1815,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "签署本领域 dc+sd-jwt 和 jwt_vc_json 凭证及其 Token Status List Token 的密钥。`dedicated`（默认值）是凭证专用的密钥，每个算法族一把，不用于其他任何用途，其证书的 subjectAltName 以 URI 形式列出本领域响应的每个颁发者标识符（不含 DNS 名称），扩展密钥用法为 id-kp-documentSigning（RFC 9336），不含任何 TLS 协议栈会接受的用法，使钱包能够将凭证的 iss 与其 x5c 进行比对（HAIP 1.0 第 6.1.1 节）。颁发者标识符发生变化时（global.publicBaseUrl、tls.hostnames、监听器），证书会重新签发。`realm-key` 使用本领域的通用 JOSE 密钥签署，与 1.0.0 相同，其证书不列出任何颁发者。无论哪种方式，已签发的凭证都仍可验证。ldp_vc 和 mso_mdoc 不受影响。"
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "凭证签名密钥轮换间隔（天）"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "专用凭证签名者（keys.credentialSigner dedicated）的密钥签名多长时间后，由 keys.credential-signer-rotate 作业生成其密钥族的下一个密钥，并由新密钥开始签名。被替换的密钥不再签署任何内容，并保留在凭证签发方的 JWKS 和 DID 文档中，因此它签署的每个凭证仍可验证。从作业首次看到该密钥时开始计算。0 关闭此计划。仅限产品模式。"
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "后量子 / 混合解密密钥"
@@ -1822,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "此领域持有解密密钥的 ML-KEM 和 HPKE JWE 算法——每种算法一个密钥对，发布在领域的 JWKS 中（`use: enc`，带 `alg`），并在 `request_object_encryption_alg_values_supported` 和 `assertion_encryption_alg_values_supported` 中公布，使客户端能够使用后量子或 PQ/T 混合密钥建立方式，将请求对象或 RFC 7523 / 7522 断言加密给此领域。HPKE-10-KE 即 X-Wing（ML-KEM-768 + X25519）。向注册了其中某种算法的客户端加密，无需此处做任何设置。**默认为空，由管理员选择：**这些算法全部来自 Internet-Draft（draft-ietf-jose-pqc-kem-05、draft-ietf-jose-hpke-encrypt-22、draft-reddy-cose-jose-pqc-hybrid-hpke-11），而 JWKS 中的 AKP 密钥是许多客户端的 JOSE 库尚无法解析的密钥类型——有些会拒绝整个密钥集。只有在确知读取此领域 JWKS 的客户端能够应对时，才在此列出算法。移除某个算法会停止发布和接受它；再次列出会恢复同一密钥。"
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "请求解密密钥替换间隔（天）"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "请求对象加密密钥、OpenID4VCI 请求加密密钥和 KEM 解密密钥保留多长时间后由 keys.encryption-key-rotate 作业替换。新密钥立即发布（/oauth2/jwks、凭证签发方元数据），被替换的密钥在 keys.encryptionKeyOverlapDays 内仍可解密。从作业首次看到该密钥时开始计算。0 关闭此计划。仅限产品模式。"
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "被替换的请求解密密钥仍可解密的时长（天）"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "被 keys.encryption-key-rotate 替换的请求解密密钥，在客户端读取新密钥之前，继续打开其加密给它的内容的时长。在此期间它不在任何地方发布，期满后由 signing.retire 删除。"
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -2123,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "/admin/secrets 背后的任何一次探测等待密钥存储应答的最长时间。每次探测都只是读取元数据——对密钥文件执行 stat、访问 sys 端点、读取 KV 版本历史、DescribeSecret——从不获取秘密值。设置这个上限是为了让打开控制台页面绝不会因为别人的存储而挂起；超时的探测会显示为一行说明，与被拒绝的探测完全一样。"
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "机密存储调用超时（毫秒）"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "对 OpenBao 或 Vault、AWS KMS 或 Secrets Manager、Google Cloud KMS 或 Secret Manager、或 Azure Key Vault 的一次调用尝试最多可等待多久；作为各 SDK 自身的超时选项传入。"
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "每次机密存储调用的尝试次数"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "对机密存储或密钥服务的一次调用总共尝试多少次：即各云 SDK 自身的重试上限；对于 OpenBao 或 Vault，未获响应、或收到 5xx 或 429 的调用会在短暂停顿后重发（所有尝试均失败时记为 STS-KEYS-0214）。4xx 从不重试。"
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS 区域"
@@ -2180,6 +2236,30 @@
     "text": "每个进程和请求工作进程在一个令牌上最多保持打开的会话数，每个会话一次执行一个 HSM 操作。YubiHSM 2 总共有 16 个会话，由每个节点的每个进程共享：请让此值、进程数与节点数的乘积低于该数。"
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "令牌只在启动时打开一次"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "HSM 操作超时（毫秒）"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "一次 HSM 操作及等待执行它的会话最多可用多久，超时即被拒绝（STS-KEYS-0216）。操作超时的会话会在模块响应时被丢弃。0 表示不限制。"
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "令牌只在启动时打开一次"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "每个令牌等待中的 HSM 操作数"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "在一个进程或工作进程中，最多可有多少个 HSM 操作等待同一令牌的会话。超出的操作立即被拒绝（STS-KEYS-0215）。"
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "令牌只在启动时打开一次"
   },
@@ -3464,16 +3544,16 @@
     "text": "接受的算法"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "密钥可以使用的 OpenPGP 算法，按优先顺序。先是 RFC 9980 复合算法：ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 用于签名，ML-KEM-768+X25519 与 ML-KEM-1024+X448 用于加密。然后是经典名称：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 和 nistP521 上的 ecdsa，rsaSign 与 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲线上的 ecdh，以及 rsaEncrypt。不在此列表中的名称在登记和验证时被拒绝（STS-OPENPGP-0004）。未实现 SLH-DSA。默认值列出上述每一个。"
+    "en": "f51a30de72243d25",
+    "text": "密钥可以使用的 OpenPGP 算法，按优先顺序排列。首先是 RFC 9980 的后量子算法：ML-DSA-65+Ed25519 和 ML-DSA-87+Ed448 用于签名，v6 密钥上的 SLH-DSA-SHAKE-128s、SLH-DSA-SHAKE-128f 和 SLH-DSA-SHAKE-256s 也用于签名；ML-KEM-768+X25519 和 ML-KEM-1024+X448 用于加密。然后是经典名称：ed25519、ed448、eddsaLegacy/ed25519Legacy、nistP256、nistP384 和 nistP521 上的 ecdsa、rsaSign 和 rsaEncryptSign、x25519、x448、curve25519Legacy 及相同 NIST 曲线上的 ecdh，以及 rsaEncrypt。不在此列表中的名称在注册和验证时会被拒绝（STS-OPENPGP-0004）。默认值列出了所有这些。"
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "仅登记后量子密钥"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "开启后，新登记的密钥必须使用 openpgp.algorithms 点名的后量子算法：签名密钥为 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密密钥则为 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登记：已经登记的经典密钥仍可验证，仍可接收邮件。不能与 openpgp.pqcAlongsideClassical 同时开启（STS-OPENPGP-0027）。默认关闭。"
+    "en": "b0c222dfa3cda337",
+    "text": "开启后，新注册的密钥必须使用 openpgp.algorithms 列出的后量子算法：签名密钥使用 ML-DSA-65+Ed25519、ML-DSA-87+Ed448 或三种 SLH-DSA 算法之一，有加密密钥时使用 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只限制注册：已注册的经典密钥仍可验证，仍会收到邮件。openpgp.pqcAlongsideClassical 开启时不能开启（STS-OPENPGP-0027）。默认关闭。"
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",
@@ -4178,6 +4258,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "当构建未指明有效期时，每个签发 CA 的有效时长。零即 `issuing-ca` 配置的五年。会被截断到其中间 CA 的到期时间。"
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "在 CA 证书到期前续期"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "每日 pki.ca-renew 作业是否在提前期内（pki.rootRenewalLeadDays、pki.caRenewalLeadDays）以相同的密钥和主体续期根 CA、每个中间 CA 和每个签发 CA，使其签署的每个证书仍可验证，且对其密钥的固定仍然有效。续期后的根证书与被替换的根证书并列发布在 /pki/ca/service/root-previous.cer，直到后者到期。导入的 CA 永不续期。关闭时没有任何东西续期 CA，它会像 1.2.0 之前一样到期。"
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "在根 CA 到期前多久续期（天）"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "pki.ca-renew 在根 CA 到期前多久续期它，最多为其有效期的一半。默认较长（三年），因为续期后的根证书是新的信任锚证书，应在旧证书到期前交给每个依赖方。"
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "在中间 CA 或签发 CA 到期前多久续期（天）"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "pki.ca-renew 在中间 CA 或签发 CA 到期前多久续期它，最多为其有效期的一半。CA 不能比其上级 CA 存活更久，因此上级先到期的 CA 会等待上级续期。"
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -5639,6 +5743,38 @@
     "en": "6a4ac147d740738b",
     "text": "在放弃之前等待合作方答复的时长。它比一般的超时更重要，因为浏览器正在等待它——联合登录意味着有人盯着一个空白标签页，而本服务正在兑换代码——因此它足够短，使失效的合作方产生的是错误页面而不是挂起，并且错误会指明该超时。在 2026-08-30 之前它是 5000，变化在于这里的合作方通常就是本进程：信任领域是本服务的逻辑副本，而任何人向全新领域请求的第一样东西就是它的 JWKS——正是这一请求使该领域的十一个后量子密钥得以生成，其中一个是 SLH-DSA-SHAKE-128s 密钥，生成大约需要五秒。5000 这个预算之所以曾经可行，只是因为本服务过去在响应时会阻塞：事件循环停止时，执行该预算的计时器在响应完成之前无法触发。现在密钥在 libuv 的线程池上生成（common/pq_native.js），并在创建领域时预热，因此普通的获取只需几毫秒——此值是为领域仍在创建过程中时到达的那次获取准备的预算。"
   },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "每个目标的出站连接数"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "对于每次出站 HTTP 调用，一个进程同时向一个目标（合作方、接收方、客户端的 URL）保持打开的连接数。超出的请求在其总体期限内等待连接，请求首次开始等待时记录一条警告（STS-HTTP-0032）。连接会保持活动并被复用。"
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "出站连接总数"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "一个进程总共保持打开的出站 HTTP 连接数。超出的请求在其总体期限内等待连接（STS-HTTP-0032）。不得少于 federation.outboundMaxSockets。"
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "出站总体期限（毫秒）"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "任何出站 HTTP 调用总共最多可用的时间：包括等待连接、建立连接、握手以及接收完整响应。其他超时针对的是无活动时间，因此响应缓慢的对端否则会让调用一直保持打开。自身超时更长的调用改用其自身超时。到达期限时，调用以超时结束（STS-HTTP-0033）。"
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "出站连接超时（毫秒）"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "新建出站连接（含 TLS 握手）最多可用多久。从连接池复用的连接不计时。到达上限时，调用以超时结束（STS-HTTP-0034）。"
+  },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
     "text": "允许以 http:// 访问合作方（仅限开发）"
@@ -6562,6 +6698,22 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "在主动-主动集群中，每个节点的 LDAPS 监听器和主端口（除非 tls.mainPortSharedTickets 关闭）都用同一个共享密钥封存会话票据，因此一个节点签发的票据可在另一个节点上恢复（调试器的监听器每个节点保留一个密钥）。这是 tls.ticket-key-rotate 作业替换该密钥的频率（以秒为单位）；被替换的密钥会被删除，因此只有在其密钥存在期间，才能从截获的票据中恢复已恢复会话的密钥材料，而票据更旧的客户端会进行完整握手。该密钥保存在存储中，以密钥加密密钥封存。设为 0 则关闭共享；在主动-主动模式之外不共享任何内容：单个应答节点使用 OpenSSL 自己的按监听器密钥恢复会话，这些密钥从不离开进程。"
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "无需重启续期监听器证书"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "每小时的 tls.server-certificate-renew 作业是否在主端口、LDAPS 和调试器所出示证书的剩余有效期不足三分之一（或进入 tls.serverCertificateRenewLeadDays）时，以相同密钥续期，并在不重启的情况下放到每个套接字上。每个节点续期自己的证书。关闭时仅在启动时和控制台的续期操作中续期。您在 tls.certificateFile 中提供的证书由您自行续期。"
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "在监听器证书到期前多久续期（天，0 = 剩余三分之一有效期时）"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "在监听器证书到期前这么多天续期它，前提是这早于剩余三分之一有效期的时间点。默认值 0 保持三分之一。"
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7922,6 +8074,14 @@
   "krb5.krbtgtRotationIntervalDays|description": {
     "en": "0ef945c098a1eeac",
     "text": "信任领域的 krbtgt 密钥（密封每张票据授予票据的密钥）保持为当前密钥的时长，之后 krb5.krbtgt-rotate 作业会以下一个 kvno 的新随机密钥替换它。被替换的密钥会被保留（krb5.retainedKeyVersions，保留 krb5.retainedKeyTtlS），使在轮换前一瞬间签发的 TGT 在过期之前仍可使用，且在该时间窗开放期间作业从不轮换。180 天是 Active Directory 的常见建议。0 关闭定期轮换；手动轮换（/admin/kerberos/principals、POST /admin-api/kerberos/principals/rotate-krbtgt）仍然可用。仅限产品模式。当 krb5.retainedKeyVersions 为 0 时，该作业也保持关闭，因为一次不保留任何内容的轮换会在毫无通知的情况下让领域中的每个 Kerberos 用户登出。"
+  },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "本服务自身接受方密钥的轮换间隔（天）"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "服务主体密钥可以使用多久，之后由 krb5.service-key-rotate 作业以下一个 kvno 的新随机密钥替换，并保留被替换的密钥（krb5.retainedKeyVersions，保留 krb5.retainedKeyTtlS），使已签发的票据继续可用，且该窗口打开期间绝不轮换。只轮换本服务为其自身接受方生成的密钥：keytab 已交给其他服务的密钥会在 /admin/scheduler 上报告为到期，轮换它（会交出新的 keytab）仍由运营者执行。从密钥最近一次轮换或创建时开始计算。0 关闭此计划。仅限产品模式。"
   },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
@@ -11407,6 +11567,66 @@
     "en": "fe511fad2e40a74b",
     "text": "/admin/database 背后任一语句可运行多长时间，作为 PostgreSQL 自己的 statement_timeout 设置在该页面借用的那一个连接上。其中每条语句都是对目录视图的读取；设定此界限是为了让打开控制台页面永远不会占住本服务用于应答协议流量的连接池中的连接。它在服务器上设置，而不是在此处作为计时器，因为计时器会放弃 promise，使语句和连接都原样留在那里。"
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "每个进程的数据库连接数"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "每个进程在其连接池中保持的数据库连接数。默认值 0 表示节点请求工作进程数的两倍，且不少于四个。超出的调用方最多等待 persistence.poolWaitMs 以获取空闲连接。"
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "等待数据库连接（毫秒）"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "调用方在连接池中等待空闲连接多久后失败。因此失败的写入以 503 响应（STS-STORE-0066），其刷新会重试。"
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "数据库连接超时（毫秒）"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "建立一个新的数据库连接最多可用多久。"
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "空闲数据库连接保留时长（毫秒）"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "空闲连接在连接池中保留多久后被关闭。"
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "数据库语句超时（毫秒）"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "普通数据库语句在被服务器取消前最多可运行多久（PostgreSQL 的 statement_timeout、MariaDB 的 max_statement_time），记为 STS-STORE-0178。0 表示不限制。打开存储、其迁移、启动时的恢复以及在线索引构建不受此限制；回填以小批量运行。"
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "它在存储打开并读取后设置到连接池上"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "数据目录"
@@ -11827,6 +12047,14 @@
     "en": "839a4a009d203829",
     "text": "转发到另一个单元的请求，或单元间通道上的调用，在被视为另一个单元不可达而作答之前（并按 `cells.homeUnreachable` 的规定处理）可以花费的时长。"
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "单元间最大响应（字节）"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "对另一个单元的同步调用最多可返回的响应大小。超过后连接将被关闭，调用失败（STS-CELL-0212）。"
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "单元间投递尝试次数"
@@ -12058,6 +12286,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "定时刷新（attribute-sources.refresh，每分钟一次）每次运行时，每个属性源读取多少人，下次从上次结束处继续。较大的值会更快完成一轮，但每次运行占用节点的时间更长。"
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "每个来源的连接数"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "每个进程对一个属性源保持的连接数。超出的查询在该来源自身的超时内等待连接。更改在每个来源的下一次查询时生效。"
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12368,8 +12604,8 @@
     "text": "进行中的发送数"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "一个进程在一次清理中同时发送多少封消息。"
+    "en": "d6de0478b866cf8b",
+    "text": "一个进程同时发送多少封消息，包括一次清理中以及消息入队后的首次尝试。找不到空闲名额的消息等待下一次清理。"
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12384,8 +12620,8 @@
     "text": "每个领域的发件箱行数"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "每个领域的发件箱上限：最旧的已完成行最先被删除，待处理的行则从不删除。"
+    "en": "3b7f698ec30a6ed1",
+    "text": "每个领域的发件箱上限：最旧的已完成行最先被删除，待处理的行则从不删除。会使待处理行超过该上限的消息将被拒绝（STS-MAIL-0244）。"
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

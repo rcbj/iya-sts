@@ -287,6 +287,9 @@ class GnapInteract {
     const authnAt = this.authnElsewhere(req);
     const state = view ? JSON.stringify(Object.assign({ view: view },
       own && own.value ? { preferredLanguage: own } : {})) : '';
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const t = ShellDocument.translator({ application: application || '',
+                                         username: person || '' });
     const html = ShellDocument.document({
       title: 'GNAP authorization server — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
@@ -298,10 +301,13 @@ class GnapInteract {
       script: SCRIPT_PATH,
       open: '<div class="card gnap">',
       close: '</div>',
-      noscript: '<h1>GNAP authorization</h1><div class="err">This page is ' +
+      noscript: '<h1>' + ShellDocument.said(t, 'browser.noscript.gnap.title',
+        'GNAP authorization') + '</h1><div class="err">' +
+        ShellDocument.said(t, 'browser.noscript.gnap', 'This page is ' +
         'a script that runs in your browser, and with scripts blocked ' +
         'there is nothing it can show. Allow scripts for this page to ' +
-        'answer the application that sent you here.</div>',
+        'answer the application that sent you here.') + '</div>',
+      translator: t,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     // error-code: none — the shell's own send; a refusal's code is marked by its caller (interactionError()) first.

@@ -53,5 +53,19 @@
   "done.mail.openpgp": "您的邮件现在使用您的 OpenPGP 密钥加密。",
   "done.mail.smime": "您的邮件现在使用您的 S/MIME 证书加密。",
   "done.smimeSet": "您的 S/MIME 证书已设置。",
-  "done.smimeRemoved": "您的 S/MIME 证书已删除。"
+  "done.smimeRemoved": "您的 S/MIME 证书已删除。",
+  "kem.heading": "由本服务签发的 ML-KEM 证书",
+  "kem.intro": "本服务可以为 {mail} 向您签发一张后量子 S/MIME 证书。ML-KEM 密钥无法对请求签名，因此您需要以另一种方式证明它属于您：本服务用它加密一个秘密，您再把这个秘密发回来。",
+  "kem.step1": "使用 OpenSSL 3.5 或更高版本生成一个 ML-KEM 密钥，妥善保管私钥，并把公钥粘贴到下方。",
+  "kem.key": "您的 ML-KEM 公钥（-----BEGIN PUBLIC KEY-----）",
+  "kem.ask": "发送密钥",
+  "kem.step2": "请在 {at} 之前用您的私钥解封装这段 {algorithm} 密文，并把输出的秘密粘贴到下方。",
+  "kem.secret": "秘密（64 个十六进制字符）",
+  "kem.issue": "签发证书",
+  "kem.again": "换一个密钥重新开始",
+  "kem.issuedHeading": "您的新 S/MIME 证书",
+  "kem.issuedSub": "一张序列号为 {serial} 的 {algorithm} 证书现在是您的 S/MIME 证书。请保存它，并与您的私钥一起导入邮件程序。",
+  "kem.save": "保存证书",
+  "done.kemChallenge": "您的 {algorithm} 密钥已被接受。请解封装下方的挑战并把秘密发回。",
+  "done.kemIssued": "您的 {algorithm} S/MIME 证书 {serial} 已签发并设置。"
 }

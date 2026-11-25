@@ -5313,6 +5313,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'links, the social icons, the copyright and the version ' +
           '(common/web_footer.ts). Answered on every listener; an address ' +
           'carrying this build\'s ?v= is cached for good.' },
+  { path: '/web/browser-check.js', group: 'Service',
+    name: 'The browser check every shell runs first', specs: [],
+    what: 'NON-SPEC (#2220). A script in ECMAScript 5, run before a static ' +
+          'surface\'s bundle, that asks whether the browser has fetch, ' +
+          'TextEncoder, URL and ECMAScript 2022 and, where it does not, ' +
+          'shows the notice the shell drew hidden in the reader\'s language ' +
+          '(common/web_browser_check.ts). Answered on every listener, ' +
+          'no-cache.' },
   { path: '/web/theme.css', group: 'Service',
     name: 'A realm\'s sign-in appearance stylesheet', specs: [],
     what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +
@@ -8035,6 +8043,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'bound before anything is listening. Whether the MAIN port is ' +
           'HTTPS is global.https, on /admin-api/config with the process\'s ' +
           'own settings. Read-only.' },
+  { path: '/admin-api/tls/key-exchange', group: 'Management API',
+    name: 'TLS key exchange negotiated',
+    specs: ['rfc8446', 'openapi'],
+    what: 'NON-SPEC (#2220). The key exchange group every completed TLS ' +
+          'handshake on this node\'s listeners negotiated since its front ' +
+          'process started, counted per listener and group, and how many ' +
+          'were post-quantum (an ML-KEM group). Drawn on ' +
+          '/admin/crypto-metadata. It changes nothing.' },
   { path: '/admin-api/tls/trust', group: 'Management API',
     name: 'Client-certificate truststore',
     specs: ['rfc5280', 'openapi'],

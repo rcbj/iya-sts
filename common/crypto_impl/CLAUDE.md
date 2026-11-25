@@ -279,3 +279,24 @@ certificate parsing, base64, UTF-8 and binary strings.
   HSS/LMS go to the caller's `opts.signer` with the UTF-8 of SignedInfo.
 * **Not in this change**: `symmetric_crypto.js` (the AES under `jose_jwe.js`)
   still runs forge's ciphers; it is JOSE, not XML.
+
+## Post-quantum in the token and in OpenPGP (#2220, 2026-11-25)
+
+* **`pkcs11.js` makes and signs SLH-DSA** (PKCS#11 3.2's `CKM_SLH_DSA`
+  0x2e, `CKM_SLH_DSA_KEY_PAIR_GEN` 0x2d, `CKK_SLH_DSA` 0x4b, the parameter
+  set on the key) beside ML-DSA, for SLH-DSA-SHA2-128s and -SHAKE-128s.
+  The numbers are written out: pkcs11js 2.1.7 carries the 3.0 headers.
+  `canGenerate()` of a post-quantum key now asks for the generation AND the
+  signing mechanism, because the realm's published set is made in the token
+  where it offers both (`helpers.js`'s `pqPairFor()`), and a key the token
+  could make and not sign with would publish a key that signs nothing.
+  `postQuantumOffer()` says which of the five it offers. SoftHSM2 2.6 offers
+  neither family, so `tests/pkcs11_pq_published_set.js` plays the token.
+* **`openpgp_pqc.js` reads SLH-DSA** (RFC 9980 section 7, ids 32–34):
+  standalone signatures over the dataDigest, v6 keys only, over any digest
+  of at least 256 bits (section 6.2.1; SHA-1 and SHA2-224 refused). The first
+  cut bound each set to one SHA3 digest, which would have refused a valid
+  SHA2-256 signature. `verifyComposite()` hands a standalone algorithm to
+  `verifyStandalone()`, which answers the same shape (`eddsa` true, the
+  SLH-DSA verdict in `mldsa`), so every caller — the self-signatures, a
+  detached signature, a cleartext challenge — is unchanged.

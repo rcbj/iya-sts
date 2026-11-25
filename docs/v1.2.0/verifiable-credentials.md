@@ -955,8 +955,13 @@ credential does not carry it. What happens next depends on the reason:
 | `keyCompromise`, `cACompromise`, `aACompromise`, `privilegeWithdrawn`, `unspecified`, any other | The key is no longer trusted. The next credential is signed by a **new key** of that algorithm family, under a new certificate. The old key is never certified again. It is not published, and this realm's Verifier refuses what it signed (`STS-PKI-0287`). |
 | `certificateHold` | Treated as the row above while the hold stands: a hold suspends trust, and certifying the same key again at once would undo it. If the hold is released, the old key is published and accepted again for what it signed, but it does not sign again, because a newer key exists. |
 
-There is no scheduled rotation of these keys yet. A revocation is what
-replaces one.
+**A scheduled rotation replaces each key too** (product mode). The hourly
+`keys.credential-signer-rotate` job makes the next key of a family once the
+current key is `keys.credentialSignerRotationIntervalDays` (365) old, counted
+from when the job first saw it, so an upgrade rotates nothing on its first
+start. The new key signs from then on. The key it replaces signs nothing
+more and stays in the issuer's JWKS and DID document, with its certificate,
+so every credential it signed keeps verifying. A rotation revokes nothing.
 
 **A post-quantum key has a certificate over itself.** The ML-DSA keys in the
 `hybrid-groups` signer model share their classical partner's certificate,

@@ -140,7 +140,7 @@ function childMain() {
          r.text.indexOf('<script src="/oauth2/consent.js" defer></script>') >
            0 &&
          r.text.indexOf('<link rel="stylesheet" href="/web/card.css">') > 0 &&
-         r.text.indexOf('<noscript>') > 0 && !/<form/.test(r.text) &&
+         /<noscript[ >]/.test(r.text) && !/<form/.test(r.text) &&
          !/consent-allow/.test(r.text),
          '1a. /oauth2/consent answers the shell: the bundle, the card, the ' +
          'notice, and no form', r.status + ' ' + r.text.slice(0, 500));

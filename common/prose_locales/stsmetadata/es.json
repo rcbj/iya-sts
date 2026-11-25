@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Las reglas del pie de página que dibuja el shell de cada superficie estática — los enlaces de documentación, contacto y acerca de, los iconos de redes sociales, el copyright y la versión (common/web_footer.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Un script en ECMAScript 5, ejecutado antes del bundle de una superficie estática, que comprueba si el navegador tiene fetch, TextEncoder, URL y ECMAScript 2022 y, si no los tiene, muestra el aviso que el shell dibujó oculto en el idioma del lector (common/web_browser_check.ts). Se responde en cada listener, no-cache."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Los colores de inicio de sesión del dominio como las propiedades personalizadas CSS que lee /web/card.css (common/branding.ts): los cuatro colores branding.* y los tonos derivados de ellos, construidos solo a partir de valores validados. Un shell la enlaza después de la tarjeta solo donde la apariencia del dominio difiere de la del servicio; una dirección que lleva su resumen como ?v= se guarda en caché para siempre."
@@ -2566,6 +2570,10 @@
   "stsmetadata.endpoints./admin-api/tls.what": {
     "en": "019419feb342ad45",
     "text": "GET /admin/tls en JSON: los ajustes tls.*, todos solo modificables con un reinicio porque el certificado se acuña y los sockets se enlazan antes de que nada escuche. Si el puerto PRINCIPAL es HTTPS lo decide global.https, en /admin-api/config con los ajustes propios del proceso. Solo lectura."
+  },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). El grupo de intercambio de claves que negoció cada negociación TLS completada en los listeners de este nodo desde que se inició su proceso frontal, contado por listener y grupo, y cuántos fueron poscuánticos (un grupo ML-KEM). Se muestra en /admin/crypto-metadata. No cambia nada."
   },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",

@@ -3100,6 +3100,265 @@ async function reconcileWithHierarchy(options) {
   return true;
 }
 
+// ===========================================================================
+// THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS RUNS (#2220, ASVS
+// 5.0.0 L3, key-management.md's Known gaps).
+//
+// `pki.start()` re-issues the listener certificate over the same key when
+// less than a third of its validity is left, and the console's Renew does the
+// same — so a node that ran past that point without a restart presented a
+// certificate nobody renewed until a client saw it expire. The per-process job
+// `tls.server-certificate-renew` asks the same question every hour, of the
+// certificates THIS process's sockets present, and re-issues through the same
+// `pki.certifyRegistered()`, so `takeIssuedCertificate()` puts the new leaf on
+// every socket in the same act (main port, LDAPS, the debugger, the custom
+// listeners' truststores) WITHOUT A RESTART, and the key does not change.
+//
+// **PER PROCESS, AND ONLY THE FRONT PROCESS DOES ANYTHING**, for this file's
+// rule that a socket is held by one process: every node's front process
+// presents a leaf over its OWN listener key (*THE LISTENER KEY IS KEPT PER
+// NODE*), so a cluster job — one node — would renew one node's listener and
+// leave the others. A request worker owns no socket and certified nothing
+// (`certifyServerCertificateUnderPki()`); its run is off, and it is handed the
+// renewed bundle by the front process's pass (`request_pool.js`,
+// `reconcileTheListener({ renew: true })`), the path a rebuilt hierarchy
+// already takes. An operator's `tls.certificateFile` is the operator's to
+// renew, as before.
+//
+// **ON BY DEFAULT, IN BOTH MODES**: it does at the third of the validity what
+// every restart already did, over the same key, so a pin on the key
+// (SubjectPublicKeyInfo) holds across it. `tls.serverCertificateRenewal` off
+// is the way back to "at start and on the console's Renew";
+// `tls.serverCertificateRenewLeadDays` renews earlier than the third.
+// ===========================================================================
+const LISTENER_RENEW_JOB = 'tls.server-certificate-renew';
+const LISTENER_RENEW_EVERY_MS = 3600 * 1000;
+let lastListenerRenewal = null;
+
+// The lead `tls.serverCertificateRenewLeadDays` asks for, in milliseconds; 0
+// leaves the third of the validity alone.
+function listenerRenewLeadMs() {
+  log.debug("Entering listenerRenewLeadMs().");
+  const days = Number(config.value('tls.serverCertificateRenewLeadDays'));
+  log.debug("Leaving listenerRenewLeadMs().");
+  return days > 0 ? days * 86400000 : 0;
+}
+
+/**
+ * The listener certificates this process presents that are due for renewal
+ * at `nowMs`: less than a third of the validity left, or inside
+ * `tls.serverCertificateRenewLeadDays`. Pure in its reading of each record.
+ *
+ * @param nowMs - the time, in epoch milliseconds; now when omitted
+ * @returns `{ algorithm, notAfter, why }` per certificate due
+ */
+function listenerCertificatesDue(nowMs) {
+  log.debug("Entering listenerCertificatesDue().");
+  const now = Number(nowMs) || Date.now();
+  const lead = listenerRenewLeadMs();
+  const out = [];
+  listenerCertificatesOwned().forEach(function (one) {
+    if (!one.certPem || one.selfSigned !== false) {
+      return;
+    }
+    let from = 0;
+    let to = 0;
+    try {
+      const read = stsCrypto.parseCertificate(one.certPem);
+      from = new Date(read.validFrom).getTime();
+      to = new Date(read.validTo).getTime();
+    } catch (e) {
+      // Unreadable is not "due": the hierarchy reconcile is what replaces a
+      // certificate this process cannot read back.
+      log.debug("Caught in listenerCertificatesDue(): " +
+                ((e && e.message) || e));
+      return;
+    }
+    const third = !(to - now > (to - from) / 3);
+    const inLead = lead > 0 && !(to - now > lead);
+    if (third || inLead) {
+      out.push({ algorithm: one.algorithm,
+                 notAfter: new Date(to).toISOString(),
+                 why: third ? 'less than a third of its validity remains'
+                            : 'it expires within ' +
+                              'tls.serverCertificateRenewLeadDays' });
+    }
+  });
+  log.debug("Leaving listenerCertificatesDue(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Why the listener renewal job is off in this process, or ''.
+ *
+ * @returns the reason
+ */
+function listenerRenewalOffReason() {
+  log.debug("Entering listenerRenewalOffReason().");
+  let why = '';
+  if (process.env.STS_REQUEST_WORKER) {
+    why = 'a request worker holds no listener; the front process renews ' +
+          'the certificate and hands it here';
+  } else if (config.value('tls.serverCertificateRenewal') === false) {
+    why = 'tls.serverCertificateRenewal is off';
+  } else if (!SERVER_CERTIFICATE ||
+             SERVER_CERTIFICATE.algorithm === 'supplied') {
+    why = 'the certificate is the operator\'s (tls.certificateFile), and ' +
+          'renewing it is theirs';
+  } else if (SERVER_CERTIFICATE.handedIn) {
+    why = 'this process was handed its certificate and holds no listener';
+  }
+  log.debug("Leaving listenerRenewalOffReason(). " + (why || 'on'));
+  return why;
+}
+
+/**
+ * Renews the listener certificates this process presents that are due,
+ * over the same keys, and puts them on every socket without a restart.
+ * Never rejects. The front process's `request_pool.reconcileTheListener()`
+ * calls it inside its one pass at a time, and hands the result to every
+ * request worker.
+ *
+ * @param nowMs - the time; now when omitted
+ * @returns a promise of `{ renewed, due, why }`
+ */
+async function renewListenerCertificate(nowMs) {
+  log.debug("Entering renewListenerCertificate().");
+  const off = listenerRenewalOffReason();
+  if (off) {
+    lastListenerRenewal = { renewed: false, due: [], why: off };
+    log.debug("Leaving renewListenerCertificate(). Off.");
+    return lastListenerRenewal;
+  }
+  const due = listenerCertificatesDue(nowMs);
+  if (!due.length) {
+    lastListenerRenewal = { renewed: false, due: [], why: 'not due' };
+    log.debug("Leaving renewListenerCertificate(). Not due.");
+    return lastListenerRenewal;
+  }
+  const mine = listenerCertificatesOwned();
+  const was = mine.map(function (one) {
+    return one.fingerprint256;
+  }).join(',');
+  try {
+    // NEVER BUILDS A BRANCH: one stale since this process adopted it is the
+    // hierarchy reconcile's to wait for (`buildBranch: false`'s rule).
+    await require('../common/pki').certifyRegistered({
+      repairBranch: false, renewWithinMs: listenerRenewLeadMs() });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-TLS-0078') + 'tls: the listener ' +
+              'certificate could not be renewed: ' + e.message + '. It ' +
+              'goes on presenting the one it has, which expires ' +
+              due[0].notAfter + '.');
+    audit.record({ action: 'tls.server-certificate.renew',
+                   protocol: 'TLS', channel: 'scheduler',
+                   outcome: 'failure', errorCode: 'STS-TLS-0078',
+                   summary: 'The listener certificate could not be renewed',
+                   detail: { due: due, why: String(e.message || e) } });
+    lastListenerRenewal = { renewed: false, due: due,
+                            why: String(e.message || e) };
+    log.debug("Leaving renewListenerCertificate(). Failed.");
+    return lastListenerRenewal;
+  }
+  const now = mine.map(function (one) {
+    return one.fingerprint256;
+  }).join(',');
+  if (now === was) {
+    log.warn(errorCodes.tag('STS-TLS-0078') + 'tls: the listener ' +
+             'certificate is due for renewal (' + due[0].why + ') and was ' +
+             'not re-issued, so it goes on presenting the one that expires ' +
+             due[0].notAfter + '; see the pki lines above for why.');
+    audit.record({ action: 'tls.server-certificate.renew',
+                   protocol: 'TLS', channel: 'scheduler',
+                   outcome: 'failure', errorCode: 'STS-TLS-0078',
+                   summary: 'The listener certificate is due for renewal ' +
+                            'and was not re-issued',
+                   detail: { due: due } });
+    lastListenerRenewal = { renewed: false, due: due,
+                            why: 'not re-issued' };
+    log.debug("Leaving renewListenerCertificate(). Not re-issued.");
+    return lastListenerRenewal;
+  }
+  audit.record({ action: 'tls.server-certificate.renew',
+                 protocol: 'TLS', channel: 'scheduler', outcome: 'success',
+                 summary: due.length + ' listener certificate(s) renewed ' +
+                          'over the same key',
+                 detail: { due: due,
+                           notAfter: SERVER_CERTIFICATE.notAfter || '' } });
+  log.info('tls: the listener certificate was renewed over the same key (' +
+           due[0].why + ') and is on every socket of this process now; it ' +
+           'expires ' + (SERVER_CERTIFICATE.notAfter || 'later') + '.');
+  lastListenerRenewal = { renewed: true, due: due, why: '' };
+  log.debug("Leaving renewListenerCertificate(). Renewed.");
+  return lastListenerRenewal;
+}
+
+// The job, registered at this module's load in EVERY process
+// (cluster/CLAUDE.md: every process registers the same jobs) and off in a
+// request worker. Its run goes through the front process's one pass at a
+// time, so a renewal never races a hierarchy reconcile on the socket.
+function registerListenerRenewalJob() {
+  log.debug("Entering registerListenerRenewalJob().");
+  let scheduler = null;
+  try {
+    scheduler = require('../cluster/scheduler');
+  } catch (e) {
+    log.debug("Caught in registerListenerRenewalJob(): " +
+              ((e && e.message) || e));
+    scheduler = null;
+  }
+  if (!scheduler || typeof scheduler.register !== 'function' ||
+      scheduler.job(LISTENER_RENEW_JOB)) {
+    log.debug("Leaving registerListenerRenewalJob(). None, or already " +
+              "there.");
+    return false;
+  }
+  scheduler.register({
+    id: LISTENER_RENEW_JOB,
+    title: 'Listener certificate renewal',
+    describe: 'Renews the certificate this process\'s main port, LDAPS and ' +
+              'debugger listeners present, over the same key, once less ' +
+              'than a third of its validity is left or it is inside ' +
+              'tls.serverCertificateRenewLeadDays, and puts it on every ' +
+              'socket without a restart. Runs in every node\'s front ' +
+              'process, which hands the renewed certificate to its request ' +
+              'workers.',
+    owner: 'tls/tls_server.js',
+    kind: 'per-process',
+    everyMs: function () {
+      return LISTENER_RENEW_EVERY_MS;
+    },
+    off: function () {
+      return listenerRenewalOffReason();
+    },
+    manual: true,
+    run: function () {
+      let pass = null;
+      try {
+        pass = require('../common/request_pool')
+          .reconcileTheListener({ renew: true });
+      } catch (e) {
+        // No pool in this process: the renewal alone.
+        log.debug("Caught in a callback in registerListenerRenewalJob(): " +
+                  ((e && e.message) || e));
+        pass = renewListenerCertificate();
+      }
+      return Promise.resolve(pass).then(function () {
+        const done = lastListenerRenewal || { renewed: false, due: [],
+                                              why: 'not run' };
+        return { summary: done.renewed ? 'renewed'
+                                       : (done.due.length ? 'due, not renewed'
+                                                          : 'not due'),
+                 why: done.why || undefined };
+      });
+    }
+  });
+  log.debug("Leaving registerListenerRenewalJob().");
+  return true;
+}
+
+registerListenerRenewalJob();
+
 // ---------------------------------------------------------------------------
 // WHAT THE FRONT PROCESS HANDS A WORKER, AND WHAT A WORKER DOES WITH A SECOND
 // ONE (2026-09-12).
@@ -7721,6 +7980,11 @@ function connectionView(req) {
       encrypted: !!socket.encrypted,
       protocol: tlsFact('protocol'),
       cipher: tlsFact('cipher'),
+      // THE KEY EXCHANGE THIS CONNECTION NEGOTIATED (#2220), read off the
+      // session the server holds — tls/key_exchange.ts. Lazily: a library
+      // that requires nothing of this module.
+      keyExchange: socket.encrypted
+        ? require('./key_exchange').negotiatedOn(socket) : null,
       peerAddress: clientAddress.normalise(socket.remoteAddress) || null,
       clientAddress: clientAddress.clientAddressOf(req)
     },
@@ -8113,6 +8377,11 @@ module.exports = {
   // The three the request-worker pool uses. See their headers: the hierarchy
   // can be rebuilt in a process that does not own this socket.
   reconcileWithHierarchy: reconcileWithHierarchy,
+  // The listener certificate's renewal while the process runs (#2220).
+  renewListenerCertificate: renewListenerCertificate,
+  listenerCertificatesDue: listenerCertificatesDue,
+  listenerRenewalOffReason: listenerRenewalOffReason,
+  LISTENER_RENEW_JOB: LISTENER_RENEW_JOB,
   // Whether the listener is waiting for a process branch another process is
   // building (2026-09-13) — `common/request_pool.js` arms its fallback on it.
   listenerAwaitsBranch: listenerAwaitsBranch,
