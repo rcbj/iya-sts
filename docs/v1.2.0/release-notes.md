@@ -6,6 +6,15 @@ title: Release notes
 
 ## 1.2.0
 
+### New: OpenID Federation Trust Anchors from truststores
+
+A realm's OpenID Federation Trust Anchors may now come from key-set
+truststores bound to `oidfed-anchor:<entity id>`, named by the new
+`oidfed-anchor` use case (#2150). Its default, `registered-keys`, keeps
+the anchors registered under OpenID Federation, so nothing changes until
+an administrator assigns a key set. An anchor's key set is always pasted
+keys, never a `jwks_uri`.
+
 ### New: key sets as truststores
 
 A truststore may now hold a key set bound to one party: a client, a
