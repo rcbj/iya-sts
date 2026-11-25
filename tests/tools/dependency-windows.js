@@ -22,11 +22,21 @@
 // the published image, which covers what `npm audit` cannot see: the operating
 // system's packages, the Node runtime and every tree shipped. A finding with
 // no fixed version is listed and cannot fail: nothing can be upgraded to.
+//
+// **TWO LOCKFILES, ONE SET OF RULES (#2159).** The root `package-lock.json`
+// and `sdk/package-lock.json`, which pins the optional SDKs every image
+// installs under /opt/sts-sdk (#2141), are each audited, dated and held to
+// the same windows, and every line names the lockfile it came from. An SDK an
+// image installs only when `STS_CLOUD_SDKS` names it is still shipped by the
+// images that name it, so a finding there is not "optional" and is not
+// discounted. `--updates` reads the SDK workspaces' pins as direct
+// dependencies too. A lockfile whose audit cannot be read fails the run.
 // ---------------------------------------------------------------------------
 
 const childProcess = require('child_process');
 const fs = require('fs');
 const https = require('https');
+const path = require('path');
 
 const log = {
   debug: function (message) {
@@ -44,6 +54,12 @@ const REVIEW_DAYS = 90;
 // Trivy's severities in SECURITY.md's words; the others have no window.
 const TRIVY_SEVERITY = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'moderate' };
 const REVIEWS_FILE = '.github/dependency-reviews.json';
+// Every lockfile the images install from, relative to the repository root
+// (#2159): `dir` is where `npm audit` runs.
+const LOCKFILES = [
+  { dir: '.', name: 'package-lock.json' },
+  { dir: 'sdk', name: 'sdk/package-lock.json' }
+];
 
 /**
  * Picks the advisories that are past their window.
@@ -147,17 +163,47 @@ function oldestNewer(times, locked, latest) {
 }
 
 /**
- * Asks the registry about every direct dependency the lockfile pins.
+ * The direct dependencies of a lockfile's manifest: the root's own, or, for
+ * a manifest of npm workspaces (sdk/), each workspace's.
  *
+ * @param {string} dir - the directory holding package.json
+ * @returns {Array<string>} package names
+ */
+function directDependencies(dir) {
+  log.debug("Entering directDependencies().");
+  const read = function (file) {
+    return JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+  };
+  const manifests = [read('package.json')];
+  if (Array.isArray(manifests[0].workspaces)) {
+    const base = path.join(dir, 'packages');
+    fs.readdirSync(base).sort().forEach(function (one) {
+      manifests.push(read(path.join('packages', one, 'package.json')));
+    });
+  }
+  const names = {};
+  manifests.forEach(function (one) {
+    Object.keys(Object.assign({}, one.dependencies, one.optionalDependencies))
+      .forEach(function (name) {
+        names[name] = true;
+      });
+  });
+  log.debug("Leaving directDependencies().");
+  return Object.keys(names).sort();
+}
+
+/**
+ * Asks the registry about every direct dependency a lockfile pins.
+ *
+ * @param {{dir: string, name: string}} lockfile - one of LOCKFILES
  * @returns {Array<object>} rows for `updatesOverdue()`
  */
-function dependencyUpdates() {
+function dependencyUpdates(lockfile) {
   log.debug("Entering dependencyUpdates().");
-  const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+  const lock = JSON.parse(fs.readFileSync(path.join(lockfile.dir,
+    'package-lock.json'), 'utf8'));
   const rows = [];
-  Object.keys(Object.assign({}, manifest.dependencies,
-                            manifest.optionalDependencies))
+  directDependencies(lockfile.dir)
     .forEach(function (name) {
       const pinned = lock.packages['node_modules/' + name] || {};
       if (!pinned.version || pinned.link ||
@@ -169,6 +215,7 @@ function dependencyUpdates() {
       { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
       const view = JSON.parse(ran.stdout || '{}');
       rows.push({ package: name, locked: pinned.version,
+                  lockfile: lockfile.name,
                   oldestNewerPublished: oldestNewer(view.time || {},
                     pinned.version, view['dist-tags.latest']) });
     });
@@ -177,30 +224,61 @@ function dependencyUpdates() {
 }
 
 /**
- * Runs `npm audit` and collects the distinct advisories it names.
+ * Collects the distinct advisories an `npm audit --json` report names.
  *
- * @returns {Array<{id: string, severity: string, package: string}>} advisories
+ * @param {object} report - the parsed report
+ * @param {string} lockfile - the lockfile's name, carried on every row
+ * @returns {Array<{id: string, severity: string, package: string,
+ *   lockfile: string}>} advisories
  */
-function audited() {
-  log.debug("Entering audited().");
-  const ran = childProcess.spawnSync('npm',
-    ['audit', '--omit=dev', '--json'],
-    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  const report = JSON.parse(ran.stdout);
+function auditFindings(report, lockfile) {
+  log.debug("Entering auditFindings().");
   const found = {};
   Object.keys(report.vulnerabilities || {}).forEach(function (name) {
     (report.vulnerabilities[name].via || []).forEach(function (via) {
       const match = via && via.url && /GHSA-[a-z0-9-]+/i.exec(via.url);
       if (match) {
         found[match[0]] = { id: match[0], severity: via.severity,
-                            package: via.name };
+                            package: via.name, lockfile: lockfile };
       }
     });
   });
-  log.debug("Leaving audited().");
+  log.debug("Leaving auditFindings().");
   return Object.keys(found).map(function (id) {
     return found[id];
   });
+}
+
+/**
+ * Runs `npm audit` over one lockfile and collects its advisories.
+ *
+ * @param {{dir: string, name: string}} lockfile - one of LOCKFILES
+ * @returns {Array<object>} advisories, each naming the lockfile
+ */
+function audited(lockfile) {
+  log.debug("Entering audited().");
+  const ran = childProcess.spawnSync('npm',
+    ['audit', '--omit=dev', '--json'],
+    { cwd: lockfile.dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  let report;
+  try {
+    report = JSON.parse(ran.stdout);
+  } catch (e) {
+    // A CHECK THAT CANNOT TELL MUST NOT PASS: an unreadable audit of either
+    // lockfile is the run's failure, not an empty list.
+    log.debug("Caught in audited(): " + ((e && e.message) || e));
+    log.debug("Leaving audited().");
+    throw new Error('npm audit of ' + lockfile.name + ' gave no report: ' +
+                    String(ran.stderr || '').trim());
+  }
+  if (report.error) {
+    log.debug("Leaving audited().");
+    throw new Error('npm audit of ' + lockfile.name + ' failed: ' +
+                    JSON.stringify(report.error));
+  }
+  const found = auditFindings(report, lockfile.name);
+  log.debug("Leaving audited().");
+  return found;
 }
 
 /**
@@ -247,19 +325,23 @@ function publishedOn(id) {
  */
 async function main() {
   log.debug("Entering main().");
-  const advisories = audited();
-  for (const one of advisories) {
-    one.published = await publishedOn(one.id);
+  let failed = 0;
+  for (const lockfile of LOCKFILES) {
+    const advisories = audited(lockfile);
+    for (const one of advisories) {
+      one.published = await publishedOn(one.id);
+    }
+    const late = overdue(advisories, Date.now());
+    advisories.forEach(function (one) {
+      console.log([late.indexOf(one) >= 0 ? 'OVERDUE' : 'within',
+                   one.lockfile, one.severity, one.package, one.id,
+                   one.published || '(no date)'].join('  '));
+    });
+    console.log(lockfile.name + ': ' + advisories.length +
+                ' advisory(ies), ' + late.length +
+                ' past the window SECURITY.md gives.');
+    failed += late.length;
   }
-  const late = overdue(advisories, Date.now());
-  advisories.forEach(function (one) {
-    console.log([late.indexOf(one) >= 0 ? 'OVERDUE' : 'within',
-                 one.severity, one.package, one.id,
-                 one.published || '(no date)'].join('  '));
-  });
-  console.log(advisories.length + ' advisory(ies), ' + late.length +
-              ' past the window SECURITY.md gives.');
-  let failed = late.length;
   const named = process.argv.filter(function (one) {
     return one.indexOf('--image-report=') === 0;
   })[0];
@@ -281,10 +363,14 @@ async function main() {
   }
   if (process.argv.indexOf('--updates') >= 0) {
     const reviews = JSON.parse(fs.readFileSync(REVIEWS_FILE, 'utf8'));
-    const waiting = updatesOverdue(dependencyUpdates(), reviews, Date.now());
+    let rows = [];
+    LOCKFILES.forEach(function (lockfile) {
+      rows = rows.concat(dependencyUpdates(lockfile));
+    });
+    const waiting = updatesOverdue(rows, reviews, Date.now());
     waiting.forEach(function (one) {
-      console.log(['UNREVIEWED', one.package, one.locked, 'newer since',
-                   one.oldestNewerPublished].join('  '));
+      console.log(['UNREVIEWED', one.lockfile, one.package, one.locked,
+                   'newer since', one.oldestNewerPublished].join('  '));
     });
     console.log(waiting.length + ' package(s) past the ' +
                 REVIEW_DAYS + '-day review.');
@@ -304,6 +390,8 @@ if (require.main === module) {
 }
 
 module.exports = { overdue: overdue, WINDOW_DAYS: WINDOW_DAYS,
+                   LOCKFILES: LOCKFILES, auditFindings: auditFindings,
+                   directDependencies: directDependencies,
                    imageFindings: imageFindings,
                    updatesOverdue: updatesOverdue,
                    oldestNewer: oldestNewer };

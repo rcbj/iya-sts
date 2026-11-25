@@ -165,6 +165,12 @@ Scope: `admin:read`.
 | `complianceStates[]` | string |  |  |
 | `decisions` | object |  |  |
 | `decisions.acr` | string |  |  |
+| `decisions.adminDevice` | object |  |  |
+| `decisions.adminDevice.armed` | boolean |  |  |
+| `decisions.adminDevice.armedAt` | string |  |  |
+| `decisions.adminDevice.inForce` | boolean |  |  |
+| `decisions.adminDevice.setting` | string |  |  |
+| `decisions.adminDevice.value` | string |  |  |
 | `decisions.claim` | string |  |  |
 | `decisions.compliantDeviceAttested` | boolean |  |  |
 | `decisions.expectRegistered` | boolean |  |  |

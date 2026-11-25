@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "Se cambió el almacén de confianza de firmantes o un ajuste de PKI paranoico"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Se cambió un almacén de confianza con nombre o la asignación de almacenes de confianza de un caso de uso"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Se derivaron las claves Kerberos de una persona a partir de su contraseña"
@@ -1182,6 +1186,38 @@
   "audit.actions.authzen.access-request.denials-full.label": {
     "en": "d4a30614c3be855a",
     "text": "El almacén de denegaciones solicitables de AuthZEN estaba lleno"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "Un acto de administración quedó retenido para un segundo administrador"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "Un acto de administración retenido fue aprobado y ejecutado"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "Un acto de administración retenido fue rechazado"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "Un acto de administración retenido fue retirado por quien lo pidió"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "Un acto de administración retenido caducó sin decisión"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "Un acto de administración retenido fue aprobado y no se ejecutó"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "A alguien se le denegó la decisión de un acto de administración retenido"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "Un acto de administración de alto riesgo se ejecutó sin un segundo administrador"
   },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
@@ -2354,6 +2390,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "Se estableció el nivel de riesgo de un dispositivo registrado"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Los administradores del dominio necesitan ahora un dispositivo registrado conforme"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

@@ -184,6 +184,9 @@ class PkiTrustPage {
     if (row.kind === 'view' && row.name === 'signers') {
       return t.html('consolePkiTrust.whereSigners');
     }
+    if (row.kind === 'view' && row.storeKind === 'jwks') {
+      return t.html('consolePkiTrust.whereRegistered');
+    }
     if (row.kind === 'view') {
       return t.html('consolePkiTrust.whereClient') + ' <a href="' +
         '/admin/tls/trust">' + t.html('consolePkiTrust.clientLink') + '</a>';
@@ -219,11 +222,64 @@ class PkiTrustPage {
         : '') + '</td></tr>';
   }
 
+  // A key set's row (#2149): its party, its keys or jwks_uri, who trusts it,
+  // and for one this realm holds, a form that replaces its keys.
+  private static keySetOf(row: Json, writable: boolean, ctx: Json): string {
+    const t = ctx.t;
+    const named = row.kind === 'named';
+    const holds = !named ? t.html('consolePkiTrust.keySetRegistered') :
+      '<div>' + t.html('consolePkiTrust.keySetFor', { party: row.party }) +
+      '</div><div class="sub">' + (row.jwksUri
+        ? t.html('consolePkiTrust.keySetUri', { uri: row.jwksUri })
+        : t.html('consolePkiTrust.keySetKeys', { n: String(row.keys || 0) })) +
+      '</div>';
+    const detail = named && writable
+      ? '<details><summary>' + t.html('consolePkiTrust.setKeysHeading') +
+        '</summary><form method="post" action="' + PAGE + '#' + TAB_STORES +
+        '"><input type="hidden" name="action" value="set-keys">' +
+        '<input type="hidden" name="name" value="' + kit.esc(row.name) +
+        '"><textarea name="jwks" rows="5" aria-label="' +
+        kit.esc(t.text('consolePkiTrust.createJwks')) + '" placeholder=' +
+        '"{&quot;keys&quot;: [ … ]}"></textarea><div class="formrow">' +
+        '<label>' + t.html('consolePkiTrust.createJwksUri') + ' <input ' +
+        'type="url" name="jwksUri" size="48"></label></div>' +
+        '<div class="formrow"><button type="submit">' +
+        t.html('consolePkiTrust.setKeysButton') + '</button></div></form>' +
+        '</details>'
+      : '';
+    const control = writable
+      ? '<form method="post" action="' + PAGE + '#' + TAB_STORES + '">' +
+        '<input type="hidden" name="action" value="delete">' +
+        '<input type="hidden" name="name" value="' + kit.esc(row.name) + '">' +
+        '<button type="submit" class="secondary">' +
+        t.html('consolePkiTrust.deleteStore') + '</button></form>'
+      : '<span class="sub">' + PkiTrustPage.whereChanged(row, ctx) +
+        '</span>';
+    return '<tr><td><code>' + kit.esc(row.name) + '</code>' +
+      (row.description ? '<div class="sub">' + kit.esc(row.description) +
+        '</div>' : '') +
+      (row.problem ? '<div class="state-invalid">' + kit.esc(row.problem) +
+        '</div>' : '') + detail + '</td><td>' +
+      PkiTrustPage.kindText(row.kind, t) + '<div class="sub">' +
+      t.html('consolePkiTrust.kindKeySet') + '</div></td><td>' +
+      (row.scope === 'service' ? t.html('consolePkiTrust.scopeService')
+                               : t.html('consolePkiTrust.scopeRealm')) +
+      '</td><td>' + holds + '</td><td>' +
+      ((row.usedBy || []).map(function (one: string) {
+        return '<code>' + kit.esc(one) + '</code>';
+      }).join(', ') || '<span class="sub">' +
+        t.html('consolePkiTrust.nobody') + '</span>') + '</td><td>' +
+      control + '</td></tr>';
+  }
+
   // One truststore's row: what it is, what it holds, who trusts it, and for
   // a named truststore this realm holds, its certificates and controls.
   private static storeOf(row: Json, ctx: Json): string {
     const t = ctx.t;
     const writable = !row.readOnly && row.kind === 'named' && ctx.write;
+    if (row.storeKind === 'jwks') {
+      return PkiTrustPage.keySetOf(row, writable, ctx);
+    }
     const holds = t.html('consolePkiTrust.holds', {
       anchors: String(row.anchors), intermediates: String(row.intermediates)
     }) + (row.kind === 'spiffe'
@@ -297,7 +353,25 @@ class PkiTrustPage {
         '<div class="formrow"><label for="truststore-description">' +
         t.html('consolePkiTrust.createDescription') + '</label><input ' +
         'type="text" id="truststore-description" name="description" ' +
-        'size="48"></div><div class="formrow"><button type="submit">' +
+        'size="48"></div>' +
+        // A KEY SET (#2149): bound to one party, its keys pasted or fetched.
+        '<div class="formrow"><label for="truststore-kind">' +
+        t.html('consolePkiTrust.createKind') + '</label><select ' +
+        'id="truststore-kind" name="kind"><option value="x509">' +
+        t.html('consolePkiTrust.createKindX509') + '</option><option ' +
+        'value="jwks">' + t.html('consolePkiTrust.createKindJwks') +
+        '</option></select></div>' +
+        '<div class="formrow"><label for="truststore-party">' +
+        t.html('consolePkiTrust.createParty') + '</label><input ' +
+        'type="text" id="truststore-party" name="party" size="40" ' +
+        'placeholder="client:my-client"></div>' +
+        '<div class="formrow"><label for="truststore-jwks">' +
+        t.html('consolePkiTrust.createJwks') + '</label><textarea ' +
+        'id="truststore-jwks" name="jwks" rows="4"></textarea></div>' +
+        '<div class="formrow"><label for="truststore-jwks-uri">' +
+        t.html('consolePkiTrust.createJwksUri') + '</label><input ' +
+        'type="url" id="truststore-jwks-uri" name="jwksUri" size="48">' +
+        '</div><div class="formrow"><button type="submit">' +
         t.html('consolePkiTrust.createButton') + '</button></div></form>')
       : kit.note(t.html('consolePkiTrust.needsWrite'));
     return '<h2 data-tab="truststores">' +

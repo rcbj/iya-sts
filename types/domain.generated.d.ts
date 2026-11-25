@@ -1096,10 +1096,13 @@ declare namespace IyaDomain {
 
   /**
    * A named truststore: certificate authorities a use case is assigned to trust
-   * (#2118).
+   * (#2118), or a key set bound to one party (#2149).
    */
   interface Truststore {
     kind?: string;
+    party?: string;
+    jwks?: string;
+    jwksUri?: string;
     addedBy?: string;
     realm?: string;
   }

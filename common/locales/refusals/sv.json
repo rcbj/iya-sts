@@ -416,6 +416,7 @@
   "password.reused": "Det lösenordet har använts för det här kontot nyligen. Den här sfärens lösenordspolicy avvisar det nuvarande lösenordet och de {history} före det (profil ”{profile}”). Välj ett som du inte har använt här.",
   "password.rotates": "{account} är ett tjänstkonto vars lösenord roteras via dess push-destination, så det kan inte anges för hand: destinationen är där dess konsumenter läser det. Använd Rotate now på dess sida, eller POST /admin-api/users/rotate-password.",
   "policy.compliantDeviceRequired": "En registrerad enhet som uppfyller kraven krävs.",
+  "policy.adminCompliantDeviceRequired": "Administrationskonsolen kräver en registrerad enhet som uppfyller kraven. Logga in från en enhet som är registrerad på dig och markerad som kompatibel: registrera en på sidan Enheter i användarportalen och be en annan administratör eller er enhetshantering att markera den som kompatibel.",
   "policy.deviceBoundPending": "Programmet kräver en enhetsbunden session, och registreringen för den här är inte klar.",
   "policy.deviceBoundRefused": "Programmet kräver en enhetsbunden session, och den här {fact, select, skipped {hoppades över.} other {bands inte i tid.}}",
   "policy.indeterminate": "utfärdandepolicyn kunde inte utvärderas{anyStatus, select, yes {: {status}} other {}}. Ingenting utfärdas vid ett Indeterminate, eftersom alternativet är att utfärda vid ett fel.",

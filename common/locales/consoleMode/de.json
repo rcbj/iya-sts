@@ -30,5 +30,16 @@
   "waivedBy": "IN DIESEM VERTRAUENSBEREICH VON EINEM ADMINISTRATOR AUSGESETZT: <code>{requirement}</code> ({section}, ein {level}), weil <code>{setting}</code> eingeschaltet ist. Jede andere Anforderung des BCP bleibt in Kraft.",
   "requirementNotMet": "HIER NICHT ERFÜLLT: <code>{requirement}</code> ({section}), wegen <code>{setting}</code>.",
   "waivedPerApplication": "JE ANWENDUNG: eine Anwendung verwendet diese Antworttypen nur, wenn ihr <code>{attribute}</code> denjenigen aufführt, den sie verlangt, gesetzt von einem Administrator oder dem Eigentümer der Anwendung. Ein Client, der sich selbst registriert, darf nur das aktivieren, was <code>{setting}</code> nennt: {value}.",
-  "waivedPerApplicationNone": "JE ANWENDUNG: eine Anwendung verwendet diese Antworttypen nur, wenn ihr <code>{attribute}</code> denjenigen aufführt, den sie verlangt, gesetzt von einem Administrator oder dem Eigentümer der Anwendung. Ein Client, der sich selbst registriert, darf keinen davon aktivieren, weil <code>{setting}</code> leer ist."
+  "waivedPerApplicationNone": "JE ANWENDUNG: eine Anwendung verwendet diese Antworttypen nur, wenn ihr <code>{attribute}</code> denjenigen aufführt, den sie verlangt, gesetzt von einem Administrator oder dem Eigentümer der Anwendung. Ein Client, der sich selbst registriert, darf keinen davon aktivieren, weil <code>{setting}</code> leer ist.",
+  "dualHeading": "Vier-Augen-Freigabe",
+  "dualLead": "Ob risikoreiche Administratoraktionen in diesem Bereich auf einen zweiten Administrator warten (<code>admin.dualControl</code>). Es ist in beiden Modi eine Einstellung des Bereichs, kein Modusunterschied; es steht hier, weil diese Seite beantwortet, ob es in Kraft ist.",
+  "dualInForce": "In Kraft: Eine zurückgehaltene Aktion wartet auf einen zweiten Administrator.",
+  "dualOnNotInForce": "An, aber nicht für jede Berechtigung in Kraft.",
+  "dualOff": "Aus.",
+  "dualThAuthority": "Berechtigung",
+  "dualThHolders": "Personen, die entscheiden könnten",
+  "dualThInForce": "In Kraft",
+  "dualYes": "ja",
+  "dualNo": "nein",
+  "dualLink": "Ausstehende Freigaben ({n, plural, =1 {eine Aktion wartet} other {# Aktionen warten}})"
 }

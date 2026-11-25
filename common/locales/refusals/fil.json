@@ -416,6 +416,7 @@
   "password.reused": "Ginamit kamakailan ang password na iyon para sa account na ito. Tinatanggihan ng password policy ng realm na ito ang kasalukuyang password at ang {history} bago nito (profile na “{profile}”). Pumili ng hindi mo pa nagagamit dito.",
   "password.rotates": "Ang {account} ay isang service account na umiikot ang password sa push destination nito, kaya hindi ito maitatakda nang mano-mano: sa destination binabasa ito ng mga gumagamit nito. Gamitin ang “I-rotate ngayon” sa pahina nito, o POST /admin-api/users/rotate-password.",
   "policy.compliantDeviceRequired": "Kailangan ng compliant na nakarehistrong device.",
+  "policy.adminCompliantDeviceRequired": "Kailangan ng admin console ng compliant na nakarehistrong device. Mag-sign in mula sa device na nakarehistro sa iyo at minarkahang compliant: magrehistro ng isa sa pahinang Devices ng user portal, at hilingin sa ibang administrator o sa iyong device management na markahan itong compliant.",
   "policy.deviceBoundPending": "Kailangan ng application ang session na nakatali sa device, at hindi pa tapos ang pagrehistro para sa session na ito.",
   "policy.deviceBoundRefused": "Kailangan ng application ang session na nakatali sa device, at ang session na ito ay {fact, select, skipped {nilaktawan.} other {hindi naitali sa tamang oras.}}",
   "policy.indeterminate": "hindi ma-evaluate ang patakaran sa pag-isyu{anyStatus, select, yes {: {status}} other {}}. Walang iniisyu sa isang Indeterminate, dahil ang alternatibo ay ang mag-isyu sa isang error.",

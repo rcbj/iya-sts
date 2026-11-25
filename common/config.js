@@ -7931,6 +7931,35 @@ const SETTINGS = [
                  'policy. A door with no device evidence (a Kerberos ' +
                  'ticket, a password grant without DPoP) is refused. Per ' +
                  'realm, like every setting.' },
+  // #2179 (2026-11-24, ASVS 5.0.0 8.4.2): the administrative surface — a
+  // person's token to the console or carrying an admin:* scope — needs a
+  // compliant registered device in product. `auto` resolves through
+  // `mode.requiresCompliantDeviceForAdmin()`; the rule is the issuance
+  // policy's `device-required-admin`, and it is ARMED per realm on first
+  // proof (`common/admin_device_requirement.ts` argues the no-lockout rule).
+  { key: 'devices.requireCompliantDeviceForAdmin', group: 'Devices',
+    label: 'Administrators need a compliant registered device',
+    env: 'STS_DEVICES_REQUIRE_COMPLIANT_DEVICE_FOR_ADMIN', type: 'enum',
+    dflt: 'auto', runtime: true, enumValues: ['auto', 'on', 'off'],
+    description: 'Whether a PERSON is issued a credential for the ' +
+                 'administrative surface — a token to the admin console, ' +
+                 'or one carrying an admin:* scope for /admin-api — only ' +
+                 'from a compliant registered device of their own (or an ' +
+                 'application\'s), attested too where ' +
+                 'devices.compliantDeviceAttested says so ' +
+                 '(STS-DEVICE-0054). **`auto` is on in product mode and ' +
+                 'off in development**; `on` and `off` force it. Asked at ' +
+                 'the token endpoint, every grant and every refresh. ' +
+                 'Programs (client credentials, service accounts) are ' +
+                 'never asked. NO LOCKOUT: the requirement is ARMED in a ' +
+                 'realm the first time a console administrator is issued ' +
+                 'such a credential from a compliant device; until then ' +
+                 'every administrator is admitted as before, and once ' +
+                 'armed it stays armed. Register a device on the user ' +
+                 'portal\'s Devices page, have it marked compliant on ' +
+                 'Directory > Devices or by your device management, and ' +
+                 'sign in with the passkey or certificate on it. Per ' +
+                 'realm, like every setting.' },
   { key: 'devices.compliantDeviceAttested', group: 'Devices',
     label: 'A compliant device must also be attested',
     env: 'STS_DEVICES_COMPLIANT_DEVICE_ATTESTED', type: 'bool', dflt: false,
@@ -10911,6 +10940,36 @@ const SETTINGS = [
                  'default realm\'s group is the service\'s Security ' +
                  'Administrators, over every realm; a realm\'s own group ' +
                  'confines its members to that realm.' },
+
+  // TWO-PERSON APPROVAL (#2166, ASVS 5.0.0 2.3.5; rcbj's decision of
+  // 2026-11-24: built, and off by default). A realm's own setting: the
+  // default realm's holds the service's acts, a realm's its own.
+  // `admin-core/dual_control.ts` argues it.
+  { key: 'admin.dualControl', group: 'Admin console',
+    label: 'Two-person approval for high-risk acts',
+    env: 'STS_ADMIN_DUAL_CONTROL', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a high-risk administrator act is not done when the ' +
+                 'first administrator asks: deleting a realm, granting an ' +
+                 'administrator role, re-keying or revoking a CA, ' +
+                 'replacing a trust anchor, rotating, importing or ' +
+                 'retiring a signing key, rotating the key-encryption key, ' +
+                 'and turning this setting off. It is held on Pending ' +
+                 'approvals until a second, different administrator ' +
+                 'holding the same authority approves it, when it runs as ' +
+                 'the first one\'s act, or refuses it. When fewer than two ' +
+                 'people could decide an act, it runs at once and the ' +
+                 'audit log says nobody approved it, so a realm can never ' +
+                 'be locked out. Off, the default, every act runs when its ' +
+                 'administrator asks.' },
+  { key: 'admin.dualControlLifetimeHours', group: 'Admin console',
+    label: 'How long a held act waits for a second administrator (hours)',
+    env: 'STS_ADMIN_DUAL_CONTROL_LIFETIME_HOURS', type: 'int', dflt: 24,
+    min: 1, max: 168,
+    runtime: true,
+    description: 'How long an act held for two-person approval waits for a ' +
+                 'decision. After it, the act has expired and is never ' +
+                 'run; its requester asks again.' },
 
   // -------------------------------------------------------------------------
   // THE MANAGEMENT API'S OWN GATE (2026-09-09), which is a different question

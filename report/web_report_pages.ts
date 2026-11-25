@@ -1074,12 +1074,12 @@ class ReportRuntime extends SpaClient {
   // runs in this tab.
   private lastRun: any;
   private resultPer: number;
-  // THE REALM THE TOKEN WAS ISSUED IN (#1038): its prefix, null before a
-  // sign-in. A service administrator's default-realm token is kept when
-  // the realm field moves the page to another realm, so the token, refresh
-  // and resource requests go on naming the realm that issued it while the
-  // pages and the API calls name the realm on screen.
-  private issuerPrefix: string | null;
+  // THE REALM THE TOKEN WAS ISSUED IN (#1038) is `SpaClient`'s
+  // `issuerPrefix` since #2200: a service administrator's default-realm
+  // token is kept when the realm field moves the page to another realm, so
+  // the token, refresh, second authorization and resource requests go on
+  // naming the realm that issued it while the pages and the API calls name
+  // the realm on screen.
   // The prefix the page was loaded at: the `elsewhere` bases carry it.
   private loadedPrefix: string;
 
@@ -1107,7 +1107,6 @@ class ReportRuntime extends SpaClient {
     this.groupQuery = '';
     this.lastRun = null;
     this.resultPer = 50;
-    this.issuerPrefix = null;
     this.loadedPrefix = ReportRuntime.prefixOf(env.location.pathname);
   }
 
@@ -1400,7 +1399,10 @@ class ReportRuntime extends SpaClient {
     const params: any = {
       response_type: 'code',
       client_id: CLIENT_ID,
-      redirect_uri: this.url(BASE + '/callback'),
+      // THE ISSUING REALM'S CALLBACK (#2200): a second authorization after
+      // the realm field moved the page is the issuer's, and so is the
+      // `redirect_uri` its client registers.
+      redirect_uri: this.issuerUrl(BASE + '/callback'),
       // The read scope, or a second authorization's (#2168).
       scope: (extra && extra.scope) || SCOPE,
       state: state,
@@ -1638,7 +1640,7 @@ class ReportRuntime extends SpaClient {
    * @returns the URL
    */
   callbackUrl(): string {
-    return this.url(BASE + '/callback');
+    return this.issuerUrl(BASE + '/callback');
   }
 
   /**

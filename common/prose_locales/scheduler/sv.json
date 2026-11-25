@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "Utgång av tvåpersonsgodkännanden"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "Flyttar varje administratörsåtgärd som hålls kvar för en andra administratör (#2166) och vars tidsfrist har passerat till utgången, och skriver dess granskningsrad, tar bort en avslutad en vecka efter att den avslutades och reparerar listan över väntande. En läsning tillämpar tidsfristen själv, så detta är registreringen och städningen, aldrig det som beslutar."
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "Attributkällor: schemalagd uppdatering"

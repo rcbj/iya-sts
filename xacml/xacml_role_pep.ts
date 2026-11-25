@@ -217,6 +217,10 @@ interface IssuanceQuestion {
   // carries no device attribute, and every device rule is inapplicable.
   device?: any;
   deviceRequirement?: string[];
+  // #2179: a person is being issued a credential for the administrative
+  // surface (`common/admin_device_requirement.ts`'s `isAdminSurface()`),
+  // sent as `device-admin-surface` beside the requirement.
+  deviceAdminSurface?: boolean;
   // THE PROTOCOL DECLARATION (2026-10-01): the families this issuance
   // satisfies, the families the application is declared for, and the realm's
   // mode — named by the gate only where the application is declared for
@@ -984,7 +988,9 @@ class XacmlRolePep {
     }
     const fact = asked.device || null;
     req.environment(DEVICE.REQUIREMENT, asked.deviceRequirement)
-      .environment(DEVICE.RECOGNIZED, [!!fact], model.TYPE.BOOLEAN);
+      .environment(DEVICE.RECOGNIZED, [!!fact], model.TYPE.BOOLEAN)
+      .environment(DEVICE.ADMIN_SURFACE, [asked.deviceAdminSurface === true],
+                   model.TYPE.BOOLEAN);
     if (fact) {
       const subject = asked.subject || {};
       const ownerKind = subject.kind === 'application' ? 'application'
@@ -1026,7 +1032,8 @@ class XacmlRolePep {
     const said = hit ? String(hit.lexical !== undefined ? hit.lexical
                                                         : hit.value) : '';
     log.debug("Leaving XacmlRolePep.deviceObligationOf(). " + said);
-    return said === 'compromised' ? 'compromised' : 'not-compliant';
+    return said === 'compromised' || said === 'admin-not-compliant'
+      ? said : 'not-compliant';
   }
 
   // What an authentication Deny says the authentication lacked (#723):
@@ -1300,12 +1307,20 @@ class XacmlRolePep {
       ? this.deviceObligationOf(answer) : null;
     if (deviceDeny) {
       const fact = asked.device || null;
+      // #2179: `admin-not-compliant` is the administrative surface's own
+      // rule, recorded under a code of its own so an operator can tell a
+      // console refusal from the realm-wide one.
       const code = deviceDeny === 'compromised' ? 'STS-DEVICE-0038'
-                                                : 'STS-DEVICE-0037';
+        : (deviceDeny === 'admin-not-compliant' ? 'STS-DEVICE-0054'
+                                                : 'STS-DEVICE-0037');
       const deviceWhy = deviceDeny === 'compromised'
         ? 'The registered device ' + String(fact && fact.id || '') +
           ' this came from is marked compromised, and the realm refuses one.'
-        : 'The realm requires a compliant registered device of the ' +
+        : (deviceDeny === 'admin-not-compliant'
+          ? 'The realm requires of its administrators ' +
+            '(devices.requireCompliantDeviceForAdmin, armed) a compliant ' +
+            'registered device of the '
+          : 'The realm requires a compliant registered device of the ') +
           'subject\'s own' + ((asked.deviceRequirement || [])
             .indexOf('attested') >= 0 ? ', attested,' : '') + ' and this ' +
           (fact ? 'came from device ' + String(fact.id) + ' (' +
@@ -1328,7 +1343,9 @@ class XacmlRolePep {
                (subject.name || 'nobody') + '" on the device — ' + deviceWhy);
       const refusal = this.refused(deviceDeny === 'compromised'
         ? Sentence.say('refusals.authn.failed')
-        : Sentence.say('refusals.policy.compliantDeviceRequired'),
+        : (deviceDeny === 'admin-not-compliant'
+          ? Sentence.say('refusals.policy.adminCompliantDeviceRequired')
+          : Sentence.say('refusals.policy.compliantDeviceRequired')),
         answer.decision,
         held, required, answer);
       refusal.device = { refusal: deviceDeny };

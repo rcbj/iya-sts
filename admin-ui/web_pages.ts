@@ -71,6 +71,7 @@ import MalwareScanPage = require('./web_malware_scan');
 import CspReportsPage = require('./web_csp_reports');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
+import ApprovalsPage = require('./web_approvals');
 import MetricsPage = require('./web_metrics');
 import ModePage = require('./web_mode');
 import BroadcastPage = require('./web_broadcast');
@@ -435,13 +436,14 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/error-codes': ['subsystems', 'codes'],
   '/admin/realms': ['realms', 'define', 'settings'],
   '/admin/config': ['index', 'settings'],
-  '/admin/mode': ['requirements', 'development', 'notyet'],
+  '/admin/mode': ['requirements', 'development', 'notyet', 'dualcontrol'],
   '/admin/persistence': ['settings'],
   '/admin/cluster': ['settings'],
   '/admin/cells': ['cells', 'residents', 'rehome', 'settings'],
   '/admin/mail': ['test', 'verify', 'messages', 'settings'],
   '/admin/sign-in-appearance': ['colours', 'layout', 'preview', 'settings'],
   '/admin/rbac': ['holders', 'grant', 'settings'],
+  '/admin/approvals': ['held', 'table'],
   '/admin/debugger': ['settings'],
   '/admin/sts-metadata': ['protocols', 'servers', 'endpoints',
                           'specifications'],
@@ -889,6 +891,9 @@ const PAGES: WebPage[] = [
     render: MailPage.render },
   { path: '/admin/mail/outbox', title: 'Mail outbox',
     operation: '/admin-api/mail/outbox', render: MailOutboxPage.render },
+  // TWO-PERSON APPROVAL (#2166): the acts held for a second administrator.
+  { path: '/admin/approvals', title: 'Pending approvals',
+    operation: '/admin-api/approvals', render: ApprovalsPage.render },
   { path: '/admin/metrics', title: 'Metrics',
     operation: '/admin-api/metrics',
     render: function (view: Json, ctx?: Json): string {

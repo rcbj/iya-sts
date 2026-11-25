@@ -55,7 +55,7 @@ Do not edit it by hand.
 | [Signer trust anchor](#signer-trust-anchor) | `SignerTrustAnchor` | ou=signerTrustAnchors | 5 |
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
-| [Named truststore](#named-truststore) | `Truststore` | ou=truststores | 2 |
+| [Named truststore](#named-truststore) | `Truststore` | ou=truststores | 5 |
 | [Truststore assignments](#truststore-assignments) | `TruststoreAssignments` |  | 1 |
 | [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 26 |
 | [XACML policy enforcement point cluster](#xacml-policy-enforcement-point-cluster) | `XacmlPepCluster` | ou=pepClusters | 5 |
@@ -1359,7 +1359,10 @@ One entry per named truststore; its certificates are stsSignerTrustAnchor entrie
 | Attribute | Values | Origin | OID | Description |
 |---|---|---|---|---|
 | `stsTrustAnchorAddedBy` | one | this service | `1.3.6.1.4.1.67607.1.1.690` | Who created the truststore, from the console or the management API; empty where nobody is recorded. |
-| `stsTruststoreKind` | one | this service | `1.3.6.1.4.1.67607.1.1.1005` | What the truststore holds: x509 (certificate authorities). Absent is x509. |
+| `stsTruststoreJwks` | one | this service | `1.3.6.1.4.1.67607.1.1.1008` | A jwks truststore's key set as pasted: a JSON Web Key Set of public keys only. |
+| `stsTruststoreJwksUri` | one | this service | `1.3.6.1.4.1.67607.1.1.1009` | A jwks truststore's jwks_uri, fetched under the outbound policy where no key set was pasted. |
+| `stsTruststoreKind` | one | this service | `1.3.6.1.4.1.67607.1.1.1005` | What the truststore holds: x509 (certificate authorities) or jwks (a key set bound to one party, #2149). Absent is x509. |
+| `stsTruststoreParty` | one | this service | `1.3.6.1.4.1.67607.1.1.1007` | A jwks truststore's party, the one whose JSON Web Tokens its keys may verify: client:<client_id>, federation:<relationship id> or claims-provider:<provider id> (#2149). |
 
 ## Truststore assignments
 

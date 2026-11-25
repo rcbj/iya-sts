@@ -108,5 +108,19 @@
   "systemHint": "Sujet, émetteur ou empreinte",
   "systemShown": "{shown} certificats sur {n} correspondent.",
   "thIssuer": "Émetteur",
-  "emptySystem": "Aucun certificat ne correspond."
+  "emptySystem": "Aucun certificat ne correspond.",
+  "whereRegistered": "Modifié là où chaque partie est enregistrée : un client, une relation de fédération ou un fournisseur de revendications.",
+  "keySetRegistered": "Les clés enregistrées de chaque partie",
+  "keySetFor": "Un jeu de clés pour {party}",
+  "keySetUri": "récupéré depuis {uri}",
+  "keySetKeys": "{n} clé(s) collée(s)",
+  "setKeysHeading": "Remplacer les clés",
+  "setKeysButton": "Définir les clés",
+  "kindKeySet": "un jeu de clés",
+  "createKind": "Contient",
+  "createKindX509": "des certificats",
+  "createKindJwks": "un jeu de clés lié à une seule partie",
+  "createParty": "Partie (jeu de clés uniquement) : client:, federation: ou claims-provider:…",
+  "createJwks": "Clés publiques, sous forme de JSON Web Key Set",
+  "createJwksUri": "Ou une jwks_uri"
 }

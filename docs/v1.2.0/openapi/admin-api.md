@@ -26,7 +26,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | Section | Operations | What it covers |
 |---|---|---|
 | [ACME](admin-api-acme.html) | 8 |  |
-| [Admin roles](admin-api-admin-roles.html) | 3 |  |
+| [Admin roles](admin-api-admin-roles.html) | 7 |  |
 | [Applications](admin-api-applications.html) | 50 |  |
 | [Audit log](admin-api-audit-log.html) | 3 | What happened here, in order — history rather than state, and read-only. It carries no credential of any kind and has no clear operation: an erase control on an administrative surface would make an audit log unable to answer the one question it exists for. |
 | [Authorization servers](admin-api-authorization-servers.html) | 6 |  |
@@ -56,7 +56,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [OpenID4VP](admin-api-openid4vp.html) | 1 |  |
 | [OpenPGP](admin-api-openpgp.html) | 1 | The OpenPGP settings (#2049): the algorithms a registered key may use, the post-quantum rules, the registration challenge and the Web Key Directory. A person's key is under Directory. |
 | [Ownership](admin-api-ownership.html) | 2 |  |
-| [PKI](admin-api-pki.html) | 34 |  |
+| [PKI](admin-api-pki.html) | 35 |  |
 | [Persistence](admin-api-persistence.html) | 1 |  |
 | [Policies](admin-api-policies.html) | 27 | The rules this realm holds a credential to — the password policy first: its minimum length, how many previous passwords may not be reused, and the symbol, uppercase and digit rules, stored as `cn=default,ou=passwordPolicies` in the directory and ENFORCED IN PRODUCT MODE at every door that sets a password. Not the XACML policy repository, which is under XACML. |
 | [RISC](admin-api-risc.html) | 5 |  |

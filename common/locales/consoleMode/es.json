@@ -30,5 +30,16 @@
   "waivedBy": "EXENTO EN ESTE DOMINIO POR UN ADMINISTRADOR: <code>{requirement}</code> ({section}, un {level}), porque <code>{setting}</code> está activado. Todos los demás requisitos de la BCP siguen en vigor.",
   "requirementNotMet": "NO SE CUMPLE AQUÍ: <code>{requirement}</code> ({section}), debido a <code>{setting}</code>.",
   "waivedPerApplication": "POR APLICACIÓN: una aplicación usa estos tipos de respuesta solo cuando su <code>{attribute}</code> incluye el que solicita, establecido por un administrador o por el propietario de la aplicación. Un cliente que se registra a sí mismo solo puede habilitar lo que nombra <code>{setting}</code>: {value}.",
-  "waivedPerApplicationNone": "POR APLICACIÓN: una aplicación usa estos tipos de respuesta solo cuando su <code>{attribute}</code> incluye el que solicita, establecido por un administrador o por el propietario de la aplicación. Un cliente que se registra a sí mismo no puede habilitar ninguno, porque <code>{setting}</code> está vacío."
+  "waivedPerApplicationNone": "POR APLICACIÓN: una aplicación usa estos tipos de respuesta solo cuando su <code>{attribute}</code> incluye el que solicita, establecido por un administrador o por el propietario de la aplicación. Un cliente que se registra a sí mismo no puede habilitar ninguno, porque <code>{setting}</code> está vacío.",
+  "dualHeading": "Aprobación de dos personas",
+  "dualLead": "Si los actos de administración de alto riesgo esperan a un segundo administrador en este dominio (<code>admin.dualControl</code>). Es un ajuste del dominio en ambos modos, no una diferencia de modo; está aquí porque saber si está en vigor es una pregunta que esta página responde.",
+  "dualInForce": "En vigor: un acto retenido espera a un segundo administrador.",
+  "dualOnNotInForce": "Activada, pero no en vigor para todas las autoridades.",
+  "dualOff": "Desactivada.",
+  "dualThAuthority": "Autoridad",
+  "dualThHolders": "Personas que podrían decidir",
+  "dualThInForce": "En vigor",
+  "dualYes": "sí",
+  "dualNo": "no",
+  "dualLink": "Aprobaciones pendientes ({n, plural, =1 {un acto en espera} other {# actos en espera}})"
 }

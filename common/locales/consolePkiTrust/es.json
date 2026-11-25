@@ -108,5 +108,19 @@
   "systemHint": "Sujeto, emisor o huella",
   "systemShown": "Coinciden {shown} de {n} certificados.",
   "thIssuer": "Emisor",
-  "emptySystem": "Ningún certificado coincide."
+  "emptySystem": "Ningún certificado coincide.",
+  "whereRegistered": "Se cambia donde se registra cada parte: un cliente, una relación de federación o un proveedor de notificaciones.",
+  "keySetRegistered": "Las claves registradas de cada parte",
+  "keySetFor": "Un conjunto de claves para {party}",
+  "keySetUri": "obtenido de {uri}",
+  "keySetKeys": "{n} clave(s) pegada(s)",
+  "setKeysHeading": "Sustituir las claves",
+  "setKeysButton": "Establecer claves",
+  "kindKeySet": "un conjunto de claves",
+  "createKind": "Contiene",
+  "createKindX509": "certificados",
+  "createKindJwks": "un conjunto de claves vinculado a una sola parte",
+  "createParty": "Parte (solo conjunto de claves): client:, federation: o claims-provider:…",
+  "createJwks": "Claves públicas, como JSON Web Key Set",
+  "createJwksUri": "O una jwks_uri"
 }

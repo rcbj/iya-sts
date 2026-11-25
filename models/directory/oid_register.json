@@ -829,7 +829,10 @@
   "appDynamicRoleSelection": 781,
   "xacmlRole": 782,
   "stsTruststoreKind": 1005,
-  "stsTruststoreAssignment": 1006
+  "stsTruststoreAssignment": 1006,
+  "stsTruststoreParty": 1007,
+  "stsTruststoreJwks": 1008,
+  "stsTruststoreJwksUri": 1009
  },
  "classes": {
   "spiffeAgent": 1,

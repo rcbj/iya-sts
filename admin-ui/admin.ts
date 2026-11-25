@@ -2708,6 +2708,18 @@ const SECTIONS = [
                'first signs in, anybody who signs in holds the roles ' +
                'that account holds: all three in the default realm, and ' +
                'Admin Read and Admin Write in a trust realm.' },
+      // TWO-PERSON APPROVAL (#2166), beside Admin roles: who may decide a
+      // held act is the roster on the page above. Drawn by
+      // `web_approvals.ts` from `GET /admin-api/approvals`.
+      { path: '/admin/approvals', label: 'Pending approvals',
+        blurb: 'Administrator acts held for a second administrator while ' +
+               'two-person approval (<code>admin.dualControl</code>, off by ' +
+               'default) is on: deleting a realm, granting an ' +
+               'administrator role, re-keying or revoking a CA, replacing ' +
+               'a trust anchor, signing-key and key-encryption-key ' +
+               'rotation. A second, different administrator holding the ' +
+               'same authority approves or refuses each; its requester may ' +
+               'withdraw it; it expires undecided.' },
       // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), beside Admin roles and
       // for the reason it is in this section at all: the question it answers
       // is whether this service is set up to serve the debugger and to whom,

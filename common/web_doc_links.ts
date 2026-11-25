@@ -159,6 +159,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/policies/new':
     'admin-console.html#creating-a-named-policy--adminpoliciesnew',
   '/admin/rbac': 'admin-console.html#who-may-use-the-console',
+  '/admin/approvals': 'admin-console.html#two-person-approval',
   '/admin/realms': 'trust-realms.html',
   '/admin/risc-accounts': 'signals-received.html',
   '/admin/risc-accounts/account': 'signals-received.html',

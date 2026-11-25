@@ -6,6 +6,77 @@ title: Release notes
 
 ## 1.2.0
 
+### New: key sets as truststores
+
+A truststore may now hold a key set bound to one party: a client, a
+federation relationship or a claims provider, as pasted public keys or a
+`jwks_uri` (#2149). Four new use cases, `client-jws`, `federation-jwt`,
+`ssf-set` and `claims-provider-jwt`, decide which keys verify a JSON Web
+Token or signature from each kind of party. Each defaults to
+`registered-keys`, each party's own registration, so nothing changes until
+an administrator assigns a key set. A key set is never shared between
+parties. `POST /admin-api/truststores/create` takes `kind`, `party`,
+`jwks` and `jwksUri`, and the new `POST /admin-api/truststores/set-keys`
+replaces a key set's keys.
+
+### Behaviour change: in product mode, administrators need a compliant registered device
+
+In product mode, a person's token for the admin console, or any token
+carrying an `admin:*` scope for `/admin-api`, is now issued only from a
+compliant registered device of their own (ASVS 5.0.0 8.4.2). The check is
+made at the token endpoint, on every grant and every refresh. A refusal is
+`access_denied`, recorded as `STS-DEVICE-0054`. The new setting
+`devices.requireCompliantDeviceForAdmin` controls it: `auto` (the default)
+is on in product and off in development, and `on` and `off` force it.
+Programs that use their own client credentials are not affected.
+
+**Upgrading.** Nothing to run, and nobody is locked out. The requirement
+starts unarmed in every realm, so every administrator signs in exactly as
+before. It arms itself the first time a console administrator signs in from
+a compliant registered device. Directory → Devices says which state a realm
+is in. Before that first sign-in, register your administrators' devices,
+have them marked compliant, and sign them in with the passkey or
+certificate on the device. [Devices](devices.md) has the steps, and the way
+back in if every administrator loses their device. A realm that keeps its
+own `role-issuance` document must rebuild it from the template to get the
+rule. To keep the 1.1 behaviour, set the setting to `off`.
+
+This repository's own test stacks run with the setting `off`
+(`docker-compose-run-tests.yml`), because their browser-driven console jobs
+sign in from browsers that hold no registered device. One job,
+`tests/protocol/sts_admin_device_requirement.js`, turns it on in a realm of
+its own and checks the rule end to end.
+### New: two-person approval for high-risk administrator acts
+
+A realm can now require a second administrator for its highest-risk acts
+(ASVS 5.0.0 2.3.5). This is new setting `admin.dualControl`, off by default
+and per realm. While it is on, these acts wait on a new console page,
+**Pending approvals** (`/admin/approvals`):
+
+* removing a realm
+* granting an administrator role
+* re-keying or revoking a CA
+* replacing a trust anchor
+* rotating, importing or retiring a signing key
+* rotating the key-encryption key
+* turning the setting off
+
+A second, different administrator with the same authority approves the act,
+and it then runs as the first administrator's act, or refuses it. The
+requester may withdraw it. Undecided, it expires after
+`admin.dualControlLifetimeHours` (default 24).
+
+The management API answers a held act with HTTP 202 and the request's id,
+and adds `GET /admin-api/approvals` and `POST /admin-api/approvals/{approve,
+refuse, withdraw}`. When fewer than two people could decide an act, it runs
+and is recorded as `STS-ADMIN-0976`, so a realm can never be locked out. The
+**Mode** page shows whether the control is in force.
+
+**Upgrading.** Nothing to run. With the setting off, which is the default,
+nothing changes. The held acts are kept in the existing store, so there is
+no schema change. See
+[Two-person approval](admin-console.md#two-person-approval).
+
 ### Behaviour change: a password an administrator types is temporary
 
 In product mode, a password an administrator types for somebody must now
@@ -185,6 +256,15 @@ does not pin, or a `name@version` whose version it does not hold, now fails the
 build instead of installing something unpinned; to move a pin, change it in
 `sdk/packages/` and run `npm install --package-lock-only --ignore-scripts` in
 `sdk/`.
+
+The advisory check every CI run makes (`tests/tools/dependency-windows.js`) now
+audits `sdk/package-lock.json` as well, under the same windows, and names the
+lockfile of each finding. Its first run found ten vulnerable packages under
+`dbus-next`, reached through its optional `usocket` and node-gyp 7 (`request`,
+`form-data`, `qs`, `tough-cookie`, `uuid`, `tar`) and its `xml2js`; none is in
+an image built without `STS_CLOUD_SDKS=dbus-next`. `sdk/package.json` now
+overrides `usocket` to 1.1.0 and `xml2js` to 0.6.2, and `npm audit` there
+reports nothing.
 ### Changed: product mode keeps the build to administrators
 
 In product mode the page footer no longer shows the version and its build
@@ -419,6 +499,13 @@ waits in memory and is sent once the scope is in hand. The write token is
 used for changes only, is never refreshed, and is dropped after ten minutes
 or at its expiry; reads keep the read token. A browser that blocks the
 window gets a bar with a **Continue** button.
+
+A service administrator working on another realm's pages through the realm
+switcher is asked for the write scope by the realm they signed in at, where
+their account is, not by the realm on screen; and the pages that draw their
+own write controls (Sign-out's end-session buttons, the roles page) draw
+them from the roles the person holds, as the rest of the console does, while
+the change itself still needs the scope (#2200).
 
 Two new read scopes: `account:read` (`/account-api`, GETs only) and
 `report:read` (`/report-api`, GETs only, authorized by `REPORT_USE` or

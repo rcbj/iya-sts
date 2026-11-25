@@ -8837,46 +8837,107 @@ class FederationSp {
    * @returns a promise of `{ ok, keys, from }`, or `{ ok: false, keys: [],
    *   errorCode, why }`
    */
-  keysFor(record) {
+  // WHICH KEYS COUNT (#2149): the `federation-jwt` use case's list. By
+  // default the relationship's own fedJwks or fedJwksUri, exactly as
+  // `registeredKeysFor()` reads them; a key set bound to this relationship
+  // adds its keys, a bound jwks_uri fetched under THIS relationship's outbound
+  // policy; and a list without `registered-keys` leaves the relationship's
+  // own keys out.
+  keysFor(record): Promise<any> {
     const { fedHttp, log } = this.deps;
     log.debug("Entering FederationSp.keysFor(). id=" + record.fedId);
+    const sources = require('../common/truststores').keySources(
+      'federation-jwt', { kind: 'federation', id: String(record.fedId) });
+    if (sources.registered && !sources.sets.length) {
+      log.debug("Leaving FederationSp.keysFor(). The registration alone.");
+      return this.registeredKeysFor(record);
+    }
+    const own = sources.registered ? this.registeredKeysFor(record) :
+      Promise.resolve({ ok: false, keys: [], errorCode: 'STS-FED-0031',
+        why: 'the federation-jwt use case leaves this relationship\'s own ' +
+             'keys out, and no key set bound to it gave a key' });
+    const bound = Promise.all(sources.sets.map(function (set) {
+      if (!set.uri) {
+        return { ok: true, keys: set.keys || [], from: set.name };
+      }
+      return fedHttp.fetchJson(Object.assign({}, record,
+        { fedJwksUri: set.uri }), 'fedJwksUri', { method: 'GET' })
+        .then(function (answer) {
+          return answer.ok && answer.json && Array.isArray(answer.json.keys)
+            ? { ok: true, keys: answer.json.keys, from: set.name }
+            : { ok: false, keys: [], errorCode: answer.errorCode ||
+                'STS-FED-0056', why: 'the key set "' + set.name + '" at ' +
+                set.uri + ' could not be fetched: ' + answer.why };
+        });
+    }));
+    log.debug("Leaving FederationSp.keysFor(). With bound key sets.");
+    return Promise.all([own, bound]).then(function (got) {
+      const answers = [got[0]].concat(got[1]);
+      const keys = [];
+      const from = [];
+      answers.forEach(function (one) {
+        if (one.ok) {
+          one.keys.forEach(function (k) {
+            keys.push(k);
+          });
+          from.push(one.from);
+        }
+      });
+      if (!keys.length) {
+        const failed = answers.filter(function (one) {
+          return !one.ok;
+        })[0] || got[0];
+        return failed;
+      }
+      return { ok: true, keys: keys, from: from.join(', ') };
+    });
+  }
+
+  // The relationship's own key set: fedJwks as pasted, else fedJwksUri
+  // fetched. What `keysFor()` read alone before #2149.
+  registeredKeysFor(record): Promise<any> {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.registeredKeysFor(). id=" +
+              record.fedId);
     const pasted = String(record.fedJwks || '').trim();
     if (pasted) {
       try {
         const parsed = JSON.parse(pasted);
         const keys = Array.isArray(parsed.keys) ? parsed.keys :
                      (parsed.kty ? [parsed] : []);
-        log.debug("Leaving FederationSp.keysFor(). " + keys.length + ' ' +
-            'pasted key(s).');
+        log.debug("Leaving FederationSp.registeredKeysFor(). " +
+                  keys.length + ' pasted key(s).');
         return Promise.resolve({ ok: true, keys: keys, from: 'fedJwks' });
       } catch (e) {
-        log.debug("Leaving FederationSp.keysFor(). fedJwks will not parse.");
+        log.debug("Leaving FederationSp.registeredKeysFor(). " +
+                  "fedJwks will not parse.");
         return Promise.resolve({ ok: false, keys: [], errorCode: 'STS-FED-0030',
                                  why: 'fedJwks on this relationship is not ' +
                                       'JSON: ' + e.message });
       }
     }
     if (!String(record.fedJwksUri || '').trim()) {
-      log.debug("Leaving FederationSp.keysFor(). Neither is configured.");
+      log.debug("Leaving FederationSp.registeredKeysFor(). " +
+                "Neither is configured.");
       return Promise.resolve({ ok: false, keys: [], errorCode: 'STS-FED-0031',
                                why: 'neither fedJwks nor fedJwksUri is ' +
                                     'configured, so there is no key to ' +
                                     'verify the token with' });
     }
-    log.debug("Leaving FederationSp.keysFor().");
+    log.debug("Leaving FederationSp.registeredKeysFor().");
     return fedHttp.fetchJson(record, 'fedJwksUri', { method: 'GET' })
                   .then((answer) => {
       if (!answer.ok || !answer.json) {
-        log.debug("Leaving FederationSp.keysFor(). The JWKS could not be " +
-                  'fetched.');
+        log.debug("Leaving FederationSp.registeredKeysFor(). " +
+                  "The JWKS could not be fetched.");
         return { ok: false, keys: [],
                  errorCode: answer.errorCode || 'STS-FED-0056',
                  why: 'the JWKS at ' + answer.url + ' could not be fetched: ' +
                       answer.why };
       }
       const keys = Array.isArray(answer.json.keys) ? answer.json.keys : [];
-      log.debug("Leaving FederationSp.keysFor(). " + keys.length + ' fetched ' +
-          'key(s).');
+      log.debug("Leaving FederationSp.registeredKeysFor(). " +
+                keys.length + ' fetched key(s).');
       return { ok: true, keys: keys, from: 'fedJwksUri' };
     });
   }
