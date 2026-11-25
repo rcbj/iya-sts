@@ -724,7 +724,7 @@ class TrustAnchor {
 
 /**
  * A named truststore: certificate authorities a use case is assigned to trust
- * (#2118).
+ * (#2118), or a key set bound to one party (#2149).
  */
 class Truststore {
   /**

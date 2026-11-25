@@ -47,7 +47,7 @@ const forge = require("node-forge");
 const K = require("./oauth_wire_kit.js").kit("sts_truststores");
 const log = K.log;
 
-const FLOOR = 18;
+const FLOOR = 25;
 const DAY = 86400000;
 
 function check(what, fn) {
@@ -269,6 +269,54 @@ async function test() {
   check("C7. unassigned, the truststore is deleted", function () {
     assert.strictEqual(deleted.status, 200, K.shown(deleted));
     assert.ok(!storeIn(gone, "partners"));
+  });
+
+  log.info("=== K. a key set bound to one party (#2149) ===");
+  const jwk = Object.assign({ kid: "ks-" + K.STAMP, alg: "ES256" },
+    nodeCrypto.generateKeyPairSync("ec", { namedCurve: "P-256" })
+      .publicKey.export({ format: "jwk" }));
+  const keyMade = await act(realm, "create", { name: "partner-keys",
+    kind: "jwks", party: "client:partner-" + K.STAMP,
+    jwks: { keys: [jwk] } });
+  check("K1. a key set bound to one client is created", function () {
+    assert.strictEqual(keyMade.status, 200, K.shown(keyMade));
+  });
+  const keyRow = storeIn(await view(realm), "partner-keys");
+  check("K2. the view says it is a key set, whose, and its keys",
+        function () {
+    assert.ok(keyRow && keyRow.storeKind === "jwks" &&
+              keyRow.party === "client:partner-" + K.STAMP &&
+              keyRow.keys === 1, JSON.stringify(keyRow));
+  });
+  refused("K3. a key set refuses a private key",
+          await coded(realm, "STS-PKI-0308", "create", { name: "bad-keys",
+            kind: "jwks", party: "client:x", jwks: { keys: [{ kty: "EC",
+              crv: "P-256", x: jwk.x, y: jwk.y, d: "AAAA" }] } }),
+          "STS-PKI-0308");
+  refused("K4. a certificate use case does not name a key set",
+          await coded(realm, "STS-PKI-0309", "assign",
+                      { useCase: "saml-signer",
+                        truststores: ["partner-keys"] }),
+          "STS-PKI-0309");
+  const keyAssigned = await act(realm, "assign", { useCase: "client-jws",
+    truststores: ["registered-keys", "partner-keys"] });
+  const keyUri = await act(realm, "set-keys", { name: "partner-keys",
+    jwksUri: "https://keys.example.net/" + K.STAMP + "/jwks" });
+  const afterKeys = await view(realm);
+  check("K5. client-jws is assigned the key set, and its keys replaced by " +
+        "a jwks_uri, read back", function () {
+    assert.strictEqual(keyAssigned.status, 200, K.shown(keyAssigned));
+    assert.strictEqual(keyUri.status, 200, K.shown(keyUri));
+    const row = storeIn(afterKeys, "partner-keys");
+    assert.ok(row.jwksUri === "https://keys.example.net/" + K.STAMP +
+              "/jwks" && row.usedBy.indexOf("client-jws") >= 0,
+              JSON.stringify(row));
+  });
+  const keyCleared = await act(realm, "unassign", { useCase: "client-jws" });
+  const keyGone = await act(realm, "delete", { name: "partner-keys" });
+  check("K6. unassigned, the key set is deleted", function () {
+    assert.strictEqual(keyCleared.status, 200, K.shown(keyCleared));
+    assert.strictEqual(keyGone.status, 200, K.shown(keyGone));
   });
 
   log.info("=== E. an unknown action ===");

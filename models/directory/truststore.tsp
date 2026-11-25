@@ -35,9 +35,24 @@ namespace IyaSts.Directory;
 model Truststore {
   @attr(#{
     kind: "single",
-    what: "What the truststore holds: x509 (certificate authorities). Absent is x509."
+    what: "What the truststore holds: x509 (certificate authorities) or jwks (a key set bound to one party, #2149). Absent is x509."
   })
   stsTruststoreKind?: string;
+  @attr(#{
+    kind: "single",
+    what: "A jwks truststore's party, the one whose JSON Web Tokens its keys may verify: client:<client_id>, federation:<relationship id> or claims-provider:<provider id> (#2149)."
+  })
+  stsTruststoreParty?: string;
+  @attr(#{
+    kind: "single",
+    what: "A jwks truststore's key set as pasted: a JSON Web Key Set of public keys only."
+  })
+  stsTruststoreJwks?: string;
+  @attr(#{
+    kind: "single",
+    what: "A jwks truststore's jwks_uri, fetched under the outbound policy where no key set was pasted."
+  })
+  stsTruststoreJwksUri?: string;
   @attr(#{
     kind: "single",
     what: "Who created the truststore, from the console or the management API; empty where nobody is recorded."

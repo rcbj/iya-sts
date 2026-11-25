@@ -55,7 +55,9 @@ import helpers = require('./helpers');
 const log = helpers.log;
 
 type Scope = 'service' | 'realm';
-type Kind = 'x509' | 'spiffe' | 'pins' | 'fixed' | 'admission';
+// `jwks` (#2149): a JSON Web Signature verified against a key set bound to the
+// party that signed it, never against a pool.
+type Kind = 'x509' | 'spiffe' | 'pins' | 'fixed' | 'admission' | 'jwks';
 
 interface UseCase {
   id: string;
@@ -249,6 +251,33 @@ const ROWS: UseCase[] = [
     title: 'A JWT-SVID, against the bundle of its trust domain',
     sites: ['spiffe/spiffe_ca.ts ValidateJWTSVID'],
     defaults: ['spiffe:*'] },
+  // KEY SETS (#2149, rcbj 2026-11-25). A JWK names no owner, so these never
+  // pool: each list names sources, and at a verification only the presenting
+  // party's own contribute — its registration (`registered-keys`, the
+  // default, which is what each site read before) and any key-set truststore
+  // bound to it.
+  { id: 'client-jws', scope: 'realm', kind: 'jwks', direction: 'inbound',
+    title: 'A JWT or signature a client made: private_key_jwt, an RFC 7523 ' +
+      'assertion, a request object, an HTTP message signature',
+    sites: ['oauth-oidc/assertion_grant.js keysForParty',
+            'oauth-oidc/client_auth.js', 'oauth-oidc/request_object.ts',
+            'oauth-oidc/http_signatures.ts'],
+    defaults: ['registered-keys'] },
+  { id: 'federation-jwt', scope: 'realm', kind: 'jwks',
+    direction: 'inbound',
+    title: 'A token a federation partner signed: its ID Token, logout ' +
+      'token or signed response',
+    sites: ['federation/federation_sp.ts keysFor'],
+    defaults: ['registered-keys'] },
+  { id: 'ssf-set', scope: 'realm', kind: 'jwks', direction: 'inbound',
+    title: 'A Security Event Token an SSF transmitter partner signed',
+    sites: ['ssf/ssf_transmitters.ts'],
+    defaults: ['registered-keys'] },
+  { id: 'claims-provider-jwt', scope: 'realm', kind: 'jwks',
+    direction: 'inbound',
+    title: 'Aggregated or distributed claims a claims provider signed',
+    sites: ['oauth-oidc/claims_providers.ts verifyFrom'],
+    defaults: ['registered-keys'] },
   { id: 'revocation-signer', scope: 'service', kind: 'x509',
     direction: 'inbound',
     title: 'A CRL issuer outside the path of the certificate checked',
@@ -414,7 +443,8 @@ class TruststoreUseCases {
   static assignable(row: UseCase | null): boolean {
     log.debug("Entering TruststoreUseCases.assignable().");
     log.debug("Leaving TruststoreUseCases.assignable().");
-    return !!row && (row.kind === 'x509' || row.kind === 'spiffe');
+    return !!row && (row.kind === 'x509' || row.kind === 'spiffe' ||
+                     row.kind === 'jwks');
   }
 
   /**

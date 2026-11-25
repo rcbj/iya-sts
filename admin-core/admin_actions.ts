@@ -974,8 +974,9 @@ const PKI_TRUST_ACTIONS = ['add', 'remove', 'recheck', 'set-row'];
  * The actions `namedTruststoresAction()` answers (#2118): named truststores
  * and the use cases assigned them.
  */
+// `set-keys` (#2149): a key-set truststore's keys, pasted or a jwks_uri.
 const NAMED_TRUSTSTORE_ACTIONS = ['show', 'create', 'delete', 'add', 'remove',
-                                  'assign', 'unassign'];
+                                  'assign', 'unassign', 'set-keys'];
 
 /**
  * The actions `spiffeEntriesAction()` answers.
@@ -12304,6 +12305,15 @@ class AdminActions {
     if (one.kind === 'named') {
       row.addedBy = String(one.addedBy || '');
     }
+    // What it holds (#2149): certificates, a key set, or a SPIFFE bundle.
+    if (one.storeKind) {
+      row.storeKind = String(one.storeKind);
+    }
+    if (one.storeKind === 'jwks' && one.kind === 'named') {
+      row.party = String(one.party || '');
+      row.keys = Number(one.keys) || 0;
+      row.jwksUri = String(one.jwksUri || '');
+    }
     if (one.kind === 'spiffe') {
       row.trustDomain = String(one.trustDomain || '');
       row.jwtKeys = Array.isArray(one.jwtKeys) ? one.jwtKeys.length :
@@ -12394,7 +12404,7 @@ class AdminActions {
       log.debug("Leaving AdminActions.namedTruststoresAction(). Unknown " +
                 "action.");
       return this.refused('STS-ADMIN-0956', { ok: false, errors: [
-        'Unknown action "' + action + '". The seven are: ' +
+        'Unknown action "' + action + '". The eight are: ' +
         NAMED_TRUSTSTORE_ACTIONS.join(', ') + '.'] });
     }
     // Lazily: libraries, loaded long after this module.
@@ -12433,20 +12443,51 @@ class AdminActions {
       log.debug("Leaving AdminActions.namedTruststoresAction(). show.");
       return { ok: true, truststore: shown };
     }
+    // A key set may be sent as JSON text or as the object itself (#2149).
+    const jwksText = function (value: any): string {
+      log.debug("Entering jwksText().");
+      log.debug("Leaving jwksText().");
+      return value && typeof value === 'object' ? JSON.stringify(value) :
+        String(value || '');
+    };
     if (action === 'create') {
+      const kind = String(asked.kind || 'x509');
       const made = truststores.create(realmId, {
         name: name, description: String(asked.description || ''),
-        addedBy: actor });
+        addedBy: actor, kind: kind, party: String(asked.party || ''),
+        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || '') });
       if (!made.ok) {
         log.debug("Leaving AdminActions.namedTruststoresAction(). create " +
                   "refused.");
         return refusal(made, 'STS-ADMIN-0957');
       }
-      record('The truststore ' + name + ' was created',
-             { action: 'create', name: name });
+      record('The truststore ' + name + ' was created', Object.assign(
+        { action: 'create', name: name, kind: kind },
+        kind === 'jwks' ? { party: String(asked.party || ''),
+                            jwksUri: String(asked.jwksUri || '') } : {}));
       log.debug("Leaving AdminActions.namedTruststoresAction(). created.");
       return { ok: true, name: name,
                message: 'The truststore "' + name + '" was created.' };
+    }
+    if (action === 'set-keys') {
+      const set = truststores.setKeys(realmId, name, {
+        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || '') });
+      if (!set.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). set-keys " +
+                  "refused.");
+        return refusal(set, 'STS-ADMIN-0957');
+      }
+      // The kids and the jwks_uri, never the keys themselves.
+      const kids = asked.jwksUri ? '' : truststores.keysOfText(
+        jwksText(asked.jwks)).keys.map(function (one: any) {
+        return String(one.kid || '');
+      }).join(' ');
+      record('The key set ' + name + ' was given new keys',
+             { action: 'set-keys', name: name,
+               jwksUri: String(asked.jwksUri || ''), kids: kids });
+      log.debug("Leaving AdminActions.namedTruststoresAction(). keys set.");
+      return { ok: true, name: name,
+               message: 'The key set "' + name + '" was given new keys.' };
     }
     if (action === 'delete') {
       const gone = truststores.remove(realmId, name);
