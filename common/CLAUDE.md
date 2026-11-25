@@ -14408,6 +14408,13 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   An app password (a `friendlyName`) is not "your password was changed". A
   recovery whose link was itself mailed (`mailed: true`) sends no second
   message.
+- **An unusual sign-in and a run of refused passwords (#2162)** are
+  `signInAlert()` and `refusedAttempts()`, asked by `risk/risk_engine.ts`
+  and `risk/risk_failures.ts` (`risk/CLAUDE.md` argues when). Each kind is
+  told at most once in `mail.signInAlertWindowS`, held by the outbox:
+  `send()`'s `dedupWindowS` replaces `mail.dedupWindowS` for that message,
+  `dedupAlso` names its other kinds, and `queuedWithin()` asks whether any
+  row of the window carries a key — so the window is the cluster's.
 - **Every other credential added or removed (#2163, ASVS 5.0.0 6.3.7)** is
   the `credential-changed` notice, `mail.credentialChangeNotices` (on). Two
   funnels feed `MailUses.credentialChanged()`, and between them every door:

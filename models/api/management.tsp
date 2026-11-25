@@ -13293,7 +13293,7 @@ op `deleteRiskDatasetVersion`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"20
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
+op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "sign-in-alert" | "sign-in-refusals" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
   @js(#{`examples`:#["fr"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
@@ -13439,7 +13439,7 @@ op `saveMailTemplate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "sign-in-alert" | "sign-in-refusals" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string;
     @js(#{`description`:"One line."}) `subject`: string;
     @js(#{`description`:"The text part."}) `text`: string;
@@ -13475,7 +13475,7 @@ op `saveMailTemplate`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetMailTemplate`(@js(#{`examples`:#[#{`template`:"test-message",`lang`:"de"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "sign-in-alert" | "sign-in-refusals" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,

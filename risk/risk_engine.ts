@@ -437,6 +437,22 @@ const RANK: Record<string, number> = { UNSCORED: 0, LOW: 1, MEDIUM: 2,
                                        HIGH: 3 };
 
 // ---------------------------------------------------------------------------
+// WHAT A PERSON IS TOLD OF AFTER AN UNUSUAL SIGN-IN (#2162, ASVS 5.0.0
+// 6.3.5): the signals, as the kinds `common/mail_uses.ts`'s `signInAlert()`
+// names. `new-country` is not a signal — it moves no score — and is decided
+// in `assessNow()` from the person's own history; `unusual` is a sign-in at
+// MEDIUM or above that shows none of the others.
+// ---------------------------------------------------------------------------
+const ALERT_KINDS: Record<string, string> = {
+  'new-device': 'new-device',
+  'unregistered-device': 'new-device',
+  'tor-exit': 'anonymiser',
+  'reputation': 'anonymiser',
+  'operator-deny': 'anonymiser',
+  'account-failures': 'after-refusals'
+};
+
+// ---------------------------------------------------------------------------
 // A PERSON'S STANDING, PER PROCESS (#62 P3). What an issuance with NO
 // SESSION to read its risk from stands on — a Kerberos service ticket (the
 // KDC asks the gate synchronously),
@@ -1164,6 +1180,85 @@ class RiskEngine {
     }
   }
 
+  /**
+   * The kinds of unusual sign-in an assessment shows, for the person's
+   * alert (#2162): its signals as ALERT_KINDS names them, `new-country`
+   * where the country was new to them, and `unusual` for a sign-in at
+   * MEDIUM or above that shows none of those.
+   *
+   * @param signals - the evaluators' signals
+   * @param level - the assessment's level
+   * @param newCountry - whether the country was new to the person
+   * @returns the kinds, each once
+   */
+  static alertKindsOf(signals: Json[], level: string,
+                      newCountry: boolean): string[] {
+    log.debug("Entering RiskEngine.alertKindsOf().");
+    const kinds: string[] = [];
+    (signals || []).forEach(function (s: Json): void {
+      const kind = ALERT_KINDS[String((s && s.signal) || '')];
+      if (kind && kinds.indexOf(kind) < 0) {
+        kinds.push(kind);
+      }
+    });
+    if (newCountry) {
+      kinds.push('new-country');
+    }
+    if (!kinds.length && (RANK[String(level)] || 0) >= RANK.MEDIUM) {
+      kinds.push('unusual');
+    }
+    log.debug("Leaving RiskEngine.alertKindsOf(). " + kinds.join(','));
+    return kinds;
+  }
+
+  /**
+   * A sign-in succeeded on this assessment (#2162): where it is at or above
+   * `mail.signInAlertLevel` and shows a kind of unusual sign-in, the person
+   * is mailed — when, roughly where, with what, how, and what was unusual
+   * (`common/mail_uses.ts`'s `signInAlert()`, which tells each kind at most
+   * once in its window). Not a reaction of the risk-response policy: it
+   * decides nothing about anybody's access, it tells the person what they
+   * are owed to know. Never throws.
+   *
+   * @param assessment - the assessment, as `assess()` answered it
+   * @param username - who signed in
+   * @returns whether the person was handed to the mail channel
+   */
+  signedIn(assessment: Json, username: string): boolean {
+    const { log, config, lazy } = this.deps;
+    log.debug("Entering RiskEngine.signedIn().");
+    const a = assessment || {};
+    const kinds = Array.isArray(a.alerts) ? a.alerts.map(String) : [];
+    let wanted = 'MEDIUM';
+    try {
+      wanted = String(config.value('mail.signInAlertLevel') || 'MEDIUM');
+    } catch (e) {
+      log.debug("Caught in RiskEngine.signedIn(): " + ((e && e.message) ||
+                                                        e));
+      // The default line.
+      wanted = 'MEDIUM';
+    }
+    if (!username || a.phase === 'session' || !kinds.length ||
+        (RANK[String(a.level)] || 0) < (RANK[wanted] || RANK.MEDIUM)) {
+      log.debug("Leaving RiskEngine.signedIn(). Nothing to tell.");
+      return false;
+    }
+    try {
+      lazy('../common/mail_uses').signInAlert(username, {
+        kinds: kinds, at: Number(a.at) || 0, city: a.city,
+        subdivision: a.subdivision, country: a.country,
+        browser: a.uaFamily, os: a.uaOs, method: a.credentialKind });
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-MAIL-0031') + 'risk: the sign-in alert ' +
+               'for ' + username + ' could not be queued: ' +
+               ((e && e.message) || e));
+      log.debug("Leaving RiskEngine.signedIn(). Threw.");
+      return false;
+    }
+    log.debug("Leaving RiskEngine.signedIn(). Told.");
+    return true;
+  }
+
   // -------------------------------------------------------------------------
   // WHAT WAS DECIDED, written onto the assessment (#62 P3): the policy's
   // answer — permit, step-up, refuse, or observed — the policy that gave it,
@@ -1187,6 +1282,12 @@ class RiskEngine {
       return;
     }
     const o = outcome || {};
+    // A SESSION STARTED ON IT: the sign-in succeeded (#2162), and the
+    // person is told if it looked unusual. `assessment` and `username` are
+    // the door's; a caller that hands neither tells nobody.
+    if (o.sessionId && o.assessment && o.username) {
+      this.signedIn(o.assessment, String(o.username));
+    }
     store.settleAssessment({ realm: realm, id: assessmentId,
       decision: String(o.decision || ''), policyId: String(o.policy || ''),
       errorCode: String(o.errorCode || ''),
@@ -1321,6 +1422,11 @@ class RiskEngine {
     const amended: Json = Object.assign({}, assessment, {
       signals: [model].concat(signals), score: score, level: level });
     delete amended.deviceAwaited;
+    // The alert's kinds follow the amended signals and level (#2162); a new
+    // country is the assessment's, which the device does not move.
+    amended.alerts = RiskEngine.alertKindsOf(signals, level,
+      (Array.isArray(assessment.alerts) ? assessment.alerts : [])
+        .indexOf('new-country') >= 0);
     const context = assessment.sessionContext;
     if (context) {
       Object.defineProperty(amended, 'sessionContext', {
@@ -2062,6 +2168,15 @@ class RiskEngine {
       score: score, level: level, decision: 'observe'
     };
     await store.recordAssessment(assessment, sealing);
+    // WHAT THE PERSON WOULD BE TOLD OF (#2162), on the answer only — set
+    // after the row was written, so no store keeps it — and enumerable,
+    // because the answer may cross a persisted step (`pendingMfa`) before
+    // the session it alerts about starts. A country is new where the person
+    // has history enough for an absence to mean anything and none of it was
+    // there; an unmapped address names no country, and is not new.
+    const newCountry = enough && !riskModel.missing(attempt.country) &&
+      user.count('country', attempt.country) === 0;
+    assessment.alerts = RiskEngine.alertKindsOf(signals, level, newCountry);
 
     // THE HISTORY MOVES ON, after the score was taken against it — for a
     // sign-in. A live session's re-assessment (#62 P4) is not an attempt to
@@ -2157,6 +2272,13 @@ class RiskEngine {
     if (awaiting) {
       assessment.deviceAwaited = { fingerprint: String(context.device || ''),
                                    enough: enough };
+    }
+    // ASSESSED AFTER THE SESSION STARTED (a door that assessed nothing
+    // before, `authn.ts`'s `assessRisk()`): the sign-in has succeeded, so
+    // the person is told now. A door that assessed before is told from
+    // `settle()`, once the session it decided on exists.
+    if (assessment.sessionId && input.phase !== 'session') {
+      this.signedIn(assessment, String(input.username || ''));
     }
     log.info('risk: ' + subject + ' at ' + assessment.door + ' scored ' +
              (modelled.score === null ? 'nothing (' + modelled.why + ')'

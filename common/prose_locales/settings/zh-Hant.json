@@ -12443,6 +12443,30 @@
     "en": "bd3ae7ff26663b42",
     "text": "當是「服務」而非人員將認證標記為遭入侵或停用帳戶時（風險評分），也寄信給該領域 Admin Write 名冊中每位有位址的成員。"
   },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "登入提醒"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "當某人帳戶的一次登入成功但看起來異常時通知此人——此人從未用過的裝置或瀏覽器、從未登入過的國家、Tor 等匿名網路、此前剛被拒絕的密碼，或風險等級達到或超過 mail.signInAlertLevel——並說明時間、大致地點、使用的裝置與方式，附上其最近登入紀錄的連結；當其帳戶的密碼被拒絕的次數達到登入限制（security.rateLimitWindowS 內 security.rateLimitPerIdentity 次）時也會通知，無論之後是否有人登入。在安全通知關閉或未設定傳輸方式時不傳送任何郵件。"
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "登入提醒等級"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "成功登入需達到的最低風險等級，才會通知此人。LOW 時，新裝置或新國家無論評分都會通知；MEDIUM（預設）時，通知風險引擎認為異常的登入；HIGH 時，僅通知它認為極可能不是本人的登入。歷史不足以評分的登入只會因其表現出的情況而通知：匿名網路或被拒絕的密碼。"
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "登入提醒時間窗口（秒）"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "同一類登入提醒——新裝置、新國家、匿名網路、被拒絕的密碼——在多長時間內最多通知此人一次。寄件匣即為紀錄，因此長於 mail.retentionS 的窗口實際只持續那麼久。"
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "同步報表列數上限"

@@ -55,6 +55,16 @@
       "text": "Återställning av kontot {{username}} startades {{when}} av {{by}}.\n\nOm det inte var du eller någon du bett om det, kontakta genast den som administrerar ditt konto.\n",
       "html": "<p>Återställning av kontot <strong>{{username}}</strong> startades {{when}} av {{by}}.</p><p>Om det inte var du eller någon du bett om det, kontakta genast den som administrerar ditt konto.</p>"
     },
+    "sign-in-alert": {
+      "subject": "En ovanlig inloggning på ditt {{service}}-konto",
+      "text": "Någon loggade in på kontot {{username}} {{when}}, och det verkade ovanligt: {{what}}.\n\nVar, ungefär: {{place}}\nMed: {{device}}\nHur: {{method}}\n\nOm det var du behöver du inte göra något. Om inte, öppna dina senaste inloggningar och säg det där, vilket loggar ut alla dina sessioner, och byt sedan lösenord:\n\n{{link}}\n",
+      "html": "<p>Någon loggade in på kontot <strong>{{username}}</strong> {{when}}, och det verkade ovanligt: {{what}}.</p><p>Var, ungefär: {{place}}</p><p>Med: {{device}}</p><p>Hur: {{method}}</p><p>Om det var du behöver du inte göra något. Om inte, <a href=\"{{link}}\">öppna dina senaste inloggningar</a> och säg det där, vilket loggar ut alla dina sessioner, och byt sedan lösenord.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Nekade inloggningsförsök på ditt {{service}}-konto",
+      "text": "{{count}} försök att logga in på kontot {{username}} med fel lösenord nekades under de {{minutes}} minuterna före {{when}}.\n\nOm det var du behöver du inte göra något. Om inte kan någon försöka gissa ditt lösenord: logga in, granska dina senaste inloggningar och byt lösenord om det kan vara känt.\n\n{{link}}\n",
+      "html": "<p>{{count}} försök att logga in på kontot <strong>{{username}}</strong> med fel lösenord nekades under de {{minutes}} minuterna före {{when}}.</p><p>Om det var du behöver du inte göra något. Om inte kan någon försöka gissa ditt lösenord: logga in, <a href=\"{{link}}\">granska dina senaste inloggningar</a> och byt lösenord om det kan vara känt.</p>"
+    },
     "address-changed": {
       "subject": "E-postadressen för ditt konto för {{service}} har ändrats",
       "text": "E-postadressen för kontot {{username}} ändrades {{when}} till {{address}}. Det här meddelandet skickades till den adress kontot hade tidigare.\n\nOm du inte väntade dig detta, kontakta genast den som administrerar ditt konto.\n",

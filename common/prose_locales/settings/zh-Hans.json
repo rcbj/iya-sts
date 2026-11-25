@@ -12443,6 +12443,30 @@
     "en": "bd3ae7ff26663b42",
     "text": "当由服务而非某个人将凭据标记为已泄露或禁用账户时（风险评分），也向该领域管理员写入名册中每位有地址的成员发送邮件。"
   },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "登录提醒"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "当某人账户的一次登录成功但看起来异常时通知此人——此人从未用过的设备或浏览器、从未登录过的国家、Tor 等匿名网络、此前刚被拒绝的密码，或风险级别达到或超过 mail.signInAlertLevel——并说明时间、大致地点、使用的设备和方式，附上其最近登录记录的链接；当其账户的密码被拒绝的次数达到登录限制（security.rateLimitWindowS 内 security.rateLimitPerIdentity 次）时也会通知，无论之后是否有人登录。在安全通知关闭或未配置传输方式时不发送任何邮件。"
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "登录提醒级别"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "成功登录需达到的最低风险级别，才会通知此人。LOW 时，新设备或新国家无论评分都会通知；MEDIUM（默认）时，通知风险引擎认为异常的登录；HIGH 时，仅通知它认为极可能不是本人的登录。历史不足以评分的登录只会因其表现出的情况而通知：匿名网络或被拒绝的密码。"
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "登录提醒时间窗口（秒）"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "同一类登录提醒——新设备、新国家、匿名网络、被拒绝的密码——在多长时间内最多通知此人一次。发件箱即为记录，因此长于 mail.retentionS 的窗口实际只持续那么久。"
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "同步报表行数上限"

@@ -12443,6 +12443,30 @@
     "en": "bd3ae7ff26663b42",
     "text": "Cuando el SERVICIO, y no una persona, marca una credencial como comprometida o desactiva una cuenta (puntuación de riesgo), envía también un correo a cada miembro de la lista Admin Write del dominio que tenga una dirección."
   },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Alertas de inicio de sesión"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Avisar a una persona cuando un inicio de sesión en su cuenta se completa pareciendo inusual —un dispositivo o navegador, o un país, desde el que nunca ha iniciado sesión, una red de anonimización como Tor, contraseñas rechazadas justo antes o un nivel de riesgo igual o superior a mail.signInAlertLevel— con cuándo, aproximadamente dónde, con qué y cómo, y un enlace a sus inicios de sesión recientes; y cuando se rechazan contraseñas para su cuenta tantas veces como permite el límite de inicio de sesión (security.rateLimitPerIdentity en security.rateLimitWindowS), inicie sesión alguien después o no. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Nivel de las alertas de inicio de sesión"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "El nivel de riesgo más bajo que debe alcanzar un inicio de sesión correcto para avisar a la persona. En LOW se avisa de un dispositivo o país nuevo sea cual sea su puntuación; en MEDIUM, el valor predeterminado, de un inicio de sesión que el motor de riesgo considera inusual; en HIGH, solo de uno que considera muy probablemente ajeno a la persona. Un inicio de sesión que nadie tiene historial suficiente para puntuar solo se avisa por lo que muestra: una red de anonimización o contraseñas rechazadas."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Ventana de las alertas de inicio de sesión (segundos)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Durante cuánto tiempo un tipo de alerta de inicio de sesión —un dispositivo nuevo, un país nuevo, una red de anonimización, contraseñas rechazadas— se avisa como máximo una vez a una persona. La bandeja de salida es el registro, así que una ventana más larga que mail.retentionS dura solo eso."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Límite de filas de un informe síncrono"

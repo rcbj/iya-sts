@@ -12443,6 +12443,30 @@
     "en": "bd3ae7ff26663b42",
     "text": "Wenn der DIENST, nicht eine Person, Anmeldedaten als kompromittiert markiert oder ein Konto deaktiviert (Risikobewertung), auch jedes Mitglied der Liste Admin Write des Vertrauensbereichs anschreiben, das eine Adresse hat."
   },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Anmeldewarnungen"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Eine Person benachrichtigen, wenn eine Anmeldung bei ihrem Konto gelingt und dabei ungewöhnlich wirkt – ein Gerät oder Browser oder ein Land, von dem aus sie sich noch nie angemeldet hat, ein Anonymisierungsnetz wie Tor, kurz zuvor abgelehnte Passwörter oder eine Risikostufe ab mail.signInAlertLevel – mit Zeitpunkt, ungefährem Ort, womit und wie, und einem Link zu ihren letzten Anmeldungen; und wenn für ihr Konto so oft Passwörter abgelehnt werden, wie das Anmeldelimit erlaubt (security.rateLimitPerIdentity in security.rateLimitWindowS), ob sich danach jemand anmeldet oder nicht. Nichts wird gesendet, solange Sicherheitshinweise aus sind oder kein Transport konfiguriert ist."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Stufe der Anmeldewarnungen"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "Die niedrigste Risikostufe, die eine erfolgreiche Anmeldung erreichen muss, damit die Person benachrichtigt wird. Bei LOW wird ein neues Gerät oder Land unabhängig von der Bewertung gemeldet; bei MEDIUM, dem Standard, eine Anmeldung, die die Risikobewertung für ungewöhnlich hält; bei HIGH nur eine, die sie sehr wahrscheinlich nicht der Person zuschreibt. Eine Anmeldung, für die niemand genug Verlauf zur Bewertung hat, wird nur für das gemeldet, was sie zeigt: ein Anonymisierungsnetz oder abgelehnte Passwörter."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Zeitfenster der Anmeldewarnungen (Sekunden)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Wie lange eine Art von Anmeldewarnung – ein neues Gerät, ein neues Land, ein Anonymisierungsnetz, abgelehnte Passwörter – einer Person höchstens einmal gemeldet wird. Der Postausgang ist der Nachweis, daher wirkt ein Fenster, das länger als mail.retentionS ist, nur so lange."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Zeilenobergrenze eines synchronen Berichts"
