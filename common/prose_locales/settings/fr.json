@@ -5383,6 +5383,22 @@
     "en": "296a8d5721391215",
     "text": "Le cn du groupe de l'annuaire dont les membres sont Administrateurs de la sécurité : eux seuls peuvent modifier une politique dans Annuaire → Politiques, désigner une politique sur une application, un groupe ou une personne, attribuer ce rôle, ou agir sur le compte d'une personne qui le détient. Admin Write seul ne le peut pas. LE RÔLE IMPLIQUE ADMIN READ et rien d'autre, de sorte qu'il peut être détenu par quelqu'un qui n'est pas administrateur par ailleurs. Le groupe du domaine par défaut constitue les Administrateurs de la sécurité du service, sur tous les domaines ; le groupe propre à un domaine limite ses membres à ce domaine."
   },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Approbation à deux personnes des actes à haut risque"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "Activé, un acte d'administration à haut risque n'est pas exécuté quand le premier administrateur le demande : supprimer un domaine, accorder un rôle d'administrateur, renouveler la clé d'une AC ou la révoquer, remplacer une ancre de confiance, faire tourner, importer ou retirer une clé de signature, faire tourner la clé de chiffrement de clés, et désactiver ce paramètre. Il est retenu dans Approbations en attente jusqu'à ce qu'un second administrateur, différent, détenant la même autorité l'approuve — il s'exécute alors comme l'acte du premier — ou le refuse. Quand moins de deux personnes pourraient décider un acte, il s'exécute aussitôt et le journal d'audit indique que personne ne l'a approuvé, afin qu'un domaine ne puisse jamais être bloqué. Désactivé, par défaut, chaque acte s'exécute quand son administrateur le demande."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Durée d'attente d'un acte retenu pour un second administrateur (heures)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Durée pendant laquelle un acte retenu pour une approbation à deux personnes attend une décision. Au-delà, l'acte a expiré et n'est jamais exécuté ; son demandeur le redemande."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Exiger un jeton d’accès sur /admin-api"

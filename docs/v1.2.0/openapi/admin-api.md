@@ -26,7 +26,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | Section | Operations | What it covers |
 |---|---|---|
 | [ACME](admin-api-acme.html) | 8 |  |
-| [Admin roles](admin-api-admin-roles.html) | 3 |  |
+| [Admin roles](admin-api-admin-roles.html) | 7 |  |
 | [Applications](admin-api-applications.html) | 50 |  |
 | [Audit log](admin-api-audit-log.html) | 3 | What happened here, in order — history rather than state, and read-only. It carries no credential of any kind and has no clear operation: an erase control on an administrative surface would make an audit log unable to answer the one question it exists for. |
 | [Authorization servers](admin-api-authorization-servers.html) | 6 |  |

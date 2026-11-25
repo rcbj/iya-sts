@@ -1979,6 +1979,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "授予或撤销对管理控制台的访问权限"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5)。GET /admin/approvals 绘制的内容：此领域中双人审批（admin.dualControl，默认关闭）是否开启并生效、它暂缓的操作表，以及每项为第二位管理员而暂缓的管理员操作，待决的在前；?id= 指定其中一项。对应 GET /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166)。approve、refuse 和 withdraw，带 { id, reason }。批准和拒绝由另一位持有该操作所需权限的不同人员进行；批准要求近期登录，并通过该操作自身的处理程序以提出者的操作身份运行所存储的操作。撤回由提出者进行。对应 POST /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "运行、拒绝或撤回一项被暂缓的管理员操作"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "非规范。本服务当前持有的每个会话，涵盖拥有会话的三种协议，可通过 ?q= 和 ?protocol= 过滤，并通过 ?page= 和 ?per= 分页。它是一个独立于 /admin-api/logout 的资源，而不是其另一种形态：那个回答 “alice 仍登录在哪些地方”，以一个身份为键，横跨十一个系列；而这个回答 “到底有谁登录了”，其中没有特定用户。两者都读取 logout/logout.ts，即关于活动会话的唯一模型。每一行都携带撤销操作所需的键和 id、GET /admin-api/tokens?session= 所需的 sessionId，以及说明其 expiresAt 由三种计算方式中哪一种得出的 expiryRule——其中 0 表示永不过期，而不是纪元时间。对应 GET /admin/sessions。"

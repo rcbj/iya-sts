@@ -5383,6 +5383,22 @@
     "en": "296a8d5721391215",
     "text": "El cn del grupo del directorio cuyos miembros son Administradores de seguridad: solo ellos pueden cambiar una política en Directorio → Políticas, asignar una política a una aplicación, un grupo o una persona, conceder este rol o actuar sobre la cuenta de una persona que lo tiene. Admin Write por sí solo no puede. EL ROL IMPLICA ADMIN READ y nada más, de modo que puede tenerlo alguien que no sea administrador por lo demás. El grupo del dominio predeterminado son los Administradores de seguridad del servicio, en todos los dominios; el grupo propio de un dominio limita a sus miembros a ese dominio."
   },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Aprobación de dos personas para actos de alto riesgo"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "Activado, un acto de administración de alto riesgo no se realiza cuando lo pide el primer administrador: eliminar un dominio, conceder un rol de administrador, renovar la clave de una CA o revocarla, sustituir un ancla de confianza, rotar, importar o retirar una clave de firma, rotar la clave de cifrado de claves y desactivar este ajuste. Queda retenido en Aprobaciones pendientes hasta que un segundo administrador, distinto, con la misma autoridad lo apruebe —entonces se ejecuta como acto del primero— o lo rechace. Cuando menos de dos personas podrían decidir un acto, se ejecuta de inmediato y el registro de auditoría indica que nadie lo aprobó, para que un dominio nunca quede bloqueado. Desactivado, el valor predeterminado, cada acto se ejecuta cuando su administrador lo pide."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Cuánto espera un acto retenido a un segundo administrador (horas)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Cuánto espera una decisión un acto retenido para aprobación de dos personas. Después, el acto ha caducado y nunca se ejecuta; quien lo pidió vuelve a pedirlo."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Exigir un token de acceso en /admin-api"

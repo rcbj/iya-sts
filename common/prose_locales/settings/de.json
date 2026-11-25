@@ -5383,6 +5383,22 @@
     "en": "296a8d5721391215",
     "text": "Der cn der Verzeichnisgruppe, deren Mitglieder Sicherheitsadministratoren sind: nur sie dürfen eine Richtlinie unter Verzeichnis → Richtlinien ändern, eine Richtlinie auf einer Anwendung, Gruppe oder Person benennen, diese Rolle gewähren oder am Konto einer Person handeln, die sie innehat. Admin-Schreiben allein darf das nicht. DIE ROLLE IMPLIZIERT ADMIN-LESEN und sonst nichts, daher kann sie jemand innehaben, der sonst kein Administrator ist. Die Gruppe des Standardbereichs ist die der Sicherheitsadministratoren des Dienstes, über jeden Bereich; die eigene Gruppe eines Bereichs beschränkt ihre Mitglieder auf diesen Bereich."
   },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Vier-Augen-Freigabe für risikoreiche Aktionen"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "Eingeschaltet wird eine risikoreiche Administratoraktion nicht ausgeführt, wenn der erste Administrator sie anfordert: einen Bereich löschen, eine Administratorrolle gewähren, eine CA neu verschlüsseln oder widerrufen, einen Vertrauensanker ersetzen, einen Signaturschlüssel rotieren, importieren oder stilllegen, den Schlüsselverschlüsselungsschlüssel rotieren und diese Einstellung ausschalten. Sie wird unter Ausstehende Freigaben zurückgehalten, bis ein zweiter, anderer Administrator mit derselben Berechtigung sie freigibt — dann läuft sie als Aktion des ersten — oder ablehnt. Wenn weniger als zwei Personen über eine Aktion entscheiden könnten, läuft sie sofort, und das Audit-Protokoll vermerkt, dass niemand sie freigegeben hat, damit ein Bereich nie ausgesperrt werden kann. Ausgeschaltet, die Voreinstellung, läuft jede Aktion, wenn ihr Administrator sie anfordert."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Wie lange eine zurückgehaltene Aktion auf einen zweiten Administrator wartet (Stunden)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Wie lange eine für die Vier-Augen-Freigabe zurückgehaltene Aktion auf eine Entscheidung wartet. Danach ist die Aktion abgelaufen und wird nie ausgeführt; ihr Anforderer fragt erneut."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Zugriffstoken für /admin-api verlangen"

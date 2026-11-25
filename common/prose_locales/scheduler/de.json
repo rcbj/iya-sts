@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "Ablauf der Vier-Augen-Freigaben"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "Setzt jede für einen zweiten Administrator zurückgehaltene Administratoraktion (#2166), deren Frist abgelaufen ist, auf abgelaufen und schreibt ihre Audit-Zeile, entfernt eine abgeschlossene eine Woche nach ihrem Abschluss und repariert die Liste der ausstehenden. Ein Lesezugriff wendet die Frist selbst an; dies ist also die Aufzeichnung und die Bereinigung, nie das, was entscheidet."
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "Attributquellen: geplante Aktualisierung"

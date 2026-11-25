@@ -5383,6 +5383,22 @@
     "en": "296a8d5721391215",
     "text": "Ang cn ng grupo sa directory na ang mga miyembro ay mga Security Administrator: sila lamang ang maaaring magbago ng patakaran sa Directory → Policies, magtakda ng patakaran sa isang application, grupo o tao, magbigay ng role na ito, o kumilos sa account ng taong may hawak nito. Hindi ito magagawa ng Admin Write lamang. KASAMA SA ROLE ANG ADMIN READ at wala nang iba, kaya maaari itong hawakan ng taong hindi naman administrator. Ang grupo ng default realm ang mga Security Administrator ng serbisyo, sa bawat realm; ang sariling grupo ng isang realm ay naglilimita sa mga miyembro nito sa realm na iyon."
   },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Pag-apruba ng dalawang tao para sa mga mataas-na-panganib na aksyon"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "Kapag naka-on, hindi ginagawa ang isang mataas-na-panganib na aksyon ng administrator kapag hiniling ito ng unang administrator: pagbura ng realm, pagbibigay ng tungkulin ng administrator, pagpapalit ng key o pagbawi ng isang CA, pagpapalit ng trust anchor, pag-rotate, pag-import o pagretiro ng signing key, pag-rotate ng key-encryption key, at pag-off ng setting na ito. Hinahawakan ito sa Mga nakabinbing pag-apruba hanggang aprubahan ito ng ikalawang, ibang administrator na may parehong awtoridad — saka ito tatakbo bilang aksyon ng una — o tanggihan ito. Kapag wala pang dalawang tao ang maaaring magpasya sa isang aksyon, tatakbo ito agad at sasabihin ng audit log na walang nag-apruba, upang hindi kailanman ma-lock out ang isang realm. Kapag naka-off, ang default, tumatakbo ang bawat aksyon kapag hiniling ng administrator nito."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Gaano katagal naghihintay ang isang hinawakang aksyon sa ikalawang administrator (oras)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Gaano katagal naghihintay ng desisyon ang isang aksyong hinawakan para sa pag-apruba ng dalawang tao. Pagkatapos nito, nag-expire na ang aksyon at hindi na tatakbo; muling hihiling ang humiling nito."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Kailanganin ang access token sa /admin-api"

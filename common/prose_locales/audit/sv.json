@@ -1187,6 +1187,38 @@
     "en": "d4a30614c3be855a",
     "text": "AuthZEN-lagret för avslag som kan begäras var fullt"
   },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "En administratörsåtgärd hölls kvar för en andra administratör"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "En kvarhållen administratörsåtgärd godkändes och kördes"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "En kvarhållen administratörsåtgärd avslogs"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "En kvarhållen administratörsåtgärd drogs tillbaka av den som begärde den"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "En kvarhållen administratörsåtgärd löpte ut obeslutad"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "En kvarhållen administratörsåtgärd godkändes och kördes inte"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "Någon nekades beslutet om en kvarhållen administratörsåtgärd"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "En högriskåtgärd av en administratör kördes utan en andra administratör"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Utfärdande-PEP:en vägrade låta den här tjänsten prägla något"

@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "Expiration des approbations à deux personnes"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "Fait passer à expiré chaque acte d'administration retenu pour un second administrateur (#2166) dont l'échéance est dépassée, en écrivant sa ligne d'audit, supprime un acte terminé une semaine après sa fin et répare la liste des actes en attente. Une lecture applique elle-même l'échéance : ceci est l'enregistrement et le nettoyage, jamais ce qui décide."
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "Sources d’attributs : actualisation planifiée"

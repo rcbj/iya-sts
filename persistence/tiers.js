@@ -310,6 +310,12 @@ const GLOBAL_MINTED = {
   // row is a component's name, times and counts — nobody's data.
   'xacml_pep_registry.liveness': 'a remote PEP\'s last heartbeat and ' +
     'counters',
+  // ADMINISTRATOR ACTS HELD FOR A SECOND ADMINISTRATOR (#2166): a held
+  // realm deletion, CA re-key or KEK rotation is control-plane state, and
+  // every cell's console must show it and let it be decided. A row names
+  // the two administrators and the operation's body; no resident's data.
+  'dualControl.requests': 'administrator acts held for a second ' +
+    'administrator',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',
