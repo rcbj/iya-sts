@@ -518,6 +518,7 @@
   "a3.factIntrospection": "Claims d’introspection",
   "a3.factLimits": "Schéma des limites",
   "a3.limitsRefused": "aucun : les limites sont refusées",
+  "a3.writeWouldRefuse": "ENREGISTRÉE AVANT UNE RÈGLE PLUS STRICTE : elle est toujours utilisée telle qu’écrite, et l’enregistrer aujourd’hui serait refusé",
   "a3.factInteraction": "Interaction (phase 6)",
   "a3.consentForcedBy": " ; consentement imposé par ",
   "a3.factAcr": "Niveau d’authentification (phase 6)",

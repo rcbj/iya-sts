@@ -101,6 +101,9 @@ import InstanceSlot = require('../common/instance_slot');
 // order exactly as it was.
 require('./xacml_model');
 import xml = require('./xacml_xml');
+// The save's bound on a regexp-match pattern (#2220); `xacml_xml.js` has
+// already loaded it, so the require moves nothing.
+import validate = require('./xacml_validate');
 
 // The directory functions this module calls, installed by
 // `ldap/ldap_server.js`.
@@ -165,6 +168,7 @@ interface XacmlStoreDeps {
     mark<T>(target: T, code: string): T;
   };
   xml: { parsePolicy(document: string): any };
+  patternProblemsIn(policy: any): string[];
   sha256Hex(text: string): string;
 }
 
@@ -434,6 +438,7 @@ class XacmlStore {
       log: helpers.log,
       errorCodes: errorCodes,
       xml: xml,
+      patternProblemsIn: validate.patternProblemsIn,
       sha256Hex: function (text: string): string {
         return crypto.digest('sha256', text, 'hex');
       }
@@ -890,6 +895,27 @@ class XacmlStore {
                problems: (error.xacmlDetail && error.xacmlDetail.problems) ||
                          null }, 'STS-XACML-0028');
     }
+    // A REGEXP-MATCH PATTERN OF THE EXPONENTIAL SHAPE IS REFUSED AT THE
+    // SAVE (#2220, ASVS 5.0.0 1.3.12) — `xacml_validate.js`'s
+    // `patternProblemsIn()`, argued there. Only a document that CHANGED: the
+    // doors that rewrite a stored policy unchanged (enable, disable, the
+    // root demotion) must still work on one stored before the rule, which
+    // goes Indeterminate at the evaluation rather than refusing a toggle.
+    const stored = this.all().filter(function (row) {
+      return row.name === name;
+    })[0] || null;
+    if (!stored || stored.document !== document) {
+      const patterns = this.deps.patternProblemsIn(
+        this.parseDocument(document));
+      if (patterns.length) {
+        log.debug('Leaving XacmlStore.write(). An unsafe pattern.');
+        return errorCodes.mark({ ok: false,
+                 why: 'The policy "' + described.id + '" carries a regular ' +
+                      'expression this service does not evaluate: ' +
+                      patterns.join(' '),
+                 problems: patterns }, 'STS-XACML-0338');
+      }
+    }
     // THE OWNER AND THE ORPHAN MARK ARE KEPT UNLESS THE CALLER SAYS
     // OTHERWISE (#564). `writePolicy()` REPLACES the entry, and every door
     // that rewrites a policy — the editor's save, enable and disable, the
@@ -899,9 +925,7 @@ class XacmlStore {
     // an ordinary policy, eligible as the root and sent to every remote PEP.
     // They are facts about the deployment, as `xacmlEnabled` is, so they
     // live beside it and not in the document.
-    const before = this.all().filter(function (row) {
-      return row.name === name;
-    })[0] || null;
+    const before = stored;
     const application = settings.application !== undefined
       ? (settings.application ? String(settings.application) : null)
       : (before ? before.application : null);

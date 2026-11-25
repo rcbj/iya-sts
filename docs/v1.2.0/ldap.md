@@ -294,6 +294,20 @@ window onto PostgreSQL, a search that no index can narrow (an equality on
 without holding up anything else, sends each entry as it is found, and stops
 paging as soon as it reaches either limit.
 
+### Size of one message
+
+A client's message is read from its BER header before any of it is held:
+when the length the header declares is over the limit, the connection is
+closed and none of the message is read (`STS-LDAP-0227`, logged at most once
+a minute). Before a bind the limit is `ldap.maxMessageBytesBeforeBind`
+(128 KiB), which a bind, StartTLS or a root DSE search never comes near and
+a SASL bind's Kerberos token fits twice over. After a bind it is
+`ldap.maxMessageBytes` (5 MiB), the limit on every HTTP body here, so an add
+or a modify carrying a photo, a certificate chain or a large group's members
+goes through. Search results are sent by the server and are not counted. A
+message using BER's indefinite length, which LDAP does not allow, is closed
+the same way. Both listeners, 389 and 636, apply it.
+
 ### Size of the directory
 
 `ldap.maxEntries` (2000) caps how many entries the process holds, counted across
@@ -413,6 +427,8 @@ provisioning client must.
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |
 | `ldap.timeLimit` | `LDAP_TIME_LIMIT` | `30` | yes | The server-side search time limit in seconds (a client's shorter `timeLimit` wins), past which a search ends with `timeLimitExceeded` and the entries already sent. |
+| `ldap.maxMessageBytes` | `LDAP_MAX_MESSAGE_BYTES` | `5242880` | yes | The largest message a bound client may send, read from its BER header; a connection whose next message declares more is closed with none of it read (`STS-LDAP-0227`). Search results are the server's and do not count. |
+| `ldap.maxMessageBytesBeforeBind` | `LDAP_MAX_MESSAGE_BYTES_BEFORE_BIND` | `131072` | yes | The same, before the connection has bound: a bind, StartTLS or a root DSE search. Never more than `ldap.maxMessageBytes` in effect. |
 | `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
 | `ldap.directoryReadableAttributes` | `LDAP_DIRECTORY_READABLE_ATTRIBUTES` | empty | yes | In product mode, the attributes a person may read on **other** people's entries; empty (the default) means they read only their own. See the warning above before widening it. |
 | `ldap.groupMembersReadable` | `LDAP_GROUP_MEMBERS_READABLE` | `false` | yes | In product mode, whether a person may read the member list of a group they are in. See the warning above. |
