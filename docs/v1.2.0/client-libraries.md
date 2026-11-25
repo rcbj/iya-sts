@@ -6,12 +6,12 @@ title: OpenID Connect and CAEP clients
 
 The catalogue of authentication libraries, by language, is
 [Authentication libraries](authentication-libraries.md). This page is the
-detailed guide to the browser OpenID Connect client and the Swift client
-for native macOS apps. Both have been run against iya-sts, are written to
-the specifications, and also work with other OpenID providers and SSF
-transmitters.
+detailed guide to the browser OpenID Connect client, the Swift client for
+native macOS apps and the Kotlin client for native Android apps. All three
+have been run against iya-sts, are written to the specifications, and also
+work with other OpenID providers and SSF transmitters.
 
-The two libraries have the same use case on two platforms:
+The three libraries have the same use case on three platforms:
 
 * **OpenID Connect Authorization Code flow with PKCE, as a public client.** The
   application holds no client secret (`token_endpoint_auth_method: none`). It
@@ -26,9 +26,11 @@ The two libraries have the same use case on two platforms:
 |---|---|---|---|
 | **oidc-caep-client** | Single-page applications in the browser | JavaScript, with TypeScript declarations | [rcbj/oidc-caep-client](https://github.com/rcbj/oidc-caep-client) ([documentation](https://rcbj.github.io/oidc-caep-client/), npm [`oidc-caep-client`](https://www.npmjs.com/package/oidc-caep-client)) |
 | **swift-oidc-caep-native-app** (`OIDCCAEPClient`) | Native macOS apps; Linux desktops too | Swift | [rcbj/swift-oidc-caep-native-app](https://github.com/rcbj/swift-oidc-caep-native-app) ([documentation](https://rcbj.github.io/swift-oidc-caep-native-app/)) |
+| **android-oidc-caep-native-app** (`net.rcbj.oidccaep`) | Native Android apps | Kotlin | [rcbj/android-oidc-caep-native-app](https://github.com/rcbj/android-oidc-caep-native-app) ([README](https://github.com/rcbj/android-oidc-caep-native-app/blob/main/README.md)) |
 
 The Swift library is a port of the JavaScript one. It keeps the JavaScript
 library's names where Swift allows, and its protections are the same. The
+Kotlin library is in turn a port of the Swift one, test suite included. The
 feature lists below are therefore nearly identical. The differences are in the
 [comparison](#comparison) at the end.
 
@@ -391,10 +393,105 @@ iya-sts at `https://localhost:8081`.
 back-channel logout, CAEP push delivery, an embedded web view (on purpose),
 and a sign-in that survives a relaunch part way through.
 
-## Setting up iya-sts for either library
+## android-oidc-caep-native-app: native Android apps
 
-Both libraries need the same things from iya-sts. Only the redirect URI and
-CORS differ between them. Each library's repository has a script,
+An OpenID Connect client library for **native Android apps**, written in
+Kotlin: the `library` module of
+[rcbj/android-oidc-caep-native-app](https://github.com/rcbj/android-oidc-caep-native-app), package `net.rcbj.oidccaep`. It
+is a port of swift-oidc-caep-native-app, with the same API shape, the same
+protections and the same test suite. It signs the person in through the
+browser in a Custom Tab (RFC 8252), keeps their tokens encrypted at rest,
+binds them to a key in the Android Keystore, and receives CAEP events
+through the Shared Signals Framework. It needs Android 9 (API 28) or later.
+Its dependencies are OkHttp, kotlinx.coroutines, kotlinx.serialization and
+`androidx.browser`; the cryptography is the platform's own.
+
+**Use it for** an Android app that signs people in at iya-sts, calls APIs
+with a sender-constrained token, keeps people signed in across launches, and
+reacts to CAEP signals about them.
+
+### Install
+
+The library is not published to a package manager yet. Include the
+repository's `library` module in the app's Gradle build, and name the
+redirect URI's scheme, which the library's manifest registers its redirect
+activity for:
+
+```kotlin
+// the app's build.gradle.kts
+android {
+    defaultConfig { manifestPlaceholders["oidcRedirectScheme"] = "com.example.myapp" }
+}
+dependencies { implementation(project(":library")) }
+```
+
+### A minimal sketch
+
+Taken from the library's README. The app's settings (the provider's metadata
+URL, the `client_id`, the scopes and the redirect URI) are in
+`src/main/assets/oidc_configuration.json`, with the keys of the Swift
+library's `OIDCConfiguration.plist`:
+
+```kotlin
+import net.rcbj.oidccaep.*
+
+val config = OIDCAppConfiguration.load(context)          // oidc_configuration.json
+val client = config.makeClient(
+    dpopKeyStore = preferredDPoPKeyStore(context))       // the Android Keystore
+val accounts = AccountManager(client,
+    AccountManagerOptions(store = KeystoreTokenStore(context))).restore()
+accounts.signIn(config.makeAuthenticator(activity))      // a Custom Tab
+val tokens = accounts.getTokenSet()                      // refreshed when due
+
+// CAEP: one handler per event, over a poll stream.
+val receiver = SSFReceiver(SSFReceiverConfiguration(
+    transmitterIssuer = client.issuer,
+    authorization = SSFAuthorization.oidc(client) { accounts.getTokenSet() }))
+receiver.onSessionRevoked { event -> /* sign the person out */ }
+receiver.start(catchUp = true)   // create or reuse the stream, poll
+```
+
+The repository's `demo` is a working app (Jetpack Compose) configured for
+iya-sts at `https://localhost:8081`, which the Android emulator reaches
+through `adb reverse`; `scripts/setup-emulator.sh` prepares the emulator and
+`scripts/register-iya-sts-client.mjs` registers the demo.
+
+### Features
+
+The features are the Swift library's, listed [above](#features-1). What
+differs is where things are kept and how the browser is shown:
+
+* **Sign-in in a Custom Tab** (`CustomTabsWebAuthenticator`): the
+  provider's pages open in the person's browser, sharing its session, and the
+  redirect to the private-use scheme comes back to the library's own
+  activity. Closing the tab is `user_cancelled`.
+  `PrefersEphemeralWebBrowserSession` asks the browser for ephemeral
+  browsing where it supports it. `LoopbackWebAuthenticator` receives a
+  loopback redirect, as on Linux.
+* **DPoP key in the Android Keystore** (`AndroidKeystoreKeyStore`): a P-256
+  key generated in StrongBox when the device has one, else in the TEE, and
+  never extractable. `preferredDPoPKeyStore(context)` makes it.
+* **Tokens encrypted at rest** (`KeystoreTokenStore`): each value under
+  AES-256-GCM with a key held in the Android Keystore, the item's name as
+  associated data, in the app's private storage. Every account, and which one
+  was active, survives a relaunch. Exclude the store from backups: its key
+  cannot be restored on another device.
+* Configuration from `oidc_configuration.json` in the app's assets, with the
+  same keys as the Swift library's plist; relative `TrustedCertificates` are
+  asset names.
+* Everything else is the same: Authorization Code with PKCE `S256` only,
+  `state` and `nonce`, RFC 9207, PAR, RFC 8707, ID Token validation, refresh
+  with rotation, UserInfo, revocation, RP-Initiated Logout, Dynamic Client
+  Registration, `AccountManager` with its hooks, and `SSFReceiver` with poll
+  delivery, stream reuse and one handler per CAEP event. Its HTTP client is
+  OkHttp, which never follows a redirect.
+
+**Not included:** the Swift library's list, and the same reasons.
+
+## Setting up iya-sts for any of the libraries
+
+All three libraries need the same things from iya-sts. Only the redirect URI
+and CORS differ between them; the two native libraries register alike. Each library's repository has a script,
 `scripts/register-iya-sts-client.mjs`, that does all of the steps below
 for its demo through the [Management API](management-api.md). It is also a
 worked example of the calls.
@@ -402,7 +499,7 @@ worked example of the calls.
 1. **Register a public client.** Create an application declared for
    **OAuth 2.0** and **OpenID Connect**, with:
 
-   | Field | SPA (oidc-caep-client) | Native app (swift-oidc-caep-native-app) |
+   | Field | SPA (oidc-caep-client) | Native app (swift-oidc-caep-native-app, android-oidc-caep-native-app) |
    |---|---|---|
    | `oauthTokenEndpointAuthMethod` | `none` | `none` |
    | `oauthResponseType` | `code` | `code` |
@@ -477,8 +574,17 @@ each CAEP event a library will receive is on [CAEP events](caep-events.md).
 which is rebuilt on every start. The browser, or the Mac, has to trust it:
 open the URL once and accept it, or trust the Root as
 [TLS → The server certificate](tls.md#the-server-certificate) describes. The
-Swift library's `TrustedCertificates` setting adds a trust anchor without
-touching the system.
+Swift and Android libraries' `TrustedCertificates` setting adds a trust
+anchor without touching the system. On the Android emulator, the Android
+repository's `scripts/setup-emulator.sh` writes the Root into the demo and
+tells the emulator's Chrome to accept certificates under that Root's keys
+only.
+
+**The sign-in window.** `oauth2.parRequestUriLifetimeS` (60 seconds by
+default) bounds the whole sign-in when PAR is used, which the libraries do
+whenever it is offered: the password, a second factor and consent all have
+to fit inside it. A person working through those screens on a phone may
+need more; the setting goes up to 600.
 
 **Optional extras the libraries use when iya-sts offers them.** PAR is used
 whenever the discovery document advertises it. DPoP-bound tokens need nothing
@@ -488,33 +594,33 @@ on by default ([Several accounts](multiple-accounts.md)).
 
 ## Comparison
 
-| | oidc-caep-client | swift-oidc-caep-native-app |
-|---|---|---|
-| Kind of application | Browser single-page application | Native macOS app (Linux desktops too) |
-| Language | JavaScript, with TypeScript declarations | Swift 5.9+ |
-| Distribution | npm (`latest`, and `next` from `develop`) | Swift Package Manager |
-| Runtime requirement | A current browser; Node.js 24.22.1+ outside one | macOS 13+ (glibc 2.35 and GTK 4.6 for the Linux demo) |
-| Dependency | `jose` | `swift-crypto` |
-| Client type | Public (`none`) | Public (`none`) |
-| Flow | Authorization Code + PKCE `S256` | Authorization Code + PKCE `S256` |
-| Where sign-in happens | The page redirects itself | The system browser (`ASWebAuthenticationSession`), or the default browser with a loopback listener |
-| Redirect URI | `https` on the page's origin | Private-use scheme; `https` with an associated domain; loopback |
-| CORS origin in iya-sts | Required | Not needed |
-| PAR, RFC 9207, RFC 8707 | Yes | Yes |
-| DPoP key | Non-extractable WebCrypto key in IndexedDB | Secure Enclave, else Keychain |
-| DPoP default | Off; turn it on | On in `OIDCConfiguration.plist` |
-| Token cache | Memory by default; IndexedDB for several accounts | Keychain |
-| Survives a reload or relaunch | With IndexedDB | Yes, on macOS |
-| Several accounts | Yes, one active account per tab, shared across tabs | Yes, one active account per app |
-| RP-Initiated Logout, revocation | Yes | Yes |
-| Dynamic Client Registration | Yes (RFC 7591, RFC 7592) | Yes (RFC 7591, RFC 7592) |
-| SSF delivery | Poll (RFC 8936) | Poll (RFC 8936) |
-| CAEP events with their own handler | All eight CAEP 1.0 events, plus SSF verification and stream-updated | The same |
-| RISC events | Through `onEvent(RISC.…)` | Through `onEvent(RISC.…)` |
-| Stream reuse at 409/403 | Yes | Yes |
-| Stream deletion | On sign-out; opt-in on page unload | On sign-out |
-| Not included | Confidential clients, JAR/JARM, front- and back-channel logout, push delivery | The same, and an embedded web view |
-| Licence | MIT | MIT |
+| | oidc-caep-client | swift-oidc-caep-native-app | android-oidc-caep-native-app |
+|---|---|---|---|
+| Kind of application | Browser single-page application | Native macOS app (Linux desktops too) | Native Android app |
+| Language | JavaScript, with TypeScript declarations | Swift 5.9+ | Kotlin |
+| Distribution | npm (`latest`, and `next` from `develop`) | Swift Package Manager | The repository's Gradle module (not yet published) |
+| Runtime requirement | A current browser; Node.js 24.22.1+ outside one | macOS 13+ (glibc 2.35 and GTK 4.6 for the Linux demo) | Android 9 (API 28)+ |
+| Dependency | `jose` | `swift-crypto` | OkHttp, kotlinx.coroutines, kotlinx.serialization, `androidx.browser` |
+| Client type | Public (`none`) | Public (`none`) | Public (`none`) |
+| Flow | Authorization Code + PKCE `S256` | Authorization Code + PKCE `S256` | Authorization Code + PKCE `S256` |
+| Where sign-in happens | The page redirects itself | The system browser (`ASWebAuthenticationSession`), or the default browser with a loopback listener | A Custom Tab, or the browser with a loopback listener |
+| Redirect URI | `https` on the page's origin | Private-use scheme; `https` with an associated domain; loopback | Private-use scheme; loopback |
+| CORS origin in iya-sts | Required | Not needed | Not needed |
+| PAR, RFC 9207, RFC 8707 | Yes | Yes | Yes |
+| DPoP key | Non-extractable WebCrypto key in IndexedDB | Secure Enclave, else Keychain | Android Keystore: StrongBox, else the TEE |
+| DPoP default | Off; turn it on | On in `OIDCConfiguration.plist` | On in `oidc_configuration.json` |
+| Token cache | Memory by default; IndexedDB for several accounts | Keychain | Encrypted under a Keystore key (`KeystoreTokenStore`) |
+| Survives a reload or relaunch | With IndexedDB | Yes, on macOS | Yes |
+| Several accounts | Yes, one active account per tab, shared across tabs | Yes, one active account per app | Yes, one active account per app |
+| RP-Initiated Logout, revocation | Yes | Yes | Yes |
+| Dynamic Client Registration | Yes (RFC 7591, RFC 7592) | Yes (RFC 7591, RFC 7592) | Yes (RFC 7591, RFC 7592) |
+| SSF delivery | Poll (RFC 8936) | Poll (RFC 8936) | Poll (RFC 8936) |
+| CAEP events with their own handler | All eight CAEP 1.0 events, plus SSF verification and stream-updated | The same | The same |
+| RISC events | Through `onEvent(RISC.…)` | Through `onEvent(RISC.…)` | Through `onEvent(RISC.…)` |
+| Stream reuse at 409/403 | Yes | Yes | Yes |
+| Stream deletion | On sign-out; opt-in on page unload | On sign-out | On sign-out |
+| Not included | Confidential clients, JAR/JARM, front- and back-channel logout, push delivery | The same, and an embedded web view | The same as the Swift library |
+| Licence | MIT | MIT | MIT |
 
 ## Related
 
