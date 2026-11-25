@@ -1815,6 +1815,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Qué clave firma las credenciales dc+sd-jwt y jwt_vc_json de este dominio y sus Token Status List Tokens. `dedicated` — el valor predeterminado — es una clave propia, por familia de algoritmos, que no se usa para nada más, bajo un certificado cuyo subjectAltName nombra como URI cada identificador de emisor al que responde el dominio (sin nombre DNS), con el uso extendido de clave id-kp-documentSigning (RFC 9336) y nada que una pila TLS aceptaría, para que una billetera pueda comparar el iss de la credencial con su x5c (HAIP 1.0, sección 6.1.1). El certificado se vuelve a emitir cuando cambian los identificadores de emisor (global.publicBaseUrl, tls.hostnames, un listener). `realm-key` las firma con la clave JOSE general del dominio, como hacía la 1.0.0, cuyo certificado no nombra a ningún emisor. Las credenciales ya emitidas siguen siendo verificables en ambos casos. ldp_vc y mso_mdoc no se ven afectados."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Rotar la clave de firma de credenciales cada (días)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Cuánto tiempo firma la clave de un firmante de credenciales dedicado (keys.credentialSigner dedicated) antes de que la tarea keys.credential-signer-rotate cree la siguiente clave de su familia, que firma a partir de entonces. La clave que reemplaza ya no firma nada y sigue en el JWKS y el documento DID del emisor de credenciales, de modo que cada credencial que firmó sigue verificándose. Se cuenta desde que la tarea vio la clave por primera vez. 0 desactiva la programación. Solo en modo producto."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Claves de descifrado poscuánticas / híbridas"
@@ -1822,6 +1830,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "Los algoritmos JWE ML-KEM y HPKE para los que este dominio tiene una clave de descifrado — un par de claves por algoritmo, publicado en el JWKS del dominio (`use: enc`, con `alg`) y anunciado en `request_object_encryption_alg_values_supported` y `assertion_encryption_alg_values_supported`, para que un cliente pueda cifrar un objeto de solicitud o una aserción RFC 7523 / 7522 para este dominio con establecimiento de clave poscuántico o híbrido PQ/T. HPKE-10-KE es X-Wing (ML-KEM-768 + X25519). Cifrar PARA un cliente que registró uno de estos algoritmos no necesita nada aquí. **Vacío de forma predeterminada, y decisión de un administrador:** todos estos algoritmos proceden de un Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), y una clave AKP en un JWKS es un tipo de clave que las bibliotecas JOSE de muchos clientes aún no analizan — algunas rechazan el conjunto de claves entero. Nombre un algoritmo aquí solo cuando se sepa que los clientes que leen el JWKS de este dominio lo soportan. Quitar uno deja de publicarlo y aceptarlo; volver a nombrarlo recupera la misma clave."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Reemplazar las claves de descifrado de solicitudes cada (días)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Cuánto tiempo se conservan las claves de cifrado de los objetos de solicitud, la clave de cifrado de solicitudes de OpenID4VCI y las claves de descifrado KEM antes de que la tarea keys.encryption-key-rotate las reemplace. La clave nueva se publica de inmediato (/oauth2/jwks, los metadatos del emisor de credenciales) y la que reemplaza sigue descifrando durante keys.encryptionKeyOverlapDays. Se cuenta desde que la tarea vio la clave por primera vez. 0 desactiva la programación. Solo en modo producto."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "Una clave de descifrado de solicitudes reemplazada sigue descifrando durante (días)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Cuánto tiempo una clave de descifrado de solicitudes que reemplazó keys.encryption-key-rotate sigue abriendo lo que un cliente cifró para ella antes de leer la clave nueva. Mientras tanto no se publica en ninguna parte, y signing.retire la elimina cuando ha pasado este plazo."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -4178,6 +4202,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Cuánto tiempo es válida cada CA emisora cuando la construcción no indica vigencia. Cero son los cinco años del perfil `issuing-ca`. Se recorta a la caducidad de su intermedia."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "Renovar los certificados de CA antes de que caduquen"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Si la tarea diaria pki.ca-renew renueva la raíz, cada CA intermedia y cada CA emisora dentro de su plazo de antelación (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) con la MISMA clave y el mismo sujeto, de modo que cada certificado que firmó sigue verificándose y un anclaje a su clave se mantiene. Una raíz renovada se publica junto a la que reemplaza, en /pki/ca/service/root-previous.cer, hasta que esta caduca. Una CA importada nunca se renueva. Desactivado, nada renueva una CA y caduca como antes de la 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Renovar la raíz con esta antelación a su caducidad (días)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Con cuánta antelación a la caducidad de la CA raíz la renueva pki.ca-renew, como máximo la mitad de su vida útil. Larga por defecto (tres años), porque una raíz renovada es un nuevo certificado de ancla de confianza que cada parte que confía debe recibir antes de que caduque el anterior."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Renovar una CA intermedia o emisora con esta antelación a su caducidad (días)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Con cuánta antelación a la caducidad de una CA intermedia o emisora la renueva pki.ca-renew, como máximo la mitad de su vida útil. Una CA no puede sobrevivir a su CA padre, así que una cuya CA padre caduca antes espera la renovación de esta."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -6563,6 +6611,22 @@
     "en": "74971dd9b68d3a40",
     "text": "En un clúster activo-activo, la escucha LDAPS y el puerto principal de cada nodo (salvo que tls.mainPortSharedTickets esté desactivado) sellan los tickets de sesión con una única clave compartida, para que un ticket emitido por un nodo se reanude en otro (la escucha del depurador conserva una clave por nodo). Esta es la frecuencia, en segundos, con la que el trabajo tls.ticket-key-rotate la reemplaza; la clave reemplazada se elimina, así que los secretos de una sesión reanudada solo pueden recuperarse de un ticket capturado mientras vive su clave, y un cliente cuyo ticket sea más antiguo hace un handshake completo. La clave se guarda en el almacén, sellada con la clave de cifrado de claves. 0 desactiva el uso compartido, y fuera del modo activo-activo no se comparte nada: un único nodo que responde reanuda con las claves propias por escucha de OpenSSL, que nunca salen del proceso."
   },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Renovar el certificado del escuchador sin reiniciar"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Si la tarea horaria tls.server-certificate-renew renueva el certificado que presentan el puerto principal, LDAPS y el depurador, con la misma clave, en cuanto queda menos de un tercio de su validez (o entra en tls.serverCertificateRenewLeadDays), y lo pone en cada socket sin reiniciar. Cada nodo renueva el suyo. Desactivado, solo se renueva al arrancar y con Renovar en la consola. Un certificado que usted proporciona en tls.certificateFile lo renueva usted."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Renovar el certificado del escuchador con esta antelación a su caducidad (días, 0 = a un tercio de su validez)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Renovar el certificado del escuchador estos días antes de que caduque, cuando eso es antes del momento en que queda un tercio de su validez. 0, el valor predeterminado, mantiene el tercio."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "El puerto principal comparte la clave de tickets de sesión del clúster"
@@ -7922,6 +7986,14 @@
   "krb5.krbtgtRotationIntervalDays|description": {
     "en": "0ef945c098a1eeac",
     "text": "Cuánto tiempo sigue siendo actual la clave krbtgt de un dominio de confianza — la clave con la que se sella todo Ticket-Granting Ticket — antes de que el trabajo krb5.krbtgt-rotate la reemplace por una nueva clave aleatoria con el siguiente kvno. La clave reemplazada se conserva (krb5.retainedKeyVersions, durante krb5.retainedKeyTtlS) para que un TGT emitido un instante antes de la rotación siga funcionando hasta que caduque, y el trabajo nunca rota mientras esa ventana está abierta. 180 días es la recomendación habitual de Active Directory. 0 desactiva la rotación programada; una rotación manual (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) sigue funcionando. Solo en modo producto. Con krb5.retainedKeyVersions en 0 el trabajo también queda desactivado, porque una rotación que no conservara nada cerraría sin aviso la sesión de todos los usuarios de Kerberos del dominio."
+  },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Rotar la clave del aceptador propio de este servicio cada (días)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Qué antigüedad puede alcanzar una clave de principal de servicio antes de que la tarea krb5.service-key-rotate la reemplace por una nueva clave aleatoria con el siguiente kvno, conservando la que reemplaza (krb5.retainedKeyVersions, durante krb5.retainedKeyTtlS) para que los tickets ya emitidos sigan funcionando, y nunca mientras esa ventana esté abierta. Solo se rota la clave que este servicio creó para su propio aceptador: una clave cuyo keytab se entregó a otro servicio se informa como pendiente en /admin/scheduler, y rotarla, lo que entrega el keytab nuevo, sigue siendo un acto del operador. Se cuenta desde la última rotación de la clave o su creación. 0 desactiva la programación. Solo en modo producto."
   },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",

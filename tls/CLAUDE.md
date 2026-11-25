@@ -1249,6 +1249,26 @@ node name gets a key of its own (and is announced as a restart, from the
 service's last announcement); a changed `tls.selfSignedKeyBits` makes a new
 key; a start with no store makes a key per start.
 
+## THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS RUNS (#2220, 2026-11-25)
+
+`pki.start()` and the console's Renew re-issued the listener certificate over
+the same key once less than a third of its validity was left, and nothing
+else did, so a node that ran past that point without a restart presented a
+certificate nobody renewed. **`tls.server-certificate-renew` is a PER-PROCESS
+job** (`tls_server.js`, *THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS
+RUNS*), for this file's rule that a socket is one process's: every node's
+front process holds a leaf over its own listener key, so a cluster job would
+renew one node. It is registered in every process and off in a request
+worker. Its run goes through `request_pool.js`'s `reconcileTheListener({ renew:
+true })`, the one listener pass at a time, so a renewal never races a
+hierarchy reconcile on the socket, and the renewed bundle reaches the workers
+by the IPC path a rebuilt hierarchy already takes. The renewal is
+`pki.certifyRegistered({ repairBranch: false, renewWithinMs })` — the call a
+start makes, with `tls.serverCertificateRenewLeadDays` as a lead on top of the
+third (`pki.heldCertificateCurrent()`'s `renewWithinMs`) — and never builds a
+branch. `tls.serverCertificateRenewal` off is the way back.
+`tests/key_renewal.js` B holds it.
+
 ## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
 
 The SAML identity provider's metadata publishes the certificate its back

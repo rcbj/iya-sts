@@ -608,58 +608,61 @@ var config = {
 
   // --- Key material ----------------------------------------------------
   keys: {
-    source: "auto",                    // Where signing keys come from; restart to apply
-    plaintextRetention: "timed",       // How long a decrypted private key is kept
-    plaintextTtlS: 300,                // Decrypted key idle timeout (seconds)
-    signerModel: "per-algorithm",      // Signer model
-    credentialSigner: "dedicated",     // Credential signing key
-    encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
-    offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
-    postQuantumSigning: true,          // Post-quantum signing
-    eddsaSigning: false,               // EdDSA signing
-    signingAlgorithms: "",             // Signing algorithms this realm uses
-    pqcOnly: false,                    // Sign post-quantum only
-    acceptedSigningAlgorithms: "",     // JWS algorithms accepted
-    jwksCertificateUrl: false,         // Name a published key's certificates by URL
-    kidFormat: "internal",             // Signed token kid format
-    kekProvider: "file",               // Key-encryption key provider; restart to apply
-    kekTransitMount: "transit",        // Transit engine mount; restart to apply
-    kekFile: "/run/secrets/sts-kek",   // Key-encryption key file; restart to apply
-    kekRef: "",                        // Key-encryption key reference; restart to apply
-    kekVault: "",                      // Vault or Key Vault URL; restart to apply
-    vaultClientCert: "",               // Client certificate for the secret store; restart to apply
-    vaultClientKey: "",                // Client key for the secret store; restart to apply
-    vaultCaCert: "",                   // Trust anchor for the secret store; restart to apply
-    vaultCertRole: "",                 // Certificate auth role; restart to apply
-    vaultCertAuthMount: "cert",        // Certificate auth mount path; restart to apply
-    kekField: "value",                 // Vault secret field; restart to apply
-    kekToken: "",                      // Vault token; restart to apply
-    storeProbeTimeoutMs: 5000,         // Secret store probe timeout (ms)
-    kekRegion: "",                     // AWS region; restart to apply
-    pkcs11Module: "",                  // PKCS#11 module; restart to apply
-    pkcs11Mechanism: "auto",           // How the HSM wraps a data key; restart to apply
-    pkcs11GenerateKey: false,          // Make the HSM key on first use; restart to apply
-    pkcs11Sessions: 4,                 // PKCS#11 sessions per process; restart to apply
-    pkcs11PinProvider: "none",         // Where the PKCS#11 PIN is read from; restart to apply
-    pkcs11PinRef: "",                  // The PKCS#11 PIN's location; restart to apply
-    pkcs11PinField: "",                // The field the PKCS#11 PIN is in; restart to apply
-    signingKeyStore: "software",       // Where a realm's signing keys are made
-    signingKeyToken: "",               // The HSM token signing keys are made on; restart to apply
-    pkcs11SynchronousSign: false,      // Allow blocking PKCS#11 calls
-    cellKekProvider: "none",           // Where the cell key-encryption key is read from; restart to apply
-    cellKekRef: "",                    // The cell key-encryption key's location; restart to apply
-    cellKekField: "",                  // The field the cell key is in; restart to apply
-    cellKekRegion: "",                 // AWS region of the cell key; restart to apply
-    cellKekVault: "",                  // Key Vault URL of the cell key; restart to apply
-    dataKeyRotationDays: 365,          // Rotate every data encryption key after (days)
-    directoryCipher: "aes-256-gcm",    // Cipher for data stored in the directory
-    dataKeyActivationLeadSeconds: 300, // A new data encryption key is used after (seconds)
-    dataKeyRetireAfterDays: 7,         // Keep a replaced data encryption key at least (days)
-    previousKekProvider: "none",       // Where the previous key-encryption key is read from; restart to apply
-    previousKekRef: "",                // The previous key-encryption key's location; restart to apply
-    previousKekField: "",              // The field the previous key is in; restart to apply
-    previousKekRegion: "",             // AWS region of the previous key; restart to apply
-    previousKekVault: ""               // Key Vault URL of the previous key; restart to apply
+    source: "auto",                            // Where signing keys come from; restart to apply
+    plaintextRetention: "timed",               // How long a decrypted private key is kept
+    plaintextTtlS: 300,                        // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",              // Signer model
+    credentialSigner: "dedicated",             // Credential signing key
+    credentialSignerRotationIntervalDays: 365, // Rotate the credential signing key every (days)
+    encryptionKemAlgs: "",                     // Post-quantum / hybrid decryption keys
+    encryptionKeyRotationIntervalDays: 180,    // Replace the request decryption keys every (days)
+    encryptionKeyOverlapDays: 30,              // A replaced request decryption key still decrypts for (days)
+    offerKemEncryption: false,                 // Offer post-quantum / hybrid encryption to clients
+    postQuantumSigning: true,                  // Post-quantum signing
+    eddsaSigning: false,                       // EdDSA signing
+    signingAlgorithms: "",                     // Signing algorithms this realm uses
+    pqcOnly: false,                            // Sign post-quantum only
+    acceptedSigningAlgorithms: "",             // JWS algorithms accepted
+    jwksCertificateUrl: false,                 // Name a published key's certificates by URL
+    kidFormat: "internal",                     // Signed token kid format
+    kekProvider: "file",                       // Key-encryption key provider; restart to apply
+    kekTransitMount: "transit",                // Transit engine mount; restart to apply
+    kekFile: "/run/secrets/sts-kek",           // Key-encryption key file; restart to apply
+    kekRef: "",                                // Key-encryption key reference; restart to apply
+    kekVault: "",                              // Vault or Key Vault URL; restart to apply
+    vaultClientCert: "",                       // Client certificate for the secret store; restart to apply
+    vaultClientKey: "",                        // Client key for the secret store; restart to apply
+    vaultCaCert: "",                           // Trust anchor for the secret store; restart to apply
+    vaultCertRole: "",                         // Certificate auth role; restart to apply
+    vaultCertAuthMount: "cert",                // Certificate auth mount path; restart to apply
+    kekField: "value",                         // Vault secret field; restart to apply
+    kekToken: "",                              // Vault token; restart to apply
+    storeProbeTimeoutMs: 5000,                 // Secret store probe timeout (ms)
+    kekRegion: "",                             // AWS region; restart to apply
+    pkcs11Module: "",                          // PKCS#11 module; restart to apply
+    pkcs11Mechanism: "auto",                   // How the HSM wraps a data key; restart to apply
+    pkcs11GenerateKey: false,                  // Make the HSM key on first use; restart to apply
+    pkcs11Sessions: 4,                         // PKCS#11 sessions per process; restart to apply
+    pkcs11PinProvider: "none",                 // Where the PKCS#11 PIN is read from; restart to apply
+    pkcs11PinRef: "",                          // The PKCS#11 PIN's location; restart to apply
+    pkcs11PinField: "",                        // The field the PKCS#11 PIN is in; restart to apply
+    signingKeyStore: "software",               // Where a realm's signing keys are made
+    signingKeyToken: "",                       // The HSM token signing keys are made on; restart to apply
+    pkcs11SynchronousSign: false,              // Allow blocking PKCS#11 calls
+    cellKekProvider: "none",                   // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                            // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                          // The field the cell key is in; restart to apply
+    cellKekRegion: "",                         // AWS region of the cell key; restart to apply
+    cellKekVault: "",                          // Key Vault URL of the cell key; restart to apply
+    dataKeyRotationDays: 365,                  // Rotate every data encryption key after (days)
+    directoryCipher: "aes-256-gcm",            // Cipher for data stored in the directory
+    dataKeyActivationLeadSeconds: 300,         // A new data encryption key is used after (seconds)
+    dataKeyRetireAfterDays: 7,                 // Keep a replaced data encryption key at least (days)
+    previousKekProvider: "none",               // Where the previous key-encryption key is read from; restart to apply
+    previousKekRef: "",                        // The previous key-encryption key's location; restart to apply
+    previousKekField: "",                      // The field the previous key is in; restart to apply
+    previousKekRegion: "",                     // AWS region of the previous key; restart to apply
+    previousKekVault: ""                       // Key Vault URL of the previous key; restart to apply
   },
 
   // --- Signing algorithms ----------------------------------------------
@@ -714,6 +717,9 @@ var config = {
     rootLifetimeYears: 0,                                                                                                                  // Root CA lifetime (years, 0 = the profile's)
     intermediateLifetimeYears: 0,                                                                                                          // Intermediate CA lifetime (years, 0 = the profile's)
     issuingLifetimeYears: 0,                                                                                                               // Issuing CA lifetime (years, 0 = the profile's)
+    caRenewal: true,                                                                                                                       // Renew CA certificates before they expire
+    rootRenewalLeadDays: 1095,                                                                                                             // Renew the Root this long before it expires (days)
+    caRenewalLeadDays: 365,                                                                                                                // Renew an Intermediate or Issuing CA this long before it expires (days)
     maxStoredObjects: 200,                                                                                                                 // Certificates and keys the workbench store keeps, per realm
     personSelfServicePerIdentity: 5,                                                                                                       // Self-issued key pairs one person may ask for per window
     personSelfServicePerAddress: 5,                                                                                                        // Self-issued key pairs one address may ask for per window
@@ -1044,6 +1050,8 @@ var config = {
     mainPortDisableOptionalClientCertificate: false,                                                                                                                                                                                                                                                           // Main port: do not ask for a client certificate
     mainPortRequireClientCertificate: false,                                                                                                                                                                                                                                                                   // Main port: require a client certificate
     sessionTicketRotationS: 3600,                                                                                                                                                                                                                                                                              // Shared session-ticket key rotation (s)
+    serverCertificateRenewal: true,                                                                                                                                                                                                                                                                            // Renew the listener certificate without a restart
+    serverCertificateRenewLeadDays: 0,                                                                                                                                                                                                                                                                         // Renew the listener certificate this long before it expires (days, 0 = at a third of its validity)
     mainPortSharedTickets: true,                                                                                                                                                                                                                                                                               // Main port shares the cluster session-ticket key; restart to apply
     sessionTimeoutS: 300,                                                                                                                                                                                                                                                                                      // TLS session lifetime (s)
     sessionCacheSize: 2048,                                                                                                                                                                                                                                                                                    // TLS session cache size (sessions)
@@ -1254,6 +1262,7 @@ var config = {
     retainedKeyVersions: 1,                                // Previous key versions kept
     retainedKeyTtlS: 0,                                    // Previous key version lifetime (s)
     krbtgtRotationIntervalDays: 180,                       // Rotate the krbtgt key every (days)
+    serviceKeyRotationIntervalDays: 180,                   // Rotate this service's own acceptor key every (days)
     pkinit: true,                                          // PKINIT (certificate pre-authentication)
     pkinitRequireFreshness: true,                          // PKINIT requires a freshness token
     pkinitRequirePaChecksum2: false,                       // PKINIT requires paChecksum2

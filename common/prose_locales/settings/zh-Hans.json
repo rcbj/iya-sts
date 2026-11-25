@@ -1815,6 +1815,14 @@
     "en": "80863e8241a6ca0b",
     "text": "签署本领域 dc+sd-jwt 和 jwt_vc_json 凭证及其 Token Status List Token 的密钥。`dedicated`（默认值）是凭证专用的密钥，每个算法族一把，不用于其他任何用途，其证书的 subjectAltName 以 URI 形式列出本领域响应的每个颁发者标识符（不含 DNS 名称），扩展密钥用法为 id-kp-documentSigning（RFC 9336），不含任何 TLS 协议栈会接受的用法，使钱包能够将凭证的 iss 与其 x5c 进行比对（HAIP 1.0 第 6.1.1 节）。颁发者标识符发生变化时（global.publicBaseUrl、tls.hostnames、监听器），证书会重新签发。`realm-key` 使用本领域的通用 JOSE 密钥签署，与 1.0.0 相同，其证书不列出任何颁发者。无论哪种方式，已签发的凭证都仍可验证。ldp_vc 和 mso_mdoc 不受影响。"
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "凭证签名密钥轮换间隔（天）"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "专用凭证签名者（keys.credentialSigner dedicated）的密钥签名多长时间后，由 keys.credential-signer-rotate 作业生成其密钥族的下一个密钥，并由新密钥开始签名。被替换的密钥不再签署任何内容，并保留在凭证签发方的 JWKS 和 DID 文档中，因此它签署的每个凭证仍可验证。从作业首次看到该密钥时开始计算。0 关闭此计划。仅限产品模式。"
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "后量子 / 混合解密密钥"
@@ -1822,6 +1830,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "此领域持有解密密钥的 ML-KEM 和 HPKE JWE 算法——每种算法一个密钥对，发布在领域的 JWKS 中（`use: enc`，带 `alg`），并在 `request_object_encryption_alg_values_supported` 和 `assertion_encryption_alg_values_supported` 中公布，使客户端能够使用后量子或 PQ/T 混合密钥建立方式，将请求对象或 RFC 7523 / 7522 断言加密给此领域。HPKE-10-KE 即 X-Wing（ML-KEM-768 + X25519）。向注册了其中某种算法的客户端加密，无需此处做任何设置。**默认为空，由管理员选择：**这些算法全部来自 Internet-Draft（draft-ietf-jose-pqc-kem-05、draft-ietf-jose-hpke-encrypt-22、draft-reddy-cose-jose-pqc-hybrid-hpke-11），而 JWKS 中的 AKP 密钥是许多客户端的 JOSE 库尚无法解析的密钥类型——有些会拒绝整个密钥集。只有在确知读取此领域 JWKS 的客户端能够应对时，才在此列出算法。移除某个算法会停止发布和接受它；再次列出会恢复同一密钥。"
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "请求解密密钥替换间隔（天）"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "请求对象加密密钥、OpenID4VCI 请求加密密钥和 KEM 解密密钥保留多长时间后由 keys.encryption-key-rotate 作业替换。新密钥立即发布（/oauth2/jwks、凭证签发方元数据），被替换的密钥在 keys.encryptionKeyOverlapDays 内仍可解密。从作业首次看到该密钥时开始计算。0 关闭此计划。仅限产品模式。"
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "被替换的请求解密密钥仍可解密的时长（天）"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "被 keys.encryption-key-rotate 替换的请求解密密钥，在客户端读取新密钥之前，继续打开其加密给它的内容的时长。在此期间它不在任何地方发布，期满后由 signing.retire 删除。"
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -4178,6 +4202,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "当构建未指明有效期时，每个签发 CA 的有效时长。零即 `issuing-ca` 配置的五年。会被截断到其中间 CA 的到期时间。"
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "在 CA 证书到期前续期"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "每日 pki.ca-renew 作业是否在提前期内（pki.rootRenewalLeadDays、pki.caRenewalLeadDays）以相同的密钥和主体续期根 CA、每个中间 CA 和每个签发 CA，使其签署的每个证书仍可验证，且对其密钥的固定仍然有效。续期后的根证书与被替换的根证书并列发布在 /pki/ca/service/root-previous.cer，直到后者到期。导入的 CA 永不续期。关闭时没有任何东西续期 CA，它会像 1.2.0 之前一样到期。"
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "在根 CA 到期前多久续期（天）"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "pki.ca-renew 在根 CA 到期前多久续期它，最多为其有效期的一半。默认较长（三年），因为续期后的根证书是新的信任锚证书，应在旧证书到期前交给每个依赖方。"
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "在中间 CA 或签发 CA 到期前多久续期（天）"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "pki.ca-renew 在中间 CA 或签发 CA 到期前多久续期它，最多为其有效期的一半。CA 不能比其上级 CA 存活更久，因此上级先到期的 CA 会等待上级续期。"
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -6563,6 +6611,22 @@
     "en": "74971dd9b68d3a40",
     "text": "在主动-主动集群中，每个节点的 LDAPS 监听器和主端口（除非 tls.mainPortSharedTickets 关闭）都用同一个共享密钥封存会话票据，因此一个节点签发的票据可在另一个节点上恢复（调试器的监听器每个节点保留一个密钥）。这是 tls.ticket-key-rotate 作业替换该密钥的频率（以秒为单位）；被替换的密钥会被删除，因此只有在其密钥存在期间，才能从截获的票据中恢复已恢复会话的密钥材料，而票据更旧的客户端会进行完整握手。该密钥保存在存储中，以密钥加密密钥封存。设为 0 则关闭共享；在主动-主动模式之外不共享任何内容：单个应答节点使用 OpenSSL 自己的按监听器密钥恢复会话，这些密钥从不离开进程。"
   },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "无需重启续期监听器证书"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "每小时的 tls.server-certificate-renew 作业是否在主端口、LDAPS 和调试器所出示证书的剩余有效期不足三分之一（或进入 tls.serverCertificateRenewLeadDays）时，以相同密钥续期，并在不重启的情况下放到每个套接字上。每个节点续期自己的证书。关闭时仅在启动时和控制台的续期操作中续期。您在 tls.certificateFile 中提供的证书由您自行续期。"
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "在监听器证书到期前多久续期（天，0 = 剩余三分之一有效期时）"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "在监听器证书到期前这么多天续期它，前提是这早于剩余三分之一有效期的时间点。默认值 0 保持三分之一。"
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "主端口共享集群会话票据密钥"
@@ -7922,6 +7986,14 @@
   "krb5.krbtgtRotationIntervalDays|description": {
     "en": "0ef945c098a1eeac",
     "text": "信任领域的 krbtgt 密钥（密封每张票据授予票据的密钥）保持为当前密钥的时长，之后 krb5.krbtgt-rotate 作业会以下一个 kvno 的新随机密钥替换它。被替换的密钥会被保留（krb5.retainedKeyVersions，保留 krb5.retainedKeyTtlS），使在轮换前一瞬间签发的 TGT 在过期之前仍可使用，且在该时间窗开放期间作业从不轮换。180 天是 Active Directory 的常见建议。0 关闭定期轮换；手动轮换（/admin/kerberos/principals、POST /admin-api/kerberos/principals/rotate-krbtgt）仍然可用。仅限产品模式。当 krb5.retainedKeyVersions 为 0 时，该作业也保持关闭，因为一次不保留任何内容的轮换会在毫无通知的情况下让领域中的每个 Kerberos 用户登出。"
+  },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "本服务自身接受方密钥的轮换间隔（天）"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "服务主体密钥可以使用多久，之后由 krb5.service-key-rotate 作业以下一个 kvno 的新随机密钥替换，并保留被替换的密钥（krb5.retainedKeyVersions，保留 krb5.retainedKeyTtlS），使已签发的票据继续可用，且该窗口打开期间绝不轮换。只轮换本服务为其自身接受方生成的密钥：keytab 已交给其他服务的密钥会在 /admin/scheduler 上报告为到期，轮换它（会交出新的 keytab）仍由运营者执行。从密钥最近一次轮换或创建时开始计算。0 关闭此计划。仅限产品模式。"
   },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",

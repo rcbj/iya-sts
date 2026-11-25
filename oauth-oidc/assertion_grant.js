@@ -412,6 +412,21 @@ async function unwrapAssertion(presented, opts) {
       return null;
     }
   })();
+  // AND THE ONES A SCHEDULED ROTATION RETIRED (#2220), each still opening
+  // what was encrypted to it before its overlap ended.
+  const retiredOf = function (kind) {
+    log.debug('Entering retiredOf().');
+    let found = [];
+    try {
+      found = require('../common/helpers').retiredEncryptionKeysFor(kind) ||
+              [];
+    } catch (e) {
+      log.debug('Caught in retiredOf(): ' + ((e && e.message) || e));
+      found = [];
+    }
+    log.debug('Leaving retiredOf().');
+    return found;
+  };
   const kidMatches = function (jwk) {
     log.debug('Entering kidMatches().');
     log.debug('Leaving kidMatches().');
@@ -434,6 +449,13 @@ async function unwrapAssertion(presented, opts) {
         (!wanted || encEc.publicJwk.crv === wanted)) {
       candidates.push({ privateKey: encEc.privateKey });
     }
+    retiredOf('ro').forEach(function (one) {
+      const ec = one && one.ec;
+      if (ec && ec.publicJwk && kidMatches(ec.publicJwk) &&
+          (!wanted || ec.publicJwk.crv === wanted)) {
+        candidates.push({ privateKey: ec.privateKey });
+      }
+    });
     (STS.extraKeys || []).forEach(function (one) {
       const jwk = one.publicJwk || {};
       if (jwk.kty !== 'EC' || (wanted && jwk.crv !== wanted)) {
@@ -465,11 +487,24 @@ async function unwrapAssertion(presented, opts) {
                  String(header.kid) === String(held.publicJwk.kid))) {
       candidates.push({ privateJwk: held.privateJwk });
     }
+    if (held) {
+      retiredOf('kem').forEach(function (one) {
+        if (one && one.alg === alg && kidMatches(one.publicJwk)) {
+          candidates.push({ privateJwk: one.privateJwk });
+        }
+      });
+    }
   } else {
     const encRsa = encKeys && encKeys.rsa;
     if (encRsa && encRsa.publicJwk && kidMatches(encRsa.publicJwk)) {
       candidates.push({ privateKey: encRsa.privateKey });
     }
+    retiredOf('ro').forEach(function (one) {
+      const rsa = one && one.rsa;
+      if (rsa && rsa.publicJwk && kidMatches(rsa.publicJwk)) {
+        candidates.push({ privateKey: rsa.privateKey });
+      }
+    });
     // Every RSA key of this realm, JOSE first — each live generation (#42).
     require('../common/helpers').ownRsaDecryptionKeys('jose')
       .forEach(function (one) {

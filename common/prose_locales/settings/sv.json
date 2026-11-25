@@ -1815,6 +1815,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Vilken nyckel som signerar den här sfärens dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter och deras Token Status List Tokens. `dedicated` — standardvärdet — är en egen nyckel per algoritmfamilj, som inte används till något annat, under ett certifikat vars subjectAltName anger varje utfärdaridentifierare som sfären svarar på som en URI (inget DNS-namn), med den utökade nyckelanvändningen id-kp-documentSigning (RFC 9336) och inget som en TLS-stack skulle godta, så att en plånbok kan jämföra autentiseringsuppgiftens iss med dess x5c (HAIP 1.0 avsnitt 6.1.1). Certifikatet utfärdas på nytt när utfärdaridentifierarna ändras (global.publicBaseUrl, tls.hostnames, en lyssnare). `realm-key` signerar dem med sfärens allmänna JOSE-nyckel, som 1.0.0 gjorde, vars certifikat inte anger någon utfärdare. Autentiseringsuppgifter som redan utfärdats förblir verifierbara i båda fallen. ldp_vc och mso_mdoc påverkas inte."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Rotera nyckeln för signering av intyg var (dagar)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Hur länge en dedikerad intygssignerares nyckel (keys.credentialSigner dedicated) signerar innan jobbet keys.credential-signer-rotate skapar nästa nyckel i dess familj, som signerar från och med då. Nyckeln den ersätter signerar inget mer och ligger kvar i intygsutfärdarens JWKS och DID-dokument, så varje intyg den signerat fortsätter att verifieras. Räknas från när jobbet först såg nyckeln. 0 stänger av schemat. Endast produktläge."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Postkvantsäkra / hybrida dekrypteringsnycklar"
@@ -1822,6 +1830,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "De ML-KEM- och HPKE-JWE-algoritmer som den här sfären har en dekrypteringsnyckel för — ett nyckelpar per algoritm, publicerat i sfärens JWKS (`use: enc`, med `alg`) och annonserat i `request_object_encryption_alg_values_supported` och `assertion_encryption_alg_values_supported`, så att en klient kan kryptera ett request-objekt eller ett RFC 7523 / 7522-intyg till den här sfären med postkvantsäker eller PQ/T-hybrid nyckeletablering. HPKE-10-KE är X-Wing (ML-KEM-768 + X25519). Att kryptera TILL en klient som registrerat en av dessa algoritmer kräver inget här. **Tomt som standard, och ett val för administratören:** varenda en av dessa algoritmer kommer från ett Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), och en AKP-nyckel i en JWKS är en nyckeltyp som många klienters JOSE-bibliotek ännu inte kan tolka — vissa vägrar hela nyckeluppsättningen. Namnge en algoritm här bara där klienterna som läser sfärens JWKS är kända för att klara det. Att ta bort en slutar publicera och godta den; att namnge den igen återför samma nyckel."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Ersätt nycklarna för dekryptering av begäranden var (dagar)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Hur länge krypteringsnycklarna för begäranobjekt, OpenID4VCI-nyckeln för kryptering av begäranden och KEM-dekrypteringsnycklarna behålls innan jobbet keys.encryption-key-rotate ersätter dem. Den nya nyckeln publiceras genast (/oauth2/jwks, intygsutfärdarens metadata) och den den ersätter dekrypterar fortfarande i keys.encryptionKeyOverlapDays. Räknas från när jobbet först såg nyckeln. 0 stänger av schemat. Endast produktläge."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "En ersatt nyckel för dekryptering av begäranden dekrypterar fortfarande i (dagar)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Hur länge en nyckel för dekryptering av begäranden som keys.encryption-key-rotate ersatt fortsätter att öppna det en klient krypterat till den innan den läste den nya nyckeln. Den publiceras ingenstans under tiden, och signing.retire tar bort den när tiden har gått."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -4178,6 +4202,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Hur länge varje utfärdande CA gäller när bygget inte anger någon livslängd. Noll är profilen `issuing-ca`:s fem år. Begränsas till dess mellanliggande CA:s utgångstid."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "Förnya CA-certifikat innan de går ut"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Om det dagliga jobbet pki.ca-renew förnyar roten, varje mellanliggande CA och varje utfärdande CA inom dess framförhållning (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) med SAMMA nyckel och subjekt, så att varje certifikat den signerat fortsätter att verifieras och en fästning på dess nyckel håller. En förnyad rot publiceras bredvid den den ersatte, på /pki/ca/service/root-previous.cer, tills den går ut. En importerad CA förnyas aldrig. Av: inget förnyar en CA och den går ut som före 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Förnya roten så här länge innan den går ut (dagar)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Hur långt innan rot-CA:n går ut pki.ca-renew förnyar den, högst halva dess livslängd. Lång som standard (tre år), eftersom en förnyad rot är ett nytt förtroendeankarcertifikat som varje förlitande part bör få innan det gamla går ut."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Förnya en mellanliggande eller utfärdande CA så här länge innan den går ut (dagar)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Hur långt innan en mellanliggande eller utfärdande CA går ut pki.ca-renew förnyar den, högst halva dess livslängd. En CA kan inte överleva sin överordnade, så en vars överordnade går ut först väntar på dennas förnyelse."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -6563,6 +6611,22 @@
     "en": "74971dd9b68d3a40",
     "text": "I ett aktivt-aktivt kluster förseglar varje nods LDAPS-lyssnare och huvudport (om inte tls.mainPortSharedTickets är avstängt) sessionsbiljetter under en gemensam nyckel, så att en biljett som en nod utfärdat kan återupptas på en annan (debuggerns lyssnare behåller en nyckel per nod). Detta är hur ofta, i sekunder, jobbet tls.ticket-key-rotate ersätter den; nyckeln som ersätts tas bort, så en återupptagen sessions hemligheter kan återvinnas från en uppfångad biljett endast medan dess nyckel lever, och en klient vars biljett är äldre gör en fullständig handskakning. Nyckeln sparas i lagret, förseglad under nyckelkrypteringsnyckeln. 0 stänger av delningen, och utanför aktivt-aktivt läge delas ingenting: en enda svarande nod återupptar med OpenSSL:s egna nycklar per lyssnare, som aldrig lämnar processen."
   },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Förnya lyssnarcertifikatet utan omstart"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Om det timvisa jobbet tls.server-certificate-renew förnyar certifikatet som huvudporten, LDAPS och felsökaren presenterar, med samma nyckel, när mindre än en tredjedel av giltighetstiden återstår (eller det ligger inom tls.serverCertificateRenewLeadDays), och lägger det på varje socket utan omstart. Varje nod förnyar sitt eget. Av: det förnyas bara vid en start och med konsolens Förnya. Ett certifikat du anger i tls.certificateFile förnyar du själv."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Förnya lyssnarcertifikatet så här länge innan det går ut (dagar, 0 = vid en tredjedel av giltighetstiden)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Förnya lyssnarcertifikatet så många dagar innan det går ut, när det är tidigare än den punkt där en tredjedel av giltighetstiden återstår. 0, standard, behåller tredjedelen."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "Huvudporten delar klustrets nyckel för sessionsbiljetter"
@@ -7922,6 +7986,14 @@
   "krb5.krbtgtRotationIntervalDays|description": {
     "en": "0ef945c098a1eeac",
     "text": "Hur länge en förtroendesfärs krbtgt-nyckel — nyckeln som varje Ticket-Granting Ticket förseglas under — förblir aktuell innan jobbet krb5.krbtgt-rotate ersätter den med en ny slumpmässig nyckel vid nästa kvno. Nyckeln den ersätter behålls (krb5.retainedKeyVersions, under krb5.retainedKeyTtlS) så att en TGT som utfärdats ett ögonblick före rotationen fortfarande fungerar tills den går ut, och jobbet roterar aldrig medan det fönstret är öppet. 180 dagar är den vanliga rekommendationen för Active Directory. 0 stänger av schemalagd rotation; en manuell rotation (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) fungerar fortfarande. Endast produktläge. Med krb5.retainedKeyVersions på 0 förblir jobbet också av, eftersom en rotation som inte behöll något skulle logga ut varje Kerberos-användare i sfären utan förvarning."
+  },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Rotera den här tjänstens egen mottagarnyckel var (dagar)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Hur gammal en tjänstprincipalnyckel får bli innan jobbet krb5.service-key-rotate ersätter den med en ny slumpnyckel på nästa kvno, och behåller den den ersätter (krb5.retainedKeyVersions, i krb5.retainedKeyTtlS) så att redan utfärdade biljetter fortsätter att fungera, och aldrig medan det fönstret är öppet. Bara nyckeln som den här tjänsten skapade för sin egen mottagare roteras: en nyckel vars keytab lämnats ut till en annan tjänst rapporteras som förfallen på /admin/scheduler, och att rotera den, vilket lämnar ut den nya keytab-filen, förblir operatörens handling. Räknas från nyckelns senaste rotation eller dess skapande. 0 stänger av schemat. Endast produktläge."
   },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",

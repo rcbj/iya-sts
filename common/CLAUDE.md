@@ -17604,3 +17604,37 @@ the decisions (D1–D5) are on the issue; what a maintainer needs:
 * **THE KIND CHECK** (`assignmentProblem()`, STS-PKI-0309) compares what a
   use case wants with what a truststore holds across every kind in
   `NOT_X509`; nothing stands in for anything else.
+
+## `key_renewal.ts`: THE RENEWALS NOTHING DID ON ITS OWN (#2220, 2026-11-25)
+
+Three jobs, the module deciding WHEN and the key's owner what a renewal IS,
+`signing_rotation.ts`'s split:
+
+* **`pki.ca-renew`** (service, daily, both modes, no Run now) calls
+  `pki.js`'s `renewCaCertificate()`: the SAME key and subject, a fresh
+  certificate signed by the parent (the Root by itself), top down, and only
+  inside the lead (`pki.rootRenewalLeadDays`, `pki.caRenewalLeadDays`, at most
+  half the CA's life) and only where the parent's expiry lets it gain. The
+  replaced certificate goes into the tier's `previous`, public only:
+  `pki_revocation.js`'s `issuedList()` keeps its serial known to the parent's
+  responder (paranoid PKI mode asks OCSP, and `unknown` would refuse), and the
+  Root's is served at `/pki/ca/service/root-previous.cer` until it expires, so
+  a Root renewal is published rather than swapped in. A pin on the key holds.
+  A re-key stays an on-demand act, in `admin-core/dual_control.ts`'s table.
+* **`keys.credential-signer-rotate`** (realm, hourly, product) moves a
+  dedicated credential signer family to its next generation
+  (`credential_signer.js`'s `rotateFamilyAsync()`, the distrust path's door);
+  the old generation stays in `trustedMembersOf()` and is never dropped.
+* **`keys.encryption-key-rotate`** (realm, hourly, product) calls
+  `helpers.rotateEncryptionKeys()`: a new generation of the key set whose
+  request object, OpenID4VCI and KEM keys are new, the old ones in
+  `generations.retiredEnc` (sealed with the set, `keystore.js`'s
+  `serialiseRetiredEncKeys()`) until `retiredUntil`, published nowhere and
+  tried by kid at the three decrypt sites (`request_object.ts`,
+  `assertion_grant.js`, `vc_issuer.ts`); `retireExpiredGenerations()` drops
+  them.
+
+**AGE IS COUNTED FROM FIRST SIGHT** (`keys.renewalClock`, a persisted global
+store of kid → instant), because neither kind of key records when it was
+made and a stored row is never changed. So the first run after an upgrade
+rotates nothing. `tests/key_renewal.js` A, D and E hold it.
