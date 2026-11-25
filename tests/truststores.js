@@ -291,6 +291,48 @@ module.exports = {
               unreadable.problems[0].code === 'STS-CORE-0104',
               'an unreadable legacy file is a problem, named');
 
+      // D2. A SERVICE-WIDE USE CASE READS THE ASKING REALM'S OWN SETTING.
+      // Full run 45539627756 found every outbound-* use case reading its
+      // `setting:` view in the DEFAULT realm, so a realm's own
+      // federation.outboundCaFile was ignored (the #2118/#2148 regression):
+      // every dial to a peer on a private CA failed TLS.
+      t.log.info('D2. a realm\'s own CA-file setting');
+      const realmB = 'sts-ts-b-' + stamp;
+      const caFile = require('path').join(require('os').tmpdir(),
+        'sts-ts-ca-' + stamp + '.pem');
+      require('fs').writeFileSync(caFile, root.pem);
+      t.check(realms.create({ id: realmB, name: realmB,
+                              domain: realmB + '.example.net' }).ok !== false,
+              'a realm is created');
+      try {
+        t.check(realms.setOverride(realmB, 'federation.outboundCaFile',
+                                   caFile).ok !== false,
+                'the realm sets its own federation.outboundCaFile');
+        const inB = truststores.caFor('outbound-federation',
+                                      { realmId: realmB });
+        const inDefault = truststores.caFor('outbound-federation',
+                                            { realmId: 'default' });
+        t.check(holds(inB.ca || [], root.pem),
+                'outbound-federation trusts that realm\'s CA file there',
+                JSON.stringify(inB.names) + ' ' + JSON.stringify(inB.problems));
+        t.check(!holds(inDefault.ca || [], root.pem),
+                'and not in the default realm, which set none');
+        t.check(holds(truststores.configuredPems('outbound-federation',
+                                                 realmB), root.pem),
+                'configuredPems() reads it in that realm too');
+        const viaDialer = realms.run(realmB, function () {
+          return require('../common/outbound_tls')
+            .optionsFor('outbound-federation');
+        });
+        t.check(holds((viaDialer && viaDialer.ca) || [], root.pem),
+                'and an outbound dial in that realm is given it as ca',
+                JSON.stringify(Object.keys(viaDialer || {})));
+      } finally {
+        realms.clearOverride(realmB, 'federation.outboundCaFile');
+        realms.remove(realmB);
+        require('fs').unlinkSync(caFile);
+      }
+
       // E. THE STORES LIST.
       t.log.info('E. the list');
       const listed = truststores.stores(realmA);

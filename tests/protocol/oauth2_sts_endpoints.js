@@ -1331,8 +1331,14 @@ async function testRegistration(meta) {
   assert.ok(reg.client_secret, "registration should return a client_secret.");
   assert.ok(reg.client_id_issued_at > 0,
             "registration should say when the client was issued.");
-  assert.strictEqual(reg.client_secret_expires_at, 0,
-                     "0 means the secret does not expire.");
+  // RFC 7591 section 3.2.1: 0 for a secret that never expires, otherwise
+  // when it does. Since #2178 a secret expires after
+  // oauth2.clientSecretLifetimeDays (365 by default), which a stack may set
+  // to 0, so either is right; anything else is not.
+  assert.ok(reg.client_secret_expires_at === 0 ||
+            reg.client_secret_expires_at > reg.client_id_issued_at,
+            "client_secret_expires_at is 0 (never) or after " +
+            "client_id_issued_at, got " + reg.client_secret_expires_at + ".");
   assert.strictEqual(reg.client_name, "Endpoint Test Client",
                      "the registration should echo the metadata.");
   assert.ok(reg.registration_access_token && reg.registration_client_uri,
