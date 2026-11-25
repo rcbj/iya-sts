@@ -2197,7 +2197,11 @@ async fn identity_headers_from_the_service() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 502, "a CR LF value is refused, not forwarded");
+    assert_eq!(
+        r.status(),
+        403,
+        "a CR LF value is refused (a PEP failure), not forwarded"
+    );
     let r = h
         .get("/hdr/x")
         .basic_auth("denied", Some("right"))
@@ -3704,34 +3708,34 @@ fn waiting_announced() -> usize {
 
 /// NOT CONFIGURED YET IS NOT "PAGE NOT FOUND" (rcbj, 2026-11-15). After a
 /// start and before the first configuration answer, every path — the
-/// proxy's own `/.iya-pep/*` too — is 503 with `Retry-After` (the poll
-/// interval, rounded up to whole seconds): the standard page's "Try again
-/// later" for a browser, the `{error, error_description}` of the other
-/// 503s for anything else. Once a configuration arrives the routes answer;
+/// proxy's own `/.iya-pep/*` too — is a PEP failure, 403 (#2208: it was
+/// 503), with `Retry-After` (the poll interval, rounded up to whole
+/// seconds): the standard page's "Try again later" for a browser, the
+/// `{error, error_description}` of every refusal for anything else. Once a configuration arrives the routes answer;
 /// one received EMPTY or SWITCHED OFF is the 404 of STS-XPEP-0065, as
 /// before. The log has the state change, not a line per request.
 #[tokio::test]
 async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     let h = harness_unconfigured(|o| o.poll_interval_ms = 1500).await;
-    // A browser: the standard page at 503, with Retry-After.
+    // A browser: the standard page at 403, with Retry-After.
     let r = as_browser(h.get("/public/page")).send().await.unwrap();
     assert_eq!(r.headers()["retry-after"], "2", "1500 ms, rounded up");
-    let html = the_page(r, 503, "Try again later").await;
+    let html = the_page(r, 403, "Try again later").await;
     assert!(
-        html.contains("<dt>error</dt><dd><code>temporarily_unavailable"),
+        html.contains("<dt>error</dt><dd><code>access_denied"),
         "{}",
         html
     );
     assert!(html.contains("still receiving its settings"), "{}", html);
-    // An API client: the JSON of the proxy's other 503s, no code in it.
+    // An API client: the JSON of every refusal, no code in it.
     let r = h.get("/api/x").send().await.unwrap();
-    assert_eq!(r.status(), 503);
+    assert_eq!(r.status(), 403);
     assert_eq!(r.headers()["retry-after"], "2");
     assert_eq!(r.headers()["content-type"], "application/json");
     let body: Value = r.json().await.unwrap();
     assert_eq!(
         body,
-        json!({ "error": "temporarily_unavailable",
+        json!({ "error": "access_denied",
                 "error_description": "This proxy has not yet received its \
                                       configuration since it started." })
     );
@@ -3746,7 +3750,7 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
         "/nowhere",
     ] {
         let r = h.get(path).send().await.unwrap();
-        assert_eq!(r.status(), 503, "{}", path);
+        assert_eq!(r.status(), 403, "{}", path);
         assert_eq!(r.headers()["retry-after"], "2", "{}", path);
     }
     assert_eq!(hits(&h), 0, "nothing reached the application");
@@ -3774,7 +3778,7 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     );
     let r = h.get("/nowhere").send().await.unwrap();
     assert_eq!(r.status(), 404, "no route is 404 again");
-    // A configuration switched off: received, so 404 — not 503.
+    // A configuration switched off: received, so 404 — not 0118's 403.
     let mut off = configuration(&h.upstream_base, &h.service_base, &cert);
     off["proxy"]["enabled"] = json!(false);
     h.sync.receive_proxy(&off, None);
@@ -3793,11 +3797,11 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     assert_eq!(r.status(), 404);
     let body: Value = r.json().await.unwrap();
     assert_eq!(body["error"], "not_found");
-    assert_eq!(waiting_announced(), 1, "no 503 after the first answer");
+    assert_eq!(waiting_announced(), 1, "no 0118 after the first answer");
 }
 
-/// A FIRST answer that is empty is an answer: 404 from the start, never a
-/// 503 the client would wait out for nothing.
+/// A FIRST answer that is empty is an answer: 404 from the start, never
+/// 0118's refusal the client would wait out for nothing.
 #[tokio::test]
 async fn a_first_answer_that_holds_nothing_is_404_not_503() {
     let h = harness_unconfigured(|_| {}).await;
@@ -3887,7 +3891,7 @@ async fn queues_a_record_for_each_request_its_route_decided() {
     let wire = serde_json::to_value(unauthenticated).unwrap();
     assert_eq!(wire.as_object().unwrap().len(), 22);
 
-    // NOT CONFIGURED YET: a 503, and no record.
+    // NOT CONFIGURED YET: 0118's 403, and no record.
     let waiting = harness_unconfigured(|_| {}).await;
     let r = waiting
         .get("/api/x")
@@ -3895,7 +3899,7 @@ async fn queues_a_record_for_each_request_its_route_decided() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 503);
+    assert_eq!(r.status(), 403);
     assert!(waiting.proxied.audit().queued_for_test().is_empty());
 }
 

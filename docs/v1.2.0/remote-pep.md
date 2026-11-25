@@ -1360,8 +1360,8 @@ carries:
 
 * **The binding on**: every gate (resource type `audience`, action
   `issue:<token type>:<grant>`, any grant) and every scope tuple (resource
-  type `protected_resource`), alone or in a batch, is `501` for that item
-  (`STS-XPEP-0140`). So is a tuple whose resource type the realm declares as
+  type `protected_resource`), alone or in a batch, is `403` for that item
+  (`STS-XPEP-0140`): the edge cannot decide it, which is a PEP failure. So is a tuple whose resource type the realm declares as
   an `authorization_details` type, when the same request carries a
   token-exchange gate (`issue:<registered token type>:token_exchange`). The
   service answers these by the binding's fixed rules, which need delegation
@@ -1377,8 +1377,8 @@ carries:
 
 A service too old to send `tokenExchange` is read as having it **on**, and a
 missing list of declared types or token types counts every type: the edge
-answers `501` rather than risk a wider answer than the service would give.
-Each `501` is recorded in the service's audit log as an
+answers `403` rather than risk a wider answer than the service would give.
+Each of those `403`s is recorded in the service's audit log as an
 `authzen.remote.decision` row with the code, deciding nothing.
 
 **A request is mapped exactly as the service maps it.** What a property of a
@@ -1409,8 +1409,8 @@ It decides against the root policy it pulled, and asks the service's PIP
 
 A catalogue change converges on the poll — the service's nudge is about the
 policy repository. Until the container has pulled both the policies and the
-catalogue, the AuthZEN endpoints answer `503` rather than map a request
-differently from the service.
+catalogue, the AuthZEN endpoints answer `403` (a PEP failure) rather than
+map a request differently from the service.
 
 ### Applications that enforce fine-grained authorization: forwarded
 
@@ -1467,13 +1467,16 @@ application. It forwards it to the service.**
   | The service | The caller of the edge PDP gets |
   |---|---|
   | a decision | that decision |
-  | `400`, `413`, `500`, `501` or `503` (a `500` is the service's "the application's policy cannot be used") | the same status and the service's message |
-  | `401` or `403` — it does not admit **the PEP** | `502`, saying the PEP's entry needs `AUTHZEN_PEPS` and the application in its scope |
-  | any other status, or a `200` that is not a decision | `502` |
-  | no answer within `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `504` |
-  | could not be reached | `502` |
+  | `400` or `413` | the same status and the service's message |
+  | `500`, `501` or `503` (a `500` is the service's "the application's policy cannot be used"), or any other status, or a `200` that is not a decision | `403`, naming the service's status and message |
+  | `401` or `403` — it does not admit **the PEP** | `403`, saying the PEP's entry needs `AUTHZEN_PEPS` and the application in its scope |
+  | no answer within `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `403` |
+  | could not be reached | `403` |
 
-* **Before the first catalogue pull** nothing is answered (`503`), since
+  **Every PEP failure is a `403`, never a `5xx`** (#2208): whatever keeps
+  the edge from a decision refuses the caller.
+
+* **Before the first catalogue pull** nothing is answered (`403`), since
   without the catalogue the container cannot tell which applications must be
   forwarded. A catalogue whose `fgaApplications` it cannot read is refused
   whole and the one it holds is kept.
@@ -1508,7 +1511,7 @@ and `POST /xacml/pip`, and a registration in `ou=peps` grants nothing; the
 AuthZEN grant is written when an administrator enforces an application.
 
 Without them the service answers `401` or `403`, and the container answers
-`502` with a message saying exactly this. The realm's
+`403` with a message saying exactly this. The realm's
 `authzen.callerAuthentication` must admit a certificate (`mtls`, the
 default); a realm whose door is a token admits no caller to the container
 anyway.
@@ -1573,7 +1576,7 @@ the list is empty and the edge PDP answers `401` to everybody.
 naming certificates by their SHA-256. It is **optional**:
 
 * **unset** — the pulled list alone decides, and the AuthZEN endpoints answer
-  `503` until the first caller pull has loaded;
+  `403` (a PEP failure) until the first caller pull has loaded;
 * **set** — a pulled caller must **also** be on it, so an operator can confine
   an edge to some of the service's callers. The pulled name and scope are
   used; the local `name` and `applications` are not. Before the first caller
@@ -1623,7 +1626,7 @@ them.
 | The three Search APIs (`/access/v1/search/*`) | `501`. The metadata does not list them. The service holds the directory and the catalogues |
 | The Obligations Profile: an obligation is handed in `context.obligations` when the PEP declares its type in `context.supported_obligations` | Handed the same way, while `authzen.obligationsProfile` is on. The metadata then lists `supported_obligations`. Without the declaration a Permit that carries any other obligation answers `false` |
 | `context.approval` on an evaluation | Recognized and not used. The decision is made without it, and the context says `reason: approval_unverifiable`, `next_action: none`. The access-request endpoints are `501`; the edge holds no approval store |
-| The OAuth token-exchange binding's tuples, answered by its fixed rules while `authzen.tokenExchange` is on | `501` for that evaluation, or for that batch item, while it is on (or the service did not say); recorded in the audit log. While it is off, ordinary evaluations, as at the service. Not advertised |
+| The OAuth token-exchange binding's tuples, answered by its fixed rules while `authzen.tokenExchange` is on | `403` for that evaluation, or for that batch item, while it is on (or the service did not say); recorded in the audit log. While it is off, ordinary evaluations, as at the service. Not advertised |
 | `signed_metadata` in the metadata document | Omitted. The edge holds no signing key of the realm's, and republishing the service's JWT would name the wrong issuer |
 | An evaluation about an application that enforces [fine-grained authorization](fga.md) is decided against that application's own policy ([AuthZEN](authzen.md#applications-with-their-own-policy)) | Not decided here: forwarded to the service, which decides it ([above](#applications-that-enforce-fine-grained-authorization-forwarded)). It costs a round trip, needs the PEP's entry to hold `AUTHZEN_PEPS` with the application in its scope, and follows a switch of enforcement from the next poll |
 
@@ -1655,7 +1658,7 @@ already wrote its own `authzen.decision` row under the same request id.
 **A reverse proxy request is recorded once it reached its route's
 authorization**: forwarded, or refused because the route's application is not
 usable, because authentication failed, or because the policy said no. A
-request that never got that far has no row — the `503` before the proxy's
+request that never got that far has no row — the `403` before the proxy's
 first configuration, a path no route matches, a method the route does not
 take, a body too large, a redirect to sign in, and the proxy's own pages.
 
@@ -1755,8 +1758,8 @@ then acknowledges and records nothing, so the PEP's queue drains and
 | `credential.keyProblem` | the PEP has no usable key: the file is missing, unreadable or of a kind it refuses. Calls go without a token |
 | `credential.tokens.<name>.held: false` with a `lastRefusal` | the token endpoint refused the PEP — the sentence names what to provision: the key on the entry, the client, the group |
 | `https.listening: false` | no usable listener pair yet. `https.problem` says whether the files are missing (issue one) or refused (the key is not the certificate's, or a file will not parse) |
-| `authzen.catalogue.loaded: false` | no AuthZEN catalogue pulled yet, so the AuthZEN endpoints answer `503`. `authzen.catalogue.lastPullWhy` says why; a `404` means a service older than the catalogue endpoint |
-| `authzen.pulledCallers.loaded: false` | no caller list pulled yet. Without `PEP_AUTHZEN_CALLERS` the AuthZEN endpoints answer `503`; with it, that list alone decides. `authzen.pulledCallers.lastPullWhy` says why; a `404` means a service older than the caller list |
+| `authzen.catalogue.loaded: false` | no AuthZEN catalogue pulled yet, so the AuthZEN endpoints answer `403`. `authzen.catalogue.lastPullWhy` says why; a `404` means a service older than the catalogue endpoint |
+| `authzen.pulledCallers.loaded: false` | no caller list pulled yet. Without `PEP_AUTHZEN_CALLERS` the AuthZEN endpoints answer `403`; with it, that list alone decides. `authzen.pulledCallers.lastPullWhy` says why; a `404` means a service older than the caller list |
 | `authzen.answered.errors` rising with `answered.forwarded` | evaluations forwarded to the service are failing. The container's log says why; `STS-XPEP-0056` means the service does not admit the PEP itself — give its entry `AUTHZEN_PEPS` and the application in its scope |
 | `audit.queued` rising, `audit.lastShipOk: false` | decision records are not reaching the service. `audit.lastShipWhy` says why: a `401`/`403`, or `tokenHeld: false`, almost always means the certificate is not registered as the entry's JWT assertion certificate or the entry left `remote-peps` |
 | `audit.dropped` above zero | records were lost to a full queue or a batch the service refused; the container's log has each decision |
@@ -1918,25 +1921,38 @@ certificate names.
   `X-Forwarded-Proto` and `X-Forwarded-Host` are the proxy's own, never the
   client's.
 * **A request is never forwarded without the identity its route sends.** When
-  the service will not issue it, the request is refused: `403` when the
-  policy refused, `502` otherwise.
-* The status codes: `503` with `Retry-After` before the first configuration
+  the service will not issue it, the request is refused `403`. Only the
+  application's own sign-in endpoint (the ACS of a `saml` route) being
+  unreachable or answering `5xx` is a `502`.
+* **Every PEP failure is a `403`, never a `5xx` and never a pass.** When the
+  proxy cannot reach a decision — the service or one of its validation,
+  identity or sign-in endpoints cannot be asked or answers badly, no
+  configuration has arrived yet, the relying party cannot be built, the
+  session store is full, the identity cannot be delivered — the request is
+  refused `403` (`access_denied`) with the description *The enforcement
+  point could not complete the checks this request needs, so the request
+  was refused.* A `403` for a policy's refusal says why instead. A missing
+  or invalid credential is still `401` with its challenge, and too many
+  password attempts `429`.
+* The status codes: `403` with `Retry-After` before the first configuration
   (below), `404` for no route, `405` with `Allow` for a method the
   route does not take, `401` with a challenge for each mechanism the route
-  accepts, `403` for a refusal and for a route whose application no longer
-  qualifies, `413` over `maxBodyBytes`, `502` when the upstream cannot be
-  reached, and `504` after `upstreamTimeoutMs`.
+  accepts, `403` for a refusal, for a route whose application no longer
+  qualifies and for every PEP failure, `413` over `maxBodyBytes`, and only
+  for the application itself `502` when it cannot be reached and `504`
+  after `upstreamTimeoutMs`.
 * WebSockets are not proxied, because `Upgrade` is a hop-by-hop header.
 
 ### Just after the PEP starts
 
 Until the PEP has received its first proxy configuration since it started,
 which takes until its registration and first pull succeed, every proxy path
-answers `503` with a `Retry-After` header. That includes the proxy's own
+is refused `403` with a `Retry-After` header: the proxy cannot decide
+anything yet, which is a PEP failure. That includes the proxy's own
 `/.iya-pep/` pages. `Retry-After` is the poll interval (`PEP_POLL_INTERVAL_MS`,
 or the managed `pollIntervalMs`) in whole seconds, at least 1. A browser
 sees the **Try again later** page, and any other client gets
-`{"error": "temporarily_unavailable", "error_description": …}`. Once a
+`{"error": "access_denied", "error_description": "This proxy has not yet received its configuration since it started."}`. Once a
 configuration has been received, a configuration that is empty or switched
 off answers `404`, as does a path no route matches. A browser's `GET` or
 `HEAD` of `/` is the start page in both of those cases, when no route is
@@ -1944,7 +1960,7 @@ mounted at `/`:
 
 | The PEP holds | A browser sees | Status |
 |---|---|---|
-| no configuration yet since it started | Try again later | `503`, with `Retry-After` |
+| no configuration yet since it started | Try again later | `403`, with `Retry-After` |
 | a configuration that is empty or switched off, at `/` | the start page | `200` |
 | a configuration that is empty or switched off, at any other path | Page not found | `404` |
 | routes, none matching `/`, and the browser asks for `/` | the start page | `200` |
@@ -1952,7 +1968,7 @@ mounted at `/`:
 
 The PEP's log says when it starts waiting, gives a count at most once a
 minute while requests go on arriving, and says how many requests were
-answered `503` when the first configuration arrives. It does not log a line
+refused when the first configuration arrives. It does not log a line
 for each request, except at the `debug` level.
 
 ### What a person sees when the proxy refuses them
@@ -1964,7 +1980,8 @@ gets the JSON answer it always got: `{"error": …, "error_description": …}`.
 
 The page has a title and a sentence saying what went wrong: no access under
 the policy, the page closed to every request (a route with no methods), the
-policy not available, a sign-in that failed, the application not reachable,
+policy not available, access that cannot be decided now (every PEP
+failure), a sign-in that failed, the application not reachable,
 the proxy not configured yet (**Try again later**), and so on. A collapsed note explains why the page appeared, and a link goes
 to the start page (`GET /`): the product logo, the name, one sentence, and
 the standard footer. The logo is `GET /.iya-pep/logo.png`. A route mounted
@@ -1988,8 +2005,8 @@ English.
 Every error the proxy makes itself is one of these two answers: the page
 for a request that accepts HTML, the JSON for anything else, each with
 `Cache-Control: no-store`, and never with an error code, a script or a
-stack trace. For a `5xx` the description is a general sentence, never
-where the proxy was trying to connect. The exceptions are documented:
+stack trace. For a PEP failure and a `5xx` the description is a general
+sentence, never where the proxy was trying to connect. The exceptions are documented:
 the sign-in callback's **Too many accounts** is always the page; a request
 that is not valid HTTP gets a bare `400` with no body; and the PEP's
 decision API (`GET /protected`, `POST /notify`, the AuthZEN endpoints)
@@ -2227,7 +2244,8 @@ connections it has finished), and requests per method and path. The
 counters are cumulative since that PEP's process started. A PEP that has
 not reported them says so, and a missing figure is left blank rather than
 shown as zero. Path counts drop the query string. A request answered
-401, 403 or 503 counts as refused; a 404 does not. The page reads
+401 or 403 counts as refused (every PEP failure is a 403); a 404 does not,
+and nor does an application's own 503 passed through. The page reads
 `GET /admin-api/xacml/peps`, the same answer as the Protocols page. The
 figures ride `listenersInUse`. Configuring a listener stays under
 Protocols.
@@ -2709,18 +2727,18 @@ environment's, then the default.
 | `PEP_AUTHZEN_CLIENT_CA` | — | the CA bundle an AuthZEN caller's certificate must chain to. Unset, nobody is admitted |
 | `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at — *managed*: `authzenPdpIdentifier` |
-| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` — *managed*: `authzenForwardTimeoutMs` |
+| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is refused `403` — *managed*: `authzenForwardTimeoutMs` |
 | `PEP_AUDIT` | `true` | send each decision made here to the service's audit log. `false` queues nothing new — *managed*: `auditEnabled` |
 | `PEP_AUDIT_INTERVAL_MS` | `5000` | how often the queued records are sent — *managed*: `auditIntervalMs` |
 | `PEP_AUDIT_BATCH` | `200` | the most records in one request, 1 to 500 — *managed*: `auditBatch` |
 | `PEP_AUDIT_BUFFER` | `10000` | the most records waiting; full, the oldest is dropped — *managed*: `auditBuffer` |
-| `PEP_PROXY` | `true` | the reverse proxy. Until it has received its first configuration since it started, it answers `503` with `Retry-After` to everything; while the configuration it received is empty or switched off, `404` |
+| `PEP_PROXY` | `true` | the reverse proxy. Until it has received its first configuration since it started, it refuses everything `403` with `Retry-After`; while the configuration it received is empty or switched off, `404` |
 | `PEP_PROXY_PORT` | `9180` | the proxy's plain-HTTP port, bound only with `PEP_PROXY_HTTP=true` |
 | `PEP_PROXY_HTTP` | `false` | `true` binds the proxy's plain-HTTP listener on `PEP_PROXY_PORT` |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | the proxy's HTTPS listener, with the pair 9443 serves. It asks a client for a certificate and never requires one |
 | `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | on a `signals: false` session route: how old the service's last answer that a session is live may be. `0` asks on every access — *managed*: `proxySessionRecheckMs` |
 | `PEP_PROXY_SESSION_TTL_MS` | `28800000` | the longest a proxy session lives — *managed*: `proxySessionTtlMs` |
-| `PEP_PROXY_MAX_SESSIONS` | `10000` | the most proxy sessions held. A new one past it is refused `503` — *managed*: `proxyMaxSessions` |
+| `PEP_PROXY_MAX_SESSIONS` | `10000` | the most proxy sessions held. A new one past it is refused `403` — *managed*: `proxyMaxSessions` |
 | `PEP_PROXY_MAX_ACCOUNTS` | `5` | the most accounts one browser holds on a `multipleAccounts` route, 1 to 32. A sign-in past it is refused `403` — *managed*: `proxyMaxAccounts` |
 | `PEP_PROXY_JWKS_TTL_MS` | `300000` | how long the realm's JWKS is kept — *managed*: `proxyJwksTtlMs` |
 | `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | how often the CAEP and RISC stream is polled — *managed*: `proxySignalsPollMs` |

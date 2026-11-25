@@ -14,8 +14,8 @@
 //!   task, schema and cancel paths            501: the service's profile
 //! ```
 //!
-//! A token-exchange binding tuple is 501 on the evaluation endpoints, as
-//! an item error inside a batch. `signed_metadata` is omitted. Obligations
+//! A token-exchange binding tuple is 403 on the evaluation endpoints (a PEP
+//! failure: this edge cannot decide it), as an item error inside a batch. `signed_metadata` is omitted. Obligations
 //! are handed when the PEP declared every type and the realm's profile is
 //! on. `context.approval` is recognized and not used.
 //!
@@ -287,7 +287,8 @@ pub fn head_is_absent(path: &str) -> bool {
 /// on the caller list pulled from the service (#1189) and admitted there to
 /// `endpoint` — narrowed, when `PEP_AUTHZEN_CALLERS` is set, to the
 /// certificates it names. Before the first pull the local list decides
-/// alone when it is set, and nothing is answered (503) when it is not.
+/// alone when it is set, and nothing is admitted (403, a PEP failure since
+/// #2208, where it was 503) when it is not.
 /// Each refusal is the service's status for the same situation — 401 for a
 /// caller that is nobody, 403 for one that may not ask — and, the door
 /// being certificates alone, carries no `WWW-Authenticate` (there is no
@@ -340,7 +341,7 @@ pub fn admit(
     if !callers.loaded {
         if !options.authzen_callers_configured {
             return Err(Reply::error(
-                503,
+                403,
                 "STS-XPEP-0050",
                 "This edge PDP has not yet pulled from its PDP the callers \
                  the service admits to its AuthZEN API, and has no \
@@ -533,18 +534,19 @@ fn service_message(answer: &Answer) -> String {
 
 /// What the service's answer to a forwarded evaluation is to the caller
 /// (#564, P7). A decision is passed on, `context` and all. EVERYTHING ELSE
-/// IS AN ERROR, never `false`:
+/// IS AN ERROR, never `false`, and since #2208 every PEP failure among
+/// them is a 403 — never a 5xx:
 ///
-/// * no answer: 504 when the time ran out, 502 otherwise (`STS-XPEP-0055`);
+/// * no answer, the time run out or nobody listening: 403
+///   (`STS-XPEP-0055`);
 /// * 401 or 403: the service refused THIS PEP, which is the operator's to
-///   mend and not the caller's — 502, saying what the PEP's entry needs
+///   mend and not the caller's — 403, saying what the PEP's entry needs
 ///   (`STS-XPEP-0056`);
-/// * 400, 413, 500, 501, 503: the service's own status and message, which
-///   are about the request or the application's policy
-///   (`STS-XPEP-0057`; a 500 is `STS-AUTHZEN-0046`'s "the policy cannot be
-///   used" there);
-/// * any other status, or a 200 with no boolean `decision`: 502
-///   (`STS-XPEP-0057`, `-0058`).
+/// * 400 or 413: the service's own status and message, which are about the
+///   request (`STS-XPEP-0057`);
+/// * 500, 501, 503 (a 500 is `STS-AUTHZEN-0046`'s "the policy cannot be
+///   used"), any other status, or a 200 with no boolean `decision`: 403
+///   with the service's status and message (`STS-XPEP-0057`, `-0058`).
 fn forwarded_result(
     answer: &Answer,
     application: &str,
@@ -553,7 +555,7 @@ fn forwarded_result(
     if let Some(why) = &answer.error {
         return if answer.timed_out {
             ItemResult::failed(
-                504,
+                403,
                 "STS-XPEP-0055",
                 format!(
                     "\"{}\" enforces fine-grained authorization, which only \
@@ -565,7 +567,7 @@ fn forwarded_result(
             )
         } else {
             ItemResult::failed(
-                502,
+                403,
                 "STS-XPEP-0055",
                 format!(
                     "\"{}\" enforces fine-grained authorization, which only \
@@ -585,7 +587,7 @@ fn forwarded_result(
                 .and_then(Value::as_bool);
             let Some(decision) = decision else {
                 return ItemResult::failed(
-                    502,
+                    403,
                     "STS-XPEP-0058",
                     format!(
                         "The service answered the evaluation forwarded for \
@@ -609,7 +611,7 @@ fn forwarded_result(
             }
         }
         401 | 403 => ItemResult::failed(
-            502,
+            403,
             "STS-XPEP-0056",
             format!(
                 "\"{}\" enforces fine-grained authorization, which only the \
@@ -625,19 +627,21 @@ fn forwarded_result(
                 service_message(answer)
             ),
         ),
-        400 | 413 | 500 | 501 | 503 => ItemResult::failed(
+        400 | 413 => ItemResult::failed(
             answer.status,
             "STS-XPEP-0057",
             service_message(answer),
         ),
         other => ItemResult::failed(
-            502,
+            403,
             "STS-XPEP-0057",
             format!(
                 "\"{}\" enforces fine-grained authorization, which only the \
                  service decides, and the service answered HTTP {} to the \
-                 forwarded evaluation.",
-                application, other
+                 forwarded evaluation: {}",
+                application,
+                other,
+                service_message(answer)
             ),
         ),
     }
@@ -687,7 +691,7 @@ impl Pep {
         }
         if !catalogue.loaded || !self.sync.ever_loaded() {
             return Some(Reply::error(
-                503,
+                403,
                 "STS-XPEP-0043",
                 "This edge PDP has not yet pulled the policies and the \
                  AuthZEN attribute catalogue from its PDP, so it cannot map \
@@ -1046,7 +1050,8 @@ impl Pep {
         Reply::decision(json!({ "evaluations": out }))
     }
 
-    /// A binding tuple's 501 (`STS-XPEP-0140`), logged and RECORDED as every
+    /// A binding tuple's 403 (`STS-XPEP-0140`; 501 before #2208), logged
+    /// and RECORDED as every
     /// answer this edge gives is (#1827): a row in the service's audit log,
     /// `authzen.remote.decision`, deciding nothing. The record carries what
     /// any AuthZEN record carries, each type and name cut to the length a
@@ -1104,7 +1109,9 @@ impl Pep {
             request_id: batch_id.to_string(),
             ..Record::default()
         });
-        ItemResult::failed(501, "STS-XPEP-0140", message)
+        // The edge cannot decide it, so a PEP failure: 403 (#2208), where
+        // it was 501.
+        ItemResult::failed(403, "STS-XPEP-0140", message)
     }
 
     /// Decides one evaluation for an admitted caller, and records it — a
@@ -1389,10 +1396,12 @@ impl Pep {
             request_id: batch_id.to_string(),
             ..Record::default()
         });
+        // A FAULT IS A PEP FAILURE, a 403 (#2208), never a 5xx and never
+        // `false`: the caller is told it could not be evaluated.
         if outcome.fault {
             tracing::error!("{}{} {}", tag(code), line, outcome.why);
             return ItemResult::failed(
-                500,
+                403,
                 "STS-AUTHZEN-0028",
                 "The PDP could not evaluate the request.".to_string(),
             );
@@ -1446,7 +1455,7 @@ impl Pep {
     }
 }
 
-/// A single evaluation's reply. A binding 501 was already logged in
+/// A single evaluation's reply. A binding 403 was already logged in
 /// `evaluate_one`; every other error is logged here.
 fn reply_of(item: ItemResult) -> Reply {
     match item.error {
@@ -1526,7 +1535,8 @@ mod tests {
 
     /// The door before the pull, and the transport: no client CA admits
     /// nobody; plain HTTP or no certificate is 401; one that did not verify
-    /// is 401; with no list pulled and none configured, 503; with only the
+    /// is 401; with no list pulled and none configured, 403 (a PEP failure,
+    /// #2208); with only the
     /// local list, #1179's door — on it is the caller it names, off it 403.
     #[test]
     fn admits_by_certificate_alone() {
@@ -1569,8 +1579,8 @@ mod tests {
         let bare = options_with(Vec::new());
         assert_eq!(
             status(admit(&bare, true, &peer(&fp, true), &none, e)),
-            Some(503),
-            "nothing pulled and nothing configured answers nothing"
+            Some(403),
+            "nothing pulled and nothing configured admits nobody"
         );
     }
 
@@ -1849,7 +1859,7 @@ mod tests {
                     json!({ "error": { "status": 500,
                     "message": "The application's policy cannot be used." } }),
                 ),
-                500,
+                403,
                 "STS-XPEP-0057",
             ),
             (
@@ -1867,14 +1877,16 @@ mod tests {
                     json!({ "error": { "status": 403,
                     "message": "not admitted" } }),
                 ),
-                502,
+                403,
                 "STS-XPEP-0056",
             ),
-            (answered(401, json!({})), 502, "STS-XPEP-0056"),
-            (answered(404, json!({})), 502, "STS-XPEP-0057"),
+            (answered(401, json!({})), 403, "STS-XPEP-0056"),
+            (answered(404, json!({})), 403, "STS-XPEP-0057"),
+            (answered(501, json!({})), 403, "STS-XPEP-0057"),
+            (answered(503, json!({})), 403, "STS-XPEP-0057"),
             (
                 answered(200, json!({ "decision": "yes" })),
-                502,
+                403,
                 "STS-XPEP-0058",
             ),
             (
@@ -1882,7 +1894,7 @@ mod tests {
                     error: Some("connection refused".into()),
                     ..Answer::default()
                 },
-                502,
+                403,
                 "STS-XPEP-0055",
             ),
             (
@@ -1891,12 +1903,15 @@ mod tests {
                     timed_out: true,
                     ..Answer::default()
                 },
-                504,
+                403,
                 "STS-XPEP-0055",
             ),
         ];
+        // EVERY PEP FAILURE IS A 403 (#2208): no 5xx is made here, and the
+        // service's 400 and 413, about the request, are its own.
         for (answer, status, code) in cases {
             let one = forwarded_result(&answer, "payments", 5000);
+            assert!(one.status < 500, "{:?}", answer.json);
             assert_eq!(one.status, status, "{:?}", answer.json);
             assert_eq!(one.code, code, "{:?}", answer.json);
             assert!(one.error.is_some() && !one.decision);
@@ -1915,9 +1930,11 @@ mod tests {
             "payments",
             5000,
         );
-        assert_eq!(
-            passed.error.unwrap().1,
-            "The application's policy cannot be used."
+        let said = passed.error.unwrap().1;
+        assert!(
+            said.ends_with("The application's policy cannot be used."),
+            "{}",
+            said
         );
     }
 
@@ -1926,8 +1943,8 @@ mod tests {
     /// realm's path is the PDP URL's, the body arrives with
     /// `context.application` and the caller's members, `X-Request-ID`
     /// travels, the service's decision comes back, its 500 and its refusal
-    /// of the PEP are errors, a slow service is a 504 within the bound, and
-    /// nobody listening is a 502.
+    /// of the PEP are errors, a slow service is refused within the bound,
+    /// and nobody listening is refused — each a 403, a PEP failure (#2208).
     #[tokio::test]
     async fn forwards_to_the_realms_evaluation_endpoint() {
         use axum::extract::Json;
@@ -2021,13 +2038,13 @@ mod tests {
         );
         let broken =
             forward_to(&client, &ask("other"), "payments", "", 1000).await;
-        assert_eq!((broken.status, broken.code), (500, "STS-XPEP-0057"));
+        assert_eq!((broken.status, broken.code), (403, "STS-XPEP-0057"));
         assert!(!broken.decision);
         let refused =
             forward_to(&client, &ask("refused"), "payments", "", 1000).await;
-        assert_eq!((refused.status, refused.code), (502, "STS-XPEP-0056"));
+        assert_eq!((refused.status, refused.code), (403, "STS-XPEP-0056"));
         let slow = forward_to(&client, &ask("slow"), "payments", "", 200).await;
-        assert_eq!((slow.status, slow.code), (504, "STS-XPEP-0055"));
+        assert_eq!((slow.status, slow.code), (403, "STS-XPEP-0055"));
 
         // NOBODY LISTENING: a port bound and not listening, held to the
         // end, so the kernel cannot hand it to another test's listener
@@ -2039,7 +2056,7 @@ mod tests {
         let nowhere = PdpClient::new(&options).unwrap();
         let down =
             forward_to(&nowhere, &ask("read"), "payments", "", 1000).await;
-        assert_eq!((down.status, down.code), (502, "STS-XPEP-0055"));
+        assert_eq!((down.status, down.code), (403, "STS-XPEP-0055"));
         assert!(!down.decision);
     }
 
@@ -2176,7 +2193,7 @@ mod tests {
     }
 
     /// One request's items classified as the service classifies them, then
-    /// evaluated: a binding tuple is 501 before it is read or forwarded and
+    /// evaluated: a binding tuple is 403 before it is read or forwarded and
     /// is recorded for the service's audit log; with the binding off the
     /// same tuples are ordinary and a binding member is 0101.
     async fn decide(
@@ -2234,7 +2251,7 @@ mod tests {
         on.settings.token_exchange = true;
         on.settings.detail_types = Some(vec!["document".into()]);
         on.settings.token_types = Some(vec!["access_token".into()]);
-        // ON: the gate and a LONE scope are 501 — the service answers a
+        // ON: the gate and a LONE scope are 403 — the service answers a
         // lone scope a fixed false (STS-AUTHZEN-0105), which an ordinary
         // evaluation here could widen — and the binding member on a tuple
         // that is not the binding's is 0101.
@@ -2246,10 +2263,10 @@ mod tests {
         assert_eq!(alone[0].error.as_ref().unwrap().0, 400);
         let batch = decide(&pep, &on, &[gate.clone(), act.clone()]).await;
         assert_eq!(batch[0].code, "STS-XPEP-0140");
-        assert_eq!(batch[0].error.as_ref().unwrap().0, 501);
+        assert_eq!(batch[0].error.as_ref().unwrap().0, 403);
         assert!(batch[0].error.as_ref().unwrap().1.contains("(a gate)"));
         assert!(batch[1].error.as_ref().unwrap().1.contains("(a detail)"));
-        // EVERY 501 IS RECORDED (#1827), deciding nothing.
+        // EVERY 403 OF THEM IS RECORDED (#1827), deciding nothing.
         let queued = audit.queued_for_test();
         let refused: Vec<_> = queued
             .iter()

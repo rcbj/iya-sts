@@ -208,7 +208,7 @@ naming the application in `context.application`, to this realm's
 This service decides it against the application's policy, as above, and the
 edge passes the answer back. An error here — the `500` for a policy that
 cannot be used, a refusal of the PEP, no answer — is an error there, never
-`false`. So the PEP's directory entry must hold `AUTHZEN_PEPS` and have the
+`false`; the edge answers it `403`, because every PEP failure is a `403`. So the PEP's directory entry must hold `AUTHZEN_PEPS` and have the
 application in its scope, and a policy here sees the **PEP** as the caller.
 [The remote PEP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded)
 has the details.

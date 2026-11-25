@@ -1374,7 +1374,8 @@ mod tests {
             "/access/v1/search/subject",
             https.clone(),
         );
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        // NOTHING PULLED YET IS A PEP FAILURE: 403, never 503 (#2208).
+        assert_eq!(status, StatusCode::FORBIDDEN);
         assert!(body.contains("not yet pulled"), "{}", body);
         let crl = Transport {
             crl_only: true,
@@ -1389,7 +1390,7 @@ mod tests {
     /// ADMISSION ASKS THE LISTENER THE REQUEST ARRIVED ON (#1830): the
     /// environment's listener here verifies nothing, and a request that
     /// came in on a listener that does is admitted past STS-XPEP-0039 (to
-    /// 0050, no caller list pulled yet); one on a listener that does not is
+    /// 0050's 403, no caller list pulled yet); one on a listener that does not is
     /// 0039, and plain HTTP is answered by the environment's as before.
     #[test]
     fn admission_asks_the_listener_the_request_arrived_on() {
@@ -1410,7 +1411,7 @@ mod tests {
         let path = "/access/v1/evaluation";
         let (status, _, said) =
             answer(&pep, Method::POST, path, on(true), &[], body);
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{}", said);
+        assert_eq!(status, StatusCode::FORBIDDEN, "{}", said);
         assert!(said.contains("not yet pulled"), "{}", said);
         let (status, _, said) =
             answer(&pep, Method::POST, path, on(false), &[], body);

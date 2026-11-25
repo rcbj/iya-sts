@@ -26,7 +26,8 @@
 //! **ONE CONNECTION POOL PER THREAD, NOT ONE FOR THE PROCESS (2026-11-16).**
 //! A member's first call to `/xacml/pep/basic` or `/xacml/pep/session`
 //! after an idle spell sometimes waited out the whole timeout
-//! (`STS-XPEP-0075`, a 502 to the user), now and then twice in a row, and
+//! (`STS-XPEP-0075`, a 502 to the user then, a 403 since #2208), now and
+//! then twice in a row, and
 //! the next call took milliseconds. The proxy's upstream client met the
 //! same thing first (`proxy.rs`, `UPSTREAM_CLIENT`): every listener worker
 //! owns a current-thread runtime and polls it only while it serves a
@@ -67,8 +68,8 @@ pub struct Answer {
     /// Why nothing (usable) came back.
     pub error: Option<String>,
     /// Nothing came back because the time ran out — told apart from a
-    /// refused connection for the AuthZEN forward (#564), which answers 504
-    /// for the one and 502 for the other.
+    /// refused connection for the AuthZEN forward (#564), whose message
+    /// says which (both are a 403 since #2208).
     pub timed_out: bool,
     /// The answer's `ETag`, for the proxy pull's `If-None-Match` (#1760).
     pub etag: Option<String>,

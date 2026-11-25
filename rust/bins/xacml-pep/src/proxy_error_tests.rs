@@ -42,6 +42,11 @@
 //! 504 (the upstream unreachable, or too slow) are the standard page; the
 //! application's 502, 503 and 504 are passed on.
 //!
+//! **EVERY PEP FAILURE IS A 403** (#2208, rcbj: "Any type of PEP failure
+//! should result in a 403 being returned"): a row made by `failed()` is
+//! `Refusal::failure()`'s, drawn with the failure wording and a generic
+//! description, and the proxy makes no 5xx but the application's two.
+//!
 //! **THE TABLE IS THE ENUMERATION**: `SOURCES` names every refusal the
 //! proxy can construct, where, and how it is reached, and
 //! `every_error_source_has_a_row` reads the source and fails when a
@@ -70,6 +75,8 @@ enum How {
 struct Source {
     status: u16,
     code: &'static str,
+    /// A PEP failure (#2208): always a 403, `Refusal::failure()`.
+    failure: bool,
     /// The function that constructs it.
     at: &'static str,
     /// When.
@@ -87,6 +94,24 @@ const fn row(
     Source {
         status,
         code,
+        failure: false,
+        at,
+        what,
+        how,
+    }
+}
+
+/// A PEP failure's row (#2208): a 403, whatever it was before.
+const fn failed(
+    code: &'static str,
+    at: &'static str,
+    what: &'static str,
+    how: How,
+) -> Source {
+    Source {
+        status: 403,
+        code,
+        failure: true,
         at,
         what,
         how,
@@ -102,7 +127,7 @@ const SOURCES: &[Source] = &[
     row(400, "STS-XPEP-0064", "proxy.rs answer_noted()",
         "the path does not normalise (an encoded /, a .. segment, //)",
         Live("unnormalised")),
-    row(503, "STS-XPEP-0118", "proxy.rs answer_noted()",
+    failed("STS-XPEP-0118", "proxy.rs answer_noted()",
         "no configuration received since the start; Retry-After",
         Live("unconfigured")),
     row(404, "STS-XPEP-0065", "proxy.rs answer_noted()",
@@ -149,7 +174,7 @@ const SOURCES: &[Source] = &[
         "the service's introspection: not active, another issuer or \
          audience, no subject",
         Live("inactive-token")),
-    row(502, "STS-XPEP-0075", "proxy_auth.rs service_failed() and others",
+    failed("STS-XPEP-0075", "proxy_auth.rs service_failed() and others",
         "a validation endpoint the service named cannot be asked, or none \
          was named",
         Live("service-unreachable")),
@@ -185,10 +210,10 @@ const SOURCES: &[Source] = &[
         "the active account's session has ended, not a browser's GET \
          (a browser goes to the chooser)",
         Live("account-ended")),
-    row(503, "STS-XPEP-0090", "proxy.rs no_session()",
+    failed("STS-XPEP-0090", "proxy.rs no_session()",
         "the relying party cannot be built (discovery fails)",
         Live("no-relying-party")),
-    row(502, "STS-XPEP-0075", "proxy.rs no_session()",
+    failed("STS-XPEP-0075", "proxy.rs no_session()",
         "the relying party is built and its authorize() fails",
         Envelope("the mock provider's discovery is what builds the party, \
                   and authorize() then fails only on a PAR the mock does \
@@ -197,7 +222,7 @@ const SOURCES: &[Source] = &[
         "a sign-in nobody started, already used or expired, or whose \
          relying party is gone",
         Live("sign-in-unknown")),
-    row(503, "STS-XPEP-0085", "proxy.rs callback()",
+    failed("STS-XPEP-0085", "proxy.rs callback()",
         "PEP_PROXY_MAX_SESSIONS live sessions, or no random value",
         Live("sessions-full")),
     row(401, "STS-XPEP-0083", "proxy.rs callback()",
@@ -212,7 +237,7 @@ const SOURCES: &[Source] = &[
         "a return path on no multipleAccounts route, or no such account \
          page or method",
         Live("no-account-page")),
-    row(500, "STS-XPEP-0110", "proxy.rs accounts()",
+    failed("STS-XPEP-0110", "proxy.rs accounts()",
         "the add page's sign-in established someone instead of starting",
         Envelope("no_session() answers a redirect or a refusal, never an \
                   identity: the arm exists for the type")),
@@ -230,24 +255,29 @@ const SOURCES: &[Source] = &[
     row(403, "STS-XPEP-0095", "proxy_auth.rs identity()",
         "the service refused the identity the route sends",
         Live("identity-refused")),
-    row(502, "STS-XPEP-0095", "proxy_auth.rs identity(), proxy.rs deliver()",
+    failed("STS-XPEP-0095", "proxy_auth.rs identity(), proxy.rs deliver()",
         "the identity endpoint did not answer usably, or answered no \
          claims, token or assertion",
         Live("identity-unusable")),
-    row(502, "STS-XPEP-0096", "proxy.rs deliver(), forward()",
+    failed("STS-XPEP-0096", "proxy.rs deliver(), forward()",
         "an identity header, token or cookie that is not a header value",
         Live("header-unsendable")),
-    row(502, "STS-XPEP-0097", "proxy.rs establish_saml()",
-        "the application's ACS unreachable, refusing, or setting no cookie",
+    failed("STS-XPEP-0097", "proxy.rs establish_saml()",
+        "the ACS the service named is not a URL, or the application's ACS \
+         refuses the assertion (4xx) or sets no cookie",
         Live("acs-failed")),
-    row(502, "STS-XPEP-0098", "proxy.rs evidence()",
+    row(502, "STS-XPEP-0097", "proxy.rs establish_saml()",
+        "the application's ACS unreachable, or answering 5xx: the \
+         application's failure, a gateway error",
+        Live("acs-down")),
+    failed("STS-XPEP-0098", "proxy.rs evidence()",
         "the credential gave no evidence the identity endpoint takes",
         Live("no-evidence")),
-    row(502, "STS-XPEP-0091", "proxy.rs forward()",
+    failed("STS-XPEP-0091", "proxy.rs forward()",
         "the request would leave the configured upstream",
         Envelope("a normalised path is a path on the upstream: the check \
                   is defence in depth, and no request reaches it")),
-    row(502, "STS-XPEP-0092", "proxy.rs upstream_client()",
+    failed("STS-XPEP-0092", "proxy.rs upstream_client()",
         "the upstream client would not build",
         Envelope("reqwest builds a client from any configuration this \
                   binary passes it")),
@@ -271,6 +301,8 @@ const DYNAMIC_PAIRS: &[(u16, &str)] =
 const DYNAMIC_SITES: &[(&str, &str, usize)] = &[
     // `Refusal::token()`'s own body.
     ("proxy_auth.rs", "401, code", 1),
+    // `Refusal::failure()`'s own body (#2208).
+    ("proxy_auth.rs", "403, code", 1),
     // `confirmation_problem()`'s code, twice (local and introspected).
     ("proxy_auth.rs", "code", 2),
     // `no_session()`, and `callback()`'s `refused` closure.
@@ -298,7 +330,6 @@ fn documented_error(status: u16, code: &str) -> &'static str {
         405 => "method_not_allowed",
         413 => "payload_too_large",
         429 => "too_many_requests",
-        503 => "temporarily_unavailable",
         504 => "gateway_timeout",
         _ => "bad_gateway",
     }
@@ -337,16 +368,18 @@ struct Scanned {
 
 fn scan(file: &str, text: &str, into: &mut Scanned) {
     let text = production(text);
-    let call =
-        Regex::new(r"(Refusal::new|Refusal::token|\brefuse|\brefused)\(")
-            .unwrap();
+    let call = Regex::new(
+        r"(Refusal::new|Refusal::token|Refusal::failure|\brefuse|\brefused)\(",
+    )
+    .unwrap();
     let code = Regex::new(r#"^"(STS-XPEP-\d{4})"$"#).unwrap();
     for found in call.captures_iter(text) {
         let whole = found.get(0).unwrap();
         let open = whole.end() - 1;
         let name = &found[1];
         let token = name == "Refusal::token" || name == "refused";
-        let args = first_args(text, open, if token { 1 } else { 2 });
+        let failure = name == "Refusal::failure";
+        let args = first_args(text, open, if token || failure { 1 } else { 2 });
         let literal_status = args[0].parse::<u16>().ok();
         match (name, token) {
             // A closure call: only its literal callers are refusals.
@@ -356,6 +389,9 @@ fn scan(file: &str, text: &str, into: &mut Scanned) {
         }
         let (status, said) = if token {
             (Some(401), args[0].as_str())
+        } else if failure {
+            // A PEP failure is always a 403 (#2208).
+            (Some(403), args[0].as_str())
         } else {
             (literal_status, args.get(1).map_or("", String::as_str))
         };
@@ -430,7 +466,7 @@ fn every_error_source_has_a_row() {
     let unrowed: Vec<_> = scanned.answered_codes.difference(&codes).collect();
     assert!(unrowed.is_empty(), "codes with no row: {:?}", unrowed);
     // The page's wording by code names only the table's pairs.
-    let arm = Regex::new(r#"\((\d{3}),\s*"(STS-XPEP-\d{4})"\)"#).unwrap();
+    let arm = Regex::new(r#"\((\d{3}),\s*"(STS-XPEP-\d{4})""#).unwrap();
     for c in arm.captures_iter(production(include_str!("proxy_page.rs"))) {
         let pair = (c[1].parse::<u16>().unwrap(), c[2].to_string());
         assert!(table.contains(&pair), "wording() for no row: {:?}", pair);
@@ -468,13 +504,25 @@ fn every_error_source_has_a_row() {
     // Each row's status has a model name, and a Live row a trigger.
     for s in SOURCES {
         assert!(
-            [400, 401, 403, 404, 405, 413, 429, 500, 502, 503, 504]
-                .contains(&s.status),
+            [400, 401, 403, 404, 405, 413, 429, 502, 504].contains(&s.status),
             "{} {}",
             s.status,
             s.code
         );
         assert!(!s.at.is_empty() && !s.what.is_empty());
+        // EVERY PEP FAILURE IS A 403, and the only 5xx are the
+        // application's (#2208).
+        assert!(!s.failure || s.status == 403, "{}", s.code);
+        assert!(
+            s.status < 500
+                || matches!(
+                    s.code,
+                    "STS-XPEP-0068" | "STS-XPEP-0069" | "STS-XPEP-0097"
+                ),
+            "a 5xx that is not the application's: {} {}",
+            s.status,
+            s.code
+        );
     }
 }
 
@@ -548,6 +596,7 @@ fn nothing_internal(
     label: &str,
     text: &str,
     status: u16,
+    failure: bool,
     out: &mut Vec<String>,
 ) {
     for bad in ["STS-", "panicked", "RUST_BACKTRACE", "src/", ".rs:"] {
@@ -555,22 +604,26 @@ fn nothing_internal(
             out.push(format!("{}: {:?} in the body: {}", label, bad, text));
         }
     }
-    if status >= 500 && (text.contains("127.0.0.1") || text.contains("http://"))
-    {
-        out.push(format!("{}: an address in a 5xx: {}", label, text));
+    let generic = status >= 500 || failure;
+    if generic && (text.contains("127.0.0.1") || text.contains("http://")) {
+        out.push(format!(
+            "{}: an address in a 5xx or failure: {}",
+            label, text
+        ));
     }
-    // A 5xx's description is a generic sentence, never the reason logged.
-    if status >= 500 && !GENERIC_5XX.iter().any(|g| text.contains(g)) {
+    // A 5xx's and a PEP failure's description is a generic sentence, never
+    // the reason logged.
+    if generic && !GENERIC_5XX.iter().any(|g| text.contains(g)) {
         out.push(format!("{}: a 5xx's own description: {}", label, text));
     }
 }
 
-/// `shown_description()`'s sentences for a 5xx of the proxy's own.
+/// `shown_description()`'s sentences for a 5xx of the proxy's own and for
+/// a PEP failure.
 const GENERIC_5XX: &[&str] = &[
-    "The application or the identity service could not be reached, or did \
-     not answer usably.",
+    "The application could not be reached, or did not answer usably.",
     "This proxy has not yet received its configuration since it started.",
-    "This proxy cannot take the request now.",
+    proxy::FAILURE_DESCRIPTION,
     "The application did not answer in time.",
     "The request could not be completed.",
 ];
@@ -580,8 +633,7 @@ const GENERIC_5XX: &[&str] = &[
 fn standard_page(
     label: &str,
     a: &Answered,
-    status: u16,
-    code: &str,
+    (status, code, failure): (u16, &str, bool),
     out: &mut Vec<String>,
 ) {
     let mut fail = |why: String| out.push(format!("{}: {}", label, why));
@@ -609,7 +661,7 @@ fn standard_page(
         fail("no nosniff or no-referrer".into());
     }
     let html = String::from_utf8_lossy(&a.body).to_string();
-    let (title, _, _) = proxy_page::wording(status, code);
+    let (title, _, _) = proxy_page::wording(status, code, failure);
     let error = documented_error(status, code);
     for want in [
         "<!doctype html>".to_string(),
@@ -634,7 +686,7 @@ fn standard_page(
     if html.contains("<script") {
         fail("a script".into());
     }
-    nothing_internal(label, &html, status, out);
+    nothing_internal(label, &html, status, failure, out);
     let incident = html
         .find("<dt>Incident ID</dt><dd><code>")
         .map(|at| at + 30)
@@ -663,8 +715,7 @@ fn standard_page(
 fn standard_json(
     label: &str,
     a: &Answered,
-    status: u16,
-    code: &str,
+    (status, code, failure): (u16, &str, bool),
     out: &mut Vec<String>,
 ) {
     use sts_model_pep::pep_proxy::components;
@@ -693,7 +744,7 @@ fn standard_json(
     if body["error"] != documented_error(status, code) {
         fail(format!("error {} for {}", body["error"], status));
     }
-    nothing_internal(label, &text, status, out);
+    nothing_internal(label, &text, status, failure, out);
 }
 
 /// The headers a refusal keeps whichever shape it is drawn in.
@@ -734,9 +785,9 @@ fn hold(s: &Source, html: bool, a: &Answered, out: &mut Vec<String>) {
     );
     // 0108 is the page whatever was asked: the callback is a navigation.
     if html || s.code == "STS-XPEP-0108" {
-        standard_page(&label, a, s.status, s.code, out);
+        standard_page(&label, a, (s.status, s.code, s.failure), out);
     } else {
-        standard_json(&label, a, s.status, s.code, out);
+        standard_json(&label, a, (s.status, s.code, s.failure), out);
     }
     if s.code != "STS-XPEP-0108" {
         its_headers(&label, a, s, out);
@@ -1051,6 +1102,12 @@ async fn trigger(case: &str, html: bool) -> (Harness, reqwest::Response) {
                 format!("{}/no-session-here", h.upstream_base);
             accept(h.get("/sso/x").basic_auth(alice.0, alice.1), html)
         }
+        "acs-down" => {
+            // Nobody at the application's ACS: the application's failure.
+            h.service.lock().unwrap().acs_url =
+                format!("http://127.0.0.1:{}/acs", dead_port());
+            accept(h.get("/sso/x").basic_auth(alice.0, alice.1), html)
+        }
         "no-evidence" => {
             // A Basic answer with no ticket, and a claim to ask for.
             let basic = serve(axum::Router::new().route(
@@ -1091,11 +1148,13 @@ async fn asked(s: &Source, html: bool) -> Answered {
         Envelope(why) => {
             assert!(!why.is_empty(), "{}: say why", s.code);
             let h = harness().await;
-            let response = h.proxied.refusal_for_test(
-                &Refusal::new(s.status, s.code, "a reason, logged"),
-                html,
-                "/somewhere",
-            );
+            let refusal = if s.failure {
+                Refusal::failure(s.code, "a reason, logged")
+            } else {
+                Refusal::new(s.status, s.code, "a reason, logged")
+            };
+            let response =
+                h.proxied.refusal_for_test(&refusal, html, "/somewhere");
             let status = response.status().as_u16();
             // reqwest's header map is http's, as axum's is.
             let headers = response.headers().clone();

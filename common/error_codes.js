@@ -26014,7 +26014,7 @@ const CODES = [
     summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
       'it had pulled both the policies and the AuthZEN catalogue, so it ' +
       'cannot map a request as the service does (#1179).',
-    spec: 'HTTP 503, an error message' },
+    spec: 'HTTP 403, an error message (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0044',
     summary: 'An AuthZEN request reached a remote PEP whose edge PDP is ' +
       'turned off (PEP_AUTHZEN=false) (#1179).',
@@ -26053,7 +26053,7 @@ const CODES = [
     summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
       'it had pulled the callers from the PDP, and no PEP_AUTHZEN_CALLERS ' +
       'is configured to decide meanwhile (#1189).',
-    spec: 'HTTP 503, an error message' },
+    spec: 'HTTP 403, an error message (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0051',
     summary: 'The client certificate an AuthZEN caller presented to the ' +
       'remote PEP\'s edge PDP verified, and its SHA-256 is not one the ' +
@@ -26081,26 +26081,31 @@ const CODES = [
       'authorization to the service: the service could not be reached, ' +
       'or did not answer within PEP_AUTHZEN_FORWARD_TIMEOUT_MS (#564). ' +
       'The evaluation is an error, never false.',
-    spec: 'HTTP 502 (504 on a timeout), or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0056',
     summary: 'The service refused the remote PEP itself when its edge PDP ' +
       'forwarded an AuthZEN evaluation about an application that ' +
       'enforces fine-grained authorization (401 or 403): the PEP\'s ' +
       'directory entry must hold AUTHZEN_PEPS and have the application ' +
       'in its stsAuthzenApplication scope (#564).',
-    spec: 'HTTP 502, or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0057',
     summary: 'The service answered an error to an AuthZEN evaluation the ' +
       'remote PEP\'s edge PDP forwarded (an application that enforces ' +
-      'fine-grained authorization): its status and message are passed to ' +
-      'the caller, never turned into false (#564).',
-    spec: 'the service\'s own status and message, or a batch item\'s ' +
-      'context.error' },
+      'fine-grained authorization), never turned into false (#564): a ' +
+      '400 or 413 is passed to the caller with the service\'s message, ' +
+      'and any other status — a 5xx included — is a PEP failure, 403 with ' +
+      'the service\'s status and message (#2208).',
+    spec: 'HTTP 400 or 413 as the service answered, otherwise HTTP 403; or ' +
+      'a batch item\'s context.error' },
   { code: 'STS-XPEP-0058',
     summary: 'The service answered 200 to an AuthZEN evaluation the remote ' +
       'PEP\'s edge PDP forwarded, with something that is not an AuthZEN ' +
       'decision (no boolean decision) (#564).',
-    spec: 'HTTP 502, or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0059',
     summary: 'The AuthZEN catalogue the remote PEP pulled carried an ' +
       'fgaApplications member that is not an array of application ' +
@@ -26196,7 +26201,7 @@ const CODES = [
       'liveness, or the token endpoint): unreachable, a status that is not ' +
       'an answer, or no endpoint named in the pull. The request is refused, ' +
       'never admitted (#1760).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0076',
     summary: 'The reverse proxy refused an EncryptedAssertion presented as a ' +
       'SAML credential: neither the proxy nor the service holds a service ' +
@@ -26251,7 +26256,7 @@ const CODES = [
       'PEP_PROXY_MAX_SESSIONS live sessions are held (none is evicted, ' +
       'which would sign somebody else out), or no random value could be ' +
       'drawn (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0086',
     summary: 'The reverse proxy\'s decision refused the request: the policy ' +
       'this PEP holds, under its bias and obligation rule, did not permit ' +
@@ -26280,17 +26285,18 @@ const CODES = [
       'redirect URI that is not https or loopback, a public client), or the ' +
       'service\'s discovery document could not be read, so nobody can be ' +
       'signed in there (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0091',
     summary: 'The upstream URL the reverse proxy built for a request would ' +
       'not stay on the configured upstream\'s origin and path, so the ' +
       'request is not sent (#1760).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0092',
     summary: 'PEP_PROXY_UPSTREAM_CA could not be read or would not load, so ' +
       'an https upstream is verified against the system\'s anchors alone; ' +
       'or the client to the upstream would not build (#1760).',
-    spec: 'HTTP 502 when the client would not build; otherwise none' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208) when the ' +
+      'client would not build; otherwise none' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-XPEP-0093',
     summary: 'The reverse proxy refused a request on a route whose ' +
@@ -26314,25 +26320,29 @@ const CODES = [
       'notOnOrAfter), could not be reached, or the pull named no such ' +
       'endpoint. The request is refused, NEVER forwarded without the ' +
       'identity (#1760, D11).',
-    spec: 'HTTP 403 when the service said 403, otherwise HTTP 502' },
+    spec: 'HTTP 403, access_denied: the policy\'s refusal when the ' +
+      'service said 403, otherwise a PEP failure (#2208)' },
   { code: 'STS-XPEP-0096',
     summary: 'A value the reverse proxy would have sent as identity was ' +
       'refused: a claim holding CR, LF or NUL, a list member holding the ' +
       'route\'s separator, an object, or a token or cookie that is not a ' +
       'header value (#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0097',
     summary: 'The reverse proxy could not establish the application\'s ' +
       'session for a saml-mode route: the ACS the service named is not an ' +
       'absolute http(s) URL, could not be reached, answered 400 or more, or ' +
-      'set no cookie (#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+      'set no cookie (#1760, D11). The application\'s own failure — its ACS ' +
+      'unreachable or answering 5xx — is a gateway error; anything else is ' +
+      'a PEP failure (#2208).',
+    spec: 'HTTP 502, bad_gateway, when the ACS cannot be reached or ' +
+      'answers 5xx; otherwise HTTP 403, access_denied' },
   { code: 'STS-XPEP-0098',
     summary: 'The reverse proxy had no evidence to ask the identity ' +
       'endpoint with: a Basic answer that carried no ticket, or a proxy ' +
       'session whose relying party or access token could not be had ' +
       '(#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0099',
     summary: 'The CAEP/RISC stream of a session route\'s relying party ' +
       'has not answered a poll within PEP_PROXY_SIGNALS_STALE_MS (the ' +
@@ -26399,8 +26409,10 @@ const CODES = [
   { code: 'STS-XPEP-0110',
     summary: 'A remote PEP proxy account page was asked for something it ' +
       'does not answer: no such page, or an add whose return path is not ' +
-      'on a session route with multipleAccounts (#1760).',
-    spec: 'HTTP 404' },
+      'on a session route with multipleAccounts (#1760); or, unreachable ' +
+      'in practice, an add whose sign-in established someone instead of ' +
+      'starting, a PEP failure (#2208).',
+    spec: 'HTTP 404; HTTP 403 for the PEP failure' },
   { code: 'STS-XPEP-0111',
     summary: 'A remote PEP proxy account act named an account the ' +
       'browser\'s set does not hold (#1760).',
@@ -26448,8 +26460,8 @@ const CODES = [
       'most once a minute, and once more when the first configuration ' +
       'arrives; a configuration received empty or switched off is ' +
       'STS-XPEP-0065 (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable, with Retry-After (the poll ' +
-      'interval in seconds, at least 1)' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208; it was 503), ' +
+      'with Retry-After (the poll interval in seconds, at least 1)' },
   { code: 'STS-XPEP-0119',
     summary: 'A remote PEP could not apply one part of a listener\'s ' +
       'tuning. A TLS knob the library refused keeps the acceptor already ' +
@@ -26624,7 +26636,8 @@ const CODES = [
       'request that also carries a token-exchange gate ' +
       '(issue:<registered token type>:token_exchange). The service ' +
       'answers those by the binding\'s fixed rules, which need delegation ' +
-      'and the directory. This edge answers 501 for that item — the whole ' +
+      'and the directory. This edge answers 403 for that item (a PEP ' +
+      'failure: it cannot decide it; 501 before #2208) — the whole ' +
       'response when the request was one evaluation, and context.error ' +
       'on a batch item — does not forward it, and records it to the ' +
       'service\'s audit log (authzen.remote.decision). The code is logged ' +
@@ -26632,7 +26645,7 @@ const CODES = [
       'ordinary evaluation, as at the service; either way a context ' +
       'member the binding reads, on a tuple that is not the binding\'s, ' +
       'is 400 STS-AUTHZEN-0101.',
-    spec: 'AuthZEN OAuth token-exchange binding; HTTP 501' },
+    spec: 'AuthZEN OAuth token-exchange binding; HTTP 403' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

@@ -429,15 +429,45 @@ impl ErrorPage {
 
 /// The title, the sentence and the background a refusal is drawn with,
 /// by its code where the code says more than the status, else by status.
+/// A PEP FAILURE (#2208, `failure`) is a 403 drawn as one: the request was
+/// refused because it could not be decided, not because the policy said
+/// no.
 pub fn wording(
     status: u16,
     code: &str,
+    failure: bool,
 ) -> (&'static str, &'static str, &'static str) {
     const POLICY_BACKGROUND: &str =
         "This application is behind a policy enforcement point. Before \
          every request reaches the application, the enforcement point \
          decides it with the access policy the identity service manages. \
          This request was refused there, so the application never saw it.";
+    if failure {
+        return match (status, code) {
+            (403, "STS-XPEP-0118") => (
+                "Try again later",
+                "The enforcement point in front of this application has \
+                 just started and is still receiving its settings from the \
+                 identity service, so the request was refused rather than \
+                 let through. Try again in a few seconds.",
+                POLICY_BACKGROUND,
+            ),
+            (403, "STS-XPEP-0085") => (
+                "Try again later",
+                "The enforcement point in front of this application cannot \
+                 start another session right now, so the sign-in was \
+                 refused. Try again later.",
+                POLICY_BACKGROUND,
+            ),
+            _ => (
+                "Access cannot be decided now",
+                "The enforcement point in front of this application could \
+                 not complete the checks this request needs, so the request \
+                 was refused rather than let through. Try again later.",
+                POLICY_BACKGROUND,
+            ),
+        };
+    }
     match (status, code) {
         (403, "STS-XPEP-0086") | (403, "STS-XPEP-0095") => (
             "You do not have access to this page",
@@ -522,21 +552,8 @@ pub fn wording(
         ),
         (502, _) => (
             "The application cannot be reached",
-            "The application or the identity service could not be reached, \
-             or did not answer usably. Try again later.",
-            "",
-        ),
-        (503, "STS-XPEP-0118") => (
-            "Try again later",
-            "The enforcement point in front of this application has just \
-             started and is still receiving its settings from the identity \
-             service. Try again in a few seconds.",
-            "",
-        ),
-        (503, _) => (
-            "Try again later",
-            "This application cannot take the request right now. Try again \
-             later.",
+            "The application could not be reached, or did not answer \
+             usably. Try again later.",
             "",
         ),
         (504, _) => (

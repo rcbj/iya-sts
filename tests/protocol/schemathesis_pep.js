@@ -760,7 +760,7 @@ async function provisionPepLane(deps, workDir) {
   const publicBase = env.proxyHttpsUrl ||
     ("https://" + new URL(env.proxyUrl).hostname + ":9543");
   // THE PROXY: one public route under a path no document names, so the
-  // proxy's own paths answer as a configured proxy's do (every path is 503
+  // proxy's own paths answer as a configured proxy's do (every path is 403
   // before a configuration, STS-XPEP-0118) and the start page is the
   // proxy's own rather than the upstream's.
   await mustAct(deps, prefix, "/admin-api/xacml/set-pep-proxy", {

@@ -94,7 +94,8 @@ impl Identity {
 
 /// A refusal, ready to answer: the status, the code it is logged under,
 /// the sentence for the log and the body, whether a token was refused
-/// (`error="invalid_token"`), and a `Retry-After` for a 429 or a 503.
+/// (`error="invalid_token"`), a `Retry-After` for a 429 (and for
+/// `STS-XPEP-0118`), and whether it is a PEP FAILURE.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Refusal {
     pub status: u16,
@@ -105,6 +106,15 @@ pub struct Refusal {
     /// A 405's `Allow` for one of the proxy's own paths, which has no route
     /// to take the list from (#1830).
     pub allow: Option<&'static str>,
+    /// **A PEP FAILURE** (#2208, rcbj: "Any type of PEP failure should
+    /// result in a 403 being returned"): the PEP could not reach a Permit
+    /// — the service or one of its validation, identity or sign-in
+    /// endpoints could not be asked or answered badly, no configuration is
+    /// held yet, the identity a route sends could not be delivered, a
+    /// session could not be made. Always a 403, never a 5xx and never
+    /// forwarded; logged at warn, recorded as a fault, and described by a
+    /// generic sentence (the reason may name the service's addresses).
+    pub failure: bool,
 }
 
 impl Refusal {
@@ -116,6 +126,15 @@ impl Refusal {
             token_refused: false,
             retry_after: None,
             allow: None,
+            failure: false,
+        }
+    }
+
+    /// A PEP failure (#2208): a 403 under `code`, never a 5xx.
+    pub fn failure(code: &'static str, why: &str) -> Refusal {
+        Refusal {
+            failure: true,
+            ..Refusal::new(403, code, why)
         }
     }
 
@@ -211,7 +230,7 @@ fn service_failed(what: &str, answer: &Answer) -> Refusal {
             what, answer.status
         ),
     };
-    Refusal::new(502, "STS-XPEP-0075", &why)
+    Refusal::failure("STS-XPEP-0075", &why)
 }
 
 pub fn now_s() -> i64 {
@@ -384,8 +403,7 @@ impl Authenticator {
         // AT THE SERVICE: an opaque token, or one this binary cannot verify.
         let url = &pulled.validation.introspect;
         if url.is_empty() {
-            return Err(Refusal::new(
-                502,
+            return Err(Refusal::failure(
                 "STS-XPEP-0075",
                 "the token cannot be verified here and the service named no \
                  introspection endpoint",
@@ -509,8 +527,7 @@ impl Authenticator {
         }
         let url = &pulled.validation.saml;
         if url.is_empty() {
-            return Err(Refusal::new(
-                502,
+            return Err(Refusal::failure(
                 "STS-XPEP-0075",
                 "the assertion cannot be verified here and the service named \
                  no SAML validation endpoint",
@@ -573,8 +590,7 @@ impl Authenticator {
         }
         let url = &pulled.validation.basic;
         if url.is_empty() {
-            return Err(Refusal::new(
-                502,
+            return Err(Refusal::failure(
                 "STS-XPEP-0075",
                 "the service named no Basic validation endpoint",
             ));
@@ -644,7 +660,8 @@ impl Authenticator {
     /// `POST validation.identity` (D11): the route, the evidence the
     /// subject was established from, and for mode `headers` the claims
     /// asked. The service's 403 is a 403 here; anything else that is not a
-    /// 200 with a JSON object is a 502. Never logged: the evidence.
+    /// 200 with a JSON object is a PEP failure, a 403 too (#2208). Never
+    /// logged: the evidence.
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn identity(
         &self,
@@ -655,8 +672,7 @@ impl Authenticator {
     ) -> Result<Map<String, Value>, Refusal> {
         let url = &pulled.validation.identity;
         if url.is_empty() {
-            return Err(Refusal::new(
-                502,
+            return Err(Refusal::failure(
                 "STS-XPEP-0095",
                 "the route sends an identity and the service named no \
                  identity endpoint",
@@ -695,8 +711,7 @@ impl Authenticator {
             Some(said) if answer.status == 200 && answer.error.is_none() => {
                 Ok(said.clone())
             }
-            _ => Err(Refusal::new(
-                502,
+            _ => Err(Refusal::failure(
                 "STS-XPEP-0095",
                 &format!(
                     "the service's identity endpoint did not answer usably \
@@ -722,8 +737,7 @@ impl Authenticator {
     ) -> Result<Option<(String, String, String)>, Refusal> {
         let url = &pulled.validation.session;
         if url.is_empty() {
-            return Err(Refusal::new(
-                502,
+            return Err(Refusal::failure(
                 "STS-XPEP-0075",
                 "the service named no session liveness endpoint",
             ));
