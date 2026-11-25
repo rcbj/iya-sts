@@ -48,6 +48,7 @@
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const ssfRoles = require("./ssf_roles.js");
@@ -532,9 +533,22 @@ async function test() {
     if (who !== TIM) {
       attributes.mail = who + "@" + DOMAIN;
     }
+    // EVE and WYN sign in, so their password is their own (#2160): a
+    // typed one is temporary in product, and `own_password.js` has them
+    // choose PASSWORD at the sign-in screen. Nobody else signs in.
+    const signsIn = who === EVE || who === WYN;
     await ok(realmApi + "/users/create", { username: who, invent: false,
-      credential: "password", password: PASSWORD, attributes: attributes },
+      credential: "password",
+      password: signsIn ? ownPassword.temporaryFor(PASSWORD) : PASSWORD,
+      attributes: attributes },
       "created " + who);
+    if (signsIn) {
+      await ownPassword.ownPassword(realmBase, who, PASSWORD,
+        function (one, value) {
+          return postJson(realmApi + "/users/set-password",
+                          { user: one, password: value });
+        });
+    }
   }
   await drain(token, streamId);
   POOL.length = 0;

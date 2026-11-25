@@ -31,6 +31,7 @@
 
 const urls = require("./url_match.js");
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const childProcess = require("child_process");
 const fs = require("fs");
@@ -250,10 +251,18 @@ async function test() {
   await ok(realmApi + "/consent/grant-global-consent",
            { client: CLIENT, scope: "openid" }, "consented openid");
   await ok(realmApi + "/users/create", { username: BOB, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Mail " + BOB, givenName: "Mail", sn: "Bob",
                   mail: MAIL } },
     "created " + BOB);
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base + R, BOB, PASSWORD, function (who, value) {
+    return send(realmApi + "/users/set-password", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: who, password: value }) });
+  });
   await ok(realmApi + "/openpgp/smime", { user: BOB, certificate: certs.rsa },
            "set an RSA S/MIME certificate");
   await ok(realmApi + "/openpgp/mail-encryption",
