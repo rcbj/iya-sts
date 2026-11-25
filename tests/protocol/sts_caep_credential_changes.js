@@ -34,6 +34,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -392,12 +393,20 @@ async function test() {
   const streamId = created.body.stream_id;
 
   log.info("=== a. a person created with a password ===");
+  // Temporary, then alice's own (#2160, `own_password.js`): she signs in
+  // with PASSWORD below. Bob never signs in, so his stays as typed.
   for (const who of [ALICE, BOB]) {
     await ok(realmApi + "/users/create", { username: who, invent: false,
-      credential: "password", password: PASSWORD,
+      credential: "password",
+      password: who === ALICE ? ownPassword.temporaryFor(PASSWORD) : PASSWORD,
       attributes: { cn: "CAEP " + who, givenName: "CAEP", sn: "Before",
                     mail: who + "@caep145.test" } }, "created " + who);
   }
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   const scimToken = await tokenFor("scim:read scim:write");
   const scimAuth = { Authorization: "Bearer " + scimToken };
   for (const who of [ALICE, BOB]) {
@@ -444,9 +453,12 @@ async function test() {
   });
   const fingerprint = nodeCrypto.createHash("sha256").update(AGENT, "utf8")
     .digest("base64url");
+  // THIS BROWSER'S session (its fp_ua): in product the sign-in that made
+  // PASSWORD alice's own (#2160) established one with another User-Agent.
   found = await waitFor(token, streamId, "session-established",
     function (set) {
-      return !!eventOf(set, "session-established") && aboutUser(set, ALICE);
+      const ev = eventOf(set, "session-established");
+      return !!ev && aboutUser(set, ALICE) && ev.fp_ua === fingerprint;
     });
   check("session-established carries fp_ua, the SHA-256 of the " +
         "User-Agent, not the header", function () {

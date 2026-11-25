@@ -934,13 +934,31 @@ const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 // whose type is JSON, XML or plain text gets this one instead. An SVG keeps
 // the base policy: it is XML, and it may style itself. A route that set its
 // own policy is left alone.
+//
+// **AND THE CERTIFICATE AND CMS BODIES ARE NOT PAGES EITHER (#2236).** The
+// EST, SCEP, ACME, CRL and OCSP answers — a certs-only PKCS#7, a PKCS#8, a
+// CSR attributes list, a CRL, an OCSP response, a PEM chain, and EST's
+// server-key multipart — are read by enrollment clients and never rendered.
+// They had the page policy and, since #2164, `Reporting-Endpoints` too, and
+// with #2181's CORP that was one header too many for libest's estclient,
+// Cisco's reference EST client: it reads AT MOST SIXTEEN header lines
+// (`MAX_HEADERS` in `est_client_http.c`) and counts the seventeenth, and the
+// blank line after it, as the body, so every dispatched product answer failed
+// "Content Length (5470) and body length (5491) mismatch" — 21 bytes, which
+// is `Connection: close` and two CRLFs. The declared length was right; the
+// client stopped reading headers early. tests/est_wire_headers.js holds the
+// count.
 // ---------------------------------------------------------------------------
 const NOT_A_PAGE_POLICY = contentSecurityPolicy({
   'style-src': null,
   'img-src': null
 });
-const NOT_A_PAGE_TYPES =
-  /^\s*(?:application\/(?:[^\s;]+\+)?(?:json|xml)|text\/(?:plain|xml))\s*(?:;|$)/i;
+const NOT_A_PAGE_TYPES = new RegExp(
+  '^\\s*(?:application\\/(?:[^\\s;]+\\+)?(?:json|xml)|text\\/(?:plain|xml)|' +
+  'application\\/(?:pkcs7-mime|pkcs8|pkcs10|pkix-cert|pkix-crl|' +
+  'pkix-pkipath|ocsp-response|csrattrs|pem-certificate-chain|' +
+  'x-pki-message|x-x509-ca-cert|x-x509-ca-ra-cert|x-x509-next-ca-cert|' +
+  'x-pkcs7-certificates)|multipart\\/mixed)\\s*(?:;|$)', 'i');
 
 // ---------------------------------------------------------------------------
 // THE BROWSER FEATURES A PAGE OF THIS SERVICE MAY USE (Qualys QID 150248,

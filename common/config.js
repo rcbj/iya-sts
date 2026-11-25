@@ -449,6 +449,71 @@ const log = bunyan.createLogger({ name: 'sts-config',
                                   level: appconfig.logLevel || 'info' });
 
 // ---------------------------------------------------------------------------
+// A LIST OF REGULAR EXPRESSIONS AN ADMINISTRATOR WROTE (#2220, ASVS 5.0.0
+// 1.3.12): SPIFFE's http_challenge DNS patterns and sigstore identities,
+// matched against what an agent or a signing certificate names. Each entry
+// that is a pattern is held to `common/pattern_safety.js` — at most 256
+// characters, no backreference, no quantified group that is itself
+// quantified or an alternation — and must compile. `csvPatterns` on the
+// row says how an entry reads: `regex`, the whole entry; `identity-pairs`,
+// `issuer=subject`, each half a pattern only when it holds one of SPIRE's
+// regex characters (`spiffe_sigstore.ts`'s `identityAllowed()`).
+// ---------------------------------------------------------------------------
+const CSV_PATTERN_CHARS = /[*+?^${}[\]|()]/;
+
+/**
+ * Says why a list setting's regular expressions may not be stored, or null.
+ *
+ * @param raw - the value as given: text or an array
+ * @param setting - the row, whose `csvPatterns` says how an entry reads
+ * @returns the problem as a sentence, or null
+ */
+function csvPatternProblem(raw, setting) {
+  log.debug("Entering csvPatternProblem().");
+  // Lazily, and a leaf: `pattern_safety.js` requires nothing.
+  const PatternSafety = require('./pattern_safety');
+  const parts = (Array.isArray(raw) ? raw :
+                 String(raw === undefined || raw === null ? '' : raw)
+                   .split(','))
+    .map(function (part) {
+      return String(part).trim();
+    }).filter(function (part) {
+      return part.length > 0;
+    });
+  const pairs = setting.csvPatterns === 'identity-pairs';
+  for (let i = 0; i < parts.length; i++) {
+    const cut = parts[i].indexOf('=');
+    const halves = pairs
+      ? (cut > 0 ? [parts[i].slice(0, cut), parts[i].slice(cut + 1)]
+                 : [parts[i]])
+      : [parts[i]];
+    for (let j = 0; j < halves.length; j++) {
+      const pattern = halves[j];
+      if (pairs && !CSV_PATTERN_CHARS.test(pattern)) {
+        continue;
+      }
+      let problem = PatternSafety.problem(pattern, PatternSafety.PATTERN_MAX);
+      if (!problem) {
+        try {
+          new RegExp(pattern);
+        } catch (e) {
+          log.debug("Caught in csvPatternProblem(): " +
+                    ((e && e.message) || e));
+          problem = 'it does not compile: ' + e.message;
+        }
+      }
+      if (problem) {
+        log.debug("Leaving csvPatternProblem(). Refused.");
+        return 'holds the regular expression "' + pattern.slice(0, 80) +
+               '", which is refused: ' + problem;
+      }
+    }
+  }
+  log.debug("Leaving csvPatternProblem().");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Types.
 //
 // A value arrives here as a string when it came from the environment or from a
@@ -721,8 +786,24 @@ const TYPES = {
     // — addresses, host names, ids another table owns — and is not checked,
     // as before. The entries are split and trimmed as parse() does, so what
     // is checked is exactly what the reader will be handed.
-    check: function (raw, setting) {
+    // A ROW THAT DECLARES `csvPatterns` (#2220) is a list of regular
+    // expressions — `regex`, each entry one, or `identity-pairs`, each entry
+    // `issuer=subject` whose halves are one when they hold a regex
+    // character — and each is held to `csvPatternProblem()`. Only a
+    // caller's write: a value from the environment or an appconfig file is
+    // WARNED about at startup (`opts.startup`, STS-CORE-0184), and a stored
+    // override read back is not checked (`opts.stored`), so a deployment
+    // that started on one before #2220 still starts with it.
+    check: function (raw, setting, opts) {
       log.debug("Entering check().");
+      if (setting && setting.csvPatterns &&
+          !(opts && (opts.startup || opts.stored))) {
+        const patterns = csvPatternProblem(raw, setting);
+        if (patterns) {
+          log.debug("Leaving check(). An unsafe pattern.");
+          return patterns;
+        }
+      }
       const allowed = setting && Array.isArray(setting.csvValues)
         ? setting.csvValues : null;
       if (!allowed) {
@@ -5278,6 +5359,55 @@ const SETTINGS = [
     description: 'The Azure Key Vault URL or the HashiCorp Vault endpoint ' +
                  'the previous key is read from. It has no fallback.' },
 
+  // THE PREVIOUS CELL KEY (#2220): the cell key rotated as the service key
+  // is, by re-wrapping this cell's data keys (`common/keystore.js`).
+  { key: 'keys.previousCellKekProvider', group: 'Key material',
+    label: 'Where the previous cell key-encryption key is read from',
+    env: 'STS_PREVIOUS_CELL_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault', 'pkcs11'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'To rotate this cell\'s key-encryption key: point ' +
+                 'keys.cellKek* at the NEW key and this at the OLD one, ' +
+                 'and start. Every data encryption key of this cell still ' +
+                 'wrapped under the old key is re-wrapped under the new one ' +
+                 'and written back; once every node of the cell has ' +
+                 'started that way, set this back to none. Refused without ' +
+                 'a cell key.' },
+
+  { key: 'keys.previousCellKekRef', group: 'Key material',
+    label: 'The previous cell key-encryption key\'s location',
+    env: 'STS_PREVIOUS_CELL_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the previous cell key is, in the provider ' +
+                 'keys.previousCellKekProvider names: a path, an ARN, a ' +
+                 'resource or a Vault read path. It has no fallback.' },
+
+  { key: 'keys.previousCellKekField', group: 'Key material',
+    label: 'The field the previous cell key is in',
+    env: 'STS_PREVIOUS_CELL_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the previous cell ' +
+                 'key. Empty takes the value whole.' },
+
+  { key: 'keys.previousCellKekRegion', group: 'Key material',
+    label: 'AWS region of the previous cell key',
+    env: 'STS_PREVIOUS_CELL_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the previous cell key is read from. Empty ' +
+                 'uses the SDK\'s own resolution.' },
+
+  { key: 'keys.previousCellKekVault', group: 'Key material',
+    label: 'Key Vault URL of the previous cell key',
+    env: 'STS_PREVIOUS_CELL_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL or the HashiCorp Vault endpoint ' +
+                 'the previous cell key is read from. It has no fallback.' },
+
   // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.
   //
@@ -7297,6 +7427,33 @@ const SETTINGS = [
                  'refused (STS-REG-0208); remove one first. Expired secrets ' +
                  'count until the daily job oauth2.client-secret-expiry ' +
                  'removes them.' },
+  // AUTOMATIC ROTATION, OPT-IN PER CLIENT (#2220): `common/applications.js`,
+  // *AUTOMATIC ROTATION, OPT-IN PER CLIENT*, argues delivery.
+  { key: 'oauth2.clientSecretAutoRotate', group: 'OAuth 2.0 / OIDC',
+    label: 'Rotate these clients\' secrets automatically',
+    env: 'STS_OAUTH2_CLIENT_SECRET_AUTO_ROTATE', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The applications whose client secret the daily ' +
+                 'oauth2.client-secret-expiry job ROTATES before it ' +
+                 'expires, comma-separated. Each entry is a `client_id`, ' +
+                 'or `client_id=destination/secret-name` to push the new ' +
+                 'secret to that secret destination (Directory → Secret ' +
+                 'destinations) before it is committed; a push that fails ' +
+                 'rotates nothing and is tried again the next day. Without ' +
+                 'a destination the client reads its new secret from its ' +
+                 'RFC 7592 client configuration endpoint. The old secret ' +
+                 'still authenticates for oauth2.clientSecretOverlapS. ' +
+                 'sts-api-client is never rotated here. Empty: no client ' +
+                 'is rotated, and each is warned about ahead of expiry.' },
+
+  { key: 'oauth2.clientSecretAutoRotateDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Rotate a listed client\'s secret this many days ahead',
+    env: 'STS_OAUTH2_CLIENT_SECRET_AUTO_ROTATE_DAYS', type: 'int',
+    dflt: 30, min: 1, max: 365, runtime: true,
+    description: 'How long before its primary client secret expires an ' +
+                 'application listed in oauth2.clientSecretAutoRotate is ' +
+                 'rotated. A secret that never expires is never rotated.' },
+
   { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
     label: 'Warn about an expiring client secret this many days ahead',
     env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
@@ -16004,6 +16161,44 @@ const SETTINGS = [
                  'client\'s own shorter timeLimit wins. The entries sent ' +
                  'before it are the answer, marked incomplete.' },
 
+  // THE LARGEST MESSAGE A CLIENT MAY SEND (#2220), read from its BER header
+  // by `ldap/ldap_message_guard.ts` before ldapjs buffers any of it, on 389
+  // and 636 alike. Only CLIENT-TO-SERVER messages are counted: a search
+  // result is the server's, however large. The numbers:
+  //   * AFTER A BIND, 5 MiB — the limit every HTTP body here is held to
+  //     (`common/app.js`), so anything the console or the APIs could write
+  //     fits through LDAP too. A modify carrying a jpegPhoto (hundreds of
+  //     KB), a certificate chain (a few KB each) or a group of tens of
+  //     thousands of member DNs (about 60 bytes each) is well inside it.
+  //   * BEFORE A BIND, 128 KiB. What a client sends first is a bind (a DN
+  //     and a password: under a kilobyte), StartTLS, or a root DSE search.
+  //     The largest is a SASL bind carrying a Kerberos token, which Windows
+  //     caps with MaxTokenSize at 48,000 bytes by default and 65,535 at
+  //     most — half this limit. Bigger than that is memory spent for
+  //     somebody who has not said who they are.
+  // Read at each message's header, so a change applies to the next one.
+  { key: 'ldap.maxMessageBytes', group: 'LDAP',
+    label: 'Largest message from a bound client (bytes)',
+    env: 'LDAP_MAX_MESSAGE_BYTES', type: 'int', dflt: 5242880,
+    min: 65536, max: 268435456, runtime: true, perProcess: true,
+    description: 'The largest LDAP message a client that has bound may ' +
+                 'send, in bytes, counted from the length its BER header ' +
+                 'declares: a connection whose next message declares more ' +
+                 'is closed before any of it is read (STS-LDAP-0227). ' +
+                 'Search results are sent by the server and do not count. ' +
+                 '5 MiB by default, the limit every HTTP body here has.' },
+
+  { key: 'ldap.maxMessageBytesBeforeBind', group: 'LDAP',
+    label: 'Largest message before a bind (bytes)',
+    env: 'LDAP_MAX_MESSAGE_BYTES_BEFORE_BIND', type: 'int', dflt: 131072,
+    min: 4096, max: 268435456, runtime: true, perProcess: true,
+    description: 'The largest LDAP message a client may send before it has ' +
+                 'bound, in bytes: a bind, StartTLS or a root DSE search. ' +
+                 'Over it the connection is closed before any of the ' +
+                 'message is read (STS-LDAP-0227). 128 KiB by default, ' +
+                 'twice the largest Kerberos token a SASL bind can carry. ' +
+                 'Never more than ldap.maxMessageBytes in effect.' },
+
   { key: 'ldap.plainListener', group: 'LDAP', label: 'Plain LDAP listener',
     env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: strongerInProduct(false, true), derived: true,
     runtime: false,
@@ -20141,7 +20336,7 @@ const SETTINGS = [
   { key: 'spiffe.httpChallengeAllowedDnsPatterns', group: 'SPIFFE',
     label: 'http_challenge allowed host names (regular expressions)',
     env: 'STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS', type: 'csv',
-    dflt: '', runtime: true,
+    dflt: '', runtime: true, csvPatterns: 'regex',
     description: 'SPIRE\'s allowed_dns_patterns, comma-separated regular ' +
                  'expressions. An http_challenge agent\'s host name must ' +
                  'match one BEFORE this server looks it up or dials it. ' +
@@ -20488,7 +20683,7 @@ const SETTINGS = [
   { key: 'spiffe.dockerSigstoreAllowedIdentities', group: 'SPIFFE',
     label: 'docker sigstore: allowed signer identities',
     env: 'STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_IDENTITIES', type: 'csv',
-    dflt: '', runtime: true,
+    dflt: '', runtime: true, csvPatterns: 'identity-pairs',
     description: 'SPIRE\'s allowed_identities, one issuer=subject pair per ' +
                  'element: the OIDC issuer and the subject a keyless ' +
                  'signing certificate must name. Either half containing one ' +
@@ -21395,6 +21590,24 @@ const SETTINGS = [
                  'SDK\'s VAULT_TOKEN. Ignored where a client certificate is ' +
                  'configured, exactly as the key\'s token is.' },
 
+  // READ AGAIN WHILE RUNNING (#2220): `persistence/persistence.js`,
+  // *THE DATABASE PASSWORD, READ AGAIN WHILE THE SERVICE RUNS*.
+  { key: 'persistence.databasePasswordRefreshS', group: 'Persistence',
+    label: 'Read the database password again every (seconds)',
+    env: 'STS_DATABASE_PASSWORD_REFRESH_S', type: 'int', dflt: 3600,
+    min: 0, max: 86400, runtime: true, perProcess: true,
+    description: 'How often each process reads the database password ' +
+                 'again from the secret store ' +
+                 '`persistence.databasePasswordProvider` names (the ' +
+                 'persistence.database-password-refresh job). A changed ' +
+                 'password is used for every connection made after it, ' +
+                 'without a restart; open connections keep working. It is ' +
+                 'also read again at once when the database refuses a ' +
+                 'login. Rotating the password at the database is the ' +
+                 'secret store\'s or the operator\'s job, and the old one ' +
+                 'must stay valid there for at least this long. 0 reads it ' +
+                 'only at start and after a refused login.' },
+
   // ---------------------------------------------------------------------
   // TLS TO THE DATABASE, and the one knob that is about TRUST rather than
   // about encryption.
@@ -21817,6 +22030,39 @@ const SETTINGS = [
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
                  'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // THE SHARED SECRETS' ROTATION (#2220): `cluster/cluster_secrets.ts`'s
+  // header argues the two steps and the identifiers that never rotate.
+  // -------------------------------------------------------------------------
+  { key: 'cluster.secretRotationDays', group: 'Cluster',
+    label: 'Rotate the shared secrets every (days)',
+    env: 'STS_CLUSTER_SECRET_ROTATION_DAYS', type: 'int', dflt: 90,
+    min: 0, max: 3650, runtime: true, perProcess: true,
+    description: 'How often the cluster.secret-rotate job replaces each ' +
+                 'shared secret that is a key: the CSRF key, the ACME ' +
+                 'nonce key, the Shared Signals receiver secret, the ' +
+                 'OpenID Federation page key, the sign-out result key and ' +
+                 'the DBSC key. A new value is published first and made ' +
+                 'current ten minutes later, once every process has read ' +
+                 'it, and the old one is still accepted for ' +
+                 '`cluster.secretOverlapS`. The pairwise subject secret ' +
+                 'and the bootstrap name secret are identifiers and never ' +
+                 'rotate, and a value set by an environment variable is ' +
+                 'the operator\'s to change. 0 turns the rotation off. A ' +
+                 'secret stored by an earlier release is dated at the ' +
+                 'job\'s first run and first rotated this many days ' +
+                 'later, never at the upgrade.' },
+
+  { key: 'cluster.secretOverlapS', group: 'Cluster',
+    label: 'Accept a rotated shared secret for (seconds)',
+    env: 'STS_CLUSTER_SECRET_OVERLAP_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true, perProcess: true,
+    description: 'How long a shared secret a rotation replaced is still ' +
+                 'accepted beside the new one, so a form, a nonce, a page ' +
+                 'pointer or a bound cookie made just before the rotation ' +
+                 'still works after it. Nothing new is made with it. A ' +
+                 'day by default.' },
 
   // -------------------------------------------------------------------------
   // CELLS (#98, 2026-09-28): one logical service deployed as several CELLS,
@@ -22491,6 +22737,37 @@ const SETTINGS = [
     label: 'The DKIM private key\'s field',
     env: 'STS_MAIL_DKIM_KEY_FIELD', type: 'string', dflt: '', runtime: true,
     description: 'The member of a JSON value to take. Empty means `dkimKey`.' },
+  // THE SELECTOR SWITCH (#2220): `common/mail_transports.ts`, *A DKIM
+  // SELECTOR SWITCH, WITH AN OVERLAP*.
+  { key: 'mail.dkimNextSelector', group: 'Mail',
+    label: 'The next DKIM selector',
+    env: 'STS_MAIL_DKIM_NEXT_SELECTOR', type: 'string', dflt: '',
+    runtime: true,
+    description: 'To rotate the DKIM key: the selector of the NEW key, ' +
+                 'whose record is published at ' +
+                 '<selector>._domainkey.<domain> before signing moves to ' +
+                 'it. The record to publish is logged when the transport ' +
+                 'is built. Empty: no rotation is under way.' },
+  { key: 'mail.dkimNextKeyField', group: 'Mail',
+    label: 'The next DKIM private key\'s field',
+    env: 'STS_MAIL_DKIM_NEXT_KEY_FIELD', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The member of the DKIM key\'s secret (the one ' +
+                 'mail.dkimKeyProvider and mail.dkimKeyRef name) that ' +
+                 'holds the next selector\'s PEM private key. Empty means ' +
+                 '`dkimNextKey`.' },
+  { key: 'mail.dkimSwitchAt', group: 'Mail',
+    label: 'Sign with the next DKIM selector from',
+    env: 'STS_MAIL_DKIM_SWITCH_AT', type: 'string', dflt: '',
+    runtime: true,
+    description: 'When messages start to be signed with ' +
+                 'mail.dkimNextSelector, as an ISO 8601 time ' +
+                 '(2026-12-01T00:00:00Z) — and only once DNS answers the ' +
+                 'next selector\'s name with its key; until then the ' +
+                 'current selector signs, with a warning. Keep the old ' +
+                 'selector\'s record published for a week after the switch, ' +
+                 'then make the next selector mail.dkimSelector and clear ' +
+                 'these three. Empty: never switch.' },
 
   { key: 'mail.sesRegion', group: 'Mail', label: 'Amazon SES region',
     env: 'STS_MAIL_SES_REGION', type: 'string', dflt: '', runtime: true,
@@ -24285,7 +24562,12 @@ function overrideProblem(key, raw, forRealm, withRules) {
     return '"' + key + '" holds a NUL character or half of a surrogate ' +
       'pair, which this service cannot store.';
   }
-  const problem = TYPES[setting.type].check(raw, setting);
+  // A STORED value (`withRules` false: a restore, a replica's pull) is not
+  // held to `csvPatterns` (#2220): a pattern written before the rule must
+  // survive a restart, and is refused only at its next save.
+  const problem = TYPES[setting.type].check(raw, setting,
+                                            withRules ? undefined
+                                                      : { stored: true });
   if (problem) {
     log.debug("Leaving overrideProblem().");
     return '"' + key + '" ' + problem + '.';
@@ -24456,6 +24738,10 @@ function checkOverrideCode(key, raw, forRealm) {
   if (unstorableText(raw)) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0171';
+  }
+  if (setting.csvPatterns && csvPatternProblem(raw, setting)) {
+    log.debug("Leaving checkOverrideCode(). An unsafe pattern.");
+    return 'STS-CORE-0183';
   }
   if (TYPES[setting.type].check(raw, setting)) {
     log.debug("Leaving checkOverrideCode().");
@@ -25483,6 +25769,14 @@ function refuseMalformedSettings() {
       if (problem) {
         named.push('  ' + layer.where + ': "' + setting.key + '" ' + problem);
       }
+      if (!problem && setting.csvPatterns &&
+          csvPatternProblem(layer.raw, setting)) {
+        log.warn(errorCodes.tag('STS-CORE-0184') + 'config: ' +
+                 layer.where + ': "' + setting.key + '" ' +
+                 csvPatternProblem(layer.raw, setting) + '. It is used as ' +
+                 'configured; /admin/config and the management API refuse ' +
+                 'it on the next save.');
+      }
       if (!problem && setting.absoluteUri &&
           TYPES[setting.type].check(layer.raw, setting)) {
         log.warn(errorCodes.tag('STS-CORE-0176') + 'config: ' +
@@ -25630,7 +25924,9 @@ function parseAs(key, raw) {
   if (problem) {
     log.debug("Leaving parseAs(). Refused: " + problem);
     return errorCodes.mark({ ok: false, problem: '"' + key + '" ' + problem },
-                           'STS-CORE-0006');
+                           setting.csvPatterns &&
+                           csvPatternProblem(raw, setting)
+                             ? 'STS-CORE-0183' : 'STS-CORE-0006');
   }
   const parsed = TYPES[setting.type].parse(raw, setting);
   log.debug("Leaving parseAs(). Parsed.");

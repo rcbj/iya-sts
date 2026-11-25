@@ -116,6 +116,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -644,14 +645,23 @@ function theGeneratorIsRight() {
   log.debug("Leaving theGeneratorIsRight().");
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses PASSWORD
+// at the sign-in screen (`own_password.js`; in development it is set).
 async function ensurePerson(who) {
   log.debug("Entering ensurePerson(). who=" + who);
   await ok(realmApi + "/users/create", {
-    username: who, invent: false, credential: "password", password: PASSWORD,
+    username: who, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Step-up " + who, givenName: "Step-up", sn: who,
                   displayName: "Step-up " + who,
                   mail: who + "@stepup.test" } },
     "created " + who + " in the realm with a password");
+  await ownPassword.ownPassword(base + R, who, PASSWORD,
+    function (one, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: one, password: value });
+    });
   log.debug("Leaving ensurePerson().");
 }
 

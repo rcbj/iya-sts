@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "Tar bort de hastighetsbegränsningsfönster som har passerats från tabellen som alla noder delar."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Uppdatering av delade hemligheter"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Läser de delade hemligheterna på nytt från lagret i den här processen, så att en rotation som gjorts på vilken nod som helst används här."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotation av delade hemligheter"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Roterar varje delad hemlighet som är en nyckel (nycklarna för CSRF, ACME-nonce, mottagare av Shared Signals, OpenID Federation-sida, utloggningsresultat och DBSC) var cluster.secretRotationDays: ett nästa värde publiceras, görs aktuellt tio minuter senare, och det gamla accepteras fortfarande under cluster.secretOverlapS. De parvisa subjekthemligheterna och bootstrap-namnhemligheterna är identifierare och roteras aldrig."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "Omkontroll av Android-attestering"
@@ -292,8 +308,8 @@
     "text": "Utgång av klienthemligheter"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Kontrollerar varje klienthemlighet för varje applikation: en granskningsrad för en applikation som har en som går ut inom oauth2.clientSecretExpiryWarningDays, och för en vars samtliga hemligheter har gått ut; och tar bort de utgångna hemligheter som en applikation har vid sidan av en giltig — aldrig dess sista, som blir kvar och avvisas i produktläge."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Kontrollerar varje klienthemlighet för varje applikation: en granskningsrad för en applikation som har en som går ut inom oauth2.clientSecretExpiryWarningDays, och för en vars samtliga hemligheter har gått ut; och tar bort de utgångna hemligheter som en applikation har vid sidan av en giltig — aldrig dess sista, som blir kvar och avvisas i produktläge. Först roterar det hemligheten för varje applikation som listas i oauth2.clientSecretAutoRotate och som går ut inom oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",

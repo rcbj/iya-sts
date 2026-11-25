@@ -2479,6 +2479,66 @@
     "en": "d51b3caaa6125e92",
     "text": "يُقرأ مرة واحدة عند البدء"
   },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "من أين يُقرأ مفتاح تشفير مفاتيح الخلية السابق"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "لتدوير مفتاح تشفير مفاتيح هذه الخلية: وجّه keys.cellKek* إلى المفتاح الجديد وهذا إلى القديم، ثم ابدأ. ويُعاد تغليف كل مفتاح تشفير بيانات في هذه الخلية ما زال مغلفًا تحت المفتاح القديم تحت الجديد ويُكتب من جديد؛ وبعد أن تكون كل عقدة في الخلية قد بدأت على هذا النحو، أعد هذا إلى none. يُرفَض من دون مفتاح خلية."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "يُقرأ المفتاح مرة واحدة، قبل استعادة المخزن"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "موقع مفتاح تشفير مفاتيح الخلية السابق"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "موضع مفتاح الخلية السابق، في المزوّد الذي يسميه keys.previousCellKekProvider: مسار أو ARN أو مورد أو مسار قراءة في Vault. وليس له رجوع."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "يُقرأ مرة واحدة عند البدء"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "الحقل الذي فيه مفتاح الخلية السابق"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "العضو في سر JSON الذي يحمل مفتاح الخلية السابق. إن كان فارغًا أُخذت القيمة كاملة."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "يُقرأ مرة واحدة عند البدء"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "منطقة AWS لمفتاح الخلية السابق"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "منطقة AWS التي يُقرأ منها مفتاح الخلية السابق. إن كانت فارغة استُخدم تحديد SDK نفسه."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "يُقرأ مرة واحدة عند البدء"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "عنوان URL لـ Key Vault لمفتاح الخلية السابق"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "عنوان URL لـ Azure Key Vault أو نقطة نهاية HashiCorp Vault التي يُقرأ منها مفتاح الخلية السابق. وليس له رجوع."
+  },
+  "keys.previousCellKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "يُقرأ مرة واحدة عند البدء"
+  },
   "global.mode|label": {
     "en": "5e23ec6a300dc60a",
     "text": "الوضع"
@@ -3210,6 +3270,22 @@
   "oauth2.clientSecretsMax|description": {
     "en": "c20e5f5d3aa6062e",
     "text": "عدد أسرار العميل التي يجوز لتطبيق واحد أن يحتفظ بها في وقت واحد (كل منها سجل على oauthClientSecret بانتهاء خاص به). تُرفض إضافة سر أو تدويره بما يتجاوز هذا (STS-REG-0208)؛ أزل واحدًا أولًا. وتُحتسب الأسرار المنتهية حتى تزيلها المهمة اليومية oauth2.client-secret-expiry."
+  },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "تدوير أسرار هذه العملاء تلقائيًا"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "التطبيقات التي تُدوِّر مهمة oauth2.client-secret-expiry اليومية سر عميلها قبل أن تنتهي صلاحيته، مفصولة بفواصل. كل إدخال هو `client_id`، أو `client_id=destination/secret-name` لدفع السر الجديد إلى وجهة الأسرار تلك (الدليل ← وجهات الأسرار) قبل اعتماده؛ والدفع الذي يفشل لا يُدوِّر شيئًا وتُعاد محاولته في اليوم التالي. من دون وجهة يقرأ العميل سره الجديد من نقطة نهاية إعداد العميل RFC 7592 الخاصة به. ويظل السر القديم يصادِق طوال oauth2.clientSecretOverlapS. ولا يُدوَّر sts-api-client هنا أبدًا. فارغ: لا يُدوَّر أي عميل، ويُحذَّر من كل عميل قبل انتهاء صلاحيته."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "تدوير سر العميل المدرج قبل هذا العدد من الأيام"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "المدة التي تسبق انتهاء صلاحية سر العميل الأساسي لتطبيق مدرج في oauth2.clientSecretAutoRotate فيُدوَّر. والسر الذي لا تنتهي صلاحيته لا يُدوَّر أبدًا."
   },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
@@ -8239,6 +8315,22 @@
     "en": "b74ec7b68f9251f2",
     "text": "حد الزمن من جانب الخادم للبحث، بالثواني، وهو ما يُنتج LDAP_TIME_LIMIT_EXCEEDED؛ ويفوز timeLimit الأقصر الخاص بالعميل. الإدخالات المُرسلة قبل ذلك هي الجواب، موسومة بأنها ناقصة."
   },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "أكبر رسالة من عميل مرتبط (بايت)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "أكبر رسالة LDAP يجوز لعميل أتمّ الربط أن يرسلها، بالبايت، محسوبة من الطول الذي يعلنه ترويس BER الخاص بها: الاتصال الذي تعلن رسالته التالية أكثر من ذلك يُغلق قبل قراءة أي شيء منها (STS-LDAP-0227). نتائج البحث يرسلها الخادم ولا تُحتسب. ‏5 MiB افتراضيًا، وهو الحد الذي لكل جسم HTTP هنا."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "أكبر رسالة قبل الربط (بايت)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "أكبر رسالة LDAP يجوز لعميل أن يرسلها قبل أن يتمّ الربط، بالبايت: ربط أو StartTLS أو بحث عن DSE الجذر. فوق ذلك يُغلق الاتصال قبل قراءة أي شيء من الرسالة (STS-LDAP-0227). ‏128 KiB افتراضيًا، أي ضعف أكبر رمز Kerberos يمكن أن يحمله ربط SASL. ولا يزيد فعليًا أبدًا على ldap.maxMessageBytes."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "مستمع LDAP غير المشفّر"
@@ -11707,6 +11799,14 @@
     "en": "81c3618a73d5aca7",
     "text": "يُقرأ مرة واحدة عند البدء، قبل فتح التجميعة"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "إعادة قراءة كلمة مرور قاعدة البيانات كل (ثوانٍ)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "عدد مرات إعادة كل عملية قراءة كلمة مرور قاعدة البيانات من مخزن الأسرار الذي يسميه `persistence.databasePasswordProvider` (مهمة persistence.database-password-refresh). وتُستخدم كلمة المرور المتغيرة في كل اتصال يُنشأ بعدها من دون إعادة تشغيل؛ وتظل الاتصالات المفتوحة تعمل. وتُعاد قراءتها فورًا أيضًا عندما ترفض قاعدة البيانات تسجيل دخول. وتدوير كلمة المرور في قاعدة البيانات من شأن مخزن الأسرار أو المشغّل، ويجب أن تبقى القديمة صالحة هناك لهذه المدة على الأقل. 0 يقرؤها عند البدء وبعد تسجيل دخول مرفوض فقط."
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "التحقق من شهادة قاعدة البيانات"
@@ -11950,6 +12050,22 @@
   "cluster.acceptMissingCapabilities|restartReason": {
     "en": "43d39d2a6820f37a",
     "text": "يجري فحص القدرات مرة واحدة، عند انضمام العقدة"
+  },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "تدوير الأسرار المشتركة كل (أيام)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "عدد مرات استبدال مهمة cluster.secret-rotate لكل سر مشترك هو مفتاح: مفتاح CSRF ومفتاح nonce الخاص بـ ACME وسر مستقبِل Shared Signals ومفتاح صفحة OpenID Federation ومفتاح نتيجة تسجيل الخروج ومفتاح DBSC. تُنشر القيمة الجديدة أولًا وتصبح الحالية بعد عشر دقائق، متى قرأتها كل عملية، ويظل القديم مقبولًا طوال `cluster.secretOverlapS`. وسر الموضوع pairwise وسر اسم التمهيد معرّفان ولا يُدوَّران أبدًا، وتغيير قيمة مضبوطة بمتغير بيئة من شأن المشغّل. 0 يوقف التدوير. والسر الذي خزّنه إصدار سابق يُؤرَّخ عند أول تشغيل للمهمة ويُدوَّر أول مرة بعد هذا العدد من الأيام، وليس عند الترقية أبدًا."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "قبول سر مشترك مُدوَّر لمدة (ثوانٍ)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "المدة التي يظل فيها السر المشترك الذي استبدله تدوير مقبولًا إلى جانب الجديد، فيظل النموذج أو الـ nonce أو مؤشر الصفحة أو ملف تعريف الارتباط المرتبط الذي أُنشئ قبيل التدوير يعمل بعده. ولا يُنشأ به أي شيء جديد. يوم واحد افتراضيًا."
   },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
@@ -12454,6 +12570,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "عضو قيمة JSON يُؤخَذ. الفارغ يعني `dkimKey`."
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "محدد DKIM التالي"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "لتدوير مفتاح DKIM: محدد المفتاح الجديد، الذي يُنشر سجله عند <selector>._domainkey.<domain> قبل أن ينتقل التوقيع إليه. ويُسجَّل في السجل السجلُّ الواجب نشره عند بناء وسيلة النقل. فارغ: لا تدوير جارٍ."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "حقل مفتاح DKIM الخاص التالي"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "العضو في سر مفتاح DKIM (الذي يسميه mail.dkimKeyProvider وmail.dkimKeyRef) الذي يحمل المفتاح الخاص PEM للمحدد التالي. الفارغ يعني `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "التوقيع بمحدد DKIM التالي اعتبارًا من"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "متى تبدأ الرسائل بالتوقيع بـ mail.dkimNextSelector، بصيغة وقت ISO 8601 (2026-12-01T00:00:00Z) — ولا يكون ذلك إلا بعد أن يجيب DNS عن اسم المحدد التالي بمفتاحه؛ وحتى ذلك الحين يوقّع المحدد الحالي مع تحذير. أبقِ سجل المحدد القديم منشورًا أسبوعًا بعد التبديل، ثم اجعل المحدد التالي هو mail.dkimSelector وامسح هذه الثلاثة. فارغ: لا تبديل أبدًا."
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",

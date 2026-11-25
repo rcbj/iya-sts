@@ -46,6 +46,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -218,11 +219,18 @@ async function setUp() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Consent withdrawal " + STAMP },
     "created the realm");
+  // Temporary, then the person's own (#2160, `own_password.js`): the
+  // sign-ins below use PASSWORD.
   await ok(realmApi + "/users/create", {
     username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Withdraw " + ALICE, givenName: "Withdraw", sn: ALICE,
                   mail: ALICE + "@withdraw.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return apiPost(realmApi + "/users/set-password",
+                     { user: who, password: value });
+    });
   await ok(realmApi + "/applications/create", application(A), "client A");
   await ok(realmApi + "/applications/create", application(B), "client B");
   log.debug("Leaving setUp().");

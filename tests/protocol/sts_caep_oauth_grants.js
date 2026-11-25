@@ -39,6 +39,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -429,10 +430,17 @@ async function test() {
     await ok(api + "/consent/grant-global-consent",
              { client: CLIENT, scope: one }, "consented " + one);
   }
+  // Temporary, then the person's own (#2160, `own_password.js`), before
+  // the stream exists: the sign-ins below use PASSWORD.
   await ok(api + "/users/create", { username: ALICE, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "CAEP " + ALICE, givenName: "CAEP", sn: "Grants",
                   mail: ALICE + "@caep239.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(base, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(api + "/users/set-password",
+                      { user: who, password: value });
+    });
   const token = await tokenFor("ssf.read ssf.manage");
   const created = await send(base + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",

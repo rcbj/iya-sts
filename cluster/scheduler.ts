@@ -5035,6 +5035,10 @@ realms.onRemove(function (id: string): void {
 clusterClaims.ensurePurgeJob(scheduler);
 clusterCounters.ensureWindowPurgeJob(scheduler);
 usedAssertions.ensurePurgeJob(scheduler);
+// #2220: the shared secrets' rotation and refresh, for the same reason —
+// required here, because `cluster_secrets.ts` does not require this module
+// and so the require closes no cycle.
+require('./cluster_secrets').ensureJobs(scheduler);
 
 /**
  * One scheduler for every periodic job in this service (#49), each job run on

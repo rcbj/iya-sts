@@ -33,6 +33,7 @@ const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const portal = require("./portal_signin.js");
 const authnSignin = require("./authn_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -398,9 +399,24 @@ function userBody(username) {
   log.debug("Entering userBody().");
   log.debug("Leaving userBody().");
   return { username: username, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Ssh " + username, sn: username, givenName: "Ssh",
                   mail: username + "@" + DOMAIN } };
+}
+
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses PASSWORD
+// at the sign-in screen (`own_password.js`; in development it is set).
+async function createPerson(rb, username) {
+  log.debug("Entering createPerson(). " + username);
+  await ok(rb + "/admin-api/users/create", userBody(username),
+           "created " + username);
+  await ownPassword.ownPassword(rb, username, PASSWORD,
+    function (who, value) {
+      return postJson(rb + "/admin-api/users/set-password",
+                      { user: who, password: value });
+    });
+  log.debug("Leaving createPerson().");
 }
 
 async function removeRealm() {
@@ -435,10 +451,8 @@ async function test() {
 
   const rb = await makeRealm(REALM);
   await realmSet(REALM, "risk.assessSignIns", false);
-  await ok(rb + "/admin-api/users/create", userBody(OWNER),
-           "created " + OWNER);
-  await ok(rb + "/admin-api/users/create", userBody(OTHER),
-           "created " + OTHER);
+  await createPerson(rb, OWNER);
+  await createPerson(rb, OTHER);
   const owner = await portal.signInToThePortal(rb, OWNER, log,
                                                { password: PASSWORD });
   const material = ed25519Material();
@@ -842,7 +856,7 @@ async function reviewTest() {
   const rb = await makeRealm(R_REALM);
   await realmSet(R_REALM, "risk.assessSignIns", false);
   for (const who of [R_OWNER, R_OTHER]) {
-    await ok(rb + "/admin-api/users/create", userBody(who), "created " + who);
+    await createPerson(rb, who);
   }
   await ok(rb + "/admin-api/groups/create", { group: R_GROUP },
            "created " + R_GROUP);

@@ -49,6 +49,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
@@ -227,16 +228,24 @@ async function drawnForNobody(path, view) {
   return html;
 }
 
+// Temporary, then the person's own (#2160, `own_password.js`): the
+// sign-ins here use PASSWORD.
 async function person(who, withAddress) {
   log.debug("Entering person().");
+  const temporary = ownPassword.temporaryFor(PASSWORD);
   await ok(realmBase() + "/admin-api/users/create",
            { username: who, invent: false,
              attributes: Object.assign({ givenName: "Emv", sn: who,
                                          cn: "Emv " + who },
                withAddress === false ? {} : { mail: who + "@" + DOMAIN }),
-             credential: "password", password: PASSWORD,
-             passwordConfirm: PASSWORD },
+             credential: "password", password: temporary,
+             passwordConfirm: temporary },
            "created " + who);
+  await ownPassword.ownPassword(realmBase(), who, PASSWORD,
+    function (one, value) {
+      return call("POST", realmBase() + "/admin-api/users/set-password",
+                  { user: one, password: value });
+    });
   const read = await call("GET", realmBase() + "/admin-api/users?user=" +
                           encodeURIComponent(who));
   SUBJECTS[who] = String((read.json && read.json.subject) || "");

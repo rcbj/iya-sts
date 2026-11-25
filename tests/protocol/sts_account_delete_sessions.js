@@ -35,6 +35,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -388,10 +389,17 @@ async function test() {
     });
   const streamId = created.body.stream_id;
 
+  // Temporary, then the person's own (#2160, `own_password.js`): a typed
+  // password is temporary in product and the sign-in below uses PASSWORD.
   await ok(realmApi + "/users/create", { username: ALICE, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Delete " + ALICE, givenName: "Delete", sn: "Me",
                   mail: ALICE + "@del241.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   const scimToken = await tokenFor("scim:read scim:write");
   const scimAuth = { Authorization: "Bearer " + scimToken };
   const scimId = await scimIdOf(scimAuth, ALICE);

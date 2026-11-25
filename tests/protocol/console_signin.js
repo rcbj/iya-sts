@@ -661,12 +661,18 @@ async function signInToTheConsole(base, user, log2, options) {
     return answer;
   }
 
+  // The scopes a second authorization was asked for and not issued (#2236).
+  const notIssued = {};
+
   // ONE REQUEST TO THE API AS THE CONSOLE, retried once with a nonce.
   async function api(method, path, body) {
     log.debug("Entering api().");
     const url = /^https?:/.test(path) ? path : base + path;
     let answer = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // A step (a renewal, a sign-in again, a second authorization) is made
+    // once per request; the nonce retry may follow it.
+    let stepped = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
       const headers = { authorization: "DPoP " + token,
                         dpop: key.proof(method, url, token),
                         accept: "application/json" };
@@ -692,7 +698,8 @@ async function signInToTheConsole(base, user, log2, options) {
       // AN EXPIRED TOKEN IS RENEWED AND THE REQUEST SENT AGAIN, as the
       // console does: a long job outlives the access token's lifetime.
       if (r.status === 401 && /invalid_token/.test(challenge) &&
-          refreshToken && attempt === 0) {
+          refreshToken && !stepped) {
+        stepped = true;
         const renewed = await refresh();
         if (renewed.status === 200) {
           continue;
@@ -702,12 +709,40 @@ async function signInToTheConsole(base, user, log2, options) {
       // as the console's popup makes it, and the request sent again.
       if (r.status === 401 &&
           /insufficient_user_authentication/.test(challenge) &&
-          attempt === 0) {
+          !stepped) {
+        stepped = true;
         say("[console] " + user + " signs in again: " + method + " " +
             path + " asks for a recent sign-in.");
         const again = await codeFlow(true);
         token = again.access_token;
         refreshToken = again.refresh_token || refreshToken;
+        continue;
+      }
+      // A SCOPE THIS TOKEN DOES NOT CARRY (#2168, #2236): RFC 6750's
+      // `insufficient_scope`, which the console answers with a second
+      // authorization for that scope. Here the authorization is asked again
+      // for the scopes this helper always asks, which a person holding the
+      // role is now issued, and the request sent again. A 403 without the
+      // challenge is a refusal, and is the caller's to read; so is one for a
+      // scope a second authorization was already not issued (a reader asking
+      // a write), which is asked no more in this process: a job sending a
+      // reader's writes on purpose is not signed in again for each.
+      const wanted = (challenge.match(/scope="([^"]*)"/) || [])[1] || "";
+      if (r.status === 403 && /insufficient_scope/.test(challenge) &&
+          !stepped && wanted && !notIssued[wanted]) {
+        stepped = true;
+        say("[console] " + user + " authorizes again: " + method + " " +
+            path + " asks for " + wanted + ", which the token does not " +
+            "carry.");
+        const again = await codeFlow(true);
+        token = again.access_token;
+        refreshToken = again.refresh_token || refreshToken;
+        const granted = String(again.scope || "").split(/\s+/);
+        if (wanted.split(/\s+/).some(function (one) {
+          return granted.indexOf(one) < 0;
+        })) {
+          notIssued[wanted] = true;
+        }
         continue;
       }
       if (!(r.status === 401 && /use_dpop_nonce/.test(challenge))) {
@@ -888,11 +923,23 @@ async function signInToTheConsole(base, user, log2, options) {
     draw: async function (path, query) {
       const answer = await this.page(path, query);
       const table = consoleBundle();
-      // DRAWN FOR WHAT THIS TOKEN MAY DO, as the console draws for its
-      // reader: `GET /admin-api/me`'s `write`, asked once.
+      // DRAWN FOR WHAT THE READER MAY DO, NOT WHAT THIS TOKEN CARRIES, as
+      // the console's runtime draws (`drawView()`, #2168): `GET
+      // /admin-api/me`'s `write`, or ADMIN_WRITE among the roles it says the
+      // person `holds` — a write is then one second authorization away, which
+      // act() makes. Asked once. Until #2236 it was `write` alone: where the
+      // token was issued before the role it was asked for had reached the
+      // node that issued it (a dispatching service), the person's page was
+      // drawn without the forms the console draws for them.
       if (this.mayWrite === undefined) {
         const me = await api("GET", "/admin-api/me");
-        this.mayWrite = !!(me.json && me.json.write);
+        const holds = (me.json && Array.isArray(me.json.holds))
+          ? me.json.holds : [];
+        this.mayWrite = !!(me.json && me.json.write) ||
+          holds.indexOf("ADMIN_WRITE") >= 0;
+        // #645: the Security Administrator's role, as the runtime asks it.
+        this.maySecure = !!(me.json && me.json.security) ||
+          holds.indexOf("SECURITY_ADMIN") >= 0;
       }
       // AND IN THE READER'S LANGUAGE, as the console's runtime draws it
       // (#539): a translator built by the bundle from the shell's `locale`
@@ -934,7 +981,8 @@ async function signInToTheConsole(base, user, log2, options) {
       const html = answer.status === 200 && answer.json
         ? table.render(path, drawnFrom,
                        table.kit.context(asked, this.mayWrite,
-                                         this.translator || undefined)) ||
+                                         this.translator || undefined,
+                                         this.maySecure)) ||
           "" : "";
       return { status: answer.status, json: answer.json, html: html };
     },

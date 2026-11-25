@@ -44,6 +44,126 @@ pub fn xml_schema_regex(pattern: &str) -> XacmlResult<Regex> {
     })
 }
 
+/// The longest value a regexp-match matches (#2220): the Node engine's
+/// `REGEX_INPUT_MAX`, counted as it counts, in UTF-16 code units.
+pub const REGEX_INPUT_MAX: usize = 4096;
+
+/// The evaluation's bound on one regexp-match (#2220), the Node engine's
+/// `boundedMatch()`: a pattern with a backreference or a quantified group
+/// that is itself quantified or an alternation, or a value longer than
+/// `REGEX_INPUT_MAX`, is a processing error (Indeterminate).
+///
+/// This crate's `regex` is linear-time and needs neither rule for its own
+/// sake. They are here for PARITY: the service's engine backtracks and
+/// refuses these at the evaluation, and a policy stored before #2220 must
+/// decide alike at the PDP and at a remote PEP.
+pub fn bounded_match(pattern: &str, subject: &str) -> XacmlResult<()> {
+    if has_backreference(pattern) {
+        return Err(XacmlError::processing(format!(
+            "The regular expression \"{}\" is not evaluated: it uses a \
+             backreference, which a pattern here may not.",
+            pattern.chars().take(200).collect::<String>()
+        )));
+    }
+    if nested_quantifier(pattern) {
+        return Err(XacmlError::processing(format!(
+            "The regular expression \"{}\" is not evaluated: it applies a \
+             quantifier to a group that is itself quantified or an \
+             alternation, the shape that makes a match take exponential \
+             time; write the repetition once.",
+            pattern.chars().take(200).collect::<String>()
+        )));
+    }
+    let length = subject.encode_utf16().count();
+    if length > REGEX_INPUT_MAX {
+        return Err(XacmlError::processing(format!(
+            "A value of {} characters is not matched against a regular \
+             expression; at most {} are.",
+            length, REGEX_INPUT_MAX
+        )));
+    }
+    Ok(())
+}
+
+/// `common/pattern_safety.js`'s `/\\[1-9]|\\k</`: a backslash followed by
+/// a digit 1-9 or by `k<`, anywhere.
+fn has_backreference(pattern: &str) -> bool {
+    let chars: Vec<char> = pattern.chars().collect();
+    for i in 0..chars.len() {
+        if chars[i] != '\\' {
+            continue;
+        }
+        match chars.get(i + 1) {
+            Some(c) if ('1'..='9').contains(c) => return true,
+            Some('k') if chars.get(i + 2) == Some(&'<') => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// `common/pattern_safety.js`'s `nestedQuantifier()`, step for step: whether
+/// a group holding a quantifier or an alternation (at any depth) is itself
+/// followed by a quantifier. Escapes and character classes are stepped over.
+pub fn nested_quantifier(pattern: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let at = |i: usize| -> char { p.get(i).copied().unwrap_or('\0') };
+    let quantifier_at = |i: usize, with_optional: bool| -> bool {
+        let c = at(i);
+        c == '+' || c == '*' || c == '{' || (with_optional && c == '?')
+    };
+    let mut stack: Vec<bool> = Vec::new();
+    let mut i = 0usize;
+    while i < p.len() {
+        let c = p[i];
+        if c == '\\' {
+            i += 2;
+            continue;
+        }
+        if c == '[' {
+            let mut j = i + 1;
+            while j < p.len() && p[j] != ']' {
+                j += if p[j] == '\\' { 2 } else { 1 };
+            }
+            i = j + 1;
+            if quantifier_at(i, false) {
+                if let Some(top) = stack.last_mut() {
+                    *top = true;
+                }
+            }
+            continue;
+        }
+        if c == '(' {
+            stack.push(false);
+            i += 1;
+            continue;
+        }
+        if c == ')' {
+            let risky = stack.pop().unwrap_or(false);
+            i += 1;
+            if risky && quantifier_at(i, true) {
+                return true;
+            }
+            if risky || quantifier_at(i, false) {
+                if let Some(top) = stack.last_mut() {
+                    *top = true;
+                }
+            }
+            continue;
+        }
+        if c == '|'
+            || quantifier_at(i, false)
+            || (c == '?' && i > 0 && p[i - 1] != '(')
+        {
+            if let Some(top) = stack.last_mut() {
+                *top = true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 /// The Node engine's test, `/\[[^\]]*-\[/`: an opening bracket, anything but
 /// a closing one, then `-[`.
 fn has_class_subtraction(pattern: &str) -> bool {
@@ -74,6 +194,22 @@ mod tests {
         assert!(!re.is_match("abcd"));
         let alt = xml_schema_regex("a|b").unwrap();
         assert!(!alt.is_match("ab"));
+    }
+
+    #[test]
+    fn nested_quantifier_refused_at_evaluation() {
+        assert!(nested_quantifier("(a+)+"));
+        assert!(nested_quantifier("(a|aa)*"));
+        assert!(nested_quantifier("((ab)*c)+"));
+        assert!(!nested_quantifier("[a-z]+"));
+        assert!(!nested_quantifier("(ab)+"));
+        assert!(!nested_quantifier("[(a+)]+"));
+        assert!(!nested_quantifier(r"\(a+\)+"));
+        assert!(bounded_match("(a+)+$", "aaaa").is_err());
+        assert!(bounded_match(r"(a)\1", "aa").is_err());
+        assert!(bounded_match("a+", "aaaa").is_ok());
+        assert!(bounded_match("a+", &"a".repeat(REGEX_INPUT_MAX)).is_ok());
+        assert!(bounded_match("a+", &"a".repeat(REGEX_INPUT_MAX + 1)).is_err());
     }
 
     #[test]

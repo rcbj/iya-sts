@@ -76,6 +76,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 const wire = require("./krb5_wire.js");
 const est = require("./est_client.js");
 const { declineToRun } = require("./expectation.js");
@@ -187,10 +188,17 @@ async function ensurePerson(who) {
   log.debug("Entering ensurePerson(). " + who);
   // The mail is what the smart-card logon profile writes as the UPN.
   await apiOk("/users/create", {
-    username: who, invent: false, credential: "password", password: PASSWORD,
+    username: who, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "PKINIT " + who, givenName: "PKINIT", sn: who,
                   displayName: "PKINIT " + who,
                   mail: who + "@pkinit.test" } }, "created " + who);
+  // Temporary, then the person's own (#2160, `own_password.js`): EST's
+  // Basic and the KDC both refuse a password that has to be changed first.
+  await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+    return apiCall("POST", "/users/set-password",
+                   { user: one, password: value });
+  });
   log.debug("Leaving ensurePerson().");
 }
 

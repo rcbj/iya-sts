@@ -34,6 +34,12 @@
 //
 // **THE DEFAULT REALM, WITH WHAT THIS JOB ADDS REMOVED IN A `finally`**: an
 // application and a console user of its own, by a stamp no other job uses.
+//
+// **IN PRODUCT (#2236)** the console user's password is made its own first
+// (`own_password.js`, #2160: a typed one is temporary there, and the browser
+// would land on the change step instead of the console), and the Save goes
+// through `console_steps.js` (#2196): the console signs in with read scopes
+// (#2168) and the write asks for `admin:write` in a popup before it is sent.
 // ===========================================================================
 
 const assert = require("assert");
@@ -41,6 +47,8 @@ const { Command, Option } = require("commander");
 const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
+const consoleSteps = require("./console_steps.js");
+const ownPassword = require("./own_password.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -69,6 +77,9 @@ const USER = "xpath-builder-" + STAMP;
 const PASSWORD = "Xpath-builder-Passw0rd!-" + STAMP;
 const APP = "xpb-" + STAMP;
 const APPLIES_TO = "https://xpb-" + STAMP + ".example";
+// The Save's answer may wait behind a popup for the write scope (#2168).
+const PRESSED_MS = 45000;
+const PRESS_MARK = "__stsXpathBuilderPress";
 
 // The expressions the builder must write for elements of its own sample (a
 // SOAP 1.2 Issue request whose prefixes are s:, a:, wsse:, wsu:, trust:,
@@ -314,6 +325,63 @@ async function pick(driver, name) {
   return now;
 }
 
+// THE STEPS AFTER A PRESS (#2196), completed by `console_steps.js`; set in
+// test() once there is a driver.
+let steps = null;
+
+// Whether the press marked `arguments[1]` has been answered: a drawn frame
+// that is not the marked one. Runs in the browser.
+const FRAME_ANSWERED = `
+  const frame = document.querySelector('.shell');
+  if (document.readyState !== 'complete' || !frame) { return false; }
+  if (frame[arguments[0]] === arguments[1]) { return false; }
+  const lede = document.querySelector('p.lede');
+  if (lede && /^Signing in/.test(lede.textContent)) { return false; }
+  return !!document.querySelector('.pagehead');
+`;
+
+// THE SAVE, SEEN TO BE ANSWERED (`sts_realm_late_forms.js`'s arrangement):
+// the console frame is marked and the button pressed in one script, what the
+// console asks for first — the write scope's popup (#2168), a sign-in again
+// (#2161) — is done as the person does it, a page that left to sign in,
+// which sent nothing, is pressed again, and the wait is for a drawn frame
+// that is not the marked one.
+async function saveAndWait(driver, selector, pressedAgain) {
+  log.debug("Entering saveAndWait(). " + selector);
+  const start = await steps.before();
+  const token = STAMP + "-" + Math.random().toString(36).slice(2);
+  const pressed = await driver.executeScript(
+    "const el = document.querySelector(arguments[2]);" +
+    "if (!el) { return 'nothing matches ' + arguments[2]; }" +
+    "const frame = document.querySelector('.shell');" +
+    "if (!frame) { return 'no console frame on ' + location.href; }" +
+    "frame[arguments[0]] = arguments[1];" +
+    "el.click(); return '';", PRESS_MARK, token, selector);
+  assert.strictEqual(pressed, "", "Save: " + pressed);
+  const answered = function () {
+    log.debug("Entering answered().");
+    log.debug("Leaving answered().");
+    return driver.executeScript(FRAME_ANSWERED, PRESS_MARK, token)
+      .catch(function (e) {
+        // A document torn down under the probe: not answered yet.
+        log.debug("Caught in saveAndWait(): " + ((e && e.message) || e));
+        return false;
+      });
+  };
+  const stepped = await steps.after(start, { settled: answered });
+  if (stepped.leftToSignIn && !pressedAgain) {
+    await waitForDrawn(driver);
+    log.info("the Save was not sent: the console signed in again on the " +
+             "page. Pressed again.");
+    await saveAndWait(driver, selector, true);
+    log.debug("Leaving saveAndWait(). Pressed again.");
+    return;
+  }
+  await driver.wait(answered, PRESSED_MS,
+                    "the Save was pressed and its answer was never drawn");
+  log.debug("Leaving saveAndWait().");
+}
+
 async function collect(driver) {
   log.debug("Entering collect().");
   await press(driver, "[data-wsp-collect]");
@@ -331,12 +399,23 @@ async function addList(driver) {
 async function test() {
   log.debug("Entering test().");
   log.info("the WS-Trust XPath builder at " + base);
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): one an administrator types is
+  // temporary in product, so a temporary one is set and the person chooses
+  // PASSWORD; in development it is set directly.
+  const temporary = ownPassword.temporaryFor(PASSWORD);
   const created = await api("POST", "/admin-api/users/create", {
     username: USER, invent: false,
     attributes: { cn: USER, givenName: "Xpath", sn: "Builder",
                   mail: USER + "@xpath-builder.test" },
-    credential: "password", password: PASSWORD });
+    credential: "password", password: temporary });
   assert.ok(created.status === 200, created.raw.slice(0, 300));
+  await ownPassword.chooseOwn(base, USER, temporary, PASSWORD,
+    function (who, value) {
+      log.debug("Entering setPassword().");
+      log.debug("Leaving setPassword().");
+      return api("POST", "/admin-api/users/set-password",
+                 { user: who, password: value });
+    });
   const granted = await api("POST", "/admin-api/rbac/grant",
                             { username: USER, role: "write" });
   assert.strictEqual(granted.status, 200, granted.raw.slice(0, 300));
@@ -357,6 +436,12 @@ async function test() {
   browserFlags.addBrowserAccessFlags(options, base);
   const driver = await new Builder().forBrowser("chrome")
       .setChromeOptions(options).build();
+  steps = consoleSteps.forDriver(driver, {
+    credentials: function () {
+      return { username: USER, password: PASSWORD };
+    },
+    log: log
+  });
   try {
     await signIn(driver);
     await driver.get(base + "/admin/applications?application=" + APP +
@@ -518,10 +603,8 @@ async function test() {
     });
 
     log.info("=== e. saved, and read back ===");
-    await press(driver, '#cfg-wstrust form.appgrid button[type="submit"]' +
-                        ':not(.default-submit):not([name])');
-    await driver.sleep(1500);
-    await waitForDrawn(driver);
+    await saveAndWait(driver, '#cfg-wstrust form.appgrid ' +
+                      'button[type="submit"]:not(.default-submit):not([name])');
     const read = await api("GET", "/admin-api/applications?application=" +
                                   encodeURIComponent(APP));
     assert.strictEqual(read.status, 200, read.raw.slice(0, 300));

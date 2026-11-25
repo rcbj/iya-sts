@@ -145,6 +145,9 @@ interface DeviceBoundDeps {
   audit: typeof audit;
   clusterClaims: typeof clusterClaims;
   secret(): Buffer;
+  // #2220: every key a verifier accepts, the current one first. Optional,
+  // so a test's dependencies without it verify under `secret()` alone.
+  secrets?: () => Buffer[];
   now(): number;
   // LAZY: `authn` requires this module, and `logout` is required 23rd.
   authn(): any;
@@ -201,6 +204,9 @@ class DeviceBoundSessions {
       audit: audit, clusterClaims: clusterClaims,
       secret: function (): Buffer {
         return clusterSecrets.get(SECRET);
+      },
+      secrets: function (): Buffer[] {
+        return clusterSecrets.keys(SECRET);
       },
       now: function (): number {
         return Date.now();
@@ -279,13 +285,27 @@ class DeviceBoundSessions {
 
   // --- the MACs -------------------------------------------------------------
 
-  private mac(parts: unknown[]): string {
+  private mac(parts: unknown[], key?: Buffer): string {
     const { log } = this.deps;
     log.debug("Entering DeviceBoundSessions.mac().");
-    const out = stsCrypto.hmac('sha256', this.deps.secret(),
+    const out = stsCrypto.hmac('sha256', key || this.deps.secret(),
                                parts.map(String).join('\n'), 'base64url');
     log.debug("Leaving DeviceBoundSessions.mac().");
     return out;
+  }
+
+  // Whether `presented` is the MAC over `parts` under any key a verifier
+  // accepts (#2220): the current one, a published next one, and the
+  // previous one while its overlap lasts.
+  private macMatches(parts: unknown[], presented: string): boolean {
+    const { log, secrets } = this.deps;
+    log.debug("Entering DeviceBoundSessions.macMatches().");
+    const keys = typeof secrets === 'function' ? secrets()
+                                               : [this.deps.secret()];
+    const ok = keys.some((key) =>
+      stsCrypto.constantTimeEquals(this.mac(parts, key), presented));
+    log.debug("Leaving DeviceBoundSessions.macMatches(). " + ok);
+    return ok;
   }
 
   // A challenge is `<expiry>.<nonce>.<mac>`: the expiry in epoch seconds, 16
@@ -332,9 +352,9 @@ class DeviceBoundSessions {
       log.debug("Leaving DeviceBoundSessions.checkChallenge(). Malformed.");
       return 'foreign';
     }
-    const expected = this.mac([CHALLENGE_LABEL, realms.currentId(), sid,
-                               dbscId || '', purpose, parts[0], parts[1]]);
-    if (!stsCrypto.constantTimeEquals(expected, parts[2])) {
+    if (!this.macMatches([CHALLENGE_LABEL, realms.currentId(), sid,
+                          dbscId || '', purpose, parts[0], parts[1]],
+                         parts[2])) {
       log.debug("Leaving DeviceBoundSessions.checkChallenge(). Not ours.");
       return 'foreign';
     }
@@ -351,13 +371,21 @@ class DeviceBoundSessions {
   // so a cookie minted for one binding is refused for any other, a re-bound
   // session included. It never outlives the session.
   private cookieValueFor(session: Json, expiresS: number): string {
-    const { log, realms } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering DeviceBoundSessions.cookieValueFor().");
-    const binding = session.dbsc || {};
-    const mac = this.mac([COOKIE_LABEL, realms.currentId(), session.id,
-                          binding.id, binding.jkt, expiresS]);
+    const mac = this.mac(this.cookieParts(session, expiresS));
     log.debug("Leaving DeviceBoundSessions.cookieValueFor().");
     return expiresS + '.' + mac;
+  }
+
+  // What a bound cookie's MAC is over (#2220: verified under every key).
+  private cookieParts(session: Json, expiresS: number): unknown[] {
+    const { log, realms } = this.deps;
+    log.debug("Entering DeviceBoundSessions.cookieParts().");
+    const binding = session.dbsc || {};
+    log.debug("Leaving DeviceBoundSessions.cookieParts().");
+    return [COOKIE_LABEL, realms.currentId(), session.id, binding.id,
+            binding.jkt, expiresS];
   }
 
   /**
@@ -488,11 +516,13 @@ class DeviceBoundSessions {
     const value = this.presentedCookie(req, this.cookieNameOf(session));
     const dot = value.indexOf('.');
     const expiresS = dot > 0 ? value.slice(0, dot) : '';
+    // `String(Number(…))`: the value as `cookieValueFor()` writes it, so a
+    // leading zero is refused as it was when the whole value was compared.
     const ok = /^\d{1,12}$/.test(expiresS) &&
+      String(Number(expiresS)) === expiresS &&
       Number(expiresS) * 1000 > this.deps.now() &&
-      stsCrypto.constantTimeEquals(this.cookieValueFor(session,
-                                                       Number(expiresS)),
-                                   value);
+      this.macMatches(this.cookieParts(session, Number(expiresS)),
+                      value.slice(dot + 1));
     // At debug: a copied cookie is presented on every request it is tried
     // on, and a line per request at info is the log the no-per-event rule
     // keeps out (the binding's own events are audit rows).
