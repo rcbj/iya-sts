@@ -460,19 +460,51 @@ class GnapRs {
   // stored to be correct — but an RS has to be able to READ it, and the place
   // an RS operator reads a credential for their application is that
   // application's entry (the console's drill-down, `/admin-api/applications`).
-  // So it is written there once, as `gnapMacaroonKey`: a credential attribute,
+  // So it is written there, as `gnapMacaroonKey`: a credential attribute,
   // sealed with the process key-encryption key when keys persist (the user's
   // choice, 2026-09-12) and withheld from LDAP readers in product mode.
+  //
+  // REWRITTEN WHEN THE DERIVATION CHANGES (#2212). The key is derived from
+  // the realm's refresh-token secret, which `signing.rotate` replaces, and
+  // until #2212 it was written ONCE, so after the first rotation the entry
+  // held a key no new macaroon was minted under. So it is compared with the
+  // current derivation, here at registration and at every macaroon minted
+  // for this resource server (`gnap_tokens.ts`, `ensureMacaroonKeyOf()`),
+  // and rewritten when it differs. RFC 9767 defines no distribution for a
+  // macaroon root key — it is shared out of band — so the entry stays where
+  // an RS reads it, and it is current before the first macaroon under the
+  // new key exists. The macaroons issued before the rotation go on
+  // verifying here under the retired secret for its grace, and at an RS
+  // under the key it already held.
   // -------------------------------------------------------------------------
+  /**
+   * Makes the macaroon root key on a resource server's entry the current
+   * derivation (#2212), writing it when absent or stale.
+   *
+   * @param identifier - the resource server application's identifier
+   */
+  ensureMacaroonKeyOf(identifier: string): void {
+    const { log, applications } = this.deps;
+    log.debug("Entering GnapRs.ensureMacaroonKeyOf().");
+    const rs = applications.get(identifier);
+    if (!rs) {
+      log.debug("Leaving GnapRs.ensureMacaroonKeyOf(). No such entry.");
+      return;
+    }
+    this.ensureMacaroonKey(rs);
+    log.debug("Leaving GnapRs.ensureMacaroonKeyOf().");
+  }
+
   private ensureMacaroonKey(rs: any): void {
     const { log, grants, tokens, applications, errorCodes,
             keystore } = this.deps;
     log.debug("Entering GnapRs.ensureMacaroonKey().");
-    if (grants.field(rs, 'macaroonKey')) {
-      log.debug("Leaving GnapRs.ensureMacaroonKey(). Present.");
+    const value = tokens.macaroonKeyFor(rs.identifier).toString('base64url');
+    const held = grants.field(rs, 'macaroonKey');
+    if (held === value) {
+      log.debug("Leaving GnapRs.ensureMacaroonKey(). Current.");
       return;
     }
-    const value = tokens.macaroonKeyFor(rs.identifier).toString('base64url');
     // THROUGH seen() AND NOT updateApplication(), which refuses it: the key is
     // DERIVED — what this service did, not what an operator may set — and
     // `updateApplication()` is the door that keeps derived attributes out of
@@ -491,11 +523,17 @@ class GnapRs {
                'key could not be written onto "' + rs.identifier + '": ' +
                e.message);
     }
-    if (!grants.field(applications.get(rs.identifier), 'macaroonKey')) {
+    if (grants.field(applications.get(rs.identifier),
+                     'macaroonKey') !== value) {
       log.warn(errorCodes.tag('STS-GNAP-0655') + 'gnap: the macaroon root ' +
                'key was not recorded on "' +
                rs.identifier + '"; a resource server verifying macaroons ' +
                                'itself will not find it.');
+    }
+    if (held) {
+      log.info('gnap: the macaroon root key on "' + rs.identifier + '" was ' +
+               'replaced by the current derivation, after a rotation of ' +
+               'the realm secret.');
     }
     log.debug("Leaving GnapRs.ensureMacaroonKey(). sealed=" +
               keystore.persists());
@@ -769,5 +807,6 @@ export = {
   register: slot.forward('register'),
   authenticate: slot.forward('authenticate'),
   presentation: slot.forward('presentation'),
-  liveProblem: slot.forward('liveProblem')
+  liveProblem: slot.forward('liveProblem'),
+  ensureMacaroonKeyOf: slot.forward('ensureMacaroonKeyOf')
 };

@@ -1086,6 +1086,7 @@ back. Reserved names are the JWT list plus `access`, `flags`, `label` and
 | `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
+| `tests/gnap_key_rotation.js` | #2212 in a child serving the whole stack: macaroons (for a resource server and for none) and a `dir` jwt-encrypted token through the `signing.rotate` job's own `rotateDue()`, still verifying after one rotation and after two; new tokens under the new secret and the resource server's entry rewritten; the grace counting `gnap.accessTokenLifetimeS`; the oldest secret's tokens refused once `signing.retire` drops it |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
 | `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: an ID Token issued to another client refused (0073, #497), impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
 | `tests/protocol/sts_gnap_delegation.js` | the same over HTTP in whichever mode the service is in: product's refusals by their audited codes, development's rows, `act` on a derived token and at introspection, the cap, and `GET /admin-api/delegation` |
@@ -1311,6 +1312,38 @@ answers the current key's refusal when none verifies. `/gnap/keys` adds
 `biscuit.root_public_keys` (non-standard; `root_public_key` is still the
 current one) and the ZCAP controller document lists every generation as a
 verification method.
+
+## THE MACAROON ROOT KEYS AND THE `dir` JWE KEY SURVIVE A ROTATION (#2212, 2026-11-25)
+
+Both are HKDF'd from the realm's refresh-token secret, which `signing.rotate`
+replaces. Until #2212 `gnap_tokens.ts` read only the current secret, so every
+macaroon (STS-GNAP-0314) and every `dir` jwt-encrypted token (STS-GNAP-0341)
+issued before a rotation was refused at it, and `gnap_rs.ts` wrote a resource
+server's `gnapMacaroonKey` once and never again. Found by reading the code for
+#2205, reproduced by `tests/gnap_key_rotation.js` before the fix.
+
+**The choice: the retired secrets the rotation already keeps, not a GNAP
+secret of its own.** `realmDerivedAll()` derives from the current secret and
+then each set in `generations.retiredRefresh` within its grace
+(`helpers.retiredRefreshTokenKeysFor()`); a macaroon moves to the next key only
+on a broken HMAC chain, a `dir` token only on a failed tag. Minting uses the
+current secret alone, and the derivation is unchanged, so tokens issued before
+the upgrade keep verifying. What GNAP owed the retention is its length:
+`SigningRotation.refreshGraceMs()` counts `gnap.accessTokenLifetimeS` (and a
+client's own `gnapAccessTokenLifetimeS`) beside `oauth2.refreshTokenTtlS`. A
+dedicated secret would have been a new keystore secret, cell tier and job doing
+what the retired list does, and would still have to read the refresh-token
+secret for the tokens already out. No new store, setting, error code or upgrade
+script. An emergency rotation keeps no retired set, so it strands every
+macaroon and `dir` token, as it should.
+
+**The resource server's entry is rewritten at the first macaroon minted for it
+after a rotation** (`mint()` calls `gnap_rs.ts`'s `ensureMacaroonKeyOf()`,
+lazily; it compares and writes only on a difference). RFC 9767 defines no
+distribution for a macaroon root key, so the entry stays the out-of-band
+channel; it is current before any macaroon under the new key exists, and an RS
+keeps the key it held for the macaroons issued before. A write that fails is
+STS-GNAP-0655 and never refuses the token.
 
 ## Cells: which cell serves a GNAP request (#98, 2026-09-28)
 

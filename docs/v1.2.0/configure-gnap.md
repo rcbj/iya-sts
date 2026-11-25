@@ -150,7 +150,9 @@ member.
 | `appAllowedToDelegateTo` | It derives tokens for a downstream resource server. See [token derivation](#token-derivation-rfc-9767-section-4). |
 
 `gnapMacaroonKey` is not one you set. The service writes it when the resource
-server first registers a resource set.
+server first registers a resource set. After a signing rotation it writes the
+new key at the first macaroon it mints for that server, so read the entry
+again when a new macaroon does not verify under the key you hold.
 
 ## A browser application: a key per browser
 
