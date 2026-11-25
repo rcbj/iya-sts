@@ -309,6 +309,10 @@ var config = {
     consumerProvisionCap: 10000,                                             // Consumer providers: accounts each may create
     outbound: true,                                                          // Make back-channel requests to partners
     outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
+    outboundMaxSockets: 64,                                                  // Outbound connections per destination
+    outboundMaxTotalSockets: 1024,                                           // Outbound connections in all
+    outboundDeadlineMs: 120000,                                              // Outbound overall deadline (ms)
+    outboundConnectTimeoutMs: 10000,                                         // Outbound connect timeout (ms)
     outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
     outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
     outboundCaFile: "",                                                      // CA certificates for outbound requests
@@ -336,6 +340,11 @@ var config = {
     mode: "memory",                                        // Persistence mode; restart to apply
     sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
     metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    poolSize: 0,                                           // Database connections per process; restart to apply
+    poolWaitMs: 5000,                                      // Wait for a database connection (ms); restart to apply
+    connectTimeoutMs: 5000,                                // Database connect timeout (ms); restart to apply
+    idleTimeoutMs: 30000,                                  // Idle database connection kept for (ms); restart to apply
+    statementTimeoutMs: 300000,                            // Database statement timeout (ms); restart to apply
     dataDir: "./data",                                     // Data directory; restart to apply
     databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
     databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
@@ -406,6 +415,8 @@ var config = {
     enabled: false,        // Scan files for malware
     url: "",               // ICAP service address
     timeoutMs: 30000,      // Scan timeout (milliseconds)
+    concurrency: 8,        // Scans at once
+    queueLimit: 64,        // Scans waiting
     caFile: "",            // CA file for an icaps service
     allowCleartext: false  // Allow plain ICAP in product mode
   },
@@ -635,11 +646,15 @@ var config = {
     kekField: "value",                 // Vault secret field; restart to apply
     kekToken: "",                      // Vault token; restart to apply
     storeProbeTimeoutMs: 5000,         // Secret store probe timeout (ms)
+    storeTimeoutMs: 30000,             // Secret store call timeout (ms)
+    storeAttempts: 3,                  // Secret store attempts per call
     kekRegion: "",                     // AWS region; restart to apply
     pkcs11Module: "",                  // PKCS#11 module; restart to apply
     pkcs11Mechanism: "auto",           // How the HSM wraps a data key; restart to apply
     pkcs11GenerateKey: false,          // Make the HSM key on first use; restart to apply
     pkcs11Sessions: 4,                 // PKCS#11 sessions per process; restart to apply
+    pkcs11TimeoutMs: 60000,            // HSM operation timeout (ms); restart to apply
+    pkcs11QueueLimit: 1000,            // HSM operations waiting per token; restart to apply
     pkcs11PinProvider: "none",         // Where the PKCS#11 PIN is read from; restart to apply
     pkcs11PinRef: "",                  // The PKCS#11 PIN's location; restart to apply
     pkcs11PinField: "",                // The field the PKCS#11 PIN is in; restart to apply
@@ -1712,6 +1727,7 @@ var config = {
     hostname: "",                   // This cell's inter-cell host name; restart to apply
     consoleUrl: "",                 // This cell's own console address; restart to apply
     relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
+    maxAnswerBytes: 16777216,       // Largest inter-cell answer (bytes)
     deliveryAttempts: 12,           // Inter-cell delivery attempts
     deliveryBackoffMs: 2000,        // Inter-cell delivery backoff (ms)
     deliveryRetentionS: 86400,      // Inter-cell delivery retention (s)
@@ -1752,7 +1768,8 @@ var config = {
   // --- Attribute sources -----------------------------------------------
   attributeSources: {
     hostPatterns: "",  // Hosts an attribute source may name
-    refreshBatch: 200  // People per scheduled refresh
+    refreshBatch: 200, // People per scheduled refresh
+    poolSize: 4        // Connections per source
   },
 
   // --- Mail ------------------------------------------------------------

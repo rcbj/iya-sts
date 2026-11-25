@@ -378,6 +378,47 @@ async function againstADouble(t) {
             'B18. timedOutWaiting() is Knex\'s wait for a slot, and not a ' +
             'dial the database did not answer', waited && waited.message);
     state.exhausted = false;
+    // #2220: the wait for a slot is its own setting, and the statement
+    // bound is set once per connection, only once it is asked for.
+    layer.openPool({ connectionString: 'postgres://db/sts',
+                     connectionTimeoutMillis: 5000 },
+                   { max: 2, acquireTimeoutMillis: 1234 });
+    const waits = state.configs[state.configs.length - 1].pool;
+    t.check(waits.acquireTimeoutMillis === 1234 &&
+            waits.createTimeoutMillis === 6000,
+            'B18a. the wait for a slot is the pool\'s acquireTimeoutMillis ' +
+            '(persistence.poolWaitMs), the dial still the connect timeout',
+            JSON.stringify(waits));
+    const plain = await pool.connect();
+    const unbound = plain.connection.sent.length;
+    plain.release();
+    pool.boundStatements(300000);
+    const bound = await pool.connect();
+    const setOn = bound.connection.sent.slice(unbound).map(function (one) {
+      return one.text;
+    });
+    bound.release();
+    const again = await pool.connect();
+    const twice = again.connection.sent.filter(function (one) {
+      return /statement_timeout/.test(one.text);
+    }).length;
+    again.release();
+    t.check(setOn.indexOf('SET statement_timeout = 300000') >= 0 &&
+            twice === 1,
+            'B18b. boundStatements() sets statement_timeout on a ' +
+            'connection the first time it is lent after, and not again',
+            JSON.stringify(setOn) + ' / ' + twice);
+    await pool.query('SELECT 1');
+    const reset = await pool.connect();
+    reset.sessionReset();
+    reset.release();
+    const after2 = await pool.connect();
+    t.check(after2.connection.sent.filter(function (one) {
+      return /statement_timeout/.test(one.text);
+    }).length >= 1 && after2.connection.__stsStatementMs === 300000,
+            'B18c. a connection whose session was reset is bound again ' +
+            'before it is next lent');
+    after2.release();
     await pool.end();
     t.equal(state.destroyedPools, 2, 'B19. end() destroys the Knex instance');
   } finally {

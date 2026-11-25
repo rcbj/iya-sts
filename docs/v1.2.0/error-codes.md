@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6130** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6140** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -49,15 +49,15 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 26
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 29
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 113
+* [Service core (`STS-CORE`)](#sts-core) — 114
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 117
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 88
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 89
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 202
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 205
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 296
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 44
+* [Mail (`STS-MAIL`)](#sts-mail) — 45
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
 * [Device register (`STS-DEVICE`)](#sts-device) — 54
@@ -142,6 +142,9 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0029` | A CSP violation report was refused because its address sent more than 60 in a minute to this process. | HTTP 429 with Retry-After, and no body |
 | `STS-HTTP-0030` | A request to POST /web/csp-report carried no report: a type other than application/csp-report, application/reports+json or application/json, a Content-Encoding, a body that is not JSON, or JSON holding no csp-report object and no csp-violation entry. | HTTP 415 or 400, with no body |
 | `STS-HTTP-0031` | A CSP violation report could not be forwarded to cspReports.forwardUrl: the collector refused it, did not answer, or the outbound rules refused the URL. Logged when forwarding starts failing, not per report; the report is still recorded here. | none — the report was answered 204 and counted |
+| `STS-HTTP-0032` | Outbound HTTP requests are waiting for a connection: the shared agent's cap per destination (federation.outboundMaxSockets) or in all (federation.outboundMaxTotalSockets) is reached. They wait within their overall deadline. Logged when requests first queue, and again only after the queue has drained (#2220). | none — the requests wait; nothing is refused for the cap |
+| `STS-HTTP-0033` | An outbound request did not finish within its overall deadline (federation.outboundDeadlineMs, or its own timeout where longer): it was ended, and the caller's own timeout path ran (#2220). | the caller's own refusal for a timeout |
+| `STS-HTTP-0034` | An outbound connection was not made within the connect timeout (federation.outboundConnectTimeoutMs): the request was ended, and the caller's own timeout path ran (#2220). | the caller's own refusal for a timeout |
 
 ## STS-PROXY
 
@@ -282,6 +285,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
 | `STS-CORE-0180` | A store could not forget what it held for a trust realm this process never defined and the store no longer lists (#1938); it is asked again at the next realm read. | — |
 | `STS-CORE-0181` | security.hstsPreload is on while security.hstsIncludeSubDomains is off, so Strict-Transport-Security is sent without preload: the HSTS preload list accepts a host only when its header covers every subdomain (#2165). Logged when this starts; /admin/mode shows it on the strict-transport-security row. Turn on security.hstsIncludeSubDomains, or turn off security.hstsPreload. | none — a warning; the header is still sent, without preload |
+| `STS-CORE-0182` | A file was not scanned because malwareScan.concurrency scans were running and malwareScan.queueLimit more were waiting: it is refused as a file the scanner could not answer for is. The warning is logged when the queue first fills (#2220). | HTTP 503 |
 
 ## STS-WORKER
 
@@ -474,6 +478,7 @@ Raised from: persistence/.
 | `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
 | `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it only once the flush is stuck (STS-STORE-0177). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
 | `STS-STORE-0177` | A request worker's own flush has been out four times workers.readBarrierTimeoutMs (2 minutes by default), so the worker asks the front process to replace it (STS-WORKER-0055). Its drain waits for that flush to settle until ten times the bound after it began, so a flush that is only slow keeps its writes. | Log line |
+| `STS-STORE-0178` | A database statement was cancelled by the server at its statement timeout (persistence.statementTimeoutMs, unless it set its own). The caller's own failure path decides what follows: a refused request, or a retried flush (#2220). | — |
 
 ## STS-CLUSTER
 
@@ -614,6 +619,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
 | `STS-CELL-0210` | A cell conversion found a sealed directory entry it could not open, so it could not decide the entry's tier; nothing was converted (#391). | cell_convert — refused |
 | `STS-CELL-0211` | A provider's server-to-server notification could not reach every cell (#727): it is answered 503 and its once-ever claim is released, so the provider's retry is accepted and fanned out again. | HTTP 503 with Retry-After |
+| `STS-CELL-0212` | A synchronous call to another cell answered more than cells.maxAnswerBytes: the connection was closed and the call failed without reading the answer (#2220). | — |
 
 ## STS-SCHED
 
@@ -858,6 +864,9 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0211` | The thread that makes a PKCS#11 token's non-cryptographic calls off the event loop (opening and logging in a session, finding a key, reading its attributes, beginning an operation, the key wrap's session object, initialising the module again) failed or exited. The calls waiting on it are refused and the next one starts a new thread (#1955). | — |
 | `STS-KEYS-0212` | A blocking PKCS#11 call was refused because the module is being initialised again after the device was lost, or must be and asynchronous calls of this thread still hold sessions on it: the module is initialised again off the event loop once they drain, and the next call is made on it (#1955). | — |
 | `STS-KEYS-0213` | A thread held the process-wide lock on re-initialising a PKCS#11 module for longer than the bound (a worker stopped while it held it, or the module hung in C_Finalize or C_Initialize): the thread waiting for it takes it over and initialises the module again itself (#1955). | — |
+| `STS-KEYS-0214` | A call to the OpenBao or Vault secret store still failed after keys.storeAttempts attempts (no answer, a timeout, a 5xx or a 429 each time); the failure is the caller's (#2220). | — |
+| `STS-KEYS-0215` | An HSM operation was refused because keys.pkcs11QueueLimit operations were already waiting for a session of the token in this thread (#2220). | — |
+| `STS-KEYS-0216` | An HSM operation, or the wait for a session to run it on, took longer than keys.pkcs11TimeoutMs: it is refused, and a session whose operation outlived its caller is discarded when the module answers (#2220). | — |
 
 ## STS-PKI
 
@@ -4579,6 +4588,7 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0241` | A message was not queued because the encryption the person chose cannot be honoured now (no usable OpenPGP encryption key, no S/MIME certificate that can receive); it is not sent in the clear against their choice (#1955). | log only (the use refuses as for any unsent message) |
 | `STS-MAIL-0242` | An encrypted message cannot be carried by the realm's transport: Azure Communication Services takes structured content and cannot send a MIME entity this service composed (#1955). | log only |
 | `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
+| `STS-MAIL-0244` | A message was not queued because the realm's outbox already holds mail.maxRows unsent messages; nothing already queued is dropped to make room (#2220). | none — the sender is told the message was refused |
 
 ## STS-I18N
 
