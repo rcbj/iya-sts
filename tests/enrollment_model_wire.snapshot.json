@@ -2340,14 +2340,13 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/pem-certificate-chain",
     "cross-origin-resource-policy": "same-site",
     "link": "<http://<port>/realm/enrollw/enroll/acme/directory>;rel=\"index\"",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "replay-nonce": "<replay-nonce>",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -3168,13 +3167,12 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-transfer-encoding": "base64",
     "content-type": "application/pkcs7-mime; smime-type=certs-only",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -3236,13 +3234,12 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-transfer-encoding": "base64",
     "content-type": "application/pkcs7-mime; smime-type=certs-only",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -3264,13 +3261,12 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-transfer-encoding": "base64",
     "content-type": "application/csrattrs",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -3321,13 +3317,12 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-transfer-encoding": "base64",
     "content-type": "application/csrattrs",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -3573,13 +3568,12 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-transfer-encoding": "base64",
     "content-type": "application/pkcs7-mime; smime-type=certs-only",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -3619,12 +3613,11 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "multipart/mixed; boundary=est-<serial>",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -3974,12 +3967,11 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/x-x509-ca-ra-cert",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -4202,12 +4194,11 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/x-pki-message",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -4228,12 +4219,11 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/x-pki-message",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -4254,12 +4244,11 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/x-pki-message",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -4280,12 +4269,11 @@
    "status": 200,
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/enrollw/web/csp-report; report-to csp-endpoint",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/x-pki-message",
     "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
-    "reporting-endpoints": "csp-endpoint=\"/realm/enrollw/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"

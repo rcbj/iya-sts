@@ -1784,6 +1784,16 @@ const SCRIPTED_PAGES = {
     "draws the page."
 };
 
+// THE SHELL'S OWN SCRIPTS, which every console page carries and no row of
+// SCRIPTED_PAGES argues: the console's (#446) and, since #2220, the browser
+// check `common/shell_document.ts` puts before it on EVERY static surface's
+// shell — an ECMAScript 5 file that tells an old browser why nothing will be
+// drawn. It is the shell's, not the page's, so it belongs beside the
+// console's script here rather than in a per-page row (#2258); a script that
+// is neither is still measured against SCRIPTED_PAGES.
+const CONSOLE_SCRIPT = /^(\/realm\/[^/]+)?\/admin\/console\.js$/;
+const BROWSER_CHECK_SCRIPT = /^\/web\/browser-check\.js$/;
+
 async function everyPageIsDrawn(driver, pages) {
   log.debug("Entering everyPageIsDrawn().");
   log.info("=== Every console page ===");
@@ -1874,13 +1884,19 @@ async function everyPageIsDrawn(driver, pages) {
     check(path + (scripted ? " carries the console's script and its own"
                            : " carries the console's script and no other"),
       function () {
+        const shell = page.scriptSrcs.filter(function (src) {
+          return BROWSER_CHECK_SCRIPT.test(src);
+        });
         const own = page.scriptSrcs.filter(function (src) {
-          return !/^(\/realm\/[^/]+)?\/admin\/console\.js$/.test(src);
+          return !CONSOLE_SCRIPT.test(src) && !BROWSER_CHECK_SCRIPT.test(src);
         });
         assert.ok(page.scriptSrcs.length >= 1 && own.length ===
-                  page.scriptSrcs.length - 1,
+                  page.scriptSrcs.length - 1 - shell.length,
           path + " should carry /admin/console.js once; the browser built " +
           JSON.stringify(page.scriptSrcs) + ".");
+        assert.ok(shell.length <= 1,
+          path + " should carry /web/browser-check.js at most once; the " +
+          "browser built " + JSON.stringify(page.scriptSrcs) + ".");
         if (scripted) {
           assert.ok(own.length === 1 && /^(\/realm\/[^/]+)?\/admin\//
                       .test(own[0]),
@@ -6990,13 +7006,15 @@ async function theTwoDrawingsAreServerSide(driver) {
       svg.forEach(function (one) { nodes += one.querySelectorAll('*').length; });
       return { count: svg.length, nodes: nodes,
                images: document.querySelectorAll('img, image').length,
-               // The console's own script runs every page since #446; what
-               // is counted is any OTHER — a graph library, say.
+               // The console's own script runs every page since #446, and
+               // the shell's browser check (#2220) every shell; what is
+               // counted is any OTHER — a graph library, say.
                // A string test, not a regex: this script is a template
                // literal, which would eat a regex's backslashes.
                scripts: Array.from(document.scripts).filter(function (one) {
-                 return !(one.getAttribute('src') || '')
-                   .endsWith('/admin/console.js');
+                 const src = one.getAttribute('src') || '';
+                 return !src.endsWith('/admin/console.js') &&
+                   src !== '/web/browser-check.js';
                }).length,
                // The sentence render() puts where the drawing goes when the
                // LAYOUT threw. It is a 200 with everything else on the page
@@ -7041,8 +7059,9 @@ async function theTwoDrawingsAreServerSide(driver) {
         "and the SVG should have something in it; it has " + drawn.nodes +
         " element(s).");
       assert.strictEqual(drawn.scripts, 0,
-        path + " must carry no script but the console's own. Every graph " +
-        "library a person would reach for runs in the browser, and the whole " +
+        path + " must carry no script but the console's and the shell's. " +
+        "Every graph library a person would reach for runs in the browser, " +
+        "and the whole " +
         "point of laying this out on the server is that no picture needs " +
         "one.");
       assert.strictEqual(drawn.images, 0,

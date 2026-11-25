@@ -3113,7 +3113,17 @@ certification differs:
   minutes): one hung WebDriver call once held the browser's lock and lost a
   whole run. A suite page that stalls logs the browser console, which is how
   #1297 (the OP iframe missing Session Management's single postMessage) was
-  found.
+  found. **A browser thrown away is ENDED, not asked to quit** (#2258):
+  selenium kills the chromedriver it started only once QUIT settles, so a
+  hung one was never ended and its child process kept the job alive after
+  "Test completed successfully." until the watchdog (run 45608374617, 4.5 h).
+  Each browser's `DriverService` is held, QUIT is bounded
+  (`CONFORMANCE_BROWSER_QUIT_MS`, 15 s) and the chromedriver killed after it,
+  at the deadline and at the job's `quit()` alike;
+  `tests/conformance_browser_close.js` holds both against a fake chromedriver
+  (`CONFORMANCE_CHROMEDRIVER`) that stops answering. The runner still relies
+  on a job's natural exit, deliberately: a forced exit after the last line
+  would have hidden this leak, and the next one.
 * **A report, not a verdict**: certification reads the module result, not our
   ledger, so every module that did not PASS is listed and a plan with a FAILED
   or INTERRUPTED module is marked not certifiable. Nothing is published.
