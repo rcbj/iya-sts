@@ -89,6 +89,7 @@ const INSTANCE_TOUCH_S = 60;
 // (header), so `any`.
 interface Store {
   has(key: string): boolean;
+  lookup?(indexKey: string): string[];
   get(key: string): any;
   set(key: string, value: any): unknown;
   delete(key: string): boolean;
@@ -142,6 +143,17 @@ interface GnapStoreDeps {
 // outlives — whichever is later (keptUntil()).
 const grants = realms.map({
   persist: 'gnap.grants',
+  // WHICH APPLICATION A PERSON APPROVED A GRANT TO, as an index (#2234): an
+  // application's Shared Signals stream carries events about a person only
+  // while that person has an active session on the application, and for a
+  // GNAP client that is a live grant the person approved to it
+  // (`ssf/application_sessions.ts`). That question is asked per event per
+  // stream, so it is a lookup here rather than a walk of every grant.
+  // `GnapStore.grantKey()` is the one spelling. A hot path (every write):
+  // no Entering/Leaving pair.
+  indexBy: function (grant: any): string[] {
+    return GnapStore.grantKeysOf(grant);
+  },
   // A hot path (every row a flush writes): no Entering/Leaving pair.
   expiresAt: function (grant: any): number | null {
     if (!grant || typeof grant !== 'object') {
@@ -448,6 +460,53 @@ class GnapStore {
     grants.set(grant.id, grant);
     log.debug("Leaving GnapStore.saveGrant().");
     return grant;
+  }
+
+  // The index key of a grant one person approved to one client instance's
+  // application (#2234). The identifier is the application's registry
+  // identifier, the username lower-cased as `gnap_signals.ts`'s approvers
+  // are. A hot path (every write to the grants): no Entering/Leaving pair.
+  static grantKey(identifier: unknown, username: unknown): string {
+    return 'approved ' + String(identifier || '') + ' ' +
+           String(username || '').toLowerCase();
+  }
+
+  // The index keys a grant is filed under: none until it has a client and a
+  // resource owner. A hot path (every write to the grants): no
+  // Entering/Leaving pair.
+  static grantKeysOf(grant: any): string[] {
+    const identifier = grant && grant.client && grant.client.identifier;
+    const username = grant && grant.ro && grant.ro.username;
+    return identifier && username
+      ? [GnapStore.grantKey(identifier, username)] : [];
+  }
+
+  /**
+   * Lists the grants a person approved to an application, from the index
+   * (#2234): live or not; the caller asks which are live.
+   *
+   * @param identifier - the application's identifier
+   * @param username - the person
+   * @returns the grants
+   */
+  grantsApprovedTo(identifier: string, username: string): any[] {
+    const { log } = this.deps;
+    const { grants } = this.deps.stores;
+    log.debug("Entering GnapStore.grantsApprovedTo().");
+    const key = GnapStore.grantKey(identifier, username);
+    const keys = typeof grants.lookup === 'function' ? grants.lookup(key)
+                                                     : [];
+    const out = [];
+    keys.forEach(function (id) {
+      const grant = grants.get(id);
+      // An index entry for a grant since re-filed under another owner, or
+      // gone, is not this person's grant.
+      if (grant && GnapStore.grantKeysOf(grant).indexOf(key) >= 0) {
+        out.push(grant);
+      }
+    });
+    log.debug("Leaving GnapStore.grantsApprovedTo(). " + out.length);
+    return out;
   }
 
   /**
@@ -1607,6 +1666,8 @@ export = {
   getGrant: slot.forward('getGrant'),
   saveGrant: slot.forward('saveGrant'),
   listGrants: slot.forward('listGrants'),
+  grantsApprovedTo: slot.forward('grantsApprovedTo'),
+  grantKey: GnapStore.grantKey,
   deleteGrant: slot.forward('deleteGrant'),
   issueContinuation: slot.forward('issueContinuation'),
   grantByContinuation: slot.forward('grantByContinuation'),

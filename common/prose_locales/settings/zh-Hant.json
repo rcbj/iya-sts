@@ -9295,6 +9295,14 @@
     "en": "581ff0b61393c1af",
     "text": "以「人員」認證建立的串流——用戶端為其取得的存取權杖，或其本人透過 Basic 的名稱與密碼——只關於該人員：關於其他任何人的事件都不會傳遞給它，不論其主體清單與 default_subjects 為何，而 Add Subject 也會拒絕指名其他人（403）。SSF 1.0 section 10.1 要求只有獲授權方才能存取共用訊號，而人員對其本人的訊號即為獲授權方。關閉時，人員的串流會被視同用戶端的串流，在 default_subjects 為 ALL 時會收到領域中的每個事件。用戶端自己的串流（client credentials）、GNAP 應用程式的串流以及此服務自己的接收端不受影響。"
   },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "應用程式的串流可以得知哪些人的事件"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "由應用程式擁有的串流（以其用戶端憑證、GNAP 金鑰或其憑證建立，而非某人的權杖）僅在某人於該應用程式有作用中工作階段時，才會傳遞關於此人的 CAEP 或 RISC 事件：即該應用程式作為信賴方的作用中登入工作階段（OpenID Connect 或 OAuth 用戶端、SAML 2.0 或 1.1 服務提供者、WS-Federation 信賴方），或此人核准給該應用程式的作用中 GNAP 授權。結束此類工作階段的事件仍會送達其工作階段被結束的應用程式。沒有主體的事件以及不涉及任何人的事件不受影響；Add Subject 若指名在該應用程式沒有作用中工作階段的人，將被拒絕（403）。default_subjects 仍為 ALL，現在表示在接收方應用程式有作用中工作階段的每個主體（SSF 1.0 第 7.1、9.2 與 10.1 節）。all 是 #2234 之前的行為：應用程式的串流會得知領域中每個人的事件，依賴全主體串流的部署（MDM 或 EDR 接收方）會刻意選擇它。個人自己的串流（ssf.personStreamsSelfOnly）、本服務自己的接收方以及 GNAP 資源伺服器的串流不受影響。"
+  },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
     "text": "新串流建立時的狀態"

@@ -9295,6 +9295,14 @@
     "en": "581ff0b61393c1af",
     "text": "Un flux créé avec l’identifiant d’une PERSONNE — un jeton d’accès qu’un client a obtenu pour elle, ou son propre nom et mot de passe en Basic — ne concerne que cette personne : les événements concernant qui que ce soit d’autre ne lui sont pas remis, quoi que disent sa liste de sujets et default_subjects, et Add Subject refuse de nommer quelqu’un d’autre (403). SSF 1.0 section 10.1 exige que seules des parties autorisées accèdent aux signaux partagés, et une personne en est une pour les siens. Désactivé, le flux d’une personne est traité comme celui d’un client et, avec default_subjects ALL, reçoit tous les événements du domaine. Le flux propre d’un client (client credentials), celui d’une application GNAP et les récepteurs propres à ce service ne sont pas concernés."
   },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "Les personnes dont le flux d'une application entend parler"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "Un flux qu'une APPLICATION possède (créé avec ses identifiants client, une clé GNAP ou son certificat — et non le jeton d'une personne) ne transporte un événement CAEP ou RISC concernant une personne que tant que cette personne a une session active sur cette application : une session d'authentification unique active dont l'application est une partie de confiance (un client OpenID Connect ou OAuth, un fournisseur de services SAML 2.0 ou 1.1, une partie de confiance WS-Federation), ou un accord GNAP actif que la personne lui a approuvé. L'événement qui MET FIN à une telle session parvient toujours à l'application dont la session a pris fin. Les événements sans sujet, et les événements qui ne concernent aucune personne, ne sont pas affectés, et un Add Subject nommant une personne sans session active sur l'application est refusé (403). default_subjects reste ALL, ce qui signifie désormais chaque sujet ayant une session active sur l'application du récepteur (SSF 1.0, sections 7.1, 9.2 et 10.1). all est le comportement d'avant #2234 : le flux d'une application entend parler de tout le monde dans le domaine, ce qu'un déploiement reposant sur des flux couvrant tous les sujets (un récepteur MDM ou EDR) choisit délibérément. Le flux propre d'une personne (ssf.personStreamsSelfOnly), les récepteurs propres de ce service et le flux d'un serveur de ressources GNAP ne sont pas affectés."
+  },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
     "text": "Statut d’un nouveau flux à sa création"

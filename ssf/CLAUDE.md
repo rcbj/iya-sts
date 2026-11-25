@@ -19,8 +19,9 @@ family here and the first one that TALKS BACK.
 | `ssf_cluster.ts` | Several nodes (2026-09-14, #46): one report per stream health transition, one prober, and the GNAP key-proof spend as route middleware. A LIBRARY. |
 | `account_signals.ts` | What a credential change on the admin and portal doors says over CAEP and RISC (2026-09-13), read out of `require.cache`. A LIBRARY. |
 | `ssf_model.ts` | **The model, as the family reads it** (#1579): the tables `models/generated/ssf.json` holds, and the holding of what is answered and sent. A LEAF. |
+| `application_sessions.ts` | **An application's stream is about the people signed in to it** (#2234): the subject scope `ssf.ts` registers, the ended-session record, and what Add Subject asks. A LIBRARY. |
 
-Twelve of the thirteen register nothing (rule 3), so their position in the
+Thirteen of the fourteen register nothing (rule 3), so their position in the
 route order is not a position. `ssf.ts` is required at **23b in
 `common/protocol_stack.ts`** — after `admin-ui/admin.ts`, whose slots
 (`setSignalsReporter`, `setCaepReporter`, `setRiscReporter`) it fills, and
@@ -1496,6 +1497,134 @@ removed; the pairwise forward match removed; the ephemeral mapping removed; a
 complex subject judged whole rather than by `user`; every Basic name treated as
 a person; the internal streams recorded as a person's. The Add Subject 403 in
 `ssf.ts` is not covered by it; a vendored job with a person's token would be.
+
+---
+
+## AN APPLICATION'S STREAM IS ABOUT THE PEOPLE SIGNED IN TO IT (#2234, 2026-11-25)
+
+**rcbj's rule: "By default, a subscribing app should only receive CAEP &
+RISC events about users that have active sessions on their app."** Until
+then an application's own stream, under `default_subjects: ALL`, was sent
+every person's events in the realm: on 8081 `gnap-demo-user`'s CAEP events
+reached the OIDC demo's stream although that person never signed in to it.
+SSF 1.0 section 7.1 leaves "appropriate for the stream" to the transmitter,
+section 9.2 says it SHOULD validate it is permitted to share an event, and
+10.1 that it SHOULD NOT leak information about subjects. #336 answered that
+for a person's stream; this answers it for an application's.
+`application_sessions.ts`'s header carries the argument; what a reader of
+this directory needs:
+
+* **A REGISTERED SUBJECT SCOPE, NOT BUILT IN** — the opposite of #336's
+  choice, for #336's own reason read the other way: who OWNS a stream is the
+  store's fact, but whether a person has a session on an application is
+  `authn/`'s and GNAP's. `ssf.ts`'s `installHooks()` registers
+  `scope()` with `setSubjectScope('application-sessions', …)`, so it can only
+  take events away, and `POST /ssf/subjects/add` asks the same function:
+  `403 access_denied`, STS-SSF-0164, after #336's check and after a
+  malformed subject's 400.
+* **"An active session on this application" is read off the ONE model of a
+  live session** (`logout/CLAUDE.md`), never a register of its own: a live
+  sign-on session (not expired, not an arrival session) whose relying-party
+  lists name the application — `oidcClients`, `saml2ServiceProviders`,
+  `saml11RelyingParties` (and their `providerId`), `wsfedRealms` — matched
+  against the application's registry identifier and every identifier
+  attribute its entry carries (`applications.ssfAllowedEventsFor()`'s cached
+  answer now holds `names` and `kinds`); or, for a GNAP client, a live grant
+  the person approved to it (`gnap_store.ts`'s new `indexBy` on the grants
+  and `grantsApprovedTo()`). The sessions come from `sessionsHeldUnder()`,
+  two indexed columns (#774), asked once per person per turn of the event
+  loop however many streams a candidate filter offers the event to (a memo
+  emptied on a microtask — a per-operation cache, not a timer).
+* **THE ENDING EVENT, AND WHY THERE IS A SHORT-LIVED RECORD.** A sign-out's
+  `session-revoked` is built after the session is gone, and a RISC
+  `account-disabled` / `account-purged` may be sent after the sessions its act
+  ended. So `caepAutoEmit()` calls `noteEnded()` on every `revoked` notice
+  BEFORE the event is built, and `logout.ts`'s `terminate()` calls it for
+  every session it is about to end BEFORE its `wsfed-rp` and `saml2-sp` rows
+  strip those parties off the session (the `oidc-rp` row leaves a client on
+  a session that ends in the same act; those two did not). The record,
+  `ssf_application_sessions.ended` (cell-local, persisted with expiry, indexed
+  by username and subject), keeps the parties two minutes; two notes of one
+  session are a union. An event naming the session (`session` member) is
+  covered for every party on it; an event about the person within the
+  grace is covered for those parties too — which is what makes the RISC
+  event arrive whichever order its door sends it in, and an account-purged
+  arrive after the entry is gone (an `iss_sub`'s `urn:uuid:` is the key).
+  GNAP's `session-revoked` names `gnap-grant:` / `gnap-token:`, which outlive
+  their end in the GNAP store and are read there.
+* **NO OPINION** (undefined) on: an event with no subject; **a subject naming
+  no PERSON** — only `iss_sub`, `email`, `phone_number`, `account`, `aliases`
+  of those, and a complex subject's `user` name one, so an application's
+  own credential changes, a device's or workload's events, GNAP's
+  user-less token subject and #2028's `pep-policies-changed` (the
+  application's complex subject, on its own stream — the four Rust client
+  libraries' local PEPs refresh policy on it) all pass untouched; a stream no
+  application owns (a person's, #336; `internalSurface`; a made-up Basic
+  name; a pre-#336 person's `urn:uuid:` `createdBy`); a GNAP resource
+  server's stream (#432's `rsCovers()` is its rule); and everything while
+  `ssf.applicationStreamScope` is `all`.
+* **AN EVENT ABOUT THE STREAM'S OWN APPLICATION IS COVERED WHATEVER THE
+  SUBJECT LIST SAYS** — `ssf_streams.ts`'s `namesOwnApplication()`, BUILT IN
+  this time, because it ADDS an event a list would take away, which no scope
+  can. Found by a live run of the WS-Federation library: a receiver that
+  adds its signed-in people narrows its stream to them, and stopped hearing
+  `pep-policies-changed` (subject: the application). A subject naming no
+  person — a complex subject's `application` member with no `user`, or a bare
+  `opaque` — whose id is the stream's `createdBy` or one of its registry
+  entry's names goes to the stream, after #336's check and the scopes, ahead
+  of the list and `ssf.defaultSubjects`. The libraries also Add Subject
+  `{ "format": "opaque", "id": <the application> }` when the receiver starts
+  and never remove it: that names no person, so the scope has no opinion and
+  the add is ACCEPTED. A person's session on the application (`user` and
+  `application`) is still the person's to judge; another application's
+  events still follow the list.
+* **FAILS CLOSED**: a session store that cannot be read (`sessionsHeldUnder()`
+  answers null) or a scope that throws withholds the event from that stream
+  and logs STS-SSF-0165.
+* **`default_subjects` stays `ALL`**, now meaning every subject with an
+  active session on the receiver's application. An added subject stays on
+  the list; its events stop when the session ends (the list is not pruned).
+* **What it costs that was not asked for.** `session-established` reaches no
+  application stream: the session records its first relying party at the
+  authorization response, after the event. A first `session-presented` to a
+  second application is the same. Neither is a session ON the application
+  yet. An OAuth grant or token held without a browser session (the password
+  grant, client credentials for a person, a refresh token outliving its
+  session) is not an active session here.
+
+`tests/ssf_application_sessions.js` holds the scope through the real
+`streamCoversSubject()` in a child (36 assertions). Ten mutants, each run
+against the compiled module, all caught: the SAML 2.0 list not read (3 red),
+the ended record not consulted for the person (2), the session-id check
+removed (1), a complex subject with no `user` read as a person — the
+pep-policies-changed case (2), the setting ignored (1), the per-turn memo
+never emptied (2), the GNAP grant ignored (1), an expired session counted
+live (2), the two notes of one session not merged (1), and an arrival
+session's id counted (1); and three on `ssf_streams.ts`'s own-application
+rule, all caught: the rule removed (1), a subject with a `user` taken as the
+application (1), any application taken as the owner (1). `tests/protocol/sts_ssf_application_sessions.js`
+is the wire: two applications and three people, Add Subject's 200 and 403,
+A's own credential change reaching it with alice on its list, its own
+opaque id added (200) and the change still reaching it,
+a verification event, a sign-out's session-revoked reaching only its
+application, a disable's session-revoked AND account-disabled reaching only
+alice's application, a person signed in nowhere reaching neither, `all` in
+its realm, and the application's own credential-change unfiltered.
+`pep-policies-changed` itself is #2028's and not on develop when this
+landed: the in-process file holds its subject's shape, and the wire job an
+application's own credential change, which has the same subject.
+
+**Fourteen older jobs set `all` in their throwaway realms** — their
+receivers hear about people never signed in to them, which is what they
+test, not the scope: `sts_ssf_allowed_events`, `sts_ssf_subject_issuer`,
+`sts_ssf_conformance`, `sts_caep_credential_changes`, `sts_risc_acts`,
+`sts_risc_register_recovery`, `sts_credential_signals`, `sts_devices`,
+`sts_ca_hierarchy_signals`, `sts_second_factor_doors`, `sts_native_sso`,
+`sts_email_verification`, `sts_ssf_foreign_receiver` (its people are linked,
+not signed in), `sts_gnap_signals` (its unscoped control stream); and
+`sts_ssf_oidf_conformance` in its plan realms. `tests/ssf_model_wire.js`
+replays answers recorded before #2234, so its child runs with
+`STS_SSF_APPLICATION_STREAM_SCOPE=all`.
 
 ---
 

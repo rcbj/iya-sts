@@ -9295,6 +9295,14 @@
     "en": "581ff0b61393c1af",
     "text": "En ström som skapats med en PERSONS inloggningsuppgift — en åtkomsttoken som en klient fått för personen, eller personens eget namn och lösenord över Basic — handlar om den personen enbart: händelser om någon annan levereras inte till den, vad dess subjektslista och default_subjects än säger, och Add Subject vägrar att ange någon annan (403). SSF 1.0 avsnitt 10.1 kräver att bara behöriga parter når de delade signalerna, och en person är behörig för sina egna. Av: en persons ström behandlas som en klients och får, under default_subjects ALL, varje händelse i sfären. En klients egen ström (klientuppgifter), en GNAP-applikations och den här tjänstens egna mottagare påverkas inte."
   },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "Vilka personer en applikations ström får höra om"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "En ström som en APPLIKATION äger (skapad med dess klientuppgifter, en GNAP-nyckel eller dess certifikat – inte en persons token) bär en CAEP- eller RISC-händelse om en person bara så länge den personen har en aktiv session hos applikationen: en aktiv inloggningssession där applikationen är en förlitande part (en OpenID Connect- eller OAuth-klient, en SAML 2.0- eller 1.1-tjänsteleverantör, en förlitande part för WS-Federation), eller ett aktivt GNAP-medgivande som personen har godkänt för den. Händelsen som AVSLUTAR en sådan session når fortfarande den applikation vars session den avslutade. Händelser utan subjekt, och händelser som inte gäller någon person, påverkas inte, och en Add Subject som namnger en person utan aktiv session hos applikationen avvisas (403). default_subjects förblir ALL, vilket nu betyder varje subjekt med en aktiv session hos mottagarens applikation (SSF 1.0, avsnitt 7.1, 9.2 och 10.1). all är beteendet före #2234: en applikations ström får höra om alla i domänen, vilket en driftsättning som förlitar sig på strömmar för alla subjekt (en MDM- eller EDR-mottagare) väljer medvetet. En persons egen ström (ssf.personStreamsSelfOnly), tjänstens egna mottagare och en GNAP-resursservers ström påverkas inte."
+  },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
     "text": "Status som en ny ström skapas i"

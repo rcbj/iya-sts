@@ -231,7 +231,12 @@ async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " and a poll stream ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
-    domain: REALM + ".example.net", name: "RISC 146 " + STAMP },
+    domain: REALM + ".example.net", name: "RISC 146 " + STAMP,
+    // EVERY PERSON'S EVENTS ON AN APPLICATION'S STREAM, AS BEFORE #2234:
+    // this job's receivers hear about people never signed in to them
+    // (`ssf.applicationStreamScope`; the scope itself is
+    // `sts_ssf_application_sessions.js`'s).
+    overrides: { "ssf.applicationStreamScope": "all" } },
     "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],

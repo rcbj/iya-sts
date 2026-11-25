@@ -20945,6 +20945,22 @@ const CODES = [
       'that is not one is refused rather than read as no header ' +
       '(#1760 phase 3).',
     spec: 'HTTP 400' },
+  { code: 'STS-SSF-0164',
+    summary: 'An Add Subject request on a stream an APPLICATION owns named ' +
+      'a person who has no active session on that application, and ' +
+      'ssf.applicationStreamScope is active-sessions (#2234): no live ' +
+      'sign-on session the application is a relying party of, and no live ' +
+      'GNAP grant the person approved to it. The stream would carry ' +
+      'nothing about them, so the add is refused rather than ignored (SSF ' +
+      '1.0 section 8.1.3.2).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-SSF-0165',
+    summary: 'Whether a person has an active session on an application ' +
+      'could not be decided, because the sessions or the GNAP grants could ' +
+      'not be read (#2234). The event is withheld from that application\'s ' +
+      'stream, and an Add Subject is refused, rather than sent to a ' +
+      'receiver that may not be entitled to it (SSF 1.0 section 10.1).',
+    spec: 'none (logged); the event is not delivered to that stream' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

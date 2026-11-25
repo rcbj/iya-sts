@@ -118,7 +118,14 @@ async function prepare(plan) {
   const id = ("ssf-" + plan.key + "-" + TAG).slice(0, 31).replace(/-+$/, "");
   const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name, [
     ["oauth2.openRegistration", true],
-    ["ssf.pushCaFile", oidf.suiteCaFile()]]);
+    ["ssf.pushCaFile", oidf.suiteCaFile()],
+    // EVERY PERSON'S EVENTS, AS BEFORE #2234: the plans' subject-control
+    // modules add and expect events about subjects of their own choosing,
+    // nobody signed in to the receiver, which an application's stream now
+    // refuses by default (`ssf.applicationStreamScope`, a 403 SSF 1.0
+    // section 8.1.3.2 permits). The scope itself is
+    // `sts_ssf_application_sessions.js`'s.
+    ["ssf.applicationStreamScope", "all"]]);
   const person = names.usernameFor("conf-" + plan.key);
   await oidf.makePerson(realm.api, person, PASSWORD);
   const registered = await oidf.send(realm.base + "/oauth2/register", {

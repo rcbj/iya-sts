@@ -9295,6 +9295,14 @@
     "en": "581ff0b61393c1af",
     "text": "Ein Stream, der mit den Anmeldedaten einer PERSON erzeugt wurde — ein Access Token, das ein Client für sie erlangt hat, oder ihr eigener Benutzername und ihr Passwort über Basic —, handelt allein von dieser Person: Ereignisse über jemand anderen werden ihm nicht zugestellt, was auch immer seine Subjektliste und default_subjects sagen, und Add Subject weigert sich, jemand anderen zu nennen (403). SSF 1.0 Abschnitt 10.1 verlangt, dass nur berechtigte Parteien auf die gemeinsamen Signale zugreifen, und eine Person ist eine für ihre eigenen. Aus wird der Stream einer Person wie der eines Clients behandelt und erhält unter default_subjects ALL jedes Ereignis im Vertrauensbereich. Der eigene Stream eines Clients (Client Credentials), der einer GNAP-Anwendung und die eigenen Empfänger dieses Dienstes sind davon nicht betroffen."
   },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "Über welche Personen der Stream einer Anwendung erfährt"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "Ein Stream, der einer ANWENDUNG gehört (erstellt mit ihren Client-Anmeldedaten, einem GNAP-Schlüssel oder ihrem Zertifikat – nicht mit dem Token einer Person), überträgt ein CAEP- oder RISC-Ereignis über eine Person nur, solange diese Person eine aktive Sitzung bei dieser Anwendung hat: eine aktive Anmeldesitzung, deren vertrauende Partei die Anwendung ist (ein OpenID-Connect- oder OAuth-Client, ein SAML-2.0- oder 1.1-Dienstanbieter, eine WS-Federation-vertrauende Partei), oder eine aktive GNAP-Berechtigung, die die Person ihr genehmigt hat. Das Ereignis, das eine solche Sitzung BEENDET, erreicht weiterhin die Anwendung, deren Sitzung es beendet hat. Ereignisse ohne Subjekt und Ereignisse, die keine Person betreffen, sind nicht betroffen, und ein Add Subject, das eine Person ohne aktive Sitzung bei der Anwendung nennt, wird abgelehnt (403). default_subjects bleibt ALL und bedeutet nun jedes Subjekt mit einer aktiven Sitzung bei der Anwendung des Empfängers (SSF 1.0, Abschnitte 7.1, 9.2 und 10.1). all ist das Verhalten vor #2234: Der Stream einer Anwendung erfährt von allen im Realm, was eine Bereitstellung, die auf Streams für alle Subjekte angewiesen ist (ein MDM- oder EDR-Empfänger), bewusst wählt. Der eigene Stream einer Person (ssf.personStreamsSelfOnly), die eigenen Empfänger dieses Dienstes und der Stream eines GNAP-Ressourcenservers sind nicht betroffen."
+  },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
     "text": "Status, in dem ein neuer Stream erzeugt wird"

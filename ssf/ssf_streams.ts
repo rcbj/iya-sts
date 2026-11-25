@@ -308,7 +308,8 @@ interface StreamDelivery {
 interface ApplicationsReader {
   ssfAllowedEventsFor(name: string): { identifier: string;
                                        values: string[];
-                                       receiverIds?: string[] } | null;
+                                       receiverIds?: string[];
+                                       names?: string[] } | null;
   ssfSettingFor?(name: string, key: string): { value: unknown;
                                                source: string;
                                                application: string };
@@ -2037,6 +2038,69 @@ class SsfStreams {
     return match;
   }
 
+  // ---------------------------------------------------------------------------
+  // AN EVENT ABOUT THE STREAM'S OWN APPLICATION GOES TO IT, WHATEVER ITS
+  // SUBJECT LIST SAYS (#2234, 2026-11-25).
+  //
+  // A receiver that adds the people signed in to it (what the client
+  // libraries do since #2234, so they are right against `default_subjects:
+  // NONE` too) narrowed its stream to them, and stopped hearing #2028's
+  // `pep-policies-changed` — whose subject is the APPLICATION — and every
+  // other event about itself: its own credential changes, its own tokens'
+  // claims. An event that tells an application about itself widens nothing
+  // and leaks nobody, so it is covered as an event with no subject is,
+  // ahead of the list and `ssf.defaultSubjects`. The libraries also Add
+  // Subject `{ "format": "opaque", "id": <the application> }`; that names no
+  // person, so `application_sessions.ts` has no opinion and it is accepted,
+  // and with it on the list the rule below changes nothing.
+  //
+  // It is the OWNER's application only: the stream's `createdBy` and the
+  // names its registry entry answers to (`ssfAllowedEventsFor()`'s cached
+  // answer). The subject must name no person — a complex subject's
+  // `application` member with no `user`, or a bare `opaque` naming it — so a
+  // person's session on the application is still judged by the person's
+  // rules. Never for this service's own receivers or a person's stream.
+  // ---------------------------------------------------------------------------
+  private namesOwnApplication(record?, subject?): boolean {
+    const { log, subjects } = this.deps;
+    log.debug("Entering SsfStreams.namesOwnApplication().");
+    if (!record || record.internalSurface || !record.createdBy ||
+        this.ownerPersonOfRecord(record) || !subject ||
+        typeof subject !== 'object') {
+      log.debug("Leaving SsfStreams.namesOwnApplication(). Not asked.");
+      return false;
+    }
+    let id = '';
+    if (subjects.isComplex(subject)) {
+      id = subject.user ? '' : subjects.applicationIdOf(subject);
+    } else if (subject.format === 'opaque') {
+      id = String(subject.id || '');
+    }
+    if (!id) {
+      log.debug("Leaving SsfStreams.namesOwnApplication(). No application.");
+      return false;
+    }
+    const by = String(record.createdBy);
+    if (id === by) {
+      log.debug("Leaving SsfStreams.namesOwnApplication(). The owner.");
+      return true;
+    }
+    let owner = null;
+    try {
+      owner = this.applicationFor(by);
+    } catch (e) {
+      log.debug("Caught in SsfStreams.namesOwnApplication(): " +
+                ((e && e.message) || e));
+      // An unreadable registry: only the owner's own name counts.
+      owner = null;
+    }
+    const names = owner
+      ? [String(owner.identifier || '')].concat(owner.names || []) : [];
+    const own = names.indexOf(id) >= 0;
+    log.debug("Leaving SsfStreams.namesOwnApplication(). " + own);
+    return own;
+  }
+
   /**
    * Says whether an event about a subject belongs on a stream: always for an
    * event with no subject; otherwise not when a subject scope refuses it, and
@@ -2066,6 +2130,11 @@ class SsfStreams {
       log.debug("Leaving SsfStreams.streamCoversSubject(). A family's " +
                 "subject scope refuses it.");
       return false;
+    }
+    if (this.namesOwnApplication(record, subject)) {
+      log.debug("Leaving SsfStreams.streamCoversSubject(). About the " +
+                "stream's own application; the list narrows nothing here.");
+      return true;
     }
     if (record.subjects.length) {
       const key = subjects.subjectKey(subject);

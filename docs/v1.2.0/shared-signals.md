@@ -249,9 +249,49 @@ username.
   by the authorization code grant), or their directory name and password over
   Basic. Events about anybody else are not delivered to it, whatever its
   subject list and `ssf.defaultSubjects` say, and an Add Subject naming
-  anybody else answers `403 access_denied`. A relying party that needs events
-  about everybody creates its stream with its own client credentials token.
+  anybody else answers `403 access_denied`. A relying party creates its
+  stream with its own client credentials token instead, and hears about the
+  people signed in to it (below).
   `ssf.personStreamsSelfOnly` turns this off.
+* **An application's stream is about the people signed in to it** (1.2.0,
+  #2234). A stream an application owns — created with its client
+  credentials, its GNAP key or its TLS client certificate — carries a CAEP or
+  RISC event about a person only while that person has an **active session
+  on that application**: a live sign-on session the application is a relying
+  party of (an OpenID Connect or OAuth client the session answered, a SAML
+  2.0 or SAML 1.1 service provider it signed in to, a WS-Federation relying
+  party), or, for a GNAP client, a live grant the person approved to it.
+  SSF 1.0 leaves what `default_subjects: ALL` covers to the transmitter
+  (section 7.1: "any subjects that are appropriate for the stream"), and
+  sections 9.2 and 10.1 ask it not to share or leak what a receiver is not
+  entitled to; this is that definition. So:
+  * **The event that ends a session reaches the application whose session it
+    ended**: a sign-out's or an expiry's `session-revoked`, and a RISC event
+    (`account-disabled`, `account-purged`) sent about the same act, for two
+    minutes after the session ended.
+  * **Events about no person are not filtered**: SSF's own verification and
+    stream-updated (no subject), and an event whose subject is the
+    application itself, a device or a workload with no `user` — an
+    application's own credential changes, GNAP's subject for a token nobody
+    approved, and the embedded PEP's `pep-policies-changed`.
+  * **An event about the application itself reaches its stream whatever
+    the subject list says.** A receiver that adds the people signed in to
+    it still hears `pep-policies-changed` and its own credential changes.
+    It may also add itself, `{ "format": "opaque", "id": "<its
+    identifier>" }`, which is accepted: that names no person.
+  * **Add Subject** naming a person with no active session on the
+    application answers `403 access_denied`; one with a session is accepted
+    and stays on the list, and its events stop when the session ends. Remove
+    Subject is unchanged.
+  * The metadata still says `default_subjects: "ALL"`, which now means every
+    subject with an active session on the receiver's application.
+  * Unchanged: a person's own stream (above), this service's own receivers,
+    a stream no application owns (a made-up Basic name in development), and
+    a GNAP resource server's stream (its tokens, see the GNAP page).
+  * `ssf.applicationStreamScope: all`, per realm, is the behaviour before
+    1.2.0, for a receiver that relies on every person's events (an MDM or EDR
+    service). A client library that wants to be correct against either
+    setting adds the person at sign-in and removes them at sign-out.
 * **`ssf.maxStreams` is per receiver.** Creating a stream past it answers 403.
 * **The console's and portal's own streams belong to no remote receiver** and
   are managed only on `/admin/ssf` and through `/admin-api`.
@@ -710,6 +750,7 @@ types from what a stream may ask for.
 | `ssf.deliveryMethods` | `STS_SSF_DELIVERY_METHODS` | `urn:ietf:rfc:8935,urn:ietf:rfc:8936` | yes | Which delivery methods the service agrees to. `push` and `poll` are accepted as shorthand. |
 | `ssf.defaultSubjects` | `STS_SSF_DEFAULT_SUBJECTS` | `ALL` | yes | What a stream with no subjects covers: everybody (`ALL`) or nobody (`NONE`). With `ALL`, naming a subject narrows the stream to the named subjects, and removing the last one widens it back to everybody. |
 | `ssf.personStreamsSelfOnly` | `STS_SSF_PERSON_STREAMS_SELF_ONLY` | `true` | yes | A stream created with a person's own credential (an access token a client obtained for them, or their name and password over Basic) carries only events about that person, whatever its subject list and `ssf.defaultSubjects` say, and Add Subject naming anybody else is refused with 403. Off, such a stream is treated like a client's. |
+| `ssf.applicationStreamScope` | `STS_SSF_APPLICATION_STREAM_SCOPE` | `active-sessions` | yes | A stream an application owns (its client credentials, GNAP key or certificate — not a person's token) carries a CAEP or RISC event about a person only while that person has an **active session on that application**: a live sign-on session it is a relying party of (OpenID Connect / OAuth client, SAML 2.0 or 1.1 service provider, WS-Federation relying party), or a live GNAP grant the person approved to it. The event that ends such a session still reaches it. Events with no subject, and events about an application, device or anything else that is not a person, are not filtered. Add Subject naming a person with no active session on the application is refused with 403. `all` is the behaviour before 1.2.0: every person in the realm. |
 | `ssf.streamStatusOnCreate` | `STS_SSF_STREAM_STATUS_ON_CREATE` | `enabled` | yes | The status a new stream starts in. `paused` makes the receiver enable its own stream. |
 | `ssf.minVerificationInterval` | `STS_SSF_MIN_VERIFICATION_INTERVAL` | `60` | yes | The `min_verification_interval` the service publishes. A stream that asks for less is refused. |
 | `ssf.verificationRateLimit` | `STS_SSF_VERIFICATION_RATE_LIMIT` | `false` | yes | Answers 429 to a verification request that comes sooner than the published interval. |
