@@ -2479,6 +2479,66 @@
     "en": "d51b3caaa6125e92",
     "text": "lu une seule fois au démarrage"
   },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "Provenance de la clé de chiffrement de clés précédente de la cellule"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "Pour effectuer la rotation de la clé de chiffrement de clés de cette cellule : faites pointer keys.cellKek* vers la NOUVELLE clé et ce paramètre vers l’ANCIENNE, puis démarrez. Chaque clé de chiffrement de données de cette cellule encore enveloppée sous l’ancienne clé est réenveloppée sous la nouvelle et réécrite ; une fois que chaque nœud de la cellule a démarré ainsi, remettez ce paramètre à none. Refusé sans clé de cellule."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "la clé est lue une seule fois, avant la restauration du stockage"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "Emplacement de la clé de chiffrement de clés précédente de la cellule"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "L’emplacement de la clé de cellule précédente, dans le fournisseur que nomme keys.previousCellKekProvider : un chemin, un ARN, une ressource ou un chemin de lecture Vault. Il n’a pas de valeur de repli."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "Champ contenant la clé de cellule précédente"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "Le membre d’un secret JSON qui contient la clé de cellule précédente. Vide, la valeur est prise en entier."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "Région AWS de la clé de cellule précédente"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "La région AWS où la clé de cellule précédente est lue. Vide, la résolution propre au SDK est utilisée."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "URL Key Vault de la clé de cellule précédente"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "L’URL Azure Key Vault ou le point de terminaison HashiCorp Vault où la clé de cellule précédente est lue. Il n’a pas de valeur de repli."
+  },
+  "keys.previousCellKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
   "global.mode|label": {
     "en": "5e23ec6a300dc60a",
     "text": "Mode"
@@ -3210,6 +3270,22 @@
   "oauth2.clientSecretsMax|description": {
     "en": "c20e5f5d3aa6062e",
     "text": "Combien de secrets clients une application peut détenir simultanément (chacun étant un enregistrement oauthClientSecret avec sa propre expiration). Ajouter ou faire entrer par rotation un secret au-delà est refusé (STS-REG-0208) ; supprimez-en d’abord un. Les secrets expirés comptent jusqu’à ce que la tâche quotidienne oauth2.client-secret-expiry les supprime."
+  },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "Effectuer automatiquement la rotation des secrets de ces clients"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "Les applications dont le secret client est renouvelé (ROTATION) par la tâche quotidienne oauth2.client-secret-expiry avant son expiration, séparées par des virgules. Chaque entrée est un `client_id`, ou `client_id=destination/secret-name` pour envoyer le nouveau secret vers cette destination de secrets (Directory → Secret destinations) avant qu’il ne soit validé ; un envoi qui échoue ne renouvelle rien et est retenté le lendemain. Sans destination, le client lit son nouveau secret depuis son point de terminaison de configuration client RFC 7592. L’ancien secret continue d’authentifier pendant oauth2.clientSecretOverlapS. sts-api-client n’est jamais renouvelé ici. Vide : aucun client n’est renouvelé, et chacun est signalé avant son expiration."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "Renouveler le secret d’un client listé ce nombre de jours à l’avance"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "Combien de temps avant l’expiration de son secret client principal une application listée dans oauth2.clientSecretAutoRotate est renouvelée. Un secret qui n’expire jamais n’est jamais renouvelé."
   },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
@@ -11723,6 +11799,14 @@
     "en": "81c3618a73d5aca7",
     "text": "lu une seule fois au démarrage, avant l’ouverture du pool"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "Relire le mot de passe de la base de données toutes les (secondes)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "À quelle fréquence chaque processus relit le mot de passe de la base de données depuis le magasin de secrets que nomme `persistence.databasePasswordProvider` (la tâche persistence.database-password-refresh). Un mot de passe modifié est utilisé pour chaque connexion établie après lui, sans redémarrage ; les connexions ouvertes continuent de fonctionner. Il est aussi relu immédiatement lorsque la base de données refuse une connexion. Changer le mot de passe dans la base relève du magasin de secrets ou de l’opérateur, et l’ancien doit y rester valide au moins aussi longtemps. 0 ne le lit qu’au démarrage et après un refus de connexion."
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "Vérifier le certificat de la base de données"
@@ -11966,6 +12050,22 @@
   "cluster.acceptMissingCapabilities|restartReason": {
     "en": "43d39d2a6820f37a",
     "text": "la vérification des capacités s’exécute une seule fois, lorsque le nœud rejoint le cluster"
+  },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "Renouveler les secrets partagés tous les (jours)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "À quelle fréquence la tâche cluster.secret-rotate remplace chaque secret partagé qui est une clé : la clé CSRF, la clé de nonce ACME, le secret du récepteur Shared Signals, la clé de page OpenID Federation, la clé du résultat de déconnexion et la clé DBSC. Une nouvelle valeur est d’abord publiée puis devient courante dix minutes plus tard, une fois que chaque processus l’a lue, et l’ancienne reste acceptée pendant `cluster.secretOverlapS`. Le secret de sujet pairwise et le secret de nom d’amorçage sont des identifiants et ne changent jamais, et une valeur définie par une variable d’environnement relève de l’opérateur. 0 désactive la rotation. Un secret stocké par une version antérieure est daté à la première exécution de la tâche et renouvelé pour la première fois ce nombre de jours plus tard, jamais lors de la mise à niveau."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "Accepter un secret partagé renouvelé pendant (secondes)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "Combien de temps un secret partagé remplacé par une rotation reste accepté à côté du nouveau, afin qu’un formulaire, un nonce, un pointeur de page ou un cookie lié créé juste avant la rotation fonctionne encore après. Rien de nouveau n’est créé avec lui. Un jour par défaut."
   },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
@@ -12470,6 +12570,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "Le membre d’une valeur JSON à extraire. Vide signifie `dkimKey`."
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "Le prochain sélecteur DKIM"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "Pour effectuer la rotation de la clé DKIM : le sélecteur de la NOUVELLE clé, dont l’enregistrement est publié à <selector>._domainkey.<domain> avant que la signature ne bascule vers elle. L’enregistrement à publier est consigné dans le journal lorsque le transport est construit. Vide : aucune rotation en cours."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "Champ de la prochaine clé privée DKIM"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "Le membre du secret de la clé DKIM (celui que nomment mail.dkimKeyProvider et mail.dkimKeyRef) qui contient la clé privée PEM du prochain sélecteur. Vide signifie `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "Signer avec le prochain sélecteur DKIM à partir de"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "Quand les messages commencent à être signés avec mail.dkimNextSelector, sous forme d’heure ISO 8601 (2026-12-01T00:00:00Z) — et seulement une fois que le DNS répond au nom du prochain sélecteur avec sa clé ; d’ici là, le sélecteur actuel signe, avec un avertissement. Gardez l’enregistrement de l’ancien sélecteur publié pendant une semaine après la bascule, puis faites du prochain sélecteur mail.dkimSelector et videz ces trois paramètres. Vide : ne jamais basculer."
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",

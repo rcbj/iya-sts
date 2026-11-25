@@ -2357,6 +2357,12 @@ const CODES = [
       'its own). The caller\'s own failure path decides what follows: a ' +
       'refused request, or a retried flush (#2220).',
     spec: '' },
+  { code: 'STS-STORE-0179',
+    summary: 'The database password could not be read again from its ' +
+      'secret store (persistence.database-password-refresh, or after the ' +
+      'database refused a login, #2220); new connections go on using the ' +
+      'password already held.',
+    spec: 'Log line and audit row' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2518,6 +2524,17 @@ const CODES = [
       'whose row the flush dropped because the block claim\'s fence was ' +
       'gone: the token in the discarded body is not delivered.',
     spec: 'RFC 9110 section 15.6.4' },
+  { code: 'STS-CLUSTER-0167',
+    summary: 'A shared secret could not be read again from the store by ' +
+      'the per-process refresh (cluster.secret-refresh, #2220); the ' +
+      'process keeps the value it holds and tries again at the next run.',
+    spec: 'Log line' },
+  { code: 'STS-CLUSTER-0168',
+    summary: 'A step of a shared secret\'s rotation (cluster.secret-rotate, ' +
+      '#2220) failed: the stored value would not open or the new one would ' +
+      'not seal. The secret keeps its value and the step is tried again at ' +
+      'the next run.',
+    spec: 'Log line' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -2961,6 +2978,11 @@ const CODES = [
       'cells.maxAnswerBytes: the connection was closed and the call ' +
       'failed without reading the answer (#2220).',
     spec: '' },
+  { code: 'STS-CELL-0213',
+    summary: 'keys.previousCellKekProvider is set and its location is ' +
+      'empty, or no cell key is configured for it to be the previous one ' +
+      'of (#2220); the service does not start.',
+    spec: 'Log line (fatal at start)' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
@@ -21382,6 +21404,12 @@ const CODES = [
       'holds mail.maxRows unsent messages; nothing already queued is ' +
       'dropped to make room (#2220).',
     spec: 'none — the sender is told the message was refused' },
+  { code: 'STS-MAIL-0245',
+    summary: 'A DKIM selector switch is held back (#2220): ' +
+      'mail.dkimNextSelector\'s key cannot sign, or mail.dkimSwitchAt has ' +
+      'passed and DNS does not answer the next selector with its key. ' +
+      'Messages are signed with the current selector until it does.',
+    spec: 'RFC 6376 section 3.6.1 (log only)' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -31800,6 +31828,13 @@ const CODES = [
       'on the access-type-schemas row.',
     spec: 'console: the refusal banner; /admin-api: HTTP 400 { ok: false, ' +
       'errors }' },
+  { code: 'STS-REG-0375',
+    summary: 'An application listed in oauth2.clientSecretAutoRotate was ' +
+      'not rotated by the daily job (#2220): its new secret could not be ' +
+      'pushed to its secret destination, or the rotation was refused. ' +
+      'Nothing changed; the old secret still authenticates and the job ' +
+      'tries again the next day.',
+    spec: 'Log line and audit row' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger was refused to a subject that is not a person, ' +
       'is not named, or did not authenticate.',

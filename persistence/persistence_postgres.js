@@ -3512,7 +3512,9 @@ function create(options) {
   // it into a socket option, which is what stops the two disagreeing again.
   // That place is `dialOptions()` since #98, so a process that is not the
   // service dials the same way.
-  const dialled = dial.connectionString;
+  // `let` since #2220: a password read again replaces it
+  // (`useConnectionString()`).
+  let dialled = dial.connectionString;
   // The connect timeout, the wait for a free connection and the idle close
   // (#2220): the caller's, or the numbers this driver always had.
   const connectMs = Number(options.connectTimeoutMs) > 0
@@ -11323,6 +11325,70 @@ function create(options) {
                          createdAt: Number(row.created_at),
                          offered: (inserted.rowCount || 0) > 0 } : null;
         });
+      });
+    },
+
+    // ---------------------------------------------------------------------
+    // A DATABASE PASSWORD READ AGAIN (#2220): the same database dialled with
+    // another connection string — `persistence.js` re-reads the password
+    // from its secret store and hands the finished string here. It is
+    // decided by `dialOptions()` exactly as the first was, and every pool of
+    // the WRITER takes it for the connections it makes from now on (the
+    // read pool too when it is the writer's). Open connections are left: a
+    // session outlives its role's password change. A string `dialOptions()`
+    // refuses changes nothing, and the refusal is the answer.
+    // ---------------------------------------------------------------------
+    useConnectionString: function (nextUrl) {
+      log.debug("Entering useConnectionString().");
+      const nextDial = dialOptions(nextUrl, verify, tlsCa, engine);
+      if (nextDial.refused) {
+        log.debug("Leaving useConnectionString(). Refused.");
+        return { ok: false, refused: nextDial.refused };
+      }
+      dialled = nextDial.connectionString;
+      pool.setConnectionString(dialled);
+      tallyPool.setConnectionString(dialled);
+      log.debug("Leaving useConnectionString().");
+      return { ok: true };
+    },
+
+    // A pooled connection to the writer that could not be made (#2220):
+    // `persistence.js` reads the password again when the database refused
+    // it.
+    onConnectFailure: function (fn) {
+      log.debug("Entering onConnectFailure().");
+      pool.onCreateFailure(fn);
+      tallyPool.onCreateFailure(fn);
+      log.debug("Leaving onConnectFailure().");
+    },
+
+    // THE ROW AS IT IS, for the shared secrets' refresh (#2220): null where
+    // nothing is stored under the name.
+    readSharedSecret: function (name) {
+      log.debug("Entering readSharedSecret(). name=" + name);
+      log.debug("Leaving readSharedSecret().");
+      return dialect.run(pool, 'readSharedSecret',
+        kx('sts_cluster_secrets').select('material')
+          .where({ name: String(name) })
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || null;
+        return row ? { material: row.material } : null;
+      });
+    },
+
+    // A ROTATION'S WRITE (#2220): the row is replaced only while it still
+    // holds what the rotation read, so two runs that raced cannot both
+    // rotate one secret — the second changes nothing and says so.
+    replaceSharedSecret: function (name, expected, material) {
+      log.debug("Entering replaceSharedSecret(). name=" + name);
+      log.debug("Leaving replaceSharedSecret().");
+      return dialect.run(pool, 'replaceSharedSecret',
+        kx('sts_cluster_secrets')
+          .update({ material: String(material) })
+          .where({ name: String(name), material: String(expected) })
+      ).then(function (r) {
+        return { replaced: (Number(r.rowCount) ||
+                            Number(r.affectedRows) || 0) > 0 };
       });
     },
 

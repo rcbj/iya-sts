@@ -57,7 +57,12 @@ class BootstrapName {
       log.debug("Leaving BootstrapName.current(). As configured.");
       return named;
     }
-    const digest = String(stsCrypto.hmac('sha256', clusterSecrets.get('csrf'),
+    // THE `bootstrap-name` SECRET, NOT THE CSRF KEY (#2220): the CSRF key
+    // rotates now, and a name derived from it would change with it. That
+    // secret is an identifier, first offered as the CSRF value the store
+    // already held, so the name an upgraded deployment knows is unchanged.
+    const digest = String(stsCrypto.hmac('sha256',
+                                         clusterSecrets.get('bootstrap-name'),
                                          DOMAIN, 'hex'));
     log.debug("Leaving BootstrapName.current(). Generated.");
     return 'admin-' + digest.slice(0, 16);

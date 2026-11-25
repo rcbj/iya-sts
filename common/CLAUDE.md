@@ -7948,15 +7948,21 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   `secrets.PREVIOUS_KEK`, restart-only) is read at start beside the new key; a
   service DEK that unwraps only under it is re-wrapped and its row written
   (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
-  wrapped under the old refuses (`STS-KEYS-0091`). **Cell keys are not covered**
-  — a rotated cell key has no previous-key descriptor yet.
+  wrapped under the old refuses (`STS-KEYS-0091`). **A cell key is rotated the
+  same way since #2220**: `keys.previousCellKek*` (`secrets.PREVIOUS_CELL_KEK`,
+  no fallback, refused without a cell key, `STS-CELL-0213`) is read beside the
+  new cell key, and `unwrapWithRotation()` tries each scope's OWN previous key
+  — the service key's for `service`, the cell key's for this cell's scope.
 * **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's
   tag) was HKDF of the KEK, so a rotated KEK would have changed every digest.
   Where DEKs are stored it is one random key of its own, class `keyed-digest`
   in the service scope's default-realm row, FIRST WRITER WINS in the merge
   (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
   rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
-  is kept — nothing a digest names outlives the process there.
+  is kept — nothing a digest names outlives the process there. **Not rotating
+  it is a decision (#2220), not a gap**: it is a blind-index key, every digest
+  it makes is stored and looked up again, and a new key would orphan all of
+  them; the KEK it is wrapped under rotates instead (`keystore.js` argues it).
 * **THE HMAC KEY EACH LABEL DERIVES IS KEPT (#760, 2026-10-20)**, beside the
   input it came from (the digest key, or the KEK's bytes), which is compared
   on every call: HKDF ran per digest, and the minted store asks one for every
