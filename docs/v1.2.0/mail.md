@@ -14,8 +14,9 @@ This service sends mail for four things:
   mailed to the person instead of being shown to the administrator.
 - **Security notices.** A person is told when their account is disabled, when
   an administrator ends their sessions, when their password changes, when a
-  credential is marked compromised, when recovery is started, and when the
-  address on their entry changes. The last notice goes to the old address.
+  credential is marked compromised, when recovery is started, when a
+  credential of theirs is added or removed, and when the address on their
+  entry changes. The last notice goes to the old address.
 
 It **receives** no mail. Every message goes to **the address on a directory
 entry**. No request, form or API parameter takes an address.
@@ -247,7 +248,7 @@ when it is saved. It is never sent on its own.
 
 | Category | Messages | May be declined |
 |---|---|---|
-| Security notices | disabled, sessions ended, password changed, compromised, recovery started, address changed, an unusual sign-in, refused sign-in attempts, a sign-in code or link (#64), a refused reset | **no** |
+| Security notices | disabled, sessions ended, password changed, a credential added or removed, compromised, recovery started, address changed, an unusual sign-in, refused sign-in attempts, a sign-in code or link (#64), a refused reset | **no** |
 | Links somebody asked for | reset, activation, verification, test | **no** |
 | Notifications | a finished report, an access request waiting on the portal, a started post-login activity's reminder | yes, on `/portal/email` |
 
@@ -327,6 +328,36 @@ next sign-in.
 *the service* acted, for example when risk scoring disabled an account or
 marked a credential compromised, every member of the realm's Admin Write roster
 who has an address is told as well (`mail.notifyAdministrators`).
+
+**A credential added or removed** (#2163) is a security notice too. A person
+is told when any of these of theirs is added or removed:
+
+- a passkey or security key
+- an authenticator app
+- an app password
+- a one-time code token or a YubiKey OTP
+- a set of recovery codes. Generating or removing a set is told, and
+  spending one code is not.
+- a certificate, including a smart card's
+- a certificate sign-in binding (`stsCertificateBinding`, `stsPivCardUuid`)
+- an S/MIME certificate or an OpenPGP key
+
+The message names the kind and its label, never anything secret. It says
+when the change was made and whether the person did it (on the portal or at
+sign-in) or an administrator did. It also says what to do if it was not them.
+It is sent whichever way the change was made: the portal, the sign-in screen,
+`/admin-api` and the console, SCIM, or an LDAP write.
+
+**One act is one message.** When an administrator removes every second factor
+of a person, or a hardware token is reported lost, the person is sent one
+message that lists every change. The same change reported twice in
+`mail.dedupWindowS` is sent once. A change the service makes on its own is not
+mailed. Examples are a certificate superseded by its renewal, or a passkey a
+policy no longer accepts. A password change keeps its own message.
+
+`mail.credentialChangeNotices` (on by default, per realm) turns these off.
+Nothing is sent while `mail.securityNotices` is off or no transport is
+configured.
 
 **An unusual sign-in, and a run of refused passwords** (#2162), are security
 notices too, `mail.signInAlerts`. A sign-in that succeeds looking unusual is

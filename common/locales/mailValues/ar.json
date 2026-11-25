@@ -17,5 +17,8 @@
   "signIn.deviceUnknown": "متصفح أو جهاز لم يعرّف بنفسه",
   "signIn.placeUnknown": "غير معروف",
   "rights.access": "الوصول",
-  "address.none": "(لا شيء)"
+  "address.none": "(لا شيء)",
+  "credentialChange.item": "{kind, select, passkey {مفتاح مرور أو مفتاح أمان} totp {تطبيق مصادقة} app-password {كلمة مرور تطبيق} hotp {رمز مميز لرموز تُستخدم مرة واحدة} yubiotp {YubiKey OTP} recovery-codes {رموز الاسترداد} certificate {شهادة} certificate-binding {ربط شهادة لتسجيل الدخول} smime {شهادة S/MIME} openpgp {مفتاح OpenPGP} other {بيانات اعتماد}}: {change, select, added {أُضيف} generated {أُنشئت} removed {أُزيل} other {تغيّر}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {مفتاح مرور أو مفتاح أمان} totp {تطبيق مصادقة} app-password {كلمة مرور تطبيق} hotp {رمز مميز لرموز تُستخدم مرة واحدة} yubiotp {YubiKey OTP} recovery-codes {رموز الاسترداد} certificate {شهادة} certificate-binding {ربط شهادة لتسجيل الدخول} smime {شهادة S/MIME} openpgp {مفتاح OpenPGP} other {بيانات اعتماد}} «{label}»: {change, select, added {أُضيف} generated {أُنشئت} removed {أُزيل} other {تغيّر}}",
+  "credentialChange.by": "{entity, select, user {بواسطتك، في البوابة أو عند تسجيل الدخول} other {بواسطة مسؤول}}"
 }

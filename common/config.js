@@ -1525,9 +1525,43 @@ const SETTINGS = [
                  'administrator: changing a person\'s password, second ' +
                  'factor, passkey, recovery codes, email address or app ' +
                  'passwords through the console or /admin-api, which ' +
-                 'answers RFC 9470\'s insufficient_user_authentication. 0 ' +
-                 'means it is not asked, which is the development default. ' +
-                 'Product mode defaults to 15.' },
+                 'answers RFC 9470\'s insufficient_user_authentication. The ' +
+                 'same applies to an administrator granting or removing a ' +
+                 'role, creating, changing or removing a trust realm, ' +
+                 'acting on the PKI, the signing keys, the key-encryption ' +
+                 'key or the secret push destinations, and changing any ' +
+                 'setting (#2161). 0 means it is not asked, which is the ' +
+                 'development default. Product mode defaults to 15.' },
+
+  // #2167 (ASVS 5.0.0 2.4.2): a signed-in person's own budget of writes,
+  // keyed by the token's subject. 300 in ten minutes is one write every two
+  // seconds, sustained for ten minutes; the busiest real visit to the portal
+  // — a passkey enrolled (two acts), a device approved (two), a few keys
+  // renamed, consents withdrawn, a photo set — is a few dozen. Off in
+  // development, as the per-address ceiling is.
+  { key: 'account.writesPerSubject', group: 'Web security',
+    label: 'Account writes per person per window',
+    env: 'STS_ACCOUNT_WRITES_PER_SUBJECT', type: 'int', dflt: strongerInProduct(300, 0), derived: true,
+    min: 0, max: 1000000,
+    runtime: true,
+    description: 'How many changes one signed-in person may make to their ' +
+                 'own account through /account-api (the portal) in an ' +
+                 'account.writeWindowS window: profile edits, credentials ' +
+                 'enrolled or removed, consents withdrawn, device changes. ' +
+                 'Counted by the token\'s subject, not by address, so ' +
+                 'people behind one address do not share it. Past it a ' +
+                 'write is refused with 429 and Retry-After until the ' +
+                 'window passes; reading the account goes on. 0 means no ' +
+                 'limit, which is the development default. Product mode ' +
+                 'defaults to 300.' },
+
+  { key: 'account.writeWindowS', group: 'Web security',
+    label: 'Account write window (seconds)',
+    env: 'STS_ACCOUNT_WRITE_WINDOW_S', type: 'int', dflt: 600,
+    min: 1, max: 86400,
+    runtime: true,
+    description: 'The window account.writesPerSubject is counted in, in ' +
+                 'seconds. A fixed window, as every rate limit here is.' },
 
   { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
     label: 'Allow a default database password in product mode',
@@ -1618,6 +1652,42 @@ const SETTINGS = [
                  'host name too. On by default in product mode. Turn it off ' +
                  'if a subdomain of this host name must still answer over ' +
                  'plain HTTP.' },
+
+  // THE EXACT BUILD ON WHAT AN OUTSIDER SEES (#2142, ASVS 5.0.0 13.4.6):
+  // the version, build number, build instant and commit on the page footer,
+  // the shells, the sign-in and account APIs' answers and documents, and the
+  // outbound User-Agent. `auto` follows the mode (mode.publishesBuildDetail());
+  // the console and /admin-api carry the build whatever this says.
+  { key: 'security.publishBuildInfo', group: 'Web security',
+    label: 'Show the exact build to people who are not administrators',
+    env: 'STS_SECURITY_PUBLISH_BUILD_INFO', type: 'enum',
+    dflt: 'auto', runtime: true,
+    enumValues: ['auto', 'on', 'off'],
+    description: 'Whether the exact version, build number, build time and ' +
+                 'commit appear where someone other than an administrator ' +
+                 'can read them: the footer of every page, the sign-in, ' +
+                 'portal and reports APIs and their OpenAPI documents, and ' +
+                 'the User-Agent of the requests this service makes to ' +
+                 'partners. auto, the default, shows them in development ' +
+                 'mode and hides them in product mode, where the documents ' +
+                 'name the API\'s own version instead and the User-Agent is ' +
+                 'the product name alone; on and off force it in either ' +
+                 'mode. The console and the management API always show the ' +
+                 'build.' },
+  // #2165 (ASVS 5.0.0 3.7.4). Off by default in both modes: the preload list
+  // is compiled into browsers and binds the whole registrable domain, so it
+  // is an operator's decision, never a default. `common/cookie_wire.ts` sends
+  // it only with includeSubDomains in force, and says why where it does not.
+  { key: 'security.hstsPreload', group: 'Web security',
+    label: 'Ask to be on the HSTS preload list',
+    env: 'STS_SECURITY_HSTS_PRELOAD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Adds preload to Strict-Transport-Security, which only ' +
+                 'product mode sends, so the host name can be submitted to ' +
+                 'the browsers\' preload list at hstspreload.org. Preloading ' +
+                 'commits the whole registrable domain and every subdomain ' +
+                 'to HTTPS in every browser, and leaving the list takes ' +
+                 'months. Sent only while Apply HSTS to subdomains is on.' },
 
   { key: 'federation.allowAssertionWithoutAudience', group: 'Federation',
     label: 'Accept an assertion that names no audience',
@@ -6979,6 +7049,24 @@ const SETTINGS = [
                  'to the same rule: the binding it carries is checked even ' +
                  'though the token itself cannot be verified.' },
 
+  { key: 'oauth2.accessTokenRequireSenderConstraint',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Issue only sender-constrained access tokens',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_REQUIRE_SENDER_CONSTRAINT', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT, and meant to stay off unless every ' +
+                 'client of the realm can bind its tokens (ASVS 5.0.0 ' +
+                 '10.3.5 and 10.4.14, #2183). On, the token endpoint issues ' +
+                 'an access token only to a request that binds it: a DPoP ' +
+                 'proof (RFC 9449) or the client certificate of the ' +
+                 'connection (RFC 8705), either one, for every grant. The ' +
+                 'authorization endpoint refuses a response_type that would ' +
+                 'mint a token in the browser (implicit and hybrid `token`), ' +
+                 'which could never be bound. A client that sends neither ' +
+                 'is refused with invalid_dpop_proof naming this setting. ' +
+                 'The two rows above refuse an unbound token at the ' +
+                 'resources; this one refuses to mint it.' },
+
   { key: 'oauth2.openRegistration', group: 'OAuth 2.0 / OIDC',
     label: 'Open dynamic client registration (product mode)',
     env: 'STS_OAUTH2_OPEN_REGISTRATION', type: 'bool', dflt: false,
@@ -7108,7 +7196,7 @@ const SETTINGS = [
 
   { key: 'oauth2.clientSecretLifetimeDays', group: 'OAuth 2.0 / OIDC',
     label: 'Client secret lifetime (days)',
-    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 0,
+    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 365,
     min: 0, max: 730, runtime: true,
     description: 'The lifetime, in days, of every client secret this ' +
                  'service mints or is given, and so the ' +
@@ -7118,9 +7206,9 @@ const SETTINGS = [
                  'mints or is given (a regeneration, a rotation, an added ' +
                  'secret, a value typed on the console), unless the add ' +
                  'form names another, or the create form does for an ' +
-                 'application\'s first secret. ZERO, the default, is that ' +
-                 'section\'s ' +
-                 'own "never". It is stamped on each secret when it is ' +
+                 'application\'s first secret. The default is 365 days ' +
+                 '(ASVS 5.0.0 13.3.4); ZERO is that section\'s own ' +
+                 '"never". It is stamped on each secret when it is ' +
                  'made and is not moved by a later change.' },
 
   { key: 'oauth2.registeredClientIdPrefix', group: 'OAuth 2.0 / OIDC',
@@ -10288,6 +10376,22 @@ const SETTINGS = [
                  '(require_pushed_authorization_requests at registration), ' +
                  'and a named authorization server\'s profile can publish ' +
                  'it.' },
+
+  { key: 'oauth2.authorizationDetailsRequirePar',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Accept authorization_details only in a pushed request',
+    env: 'STS_OAUTH2_AUTHORIZATION_DETAILS_REQUIRE_PAR', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT (ASVS 5.0.0 10.4.15, #2185). On, the ' +
+                 'authorization endpoint refuses, with invalid_request and a ' +
+                 '400 on this server, a request that carries RFC 9396 ' +
+                 'authorization_details and did not come through a ' +
+                 'request_uri issued at /oauth2/par, so a rich ' +
+                 'authorization request never travels in the browser\'s ' +
+                 'address. A signed request object passed by value is ' +
+                 'refused too: it travels in the browser as well. A request ' +
+                 'with no authorization_details is not affected; the row ' +
+                 'above makes every request pushed.' },
 
   { key: 'oauth2.parRequestUriLifetimeS', group: 'OAuth 2.0 / OIDC',
     label: 'Pushed request_uri lifetime (seconds)',
@@ -15366,6 +15470,20 @@ const SETTINGS = [
                  'asked. ' +
                  'WARNING: off, a PKINIT request is held only to its own ' +
                  'timestamp and the replay check.' },
+
+  { key: 'krb5.pkinitRequirePaChecksum2', group: 'Kerberos',
+    label: 'PKINIT requires paChecksum2',
+    env: 'KRB5_PKINIT_REQUIRE_PA_CHECKSUM2', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a PKINIT request must carry Microsoft\'s ' +
+                 'paChecksum2 (MS-PKCA section 2.2.3) — the request body\'s ' +
+                 'SHA-256, SHA-384 or SHA-512 beside the SHA-1 paChecksum ' +
+                 'RFC 4556 requires. A paChecksum2 that is sent is checked ' +
+                 'either way, and one over SHA-1 is refused in product. Off ' +
+                 'by default, because MIT Kerberos does not send one; ' +
+                 'Windows 11 and Windows Server 2022 23H2 and later do. On, ' +
+                 'a client that does not — anonymous PKINIT included — is ' +
+                 'refused KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED.' },
 
   { key: 'krb5.pkinitLegacyKdf', group: 'Kerberos',
     label: 'PKINIT accepts RFC 4556\'s own key derivation',
@@ -22238,6 +22356,21 @@ const SETTINGS = [
                  'credential is marked compromised or recovery is started. ' +
                  'A person cannot opt out of these; an operator can turn ' +
                  'them off here.' },
+  // #2163 (ASVS 5.0.0 6.3.7): `common/mail_uses.ts`'s credentialChanged().
+  { key: 'mail.credentialChangeNotices', group: 'Mail',
+    label: 'Credential change notices',
+    env: 'STS_MAIL_CREDENTIAL_CHANGE_NOTICES', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Tell a person when a passkey or security key, an ' +
+                 'authenticator app, an app password, a one-time code or ' +
+                 'YubiKey OTP token, a set of recovery codes, a ' +
+                 'certificate, a certificate sign-in binding, an S/MIME ' +
+                 'certificate or an OpenPGP key of theirs is added or ' +
+                 'removed, by whom and when. Several changes made by one ' +
+                 'act are one message. Off sends none of these; the ' +
+                 'password-changed notice is not affected. Nothing is sent ' +
+                 'while security notices are off or no transport is ' +
+                 'configured.' },
   { key: 'mail.notifyAdministrators', group: 'Mail',
     label: 'Tell administrators of system acts',
     env: 'STS_MAIL_NOTIFY_ADMINISTRATORS', type: 'bool', dflt: true,
@@ -22347,6 +22480,30 @@ const SETTINGS = [
     env: 'REPORT_MAX_CONCURRENT_PER_SUBJECT', type: 'int', dflt: 1,
     min: 1, max: 8, runtime: true,
     description: 'How many report jobs one person may have running at once.' },
+  // #2167 (ASVS 5.0.0 2.4.2): the expensive acts, keyed by the token's
+  // subject. 240 in ten minutes is one every two and a half seconds,
+  // sustained; a person refining a query previews it every few seconds at
+  // the very most, and a synchronous run may take up to report.syncMaxMs.
+  // Off in development, as the per-address ceiling is.
+  { key: 'report.actsPerSubject', group: 'Reporting',
+    label: 'Report runs and downloads per person per window',
+    env: 'REPORT_ACTS_PER_SUBJECT', type: 'int', dflt: strongerInProduct(240, 0), derived: true,
+    min: 0, max: 1000000, runtime: true,
+    description: 'How many expensive acts one caller of the Reports API may ' +
+                 'make in a report.actWindowS window: an ad hoc query or ' +
+                 'preview, a job queued, a saved definition run, a result ' +
+                 'downloaded. Counted by the token\'s subject, not by ' +
+                 'address. Past it such an act is refused with 429 and ' +
+                 'Retry-After until the window passes; the lists and ' +
+                 'definitions can still be read. 0 means no limit, which ' +
+                 'is the development default. Product mode defaults to ' +
+                 '240.' },
+  { key: 'report.actWindowS', group: 'Reporting',
+    label: 'Report act window (seconds)',
+    env: 'REPORT_ACT_WINDOW_S', type: 'int', dflt: 600,
+    min: 1, max: 86400, runtime: true,
+    description: 'The window report.actsPerSubject is counted in, in ' +
+                 'seconds. A fixed window, as every rate limit here is.' },
   { key: 'report.artifactRetentionS', group: 'Reporting',
     label: 'How long a report result is kept (seconds)',
     env: 'REPORT_ARTIFACT_RETENTION_S', type: 'int', dflt: 86400,
@@ -24279,8 +24436,10 @@ function persistableOverrides() {
 // ---------------------------------------------------------------------------
 /**
  * Puts stored process-wide overrides back, at startup or when another
- * process changed the configuration: each validated as any write is, the
- * invalid reported and skipped, and those no longer stored cleared.
+ * process changed the configuration: each checked against its row as
+ * `checkStoredOverride()` checks it (no rule between settings, which the
+ * door that took the write asked), the invalid reported and skipped, and
+ * those no longer stored cleared.
  *
  * @param saved - the stored overrides by key
  * @returns how many were applied
@@ -24288,8 +24447,27 @@ function persistableOverrides() {
 function applyPersistedOverrides(saved) {
   log.debug("Entering applyPersistedOverrides().");
   const applied = [];
+  // ------------------------------------------------------------------------
+  // WHAT EACH VALUE IS, NOT WHAT IS BESIDE IT (GitHub Actions run
+  // 45454368120): checkStoredOverride(), the realm path's check since run
+  // #300, and for its reason. This ran checkOverride(), the rules between
+  // settings included, ONE KEY AT A TIME in the order the store answered,
+  // against the companions this process held BEFORE the set was applied.
+  // `listeners.custom` defining a listener and `listeners.applications`
+  // putting `pki` on it, written in that order by one door that judged
+  // each, arrived in one pull on MariaDB (its one-second poll; PostgreSQL's
+  // NOTIFY usually pulled them apart): the mapping was judged against the
+  // old listener list, refused STS-CORE-0008 ("which is not defined") in
+  // three request workers, and never asked again, so those workers refused
+  // every Web Key Directory request on the listener (STS-TLS-0047) and
+  // `sts_openpgp_card_mail`'s gpg found no key. Taking them down in the
+  // other order refused `listeners.custom` the same way. The door that
+  // took each write judged it beside its companions; asked again here the
+  // rule reads whatever this process held at the pull, which is no state
+  // the service was ever in.
+  // ------------------------------------------------------------------------
   Object.keys(saved || {}).forEach(function (key) {
-    const problem = checkOverride(key, saved[key]);
+    const problem = checkStoredOverride(key, saved[key]);
     if (problem) {
       log.warn(errorCodes.tag('STS-CORE-0008') +
                'config: the saved override for "' + key + '" was not ' +

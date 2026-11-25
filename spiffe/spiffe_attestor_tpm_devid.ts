@@ -48,6 +48,7 @@ import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import stsCrypto = require('../common/crypto');
 import tpm = require('./spiffe_tpm');
+import truststores = require('../common/truststores');
 
 type NodeAttestationContext =
   import('../types/spiffe-attestation').NodeAttestationContext;
@@ -204,10 +205,11 @@ class TpmDevidAttestor {
     log.debug("Entering TpmDevidAttestor.attest().");
     const call = context.call;
     const status = rpc.status;
-    const devidRoots = pki.certificateBundle(String(
-      config.value('spiffe.tpmDevidCaBundle') || '')).certificates;
-    const ekRoots = pki.certificateBundle(String(
-      config.value('spiffe.tpmEndorsementCaBundle') || '')).certificates;
+    const devidRoots = pki.certificateBundle(truststores
+      .configuredPems('spiffe-attestation-tpm-devid').join('\n'))
+      .certificates;
+    const ekRoots = pki.certificateBundle(truststores
+      .configuredPems('spiffe-attestation-tpm-ek').join('\n')).certificates;
     if (!CertificateTrust.anchorsAvailable('spiffe-attestation', devidRoots) ||
         !CertificateTrust.anchorsAvailable('spiffe-attestation', ekRoots)) {
       log.debug("Leaving TpmDevidAttestor.attest(). Not configured.");

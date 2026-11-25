@@ -30,6 +30,11 @@
       "text": "Le mot de passe du compte {{username}} a été modifié le {{when}} ({{how}}).\n\nSi ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.\n",
       "html": "<p>Le mot de passe du compte <strong>{{username}}</strong> a été modifié le {{when}} ({{how}}).</p><p>Si ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.</p>"
     },
+    "credential-changed": {
+      "subject": "Les identifiants de votre compte {{service}} ont changé",
+      "text": "Les identifiants du compte {{username}} ont été modifiés le {{when}}, {{by}} : {{what}}.\n\nSi ce n’était pas vous et que vous ne l’avez pas demandé, connectez-vous maintenant, vérifiez vos paramètres de sécurité et fermez vos autres sessions, ou contactez la personne qui gère votre compte.\n",
+      "html": "<p>Les identifiants du compte <strong>{{username}}</strong> ont été modifiés le {{when}}, {{by}} : {{what}}.</p><p>Si ce n’était pas vous et que vous ne l’avez pas demandé, connectez-vous maintenant, vérifiez vos paramètres de sécurité et fermez vos autres sessions, ou contactez la personne qui gère votre compte.</p>"
+    },
     "account-disabled": {
       "subject": "Votre compte {{service}} a été désactivé",
       "text": "Le compte {{username}} a été désactivé le {{when}}. {{why}}\n\nPersonne ne peut s’y connecter tant qu’il n’est pas réactivé, et toutes ses sessions ont été fermées.\n",

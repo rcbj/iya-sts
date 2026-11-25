@@ -121,7 +121,11 @@ What changes is mostly what you must fill in.
   partner that cannot.
 * **One browser.** Product binds each sign-in to the browser that started it,
   with a cookie set when the person is sent to the partner. An answer that
-  arrives in another browser is refused (`STS-FED-0237`).
+  arrives in another browser is refused (`STS-FED-0237`). The cookie is
+  cleared by the answer that ends the sign-in, whether it signs the person in
+  or is refused, and a browser holds at most eight of them: a ninth sign-in
+  started before the others finish clears the oldest, whose answer is then
+  refused as from another browser.
 
 ---
 

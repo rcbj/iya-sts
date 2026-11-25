@@ -211,7 +211,7 @@ documents it.
 | WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) | [WS-Federation](configure-ws-federation.md) |
 | PKI | `/admin/pki` | [PKI](pki.md), [OpenSSH user certificates](pki.md#openssh-user-certificates) | |
 | SSH user certificates, OpenPGP | `/admin/ssh-user-ca`, `/admin/openpgp-settings` | [OpenSSH user certificates](pki.md#openssh-user-certificates), [OpenPGP keys and encrypted mail](openpgp.md) | |
-| PKI trust | `/admin/pki/trust` | [Signer truststore](signer-truststore.md), [use cases](pki-use-cases.md), [paranoid PKI mode](pki.md#paranoid-pki-mode) | |
+| PKI trust | `/admin/pki/trust` | [Truststores](truststores.md), [signer truststore](signer-truststore.md), [use cases](pki-use-cases.md), [paranoid PKI mode](pki.md#paranoid-pki-mode) | |
 | Cryptography | `/admin/crypto-metadata` | [Signature algorithms](crypto.md) | |
 | Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) | [ACME, EST, SCEP](configure-enrollment.md), [SPIFFE](configure-spiffe.md) |
 | TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) | [TLS and mutual TLS](configure-tls.md) |

@@ -272,8 +272,24 @@
     "text": "Ancienneté maximale de la connexion pour une modification sensible (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "4bfb2112a9f37a5d",
-    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
+    "en": "99c8adf052996759",
+    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. Il en va de même lorsqu'un administrateur accorde ou retire un rôle, crée, modifie ou supprime un domaine de confiance, agit sur la PKI, les clés de signature, la clé de chiffrement des clés ou les destinations de transmission des secrets, ou modifie un paramètre quel qu'il soit (#2161). 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
+  },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Modifications du compte par personne et par fenêtre"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Combien de modifications une personne connectée peut apporter à son propre compte via /account-api (le portail) dans une fenêtre de account.writeWindowS : modifications du profil, identifiants enregistrés ou supprimés, consentements retirés, modifications d'appareils. Compté par le sujet du jeton, non par adresse, de sorte que les personnes derrière une même adresse ne le partagent pas. Au-delà, une modification est refusée avec 429 et Retry-After jusqu'à la fin de la fenêtre ; la lecture du compte continue. 0 signifie aucune limite, la valeur par défaut en développement. Le mode produit vaut 300 par défaut."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Fenêtre des modifications du compte (secondes)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "La fenêtre dans laquelle account.writesPerSubject est compté, en secondes. Une fenêtre fixe, comme toute limite de débit ici."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -346,6 +362,22 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
+  },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Montrer la build exacte aux personnes qui ne sont pas administrateurs"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Indique si la version exacte, le numéro de build, la date de build et le commit apparaissent là où une personne autre qu’un administrateur peut les lire : le pied de page de chaque page, les API de connexion, du portail et des rapports et leurs documents OpenAPI, et le User-Agent des requêtes que ce service envoie aux partenaires. auto, la valeur par défaut, les montre en mode développement et les masque en mode produit, où les documents donnent à la place la version propre de l’API et le User-Agent n’est que le nom du produit ; on et off l’imposent dans les deux modes. La console et l’API de gestion montrent toujours la build."
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Demander l'inscription sur la liste de préchargement HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Ajoute preload à Strict-Transport-Security, que seul le mode produit envoie, afin que le nom d'hôte puisse être soumis à la liste de préchargement des navigateurs sur hstspreload.org. Le préchargement engage tout le domaine enregistrable et chaque sous-domaine à utiliser HTTPS dans tous les navigateurs, et quitter la liste prend des mois. Envoyé seulement tant que Appliquer HSTS aux sous-domaines est activé."
   },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
@@ -3027,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Le volet RFC 8705 de la ligne ci-dessus, sur les mêmes surfaces : un jeton d’accès présenté doit porter `cnf[\"x5t#S256\"]` et la connexion doit porter ce certificat. **Il exige que le port principal soit lié en HTTPS** (global.https), et l’écouteur du débogueur a commencé à DEMANDER un certificat client le 2026-09-15 pour qu’un jeton lié puisse seulement y être présenté — il est demandé, jamais exigé. Un jeton que ce service n’a pas émis est soumis à la même règle : la liaison qu’il porte est vérifiée même si le jeton lui-même ne peut pas l’être."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Émettre uniquement des jetons d’accès contraints à l’expéditeur"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "DÉSACTIVÉ PAR DÉFAUT, et à laisser désactivé sauf si chaque client du domaine peut lier ses jetons (ASVS 5.0.0 10.3.5 et 10.4.14, #2183). Activé, le point de terminaison de jeton n’émet un jeton d’accès qu’à une requête qui le lie : une preuve DPoP (RFC 9449) ou le certificat client de la connexion (RFC 8705), l’un ou l’autre, pour chaque type d’autorisation. Le point de terminaison d’autorisation refuse un response_type qui émettrait un jeton dans le navigateur (`token` implicite et hybride), qui ne pourrait jamais être lié. Un client qui n’envoie ni l’un ni l’autre est refusé avec invalid_dpop_proof nommant ce réglage. Les deux lignes ci-dessus refusent un jeton non lié aux ressources ; celle-ci refuse de l’émettre."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Enregistrement dynamique de clients ouvert (mode produit)"
@@ -3096,8 +3136,8 @@
     "text": "Durée de vie des secrets clients (jours)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "La durée de vie, en jours, de chaque secret client que ce service crée ou reçoit, et donc le `client_secret_expires_at` que publie RFC 7591 section 3.2.1 pour un client enregistré via POST /oauth2/register — la valeur par défaut pour chaque secret créé ou reçu (une régénération, une rotation, un secret ajouté, une valeur saisie dans la console), sauf si le formulaire d’ajout en indique une autre, ou le formulaire de création pour le premier secret d’une application. ZÉRO, la valeur par défaut, est le « never » de cette section. Elle est apposée sur chaque secret à sa création et n’est pas modifiée par un changement ultérieur."
+    "en": "0282a861551627b6",
+    "text": "La durée de vie, en jours, de chaque secret client que ce service crée ou reçoit, et donc le `client_secret_expires_at` que publie RFC 7591 section 3.2.1 pour un client enregistré via POST /oauth2/register — la valeur par défaut pour chaque secret créé ou reçu (une régénération, une rotation, un secret ajouté, une valeur saisie dans la console), sauf si le formulaire d’ajout en indique une autre, ou le formulaire de création pour le premier secret d’une application. La valeur par défaut est de 365 jours (ASVS 5.0.0 13.3.4) ; ZÉRO est le « never » de cette section. Elle est apposée sur chaque secret à sa création et n’est pas modifiée par un changement ultérieur."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -5078,6 +5118,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "La politique globale de la RFC 9126 section 4 : le point de terminaison d’autorisation refuse, avec invalid_request et un 400 sur ce serveur, toute requête qui ne porte pas une request_uri émise par ce service sur /oauth2/par. Publié en tant que require_pushed_authorization_requests. DÉSACTIVÉ par défaut, car chaque client envoyant une requête d’autorisation simple serait refusé. Un client peut exiger la même chose de lui-même avec oauthRequirePushedAuthorizationRequests sur son entrée (require_pushed_authorization_requests à l’enregistrement), et le profil d’un serveur d’autorisation nommé peut le publier."
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "N’accepter authorization_details que dans une requête poussée"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "DÉSACTIVÉ PAR DÉFAUT (ASVS 5.0.0 10.4.15, #2185). Activé, le point de terminaison d’autorisation refuse, avec invalid_request et une 400 sur ce serveur, une requête qui porte des authorization_details RFC 9396 et n’est pas passée par un request_uri émis à /oauth2/par, afin qu’une requête d’autorisation enrichie ne transite jamais par l’adresse du navigateur. Un objet de requête signé passé par valeur est refusé aussi : il transite lui aussi par le navigateur. Une requête sans authorization_details n’est pas concernée ; la ligne ci-dessus rend toute requête poussée."
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
@@ -7858,6 +7906,14 @@
   "krb5.pkinitRequireFreshness|description": {
     "en": "77b517dda5eb4231",
     "text": "Indique si une requête PKINIT doit porter un jeton de fraîcheur RFC 8070 — un jeton que ce KDC a émis dans KDC_ERR_PREAUTH_REQUIRED dans la limite du décalage d’horloge. C’est ce qui empêche qu’un AuthPack signé à l’avance sur une carte à puce empruntée soit utilisé plus tard. MIT Kerberos 1.17 et versions ultérieures, ainsi que Heimdal, en envoient un lorsqu’on le leur demande. AVERTISSEMENT : désactivé, une requête PKINIT n’est soumise qu’à son propre horodatage et au contrôle anti-rejeu."
+  },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT exige paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Indique si une requête PKINIT doit porter le paChecksum2 de Microsoft (MS-PKCA section 2.2.3) — le SHA-256, SHA-384 ou SHA-512 du corps de la requête, à côté du paChecksum SHA-1 qu'exige la RFC 4556. Un paChecksum2 envoyé est vérifié dans tous les cas, et un paChecksum2 en SHA-1 est refusé en mode produit. Désactivé par défaut, car MIT Kerberos n'en envoie pas ; Windows 11 et Windows Server 2022 23H2 et versions ultérieures en envoient. Activé, un client qui n'en envoie pas — PKINIT anonyme compris — est refusé avec KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
   },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
@@ -12371,6 +12427,14 @@
     "en": "4f3937bae763d218",
     "text": "Prévenir une personne, à l’adresse figurant sur son entrée, lorsque son compte est désactivé, que ses sessions sont terminées par un administrateur, que son mot de passe est modifié ou réinitialisé, que son identifiant est marqué comme compromis ou qu’une récupération est lancée. Une personne ne peut pas refuser ces avis ; un opérateur peut les désactiver ici."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Avis de modification des identifiants"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Prévenir une personne lorsqu’une clé d’accès ou clé de sécurité, une application d’authentification, un mot de passe d’application, un jeton de code à usage unique ou YubiKey OTP, un jeu de codes de récupération, un certificat, une liaison de certificat pour la connexion, un certificat S/MIME ou une clé OpenPGP lui appartenant est ajouté ou supprimé, par qui et quand. Plusieurs modifications faites par un même acte forment un seul message. Désactivé, aucun de ces avis n’est envoyé ; l’avis de changement de mot de passe n’est pas concerné. Rien n’est envoyé tant que les avis de sécurité sont désactivés ou qu’aucun transport n’est configuré."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Prévenir les administrateurs des actes du système"
@@ -12482,6 +12546,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Combien de tâches de rapport une personne peut avoir en cours à la fois."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Exécutions et téléchargements de rapports par personne et par fenêtre"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Combien d'actions coûteuses un appelant de la Reports API peut effectuer dans une fenêtre de report.actWindowS : une requête ou un aperçu ad hoc, une tâche mise en file, une définition enregistrée exécutée, un résultat téléchargé. Compté par le sujet du jeton, non par adresse. Au-delà, une telle action est refusée avec 429 et Retry-After jusqu'à la fin de la fenêtre ; les listes et les définitions restent lisibles. 0 signifie aucune limite, la valeur par défaut en développement. Le mode produit vaut 240 par défaut."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Fenêtre des actions de rapport (secondes)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "La fenêtre dans laquelle report.actsPerSubject est compté, en secondes. Une fenêtre fixe, comme toute limite de débit ici."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

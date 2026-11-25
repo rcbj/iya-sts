@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "Begäran kunde inte slutföras.",
   "gnap.tooManyCodes": "För många koder har provats härifrån. {detail}",
   "gnap.wrongOrigin": "Den här åtgärden skickas av en sida i den här tjänsten: begäran hade {carried, select, none {inget Origin} other {ett annat ursprung}}.",
+  "limits.tooManyActs": "Du har gjort det för många gånger på kort tid. Vänta {seconds} sekunder och försök igen.",
   "logout.accountNotSignedIn": "Det kontot är inte längre inloggat i den här webbläsaren. Välj igen.",
   "logout.accountsOff": "Den här förtroendesfären håller inte flera inloggade konton per webbläsare (authn.multipleAccounts är avstängt), så det finns inget konto att välja.",
   "logout.chooseAccount": "Välj ett konto, eller alla konton.",

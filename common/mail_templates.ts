@@ -194,6 +194,25 @@ const BUILT_IN: TemplateSpec[] = [
     html: '<p>The password of the account <strong>{{username}}</strong> ' +
           'was changed at {{when}} ({{how}}).</p><p>If this was not you, ' +
           'contact whoever manages your account now.</p>' },
+  // #2163 (ASVS 5.0.0 6.3.7): every other credential added or removed, one
+  // line each in `{{what}}` — a list when one act changed several — and who
+  // did it in `{{by}}`. What changed is named by its kind and label, never
+  // by anything secret.
+  { id: 'credential-changed', category: 'security',
+    title: 'A credential of yours was added or removed',
+    values: ['username', 'when', 'what', 'by'],
+    links: [],
+    subject: 'The credentials of your {{service}} account changed',
+    text: 'The credentials of the account {{username}} were changed at ' +
+          '{{when}}, {{by}}: {{what}}.\n\nIf this was not you and you ' +
+          'did not ask for it, sign in now, review your security settings ' +
+          'and sign out your other sessions, or contact whoever manages ' +
+          'your account.\n',
+    html: '<p>The credentials of the account <strong>{{username}}</strong> ' +
+          'were changed at {{when}}, {{by}}: {{what}}.</p><p>If this was ' +
+          'not you and you did not ask for it, sign in now, review your ' +
+          'security settings and sign out your other sessions, or contact ' +
+          'whoever manages your account.</p>' },
   { id: 'account-disabled', category: 'security',
     title: 'Your account was disabled',
     values: ['username', 'when', 'why'],

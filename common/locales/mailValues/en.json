@@ -17,5 +17,8 @@
   "signIn.deviceUnknown": "a browser or device that did not name itself",
   "signIn.placeUnknown": "not known",
   "rights.access": "access",
-  "address.none": "(none)"
+  "address.none": "(none)",
+  "credentialChange.item": "{kind, select, passkey {passkey or security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {recovery codes} certificate {certificate} certificate-binding {certificate sign-in binding} smime {S/MIME certificate} openpgp {OpenPGP key} other {credential}} {change, select, added {added} generated {generated} removed {removed} other {changed}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {passkey or security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {recovery codes} certificate {certificate} certificate-binding {certificate sign-in binding} smime {S/MIME certificate} openpgp {OpenPGP key} other {credential}} “{label}” {change, select, added {added} generated {generated} removed {removed} other {changed}}",
+  "credentialChange.by": "{entity, select, user {by you, on the portal or at sign-in} other {by an administrator}}"
 }

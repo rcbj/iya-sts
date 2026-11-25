@@ -5729,9 +5729,47 @@ class OAuth2Server {
     // than refused, with an audit row, so the `scope` member below reports
     // what was issued (RFC 6749 section 5.1). This service's protected scopes
     // in every mode; every other scope in product only.
-    const allowedScope = scopePolicy.narrow(opts.scope, opts.client_id,
+    //
+    // **THE ONE ALLOWANCE: THE OFFER'S CREDENTIAL SCOPES, ON A PRE-AUTHORIZED
+    // CODE REDEEMED BY A WALLET THAT NAMES NO CLIENT** (#2169, rcbj: "Obey
+    // the spec. Allowances must be made to achieve that."). OpenID4VCI 1.0
+    // section 6.1 makes `client_id` OPTIONAL for this grant and section 12.3
+    // advertises the anonymous redemption
+    // (`pre-authorized_grant_anonymous_access_supported`, which this server
+    // publishes): there IS no client, and the authorization is the Credential
+    // Offer this service made for the person, with its Transaction Code
+    // (sections 3.5 and 4.1.1). Judging the absent client as an undeclared
+    // one took every credential scope off under
+    // `oauth2.undeclaredClientScopes`'s `openid` (#1589, #2114), and a token
+    // with no credential scope files the credential under nobody
+    // (`vc_issued.ts`'s `subjectFromToken()`): the holder's `/portal/wallet`
+    // listed nothing it had just been issued, and the credential could never
+    // sign them in. So `offer_scopes` — the scopes of
+    // the offer's `credential_configuration_ids`, read off the pre-authorized
+    // code's record by the grant, never off the request — are kept, and
+    // everything else is narrowed as before. A wallet that NAMES a client is
+    // that client, judged by its declaration like any other.
+    const asked = String(opts.scope == null ? '' : opts.scope);
+    const offered: string[] = (opts.grant === 'pre-authorized code' &&
+                               !String(opts.client_id || '') &&
+                               Array.isArray(opts.offer_scopes))
+      ? opts.offer_scopes.map(String) : [];
+    const askedWords = asked.split(/\s+/).filter(function (one: string) {
+      return !!one;
+    });
+    // Without an offer, exactly the narrowing every other grant gets.
+    const narrowed = scopePolicy.narrow(offered.length
+      ? askedWords.filter(function (one: string) {
+        return offered.indexOf(one) < 0;
+      }).join(' ') : opts.scope, opts.client_id,
       { grant: opts.grant, defaults: self.credentialScopes() });
-    if (allowedScope !== String(opts.scope == null ? '' : opts.scope)) {
+    const narrowedWords = String(narrowed).split(/\s+/);
+    const allowedScope = offered.length
+      ? askedWords.filter(function (one: string) {
+        return offered.indexOf(one) >= 0 || narrowedWords.indexOf(one) >= 0;
+      }).join(' ')
+      : narrowed;
+    if (allowedScope !== asked) {
       opts.scope = allowedScope;
     }
     // `bound_key` IS NOT GRANTED WHILE KEY BINDING IS OFF (#315), whatever
@@ -8005,6 +8043,30 @@ class OAuth2Server {
     return names;
   }
 
+  // The OpenID4VCI scopes of the configurations a pre-authorized code's
+  // record names (#2169), once each, in the offer's order.
+  /**
+   * Returns the scopes of the configurations a pre-authorized code's record
+   * offers.
+   *
+   * @param record - the pre-authorized code's record
+   * @returns the scope names
+   */
+  offerScopesOf(record: Json): string[] {
+    const { log, VCI_CONFIGS } = this.deps;
+    log.debug("Entering OAuth2Server.offerScopesOf().");
+    const names: string[] = [];
+    ((record && record.configurationIds) || []).forEach(function (id: Json) {
+      const found = VCI_CONFIGS[String(id)];
+      const scope = found && found.scope;
+      if (scope && names.indexOf(String(scope)) < 0) {
+        names.push(String(scope));
+      }
+    });
+    log.debug("Leaving OAuth2Server.offerScopesOf(). " + names.length);
+    return names;
+  }
+
   // This service's own protected scopes — `common/scope_policy.ts` reads
   // each resource server's own settings for them.
   /**
@@ -9628,6 +9690,20 @@ class OAuth2Server {
       ? self.adminApiBindingRefusal(query.client_id, audiencePlan.audiences,
                                     req, base, false)
       : null;
+    // #2183: and no token in the browser at all where the realm issues only
+    // sender-constrained ones.
+    const unboundBrowser = types.indexOf('token') >= 0 ?
+      senderConstraints.browserAccessTokenRefusal() : null;
+    if (unboundBrowser) {
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A token " +
+                "in the browser could not be sender-constrained.");
+      errorCodes.mark(res, unboundBrowser.errorCode);
+      return self.redirectBack(res, base, redirectUri, query.state,
+        { error: unboundBrowser.error,
+          error_description: unboundBrowser.description },
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
+    }
     if (browserToken) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). An " +
                 "/admin-api token for a certificate client, in the browser.");
@@ -12004,6 +12080,29 @@ class OAuth2Server {
           'parameters to ' + self.asBaseOf(req) +
           '/oauth2/par first and send the ' +
           'request_uri it answers with.' }, 'STS-OAUTH-0419');
+    }
+    // ASVS 5.0.0 10.4.15 (#2185): rich authorization details only in a
+    // pushed request, where the realm says so.
+    // `req.query` is the EFFECTIVE request here: a request object passed by
+    // value (RFC 9101) has already replaced it (authorizeWithClient()), and
+    // there `authorization_details` is a JSON array rather than a string.
+    const details = (req.query || {}).authorization_details;
+    const carriesDetails = details !== undefined && details !== null &&
+      (typeof details === 'string' ? details.trim() !== '' : true);
+    if (!pushed && config.value('oauth2.authorizationDetailsRequirePar') &&
+        carriesDetails) {
+      oauthMonitor.record(clientId, 'par.required_refused',
+                        { error: 'invalid_request' });
+      log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). " +
+                "authorization_details, not pushed.");
+      return errorCodes.mark({ error: 'invalid_request',
+        description: 'this authorization request carries ' +
+          'authorization_details and was not pushed, and ' +
+          'oauth2.authorizationDetailsRequirePar says rich authorization ' +
+          'requests are accepted only through pushed authorization requests ' +
+          '(RFC 9126, RFC 9396). POST the parameters to ' +
+          self.asBaseOf(req) + '/oauth2/par first and send the request_uri ' +
+          'it answers with.' }, 'STS-OAUTH-1015');
     }
     if (pushed && !jar.alg &&
         requestObject.signedRequired(client,
@@ -16523,6 +16622,17 @@ class OAuth2Server {
                   "sent no DPoP proof.");
         throw new SenderConstraintRefused(log, consoleProblem);
       }
+      // #2183: an access token nothing binds is not minted, where the realm
+      // says so. Every grant mints through this closure.
+      const unbound = senderConstraints.accessTokenIssuanceRefusal({
+        grant: grant,
+        dpopJkt: dpopJkt,
+        certificateBound: !!mtls.presentedThumbprint(req)
+      });
+      if (unbound) {
+        log.debug("Leaving issue(). The access token would be unbound.");
+        throw new SenderConstraintRefused(log, unbound);
+      }
       if (opts.withRefresh !== false) {
         const constraint = senderConstraints.refreshIssuanceRefusal({
           grant: grant,
@@ -17113,9 +17223,17 @@ class OAuth2Server {
                     ((e && e.message) || e));
           // Not admitted: the check finds no session and reads the standing.
         });
+      // THE SCOPES THE OFFER NAMED (#2169): each offered configuration's
+      // `scope` (OpenID4VCI 1.0 section 12.2.4), read off the code's record.
+      // They are what this token is for, and `tokenSet()` keeps them for a
+      // wallet that names no client; `VCI_SCOPE` only for a record that
+      // names no configuration with one.
+      const offerScopes = self.offerScopesOf(record);
       const issued = await issue({
         jkt: dpopJkt,
-        user: preAuthUser, client_id: client.client_id, scope: VCI_SCOPE,
+        user: preAuthUser, client_id: client.client_id,
+        scope: offerScopes.length ? offerScopes.join(' ') : VCI_SCOPE,
+        offer_scopes: offerScopes,
         token_client_id: tokenClientId,
         withRefresh: false,
         // RFC 8707 on an OpenID4VCI Token Request, which OID4VCI section 6.1
@@ -22387,7 +22505,8 @@ class OAuth2Server {
       client_id: clientId,
       client_id_issued_at: issuedAt,
       client_secret: secret,
-      // `oauth2.clientSecretLifetimeDays`; 0 = never, the default.
+      // `oauth2.clientSecretLifetimeDays`: 365 days by default since
+      // ASVS 5.0.0 13.3.4 (#2178); 0 = never.
       client_secret_expires_at: self.registeredSecretExpiry(issuedAt),
       registration_access_token: token,
       registration_client_uri: base + '/oauth2/register/' + clientId

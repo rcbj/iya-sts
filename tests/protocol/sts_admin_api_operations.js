@@ -5453,6 +5453,24 @@ async function settleThenStatus(previous) {
 // operation that cannot be driven here needs somewhere to say why — and an
 // empty object is a much better prompt for that than no object at all.
 const NOT_DRIVEN_HERE = {
+  // NAMED TRUSTSTORES (#2118 phase 4). Driven by `sts_truststores.js`, with
+  // the minted certificates, refusals and realm confinement an example walk
+  // cannot carry; the service-wide half (the default realm) is
+  // `tests/truststores_api.js`'s, in process.
+  "POST /truststores/show": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/create": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/delete": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/add": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/remove": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/assign": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/unassign": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
   // SIGNING KEY ROTATION (#48, 2026-09-22). Driven by `sts_key_rotation.js`,
   // end to end and in a realm of its own: a rotation is checked against the
   // JWKS, the crypto metadata document and a token signed before it, which a

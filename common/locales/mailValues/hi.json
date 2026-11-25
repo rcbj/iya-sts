@@ -17,5 +17,8 @@
   "signIn.deviceUnknown": "ऐसा ब्राउज़र या डिवाइस जिसने अपनी पहचान नहीं बताई",
   "signIn.placeUnknown": "अज्ञात",
   "rights.access": "पहुँच",
-  "address.none": "(कोई नहीं)"
+  "address.none": "(कोई नहीं)",
+  "credentialChange.item": "{kind, select, passkey {पासकी या सुरक्षा कुंजी} totp {ऑथेंटिकेटर ऐप} app-password {ऐप पासवर्ड} hotp {एक-बार कोड टोकन} yubiotp {YubiKey OTP} recovery-codes {रिकवरी कोड} certificate {प्रमाणपत्र} certificate-binding {साइन-इन के लिए प्रमाणपत्र बंधन} smime {S/MIME प्रमाणपत्र} openpgp {OpenPGP कुंजी} other {क्रेडेंशियल}}: {change, select, added {जोड़ा गया} generated {बनाए गए} removed {हटाया गया} other {बदला गया}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {पासकी या सुरक्षा कुंजी} totp {ऑथेंटिकेटर ऐप} app-password {ऐप पासवर्ड} hotp {एक-बार कोड टोकन} yubiotp {YubiKey OTP} recovery-codes {रिकवरी कोड} certificate {प्रमाणपत्र} certificate-binding {साइन-इन के लिए प्रमाणपत्र बंधन} smime {S/MIME प्रमाणपत्र} openpgp {OpenPGP कुंजी} other {क्रेडेंशियल}} “{label}”: {change, select, added {जोड़ा गया} generated {बनाए गए} removed {हटाया गया} other {बदला गया}}",
+  "credentialChange.by": "{entity, select, user {आपके द्वारा, पोर्टल पर या साइन-इन के समय} other {एक व्यवस्थापक द्वारा}}"
 }

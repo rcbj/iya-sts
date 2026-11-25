@@ -30,6 +30,11 @@
       "text": "帳戶 {{username}} 的密碼已於 {{when}} 變更（{{how}}）。\n\n如果這不是您本人的操作，請立即聯絡您的帳戶管理員。\n",
       "html": "<p>帳戶 <strong>{{username}}</strong> 的密碼已於 {{when}} 變更（{{how}}）。</p><p>如果這不是您本人的操作，請立即聯絡您的帳戶管理員。</p>"
     },
+    "credential-changed": {
+      "subject": "您的 {{service}} 帳戶憑據已變更",
+      "text": "帳戶 {{username}} 的憑據於 {{when}} 被變更（{{by}}）：{{what}}。\n\n如果這不是您本人所為，也不是您要求的，請立即登入，檢查您的安全設定並登出其他工作階段，或聯絡管理您帳戶的人員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的憑據於 {{when}} 被變更（{{by}}）：{{what}}。</p><p>如果這不是您本人所為，也不是您要求的，請立即登入，檢查您的安全設定並登出其他工作階段，或聯絡管理您帳戶的人員。</p>"
+    },
     "account-disabled": {
       "subject": "您的 {{service}} 帳戶已被停用",
       "text": "帳戶 {{username}} 已於 {{when}} 被停用。{{why}}\n\n在重新啟用之前，任何人都無法登入此帳戶，且其所有工作階段均已結束。\n",

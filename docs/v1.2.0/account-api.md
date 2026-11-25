@@ -121,13 +121,15 @@ of the following:
 | `{ "ok": true, "view": { … } }` | Done, and here is something to show once: a generated secret, recovery codes, a private key. It is shown on the page and never put in a URL. |
 | `{ "ok": true, "go": "/portal/…" }` | Done; the portal moves to that page. |
 | `{ "ok": false, "errors": ["…"] }` | Refused, with a 4xx status. A `view` may come with it. |
+| `{ "ok": false, "errors": ["…"], "messages": [{ "key": "refusals.limits.tooManyActs", "params": { "seconds": … } }] }` | 429, with `Retry-After`: this person has made more changes to their account than `account.writesPerSubject` allows in `account.writeWindowS` (300 in ten minutes by default in product mode; off in development). Every operation that takes a token and is not a `GET` counts, by the token's subject rather than the address, so nobody else is affected; reading the account goes on (`STS-ACCOUNT-0024`). `messages` names the sentence, which the portal draws in its own language. |
 | `{ "ok": false, "stepUp": { "acrValues": "…" } }` | Sign in again, more strongly, then retry (CIBA and GNAP approvals). |
 | `{ "ok": false, "stepUp": { "prompt": "login", "maxAge": … } }` | Sign in again, then retry. Changing how a person signs in needs a sign-in within `account.recentAuthMinutes` (15 by default in product mode, not asked in development): a second factor, recovery codes, a passkey, an app password, a certificate, a signing key, a self-issued ID or published DID, the email address, or a wallet credential offer. |
 | `{ "ok": true, "location": "https://…" }` | Continue at another site (linking a claim source). |
 
 Request bodies are JSON (`Content-Type: application/json`) and are checked
 against the operation's schema before anything is done. Error text is in
-English, as everywhere in this service, and every refusal is recorded under
+English, as everywhere in this service (beside it, `messages` names a
+catalog sentence where there is one), and every refusal is recorded under
 an [error code](error-codes.md) (the `ACCOUNT` subsystem for the gate).
 
 ## In a cluster of cells

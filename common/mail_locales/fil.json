@@ -30,6 +30,11 @@
       "text": "Napalitan ang password ng account na {{username}} noong {{when}} ({{how}}).\n\nKung hindi ikaw ito, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
       "html": "<p>Napalitan ang password ng account na <strong>{{username}}</strong> noong {{when}} ({{how}}).</p><p>Kung hindi ikaw ito, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
     },
+    "credential-changed": {
+      "subject": "Nagbago ang mga kredensyal ng inyong {{service}} account",
+      "text": "Binago ang mga kredensyal ng account na {{username}} noong {{when}}, {{by}}: {{what}}.\n\nKung hindi kayo ito at hindi ninyo ito hiniling, mag-sign in ngayon, suriin ang inyong mga setting sa seguridad at i-sign out ang inyong iba pang session, o makipag-ugnayan sa namamahala ng inyong account.\n",
+      "html": "<p>Binago ang mga kredensyal ng account na <strong>{{username}}</strong> noong {{when}}, {{by}}: {{what}}.</p><p>Kung hindi kayo ito at hindi ninyo ito hiniling, mag-sign in ngayon, suriin ang inyong mga setting sa seguridad at i-sign out ang inyong iba pang session, o makipag-ugnayan sa namamahala ng inyong account.</p>"
+    },
     "account-disabled": {
       "subject": "Na-disable ang iyong account sa {{service}}",
       "text": "Na-disable ang account na {{username}} noong {{when}}. {{why}}\n\nWalang makakapag-sign in dito hangga't hindi ito muling ine-enable, at tinapos na ang bawat session nito.\n",

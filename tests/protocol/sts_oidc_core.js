@@ -376,12 +376,18 @@ async function register(metadata) {
 
 async function registered(metadata, scope) {
   log.debug("Entering registered().");
-  const r = await register(metadata);
+  const consented = String(scope || "openid profile email address phone");
+  // THE SCOPES IT WILL ASK FOR, DECLARED IN ITS REGISTRATION (#2169): RFC
+  // 7591's `scope` member is the declaration, and in product a client that
+  // declares none is issued `openid` alone (#1589). The consented ones by
+  // default; a caller asking for one it is not consented (`plain`'s
+  // offline_access, section l) names the whole list in `metadata.scope`.
+  const r = await register(Object.assign({ scope: consented },
+                                         metadata || {}));
   assert.strictEqual(r.status, 201, "a registration: " + r.status + " " +
                      r.raw.slice(0, 400));
   // One scope per grant: the register holds (client, scope) pairs.
-  for (const one of String(scope || "openid profile email address phone")
-         .split(" ")) {
+  for (const one of consented.split(" ")) {
     await ok(realmApi + "/consent/grant-global-consent",
              { client: r.body.client_id, scope: one },
              "consented " + one + " for everybody on " + r.body.client_id);
@@ -692,7 +698,10 @@ async function test() {
 
   log.info("=== b. at_hash and c_hash with the ID Token's own hash ===");
   const alice = browser("alice");
-  const plain = await registered({});
+  // offline_access declared and NOT consented: section l asks for it with
+  // the screen off and nothing recorded, and OIDC Core 11 removes it.
+  const plain = await registered({
+    scope: "openid profile email address phone offline_access" });
   // The session, made on the first request.
   await codeTokens(alice, plain, {}, ALICE);
   for (const alg of Object.keys(HASH_OF)) {

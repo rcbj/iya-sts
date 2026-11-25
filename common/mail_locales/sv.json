@@ -30,6 +30,11 @@
       "text": "Lösenordet för kontot {{username}} ändrades {{when}} ({{how}}).\n\nOm det inte var du, kontakta genast den som administrerar ditt konto.\n",
       "html": "<p>Lösenordet för kontot <strong>{{username}}</strong> ändrades {{when}} ({{how}}).</p><p>Om det inte var du, kontakta genast den som administrerar ditt konto.</p>"
     },
+    "credential-changed": {
+      "subject": "Inloggningsuppgifterna för ditt {{service}}-konto har ändrats",
+      "text": "Inloggningsuppgifterna för kontot {{username}} ändrades {{when}}, {{by}}: {{what}}.\n\nOm det inte var du och du inte bad om det, logga in nu, granska dina säkerhetsinställningar och logga ut dina andra sessioner, eller kontakta den som hanterar ditt konto.\n",
+      "html": "<p>Inloggningsuppgifterna för kontot <strong>{{username}}</strong> ändrades {{when}}, {{by}}: {{what}}.</p><p>Om det inte var du och du inte bad om det, logga in nu, granska dina säkerhetsinställningar och logga ut dina andra sessioner, eller kontakta den som hanterar ditt konto.</p>"
+    },
     "account-disabled": {
       "subject": "Ditt konto för {{service}} har inaktiverats",
       "text": "Kontot {{username}} inaktiverades {{when}}. {{why}}\n\nIngen kan logga in på det förrän det aktiveras igen, och alla dess sessioner har avslutats.\n",

@@ -30,6 +30,11 @@
       "text": "账户 {{username}} 的密码已于 {{when}} 更改（{{how}}）。\n\n如果这不是您本人操作，请立即联系您的账户管理员。\n",
       "html": "<p>账户 <strong>{{username}}</strong> 的密码已于 {{when}} 更改（{{how}}）。</p><p>如果这不是您本人操作，请立即联系您的账户管理员。</p>"
     },
+    "credential-changed": {
+      "subject": "您的 {{service}} 账户凭据已更改",
+      "text": "账户 {{username}} 的凭据于 {{when}} 被更改（{{by}}）：{{what}}。\n\n如果这不是您本人所为，也不是您要求的，请立即登录，检查您的安全设置并注销其他会话，或联系管理您账户的人员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的凭据于 {{when}} 被更改（{{by}}）：{{what}}。</p><p>如果这不是您本人所为，也不是您要求的，请立即登录，检查您的安全设置并注销其他会话，或联系管理您账户的人员。</p>"
+    },
     "account-disabled": {
       "subject": "您的 {{service}} 账户已被停用",
       "text": "账户 {{username}} 已于 {{when}} 被停用。{{why}}\n\n在重新启用之前，任何人都无法登录此账户，并且其所有会话均已结束。\n",

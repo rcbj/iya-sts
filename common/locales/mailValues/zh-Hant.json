@@ -17,5 +17,8 @@
   "signIn.deviceUnknown": "未表明身分的瀏覽器或裝置",
   "signIn.placeUnknown": "未知",
   "rights.access": "存取",
-  "address.none": "（無）"
+  "address.none": "（無）",
+  "credentialChange.item": "{kind, select, passkey {通行密鑰或安全金鑰} totp {驗證器應用程式} app-password {應用程式專用密碼} hotp {一次性驗證碼權杖} yubiotp {YubiKey OTP} recovery-codes {復原碼} certificate {憑證} certificate-binding {憑證登入繫結} smime {S/MIME 憑證} openpgp {OpenPGP 金鑰} other {憑據}}：{change, select, added {已新增} generated {已產生} removed {已移除} other {已變更}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {通行密鑰或安全金鑰} totp {驗證器應用程式} app-password {應用程式專用密碼} hotp {一次性驗證碼權杖} yubiotp {YubiKey OTP} recovery-codes {復原碼} certificate {憑證} certificate-binding {憑證登入繫結} smime {S/MIME 憑證} openpgp {OpenPGP 金鑰} other {憑據}}「{label}」：{change, select, added {已新增} generated {已產生} removed {已移除} other {已變更}}",
+  "credentialChange.by": "{entity, select, user {由您在入口網站或登入時完成} other {由管理員完成}}"
 }

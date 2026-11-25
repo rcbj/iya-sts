@@ -30,6 +30,11 @@
       "text": "Das Passwort des Kontos {{username}} wurde um {{when}} geändert ({{how}}).\n\nWenn Sie das nicht waren, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
       "html": "<p>Das Passwort des Kontos <strong>{{username}}</strong> wurde um {{when}} geändert ({{how}}).</p><p>Wenn Sie das nicht waren, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
     },
+    "credential-changed": {
+      "subject": "Die Anmeldedaten Ihres {{service}}-Kontos wurden geändert",
+      "text": "Die Anmeldedaten des Kontos {{username}} wurden am {{when}} geändert, {{by}}: {{what}}.\n\nWenn Sie das nicht waren und es nicht veranlasst haben, melden Sie sich jetzt an, prüfen Sie Ihre Sicherheitseinstellungen und beenden Sie Ihre anderen Sitzungen, oder wenden Sie sich an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>Die Anmeldedaten des Kontos <strong>{{username}}</strong> wurden am {{when}} geändert, {{by}}: {{what}}.</p><p>Wenn Sie das nicht waren und es nicht veranlasst haben, melden Sie sich jetzt an, prüfen Sie Ihre Sicherheitseinstellungen und beenden Sie Ihre anderen Sitzungen, oder wenden Sie sich an die Person, die Ihr Konto verwaltet.</p>"
+    },
     "account-disabled": {
       "subject": "Ihr Konto für {{service}} wurde deaktiviert",
       "text": "Das Konto {{username}} wurde um {{when}} deaktiviert. {{why}}\n\nNiemand kann sich mit diesem Konto anmelden, bis es wieder aktiviert wird, und jede Sitzung, die es hielt, wurde beendet.\n",

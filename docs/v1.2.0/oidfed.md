@@ -397,7 +397,9 @@ registration. The registration lasts until the chain expires, or for at most
 federation relationship, with `fedPeer` as the OP's Entity Identifier. The OP
 is then discovered through its Trust Chain and registered with automatically.
 The realm's Entity Configuration publishes `openid_relying_party` metadata
-carrying its signing key.
+carrying its signing key and, as `scope`, every scope its federated
+relationships ask for (`fedScope`), which is what an OP registering it
+automatically may issue it.
 
 ## Not yet
 
