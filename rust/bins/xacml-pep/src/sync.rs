@@ -116,11 +116,11 @@ pub struct AuthzenSettings {
     /// The realm's `authzen.tokenExchange` (#1181, #1205), which decides how
     /// the service classifies a request's tuples: on, its gate, scope and
     /// detail tuples are the binding's and answered by its fixed rules (so
-    /// this edge answers them 501, STS-XPEP-0140); off, every tuple is an
+    /// this edge answers them 403, STS-XPEP-0140); off, every tuple is an
     /// ordinary evaluation. ABSENT IS ON: an older service that does not
     /// send it may have the binding on, and evaluating one of its tuples
     /// here as ordinary could answer true where the service answers a fixed
-    /// false (a lone scope, STS-AUTHZEN-0105). A 501 decides nothing.
+    /// false (a lone scope, STS-AUTHZEN-0105). That 403 decides nothing.
     pub token_exchange: bool,
     /// The `authorization_details` types the realm's applications declare,
     /// which make a tuple beside a token-exchange gate one of the binding's

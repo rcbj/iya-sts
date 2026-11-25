@@ -3,7 +3,7 @@
   "info": {
     "title": "IYA STS remote PEP AuthZEN edge PDP",
     "version": "1",
-    "description": "AuthZEN Authorization API 1.0's access evaluation, evaluations and metadata, answered by a remote PEP from the policy and attribute catalogue it pulled from its realm, so that a PEP nearby can ask a PDP nearby. A caller is admitted by a client certificate (mutual TLS) on the HTTPS listener it connected to, which must ask for one and verify it (PEP_AUTHZEN_CLIENT_CA or its trust anchors, and its tuning asking), verified against PEP_AUTHZEN_CLIENT_CA and named on the caller list the PEP pulls from the service (GET /xacml/pep/authzen-callers), optionally narrowed by PEP_AUTHZEN_CALLERS. The metadata admits anybody. The Search APIs and the Access Request profile are 501 without admission: the service holds the directory and the approval store. Every answer is application/json with Cache-Control: no-store; a POST's answer echoes a valid X-Request-ID. EVERY PEP FAILURE IS A 403, never a 5xx: nothing pulled yet, an engine fault, a binding tuple the edge cannot decide, a forward the service did not answer or answered with anything but a decision, 400 or 413. Error codes are recorded in the PEP's log and never sent. Paths not listed are 404 with the PEP's NotFound body."
+    "description": "AuthZEN Authorization API 1.0's access evaluation, evaluations and metadata, answered by a remote PEP from the policy and attribute catalogue it pulled from its realm, so that a PEP nearby can ask a PDP nearby. A caller is admitted by a client certificate (mutual TLS) on the HTTPS listener it connected to, which must ask for one and verify it (PEP_AUTHZEN_CLIENT_CA or its trust anchors, and its tuning asking), verified against PEP_AUTHZEN_CLIENT_CA and named on the caller list the PEP pulls from the service (GET /xacml/pep/authzen-callers), optionally narrowed by PEP_AUTHZEN_CALLERS. The metadata admits anybody. The Search APIs and the Access Request profile are 403 without admission: the service holds the directory and the approval store. A switched-off API is 403 too, and the metadata names only the endpoints that answer: AuthZEN 1.0 prescribes no status for an API a PDP does not serve or has switched off (its section 10.1.2 defines 400, 401, 403 and 500), only that an endpoint absent from the metadata is one the PDP is not capable of (section 9.1.1). Every answer is application/json with Cache-Control: no-store; a POST's answer echoes a valid X-Request-ID. EVERY PEP FAILURE IS A 403, never a 5xx: nothing pulled yet, an engine fault, a binding tuple the edge cannot decide, a forward the service did not answer or answered with anything but a decision, 400 or 413. Error codes are recorded in the PEP's log and never sent. Paths not listed are 404 with the PEP's NotFound body."
   },
   "servers": [
     {
@@ -517,7 +517,7 @@
             }
           },
           "403": {
-            "description": "Admission, or an application the caller is not scoped to (STS-AUTHZEN-0025) or no application at all (0026). Or a PEP failure: nothing pulled yet, the policies and catalogue (STS-XPEP-0043) or the callers (0050); the engine could not evaluate it (STS-AUTHZEN-0028); a token-exchange binding tuple (STS-XPEP-0140); a forward the service did not answer or answered too late (PEP_AUTHZEN_FORWARD_TIMEOUT_MS, 0055), refused this PEP (0056), answered a 5xx or another status (0057) or no decision (0058).",
+            "description": "Admission, or an application the caller is not scoped to (STS-AUTHZEN-0025) or no application at all (0026). Or a PEP failure: nothing pulled yet, the policies and catalogue (STS-XPEP-0043) or the callers (0050); the engine could not evaluate it (STS-AUTHZEN-0028); a token-exchange binding tuple (STS-XPEP-0140); a forward the service did not answer or answered too late (PEP_AUTHZEN_FORWARD_TIMEOUT_MS, 0055), refused this PEP (0056), answered a 5xx or another status (0057) or no decision (0058). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): Turned off here (PEP_AUTHZEN, STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",
             "content": {
               "application/json": {
                 "schema": {
@@ -538,16 +538,6 @@
           },
           "413": {
             "description": "Larger than PEP_MAX_BODY_BYTES (STS-XPEP-0046), or the service's 413 to a forward (0057).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "Turned off here (PEP_AUTHZEN, STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",
             "content": {
               "application/json": {
                 "schema": {
@@ -630,7 +620,7 @@
             }
           },
           "403": {
-            "description": "Admission, or nothing pulled yet (STS-XPEP-0043, 0050: a PEP failure); with no items, the single endpoint's 403s.",
+            "description": "Admission, or nothing pulled yet (STS-XPEP-0043, 0050: a PEP failure); with no items, the single endpoint's 403s. Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): Turned off here (STS-XPEP-0044), in the realm (STS-AUTHZEN-0013, 0014), or the batch off (0039).",
             "content": {
               "application/json": {
                 "schema": {
@@ -645,16 +635,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFound"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "Turned off here (STS-XPEP-0044), in the realm (STS-AUTHZEN-0013, 0014), or the batch off (0039).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -679,7 +659,7 @@
             }
           },
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): Turned off here (STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",
             "content": {
               "application/json": {
                 "schema": {
@@ -704,16 +684,6 @@
                 }
               }
             }
-          },
-          "501": {
-            "description": "Turned off here (STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           }
         }
       }
@@ -722,10 +692,10 @@
       "post": {
         "operationId": "postSearchSubject",
         "summary": "Search subjects (the service's)",
-        "description": "501 STS-XPEP-0138. This edge does not hold the directory or the catalogues. Not advertised in the metadata. HEAD is 404.",
+        "description": "403 STS-XPEP-0138. This edge does not hold the directory or the catalogues. Not advertised in the metadata. HEAD is 404.",
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off (STS-XPEP-0044, STS-AUTHZEN-0013, 0014).",
             "content": {
               "application/json": {
                 "schema": {
@@ -740,16 +710,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFound"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off (STS-XPEP-0044, STS-AUTHZEN-0013, 0014).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -761,10 +721,10 @@
       "post": {
         "operationId": "postSearchResource",
         "summary": "Search resources (the service's)",
-        "description": "501 STS-XPEP-0138, as postSearchSubject.",
+        "description": "403 STS-XPEP-0138, as postSearchSubject.",
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -779,16 +739,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFound"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -800,10 +750,10 @@
       "post": {
         "operationId": "postSearchAction",
         "summary": "Search actions (the service's)",
-        "description": "501 STS-XPEP-0138, as postSearchSubject.",
+        "description": "403 STS-XPEP-0138, as postSearchSubject.",
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -821,16 +771,6 @@
                 }
               }
             }
-          },
-          "501": {
-            "description": "The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           }
         }
       }
@@ -839,10 +779,10 @@
       "post": {
         "operationId": "postAccessRequest",
         "summary": "Submit an access request (the service's)",
-        "description": "501 STS-XPEP-0139, the evaluation error object, not problem+json. This edge does not hold the approval store. Not advertised. GET of the collection is 404.",
+        "description": "403 STS-XPEP-0139, the evaluation error object, not problem+json. This edge does not hold the approval store. Not advertised. GET of the collection is 404.",
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -860,16 +800,6 @@
                 }
               }
             }
-          },
-          "501": {
-            "description": "The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           }
         }
       }
@@ -878,10 +808,10 @@
       "get": {
         "operationId": "getAccessRequestSchema",
         "summary": "The access-request schema (the service's)",
-        "description": "501 STS-XPEP-0139. POST of this path is 404. HEAD is 404.",
+        "description": "403 STS-XPEP-0139. POST of this path is 404. HEAD is 404.",
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -899,16 +829,6 @@
                 }
               }
             }
-          },
-          "501": {
-            "description": "The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           }
         }
       }
@@ -917,7 +837,7 @@
       "get": {
         "operationId": "getAccessRequest",
         "summary": "Read an access request (the service's)",
-        "description": "501 STS-XPEP-0139. POST of this path, without /cancel, is 404. HEAD is 404.",
+        "description": "403 STS-XPEP-0139. POST of this path, without /cancel, is 404. HEAD is 404.",
         "parameters": [
           {
             "name": "id",
@@ -931,7 +851,7 @@
         ],
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -949,16 +869,6 @@
                 }
               }
             }
-          },
-          "501": {
-            "description": "The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           }
         }
       }
@@ -967,7 +877,7 @@
       "post": {
         "operationId": "postCancelAccessRequest",
         "summary": "Cancel an access request (the service's)",
-        "description": "501 STS-XPEP-0139. GET of this path is 404.",
+        "description": "403 STS-XPEP-0139. GET of this path is 404.",
         "parameters": [
           {
             "name": "id",
@@ -980,7 +890,7 @@
         ],
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -998,23 +908,13 @@
                 }
               }
             }
-          },
-          "501": {
-            "description": "The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           }
         }
       },
       "delete": {
         "operationId": "deleteCancelAccessRequest",
         "summary": "Cancel an access request, DELETE (the service's)",
-        "description": "501 STS-XPEP-0139, the same path as POST.",
+        "description": "403 STS-XPEP-0139, the same path as POST.",
         "parameters": [
           {
             "name": "id",
@@ -1027,7 +927,7 @@
         ],
         "responses": {
           "403": {
-            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043).",
+            "description": "A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1042,16 +942,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFound"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

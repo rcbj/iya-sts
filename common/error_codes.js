@@ -26017,8 +26017,10 @@ const CODES = [
     spec: 'HTTP 403, an error message (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0044',
     summary: 'An AuthZEN request reached a remote PEP whose edge PDP is ' +
-      'turned off (PEP_AUTHZEN=false) (#1179).',
-    spec: 'HTTP 501, an error message' },
+      'turned off (PEP_AUTHZEN=false) (#1179). AuthZEN 1.0 prescribes no ' +
+      'status for a switched-off API, so the edge answers 403 (#2208; ' +
+      '501 before).',
+    spec: 'HTTP 403, an error message' },
   { code: 'STS-XPEP-0045',
     summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
       'identifier to name (no identifier set, and plain HTTP or no usable ' +
@@ -26607,24 +26609,29 @@ const CODES = [
     summary: 'A caller asked this edge PDP for one of the AuthZEN Search ' +
       'APIs (POST /access/v1/search/subject, resource or action). Those ' +
       'are answered by the service, which holds the directory and the ' +
-      'resource and action catalogues. This edge answers 501, before ' +
+      'resource and action catalogues. This edge answers 403 (#2208; 501 ' +
+      'before: AuthZEN 1.0 prescribes no status for an API a PDP does ' +
+      'not serve, only that it is absent from the metadata), before ' +
       'admission and without reading the body, and does not advertise ' +
       'the paths. The code is logged and not sent. A turned-off edge, or ' +
       'one that has not pulled, answers that condition first ' +
       '(STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, ' +
       'STS-AUTHZEN-0014). HEAD stays 404.',
-    spec: 'AuthZEN Authorization API 1.0 section 8; HTTP 501' },
+    spec: 'AuthZEN Authorization API 1.0 sections 8 and 9.1.1; HTTP 403' },
   { code: 'STS-XPEP-0139',
     summary: 'A caller asked this edge PDP for the Access Request and ' +
       'Approval Profile (POST /access/v1/access-requests, GET of its ' +
       'schema or of a task, POST or DELETE of a task\'s cancel). The ' +
-      'service holds the approval store. This edge answers 501 with the ' +
+      'service holds the approval store. This edge does not support the ' +
+      'profile, publishes no access_request_endpoint, and answers 403 ' +
+      '(#2208; 501 before: the profile prescribes no status for a PDP ' +
+      'that does not support it) with the ' +
       'evaluation error object, not problem+json, before admission and ' +
       'without reading the body, and does not advertise the paths. A ' +
       'POST to the task path without /cancel stays 404. The code is ' +
       'logged and not sent. context.approval on an evaluation is not ' +
       'this refusal: it is recognized and not used (STS-AUTHZEN-0084).',
-    spec: 'AuthZEN Access Request and Approval Profile; HTTP 501' },
+    spec: 'AuthZEN Access Request and Approval Profile; HTTP 403' },
   { code: 'STS-XPEP-0140',
     summary: 'An access evaluation was one of the OAuth token-exchange ' +
       'binding\'s tuples while the realm\'s authzen.tokenExchange is on ' +

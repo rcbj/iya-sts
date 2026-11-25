@@ -67,7 +67,7 @@ pub const RESERVED_CONTEXT: [&str; 3] =
 /// fixed rules (#1181), which a row may add to but never override: refused
 /// at the write there, so refused here too, and a pulled catalogue never
 /// carries one. This edge does not answer the binding. A request that names
-/// one of these, or that is one of the binding's tuples, is 501
+/// one of these, or that is one of the binding's tuples, is 403
 /// (`STS-XPEP-0140`) before it is read, so the caller is not told it is an
 /// undeclared property (`STS-AUTHZEN-0004`).
 pub const BINDING_CONTEXT: [&str; 11] = [

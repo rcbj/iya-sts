@@ -1349,10 +1349,20 @@ GET  /.well-known/authzen-configuration    its metadata
 
 The Search APIs (`POST /access/v1/search/subject`, `resource` and `action`)
 and the Access Request profile (`POST /access/v1/access-requests`, its schema,
-a task, and cancel) answer `501`. The service holds the directory and the
+a task, and cancel) answer `403`. The service holds the directory and the
 approval store; this edge does not. Those answers use the evaluation error
 object, require no admission, and are not named in the metadata. A method the
 profile does not define, and `HEAD` of any of them, stays `404`.
+
+**An AuthZEN API switched off is a `403` too** — `PEP_AUTHZEN=false`, the
+realm's `authzen.enabled` off, or the batch endpoint off. The AuthZEN
+Authorization API 1.0 prescribes no status for an API a PDP does not serve
+or has switched off (section 10.1.2 defines `400`, `401`, `403` and `500`);
+it says only that an endpoint absent from the metadata is one the PDP "is
+not capable" of (section 9.1.1). So the edge's metadata names
+`access_evaluations_endpoint` only while the batch is on, and never a
+search or access-request endpoint. The service itself still answers `501`
+in these cases.
 
 **The OAuth token-exchange binding is classified as the service classifies
 it**, from the realm's `authzen.tokenExchange` and the lists the pull
@@ -1623,9 +1633,9 @@ them.
 | The PIP answers from the directory in process | The PIP is the service's `POST /xacml/pip`, asked over the network; if that fails the subject's attributes are an empty bag, as for `/protected` |
 | One `authzen.decision` row per evaluation in the audit log, and a row on `/admin/xacml/monitor` | A log line per evaluation with the same content, never a property value or an id the caller sent; `GET /` counts the answers. The same content reaches the service's audit log a few seconds later as an `authzen.remote.decision` row ([below](#its-decisions-in-the-services-audit-log)); nothing reaches the monitor |
 | `reason_admin` is the service's sentence | It is this container's; the decision and the code are the same |
-| The three Search APIs (`/access/v1/search/*`) | `501`. The metadata does not list them. The service holds the directory and the catalogues |
+| The three Search APIs (`/access/v1/search/*`) | `403`. The metadata does not list them. The service holds the directory and the catalogues |
 | The Obligations Profile: an obligation is handed in `context.obligations` when the PEP declares its type in `context.supported_obligations` | Handed the same way, while `authzen.obligationsProfile` is on. The metadata then lists `supported_obligations`. Without the declaration a Permit that carries any other obligation answers `false` |
-| `context.approval` on an evaluation | Recognized and not used. The decision is made without it, and the context says `reason: approval_unverifiable`, `next_action: none`. The access-request endpoints are `501`; the edge holds no approval store |
+| `context.approval` on an evaluation | Recognized and not used. The decision is made without it, and the context says `reason: approval_unverifiable`, `next_action: none`. The access-request endpoints are `403`; the edge holds no approval store |
 | The OAuth token-exchange binding's tuples, answered by its fixed rules while `authzen.tokenExchange` is on | `403` for that evaluation, or for that batch item, while it is on (or the service did not say); recorded in the audit log. While it is off, ordinary evaluations, as at the service. Not advertised |
 | `signed_metadata` in the metadata document | Omitted. The edge holds no signing key of the realm's, and republishing the service's JWT would name the wrong issuer |
 | An evaluation about an application that enforces [fine-grained authorization](fga.md) is decided against that application's own policy ([AuthZEN](authzen.md#applications-with-their-own-policy)) | Not decided here: forwarded to the service, which decides it ([above](#applications-that-enforce-fine-grained-authorization-forwarded)). It costs a round trip, needs the PEP's entry to hold `AUTHZEN_PEPS` with the application in its scope, and follows a switch of enforcement from the next poll |
@@ -2723,7 +2733,7 @@ environment's, then the default.
 | `PEP_HTTPS_PORT` | `9443` | published on 9444 by `docker-compose.yml` |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read — *managed*: `httpsReloadIntervalMs` |
 | `PEP_RESOURCE` | | the resource id used when a request names none — *managed*: `resource` |
-| `PEP_AUTHZEN` | `true` | the AuthZEN edge PDP. `false` answers `501` — *managed*: `authzen` |
+| `PEP_AUTHZEN` | `true` | the AuthZEN edge PDP. `false` answers `403` — *managed*: `authzen` |
 | `PEP_AUTHZEN_CLIENT_CA` | — | the CA bundle an AuthZEN caller's certificate must chain to. Unset, nobody is admitted |
 | `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at — *managed*: `authzenPdpIdentifier` |
@@ -2809,7 +2819,7 @@ generated from the model in `models/pep/` and kept in the repository under
 | Document | What it describes |
 |---|---|
 | `pep-service.json` | The PEP's own endpoints: `GET /`, `GET /healthcheck`, `GET /protected`, `POST /notify` and `GET /crl/{name}` |
-| `pep-authzen.json` | The AuthZEN edge PDP: `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, `GET /.well-known/authzen-configuration`, and the Search and Access Request paths it answers `501` |
+| `pep-authzen.json` | The AuthZEN edge PDP: `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, `GET /.well-known/authzen-configuration`, and the Search and Access Request paths it answers `403` |
 | `pep-proxy.json` | The paths the reverse proxy reserves for itself, under `/.iya-pep/`, and how every configured route answers. The routes themselves are not listed: your configuration decides them |
 | `pep-control-plane.json` | What this service serves the PEP: registration, the heartbeat, the pulls, a listener's certificate, the reverse proxy's validation endpoints, and the PIP |
 

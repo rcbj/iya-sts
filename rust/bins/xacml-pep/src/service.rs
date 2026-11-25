@@ -193,7 +193,7 @@ impl Pep {
     /// link checker sends without meaning one; it stays the generic 404, as
     /// every other method this handler does not answer. **Not for the
     /// Search and Access Request paths either** (#1205): a GET of one of
-    /// them is 501, and rewriting HEAD to GET would tell a monitor the edge
+    /// them is 403, and rewriting HEAD to GET would tell a monitor the edge
     /// answers a profile it does not hold. Those HEADs stay 404, and the
     /// body is still stripped.
     pub async fn handle(
@@ -1199,6 +1199,94 @@ mod tests {
         assert_eq!(overview(&pep)["authzen"]["enabled"], json!(env));
     }
 
+    /// AN API SWITCHED OFF IS A 403, AND THE METADATA NAMES ONLY WHAT
+    /// ANSWERS (#2208, rcbj: "Follow the spec, but return 403 otherwise").
+    /// AuthZEN 1.0 prescribes no status for a switched-off API (section
+    /// 10.1.2 defines 400, 401, 403 and 500) and only that an endpoint
+    /// absent from the metadata is one the PDP "is not capable" of (section
+    /// 9.1.1): the batch off is left out of the metadata and refused 403,
+    /// the realm's API off and this container's switch off refuse every
+    /// AuthZEN path 403, the metadata included, and no answer is a 5xx.
+    #[test]
+    fn a_switched_off_api_is_403_and_the_metadata_names_only_what_answers() {
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let host = [("host", "pep.example:9443")];
+        let metadata = |pep: &Arc<Pep>| {
+            let (status, _, body) = answer(
+                pep,
+                Method::GET,
+                "/.well-known/authzen-configuration",
+                https.clone(),
+                &host,
+                "",
+            );
+            (status, body)
+        };
+        let (status, body) = metadata(&pep);
+        assert_eq!(status, StatusCode::OK, "{}", body);
+        let on: Value = serde_json::from_str(&body).unwrap();
+        assert!(on.get("access_evaluations_endpoint").is_some(), "{}", on);
+        for absent in [
+            "search_subject_endpoint",
+            "search_resource_endpoint",
+            "search_action_endpoint",
+        ] {
+            assert!(on.get(absent).is_none(), "{}: {}", absent, on);
+        }
+        // THE BATCH OFF: not named, and refused 403 (STS-AUTHZEN-0039).
+        pep.sync.load_catalogue_for_test(&json!({
+            "syncToken": "c2", "realm": "", "apiObject": "sts-authzen-api",
+            "rows": [], "settings": { "enabled": true, "batchEnabled": false }
+        }));
+        let (status, body) = metadata(&pep);
+        assert_eq!(status, StatusCode::OK, "{}", body);
+        let off: Value = serde_json::from_str(&body).unwrap();
+        assert!(off.get("access_evaluations_endpoint").is_none(), "{}", off);
+        assert!(off.get("access_evaluation_endpoint").is_some(), "{}", off);
+        let (status, _, said) = answer(
+            &pep,
+            Method::POST,
+            "/access/v1/evaluations",
+            https.clone(),
+            &[("content-type", "application/json")],
+            "{}",
+        );
+        assert_eq!(status, StatusCode::FORBIDDEN, "{}", said);
+        assert!(!said.contains("STS-"), "a code is never sent: {}", said);
+        assert!(said.contains("batch endpoint is turned off"), "{}", said);
+        // THE REALM'S API OFF (STS-AUTHZEN-0013): every AuthZEN path 403.
+        pep.sync.load_catalogue_for_test(&json!({
+            "syncToken": "c3", "realm": "", "apiObject": "sts-authzen-api",
+            "rows": [], "settings": { "enabled": false }
+        }));
+        let (status, _) = metadata(&pep);
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        for (method, path) in [
+            (Method::POST, "/access/v1/evaluation"),
+            (Method::POST, "/access/v1/evaluations"),
+            (Method::POST, "/access/v1/search/subject"),
+            (Method::POST, "/access/v1/access-requests"),
+        ] {
+            let (status, body) = ask(&pep, method, path, https.clone());
+            assert_eq!(status, StatusCode::FORBIDDEN, "{}: {}", path, body);
+        }
+        // THIS CONTAINER'S SWITCH OFF (PEP_AUTHZEN, STS-XPEP-0044): 403.
+        pep.options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &json!({ "authzen": false }),
+        ));
+        let (status, _) = metadata(&pep);
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) =
+            ask(&pep, Method::POST, "/access/v1/search/action", https);
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
     /// HEAD IS GET WITHOUT THE BODY (#1830) for every GET but /protected,
     /// whose GET is a decision; HEAD /protected is the generic 404.
     #[test]
@@ -1311,7 +1399,8 @@ mod tests {
     }
 
     /// Search and the Access Request profile are the service's (#1205).
-    /// A ready edge answers 501 without admission. HEAD, and the methods
+    /// A ready edge answers 403 without admission (#2208: AuthZEN 1.0
+    /// prescribes no status for an API a PDP does not serve; 501 before). HEAD, and the methods
     /// the profile does not define, stay 404. A cold edge says it is not
     /// ready before it says the path is the service's.
     #[test]
@@ -1328,7 +1417,7 @@ mod tests {
         ];
         for path in searches {
             let (status, body) = ask(&pep, Method::POST, path, https.clone());
-            assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{}", path);
+            assert_eq!(status, StatusCode::FORBIDDEN, "{}", path);
             assert!(body.contains("Search APIs"), "{}: {}", path, body);
             assert!(!body.contains("STS-XPEP"), "{}", body);
             let (status, _) = ask(&pep, Method::GET, path, https.clone());
@@ -1345,13 +1434,7 @@ mod tests {
         ];
         for (method, path) in access {
             let (status, body) = ask(&pep, method.clone(), path, https.clone());
-            assert_eq!(
-                status,
-                StatusCode::NOT_IMPLEMENTED,
-                "{} {}",
-                method,
-                path
-            );
+            assert_eq!(status, StatusCode::FORBIDDEN, "{} {}", method, path);
             assert!(body.contains("approval store"), "{}: {}", path, body);
             assert!(!body.contains("STS-XPEP"), "{}", body);
         }

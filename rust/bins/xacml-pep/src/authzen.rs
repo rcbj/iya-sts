@@ -9,9 +9,9 @@
 //! POST /access/v1/evaluations                a batch (section 7)
 //! GET  /.well-known/authzen-configuration    the metadata (section 9)
 //! POST /access/v1/search/{subject,resource,action}
-//!                                            501: the service's Search APIs
+//!                                            403: the service's Search APIs
 //! POST /access/v1/access-requests and the
-//!   task, schema and cancel paths            501: the service's profile
+//!   task, schema and cancel paths            403: the service's profile
 //! ```
 //!
 //! A token-exchange binding tuple is 403 on the evaluation endpoints (a PEP
@@ -79,13 +79,15 @@ pub const EVALUATIONS_PATH: &str = "/access/v1/evaluations";
 pub const METADATA_PATH: &str = "/.well-known/authzen-configuration";
 
 /// The Search APIs (#1175). The edge does not hold the directory or the
-/// catalogues, so each POST is 501 and the metadata does not name them.
+/// catalogues, so each POST is 403 (501 before #2208) and the metadata
+/// does not name them.
 pub const SEARCH_SUBJECT_PATH: &str = "/access/v1/search/subject";
 pub const SEARCH_RESOURCE_PATH: &str = "/access/v1/search/resource";
 pub const SEARCH_ACTION_PATH: &str = "/access/v1/search/action";
 
 /// The Access Request and Approval Profile (#1180). The edge does not hold
-/// the approval store. These paths are 501; a POST to the item path
+/// the approval store. These paths are 403 (501 before #2208); a POST to
+/// the item path
 /// without `/cancel` stays 404, as does every method not listed.
 pub const ACCESS_REQUESTS_PATH: &str = "/access/v1/access-requests";
 // The path scan (`tests/model_pep.js`) reads a `*_PATH` literal only when
@@ -266,15 +268,23 @@ fn refusal_of(
     None
 }
 
-/// A 501 for a Search or Access Request path, after the caller has already
+/// A 403 for a Search or Access Request path, after the caller has already
 /// checked that the edge PDP is on. The body is the evaluation error
 /// object. The code is logged here and never sent.
+///
+/// **403, NOT 501 (#2208, rcbj: "Follow the spec, but return 403
+/// otherwise").** AuthZEN 1.0 (Final) prescribes no status for an API a
+/// PDP does not serve or has switched off: its section 10.1.2 defines 400,
+/// 401, 403 and 500 only, and section 9.1.1 says only that the metadata's
+/// absence of an endpoint tells the PEP the PDP "is not capable" — which
+/// this edge honours by never naming these paths there. The Access Request
+/// profile is not in the specification at all. So the rule's fallback: 403.
 pub fn refused_here(method: &str, path: &str) -> Option<Reply> {
     let (code, message) = refusal_of(method, path)?;
-    Some(Reply::error(501, code, message))
+    Some(Reply::error(403, code, message))
 }
 
-/// HEAD of a path that some other method answers 501. Those HEADs are not
+/// HEAD of a path that some other method answers 403. Those HEADs are not
 /// rewritten to GET, so a monitor is not told the edge answers them.
 pub fn head_is_absent(path: &str) -> bool {
     ["GET", "POST", "DELETE"]
@@ -679,11 +689,17 @@ async fn forward_to(
 impl Pep {
     /// Whether the edge PDP answers at all, before anything is read: this
     /// container's switch, a catalogue and a policy pull held, and the
-    /// realm's own `authzen.enabled` (with the API's object).
+    /// realm's own `authzen.enabled` (with the API's object). Every refusal
+    /// here is a 403 (#2208). AuthZEN 1.0 (Final) prescribes no status for
+    /// an API a PDP has switched off — section 10.1.2 defines 400, 401, 403
+    /// and 500 only, and section 9.1.1 says only that an endpoint absent
+    /// from the metadata tells the PEP the PDP "is not capable" — so a
+    /// switched-off API takes the owner's fallback, 403, as nothing pulled
+    /// yet does.
     pub(crate) fn authzen_off(&self, catalogue: &Catalogue) -> Option<Reply> {
         if !self.options.now().authzen {
             return Some(Reply::error(
-                501,
+                403,
                 "STS-XPEP-0044",
                 "The AuthZEN API is turned off on this edge PDP \
                  (PEP_AUTHZEN).",
@@ -701,7 +717,7 @@ impl Pep {
         if !catalogue.settings.enabled {
             return Some(if catalogue.api_object {
                 Reply::error(
-                    501,
+                    403,
                     "STS-AUTHZEN-0013",
                     "The AuthZEN API is turned off in this realm \
                      (authzen.enabled, or xacml.enabled, whose engine it \
@@ -709,7 +725,7 @@ impl Pep {
                 )
             } else {
                 Reply::error(
-                    501,
+                    403,
                     "STS-AUTHZEN-0014",
                     "This realm has no sts-authzen-api application, the \
                      AuthZEN API's resource object, so the API is off here.",
@@ -796,8 +812,10 @@ impl Pep {
             return off;
         }
         if batch && !catalogue.settings.batch_enabled {
+            // Not advertised in the metadata while it is off (section
+            // 9.1.1), and no status prescribed for it: 403 (#2208).
             return Reply::error(
-                501,
+                403,
                 "STS-AUTHZEN-0039",
                 &format!(
                     "The batch endpoint is turned off in this realm \

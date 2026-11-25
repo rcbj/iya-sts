@@ -731,7 +731,7 @@ keys, variables and bounds); the table below marks them.
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | **PATHS, re-read on an interval** — the listener's pair, issued by the PDP's realm. Unlike `PEP_TLS_CERT`, which is read once, because this pair normally does not exist when the container starts. See *The HTTPS listener*. |
 | `PEP_HTTPS_PORT` | `9443` | |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. *Managed* (`httpsReloadIntervalMs`). |
-| `PEP_AUTHZEN` | `true` | The AuthZEN edge PDP (#1179). `false` answers 501 (`STS-XPEP-0044`): switched off is not a PEP failure. *Managed* (`authzen`). |
+| `PEP_AUTHZEN` | `true` | The AuthZEN edge PDP (#1179). `false` answers 403 (`STS-XPEP-0044`; 501 before #2208 — AuthZEN 1.0 prescribes no status for a switched-off API). *Managed* (`authzen`). |
 | `PEP_AUTHZEN_CLIENT_CA` | — | **A path, read once**: the CA bundle an AuthZEN caller's certificate must chain to. Set, the HTTPS listener ASKS every client for a certificate; unset or unreadable, the edge PDP admits nobody (`STS-XPEP-0039`). |
 | `PEP_AUTHZEN_CALLERS` | — | **Optional since #1189.** A JSON array of `{ "name", "sha256", "applications" }`. Set, it NARROWS the callers pulled from the service to the certificates it names (`STS-XPEP-0054`), and before the first caller pull it decides alone, as #1179's door did (`STS-XPEP-0037`); unset, the pulled list alone decides and nothing is answered before it (`STS-XPEP-0050`). Set to a value that names nobody, it admits nobody. A malformed entry is left out (`STS-XPEP-0038`). |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). *Managed* (`authzenPdpIdentifier`). |
@@ -986,7 +986,7 @@ not applying.
   item's own error here, in one place, and needs the PEP admitted to the
   single endpoint only. The cost is a round trip per forwarded item, in
   order. **There is no Search API here** (*What it cannot do*): a search is
-  501 and nothing of it is forwarded.
+  403 and nothing of it is forwarded.
 * **WHAT IS SENT.** The caller's request for that evaluation
   (`forwarded_body()`), with `context.application` SET to the resolved
   application whether or not the caller sent it — the service scopes the
@@ -1114,8 +1114,9 @@ before the first pull, one not on the local list 403 (`-0037`). No
   is narrower, never wider.
 * **SEARCH, SIGNED METADATA, ACCESS REQUESTS AND THE BINDING ARE THE
   SERVICE'S (#1205).** `POST /access/v1/search/{subject,resource,action}` is
-  501 (`STS-XPEP-0138`) before admission. The Access Request paths — the
-  collection, the schema, a task, and cancel — are 501 (`STS-XPEP-0139`)
+  403 (`STS-XPEP-0138`; 501 before #2208) before admission. The Access
+  Request paths — the collection, the schema, a task, and cancel — are 403
+  (`STS-XPEP-0139`)
   the same way, with the evaluation error object; a method the profile does
   not define stays 404, and so does HEAD of any of them. `signed_metadata`
   is omitted: this edge holds no realm signing key, and republishing the
@@ -1210,7 +1211,7 @@ decision — the PIP asked at the PDP, the enforcement counted and reported on
 the heartbeat — which a monitor's or a link checker's HEAD does not mean to
 ask for; it stays the generic 404 (`STS-XPEP-0009`), as before. **Not for
 the Search and Access Request paths either** (#1205): a GET of one of them
-is 501, and rewriting HEAD to GET would tell a monitor the edge answers a
+is 403, and rewriting HEAD to GET would tell a monitor the edge answers a
 profile it does not hold. Those HEADs stay the generic 404.
 
 ## THE REVERSE PROXY (#1760)
@@ -1235,14 +1236,30 @@ Deny). On the AuthZEN edge it is the evaluation error object at 403.
 **Kept**: 401 with its challenge for a missing or invalid credential
 (authentication, not a failure to decide); 403 for a Deny; 429 for the
 service's password lockout (a throttle); 400, 404, 405 and 413 about the
-request itself; the 501s of an AuthZEN API switched off or a Search or
-Access Request path this edge does not serve (an absence, decided by
-configuration, not a failure to decide); and the APPLICATION's own failures
+request itself; and the APPLICATION's own failures
 after the decision — unreachable 502 (`STS-XPEP-0069`, and `0097` for a
 `saml` route's ACS), too slow 504 (`0068`), or its own status passed
 through. `proxy_error_tests.rs` fails a row that is a 5xx and not one of
 those three codes. The codes stay on the log lines and audit rows, and
 are never sent.
+
+**The AuthZEN API switched off, and the paths this edge does not serve**
+(rcbj on #2208: "Follow the spec, but return 403 otherwise"). AuthZEN
+Authorization API 1.0 (Final, 11 January 2026) prescribes no status for
+either: section 10.1.2's Table 2 defines 400, 401, 403 and 500, and section
+9.1.1 says only "the absence of any of these parameters is sufficient for
+the PEP to determine that the PDP is not capable and therefore will not
+return a result for the associated API". The Access Request and Approval
+Profile (Draft 1) requires an `access_request_endpoint` of a PDP that
+supports it (section 12.1) and says nothing of one that does not. So
+`PEP_AUTHZEN` off (`0044`), the realm's API off (`STS-AUTHZEN-0013`,
+`0014`), the batch off (`STS-AUTHZEN-0039`), Search (`0138`) and the Access
+Request paths (`0139`) are 403 — they were 501 — and what the spec does
+govern is kept: the metadata names `access_evaluations_endpoint` only while
+the batch is on, and no search or access-request endpoint ever
+(`service.rs`'s `a_switched_off_api_is_403_and_the_metadata_names_only_what_answers`).
+The service's own `/access/v1` still answers 501 in those cases; that is
+the service's to decide, not this container's.
 
 ```
 PEP_PROXY_PORT        9180   plain HTTP, only with PEP_PROXY_HTTP=true
@@ -2171,7 +2188,7 @@ published APIs use:
 | Source | Document (`xacml-pep/openapi/`) | Rust module (`sts-model-pep`) | What |
 |---|---|---|---|
 | `pep_service.tsp` | `pep-service.json` | `pep_service` | `GET /`, `/healthcheck`, `/protected`, `POST /notify` (with the service's nudge as its body), `GET /crl/{name}` |
-| `pep_authzen.tsp` | `pep-authzen.json` | `pep_authzen` | the edge PDP's evaluation, evaluations, metadata, and the Search and Access Request paths it answers 501 |
+| `pep_authzen.tsp` | `pep-authzen.json` | `pep_authzen` | the edge PDP's evaluation, evaluations, metadata, and the Search and Access Request paths it answers 403 |
 | `pep_proxy.tsp` | `pep-proxy.json` | `pep_proxy` | the proxy's own paths: `/.iya-pep/*` and the start page; what EVERY route answers whatever its configuration is in the document's description and `Refusal` |
 | `pep_control_plane.tsp` | `pep-control-plane.json` | `pep_control_plane` | what the SERVICE serves the PEP: `/xacml/pep/*` and `POST /xacml/pip` |
 
