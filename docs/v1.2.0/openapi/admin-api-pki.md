@@ -6820,14 +6820,14 @@ Scope: `admin:read`.
 | `stores[].intermediates` | integer | yes | The certificates it holds that are steps on a path, not anchors. |
 | `stores[].jwksUri` | string |  | A key-set truststore's jwks_uri, where its keys are fetched rather than pasted. |
 | `stores[].jwtKeys` | integer |  | A SPIFFE bundle truststore's JWT-SVID keys, counted. |
-| `stores[].keys` | integer |  | A key-set truststore's pasted keys, counted; 0 for one that is fetched. |
+| `stores[].keys` | integer |  | A key-set truststore's pasted keys, counted, 0 for one that is fetched; or an SSH CA truststore's keys, counted. |
 | `stores[].kind` | string | yes | `built-in`, `view`, `setting`, `spiffe` or `named`. |
 | `stores[].name` | string | yes | Unique in its realm. A built-in (`system`, `service-root`, …), a view (`signers`, `client-certificates`), a legacy setting (`setting:<key>`), a SPIFFE bundle (`spiffe:<trust domain>`) or a named truststore. |
 | `stores[].party` | string |  | A key-set truststore's party, the one whose JSON Web Tokens its keys may verify: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`. |
 | `stores[].problem` | string | yes | Why what it names could not be read (an unreadable legacy file), in English; empty where nothing is wrong. |
 | `stores[].readOnly` | boolean | yes | Whether this realm may change it here: built-ins, views and settings are changed where they are kept, and a service-wide named truststore only from the default realm. |
 | `stores[].scope` | string | yes | `service` (the default realm's, nameable by a handshake or outbound use case) or `realm`. |
-| `stores[].storeKind` | string |  | What it holds where that is not certificates: `jwks`, a key set (#2149). |
+| `stores[].storeKind` | string |  | What it holds where that is not certificates: `jwks`, a key set (#2149), or `ssh`, SSH certificate authority keys (#2151). |
 | `stores[].trustDomain` | string |  | A SPIFFE bundle truststore's trust domain. |
 | `stores[].usedBy` | list | yes | The use cases that trust it in this realm, assigned or by default. |
 | `stores[].usedBy[]` | string |  |  |
@@ -6991,9 +6991,10 @@ Scope: `admin:write`.
 | `jwks` | map, or string |  |  |
 | `jwks.{key}` | any JSON |  |  |
 | `jwksUri` | string |  | A key set's jwks_uri, fetched under the outbound policy; not with `jwks`. |
-| `kind` | string |  | `x509` (the default: certificates) or `jwks`: a key set bound to one party (#2149). |
+| `kind` | string |  | `x509` (the default: certificates), `jwks`: a key set bound to one party (#2149), or `ssh`: SSH certificate authority keys (#2151). |
 | `name` | string | yes | The truststore's name. |
 | `party` | string |  | A key set's party: `client:<client_id>`, `federation:<relationship id>`, `claims-provider:<provider id>` or `oidfed-anchor:<entity id>`. Fixed once created. |
+| `sshKeys` | string |  | An `ssh` truststore's SSH CA public keys, in authorized_keys form, one per line (#2151). |
 
 **200**: The truststore was created.
 
@@ -7104,7 +7105,7 @@ Scope: `admin:write`.
 
 **Replace a key-set truststore's keys (#2149)**
 
-Gives a key-set truststore of this realm new keys: a pasted JSON Web Key Set of public keys or a jwks_uri, never both. Its party does not change.
+Gives a key-set truststore of this realm new keys: a pasted JSON Web Key Set of public keys or a jwks_uri, never both; its party does not change. Or gives an SSH CA truststore new SSH CA keys (#2151).
 
 **Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
 
@@ -7125,6 +7126,7 @@ Scope: `admin:write`.
 | `jwks.{key}` | any JSON |  |  |
 | `jwksUri` | string |  | A jwks_uri, fetched under the outbound policy; not with `jwks`. |
 | `name` | string | yes | The key-set truststore's name. |
+| `sshKeys` | string |  | For an `ssh` truststore: its SSH CA public keys, in authorized_keys form, one per line (#2151). |
 
 **200**: The key set was given new keys.
 

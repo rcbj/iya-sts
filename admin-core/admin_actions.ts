@@ -12314,6 +12314,10 @@ class AdminActions {
       row.keys = Number(one.keys) || 0;
       row.jwksUri = String(one.jwksUri || '');
     }
+    // SSH CA keys (#2151), counted; a setting's as well as a store's.
+    if (one.storeKind === 'ssh') {
+      row.keys = Number(one.keys) || 0;
+    }
     if (one.kind === 'spiffe') {
       row.trustDomain = String(one.trustDomain || '');
       row.jwtKeys = Array.isArray(one.jwtKeys) ? one.jwtKeys.length :
@@ -12455,7 +12459,8 @@ class AdminActions {
       const made = truststores.create(realmId, {
         name: name, description: String(asked.description || ''),
         addedBy: actor, kind: kind, party: String(asked.party || ''),
-        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || '') });
+        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || ''),
+        sshKeys: String(asked.sshKeys || '') });
       if (!made.ok) {
         log.debug("Leaving AdminActions.namedTruststoresAction(). create " +
                   "refused.");
@@ -12471,14 +12476,16 @@ class AdminActions {
     }
     if (action === 'set-keys') {
       const set = truststores.setKeys(realmId, name, {
-        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || '') });
+        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || ''),
+        sshKeys: String(asked.sshKeys || '') });
       if (!set.ok) {
         log.debug("Leaving AdminActions.namedTruststoresAction(). set-keys " +
                   "refused.");
         return refusal(set, 'STS-ADMIN-0957');
       }
       // The kids and the jwks_uri, never the keys themselves.
-      const kids = asked.jwksUri ? '' : truststores.keysOfText(
+      const kids = asked.jwksUri || asked.sshKeys ? '' :
+        truststores.keysOfText(
         jwksText(asked.jwks)).keys.map(function (one: any) {
         return String(one.kid || '');
       }).join(' ');

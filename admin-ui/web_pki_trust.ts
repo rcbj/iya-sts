@@ -227,13 +227,26 @@ class PkiTrustPage {
   private static keySetOf(row: Json, writable: boolean, ctx: Json): string {
     const t = ctx.t;
     const named = row.kind === 'named';
-    const holds = !named ? t.html('consolePkiTrust.keySetRegistered') :
+    const ssh = row.storeKind === 'ssh';
+    const holds = ssh ? t.html('consolePkiTrust.sshKeys',
+                               { n: String(row.keys || 0) }) :
+      !named ? t.html('consolePkiTrust.keySetRegistered') :
       '<div>' + t.html('consolePkiTrust.keySetFor', { party: row.party }) +
       '</div><div class="sub">' + (row.jwksUri
         ? t.html('consolePkiTrust.keySetUri', { uri: row.jwksUri })
         : t.html('consolePkiTrust.keySetKeys', { n: String(row.keys || 0) })) +
       '</div>';
-    const detail = named && writable
+    const detail = named && writable && ssh
+      ? '<details><summary>' + t.html('consolePkiTrust.setKeysHeading') +
+        '</summary><form method="post" action="' + PAGE + '#' + TAB_STORES +
+        '"><input type="hidden" name="action" value="set-keys">' +
+        '<input type="hidden" name="name" value="' + kit.esc(row.name) +
+        '"><textarea name="sshKeys" rows="5" aria-label="' +
+        kit.esc(t.text('consolePkiTrust.createSshKeys')) + '" placeholder=' +
+        '"ssh-ed25519 AAAA…"></textarea><div class="formrow"><button ' +
+        'type="submit">' + t.html('consolePkiTrust.setKeysButton') +
+        '</button></div></form></details>'
+      : named && writable
       ? '<details><summary>' + t.html('consolePkiTrust.setKeysHeading') +
         '</summary><form method="post" action="' + PAGE + '#' + TAB_STORES +
         '"><input type="hidden" name="action" value="set-keys">' +
@@ -261,7 +274,8 @@ class PkiTrustPage {
       (row.problem ? '<div class="state-invalid">' + kit.esc(row.problem) +
         '</div>' : '') + detail + '</td><td>' +
       PkiTrustPage.kindText(row.kind, t) + '<div class="sub">' +
-      t.html('consolePkiTrust.kindKeySet') + '</div></td><td>' +
+      (ssh ? t.html('consolePkiTrust.kindSshCa')
+           : t.html('consolePkiTrust.kindKeySet')) + '</div></td><td>' +
       (row.scope === 'service' ? t.html('consolePkiTrust.scopeService')
                                : t.html('consolePkiTrust.scopeRealm')) +
       '</td><td>' + holds + '</td><td>' +
@@ -277,7 +291,7 @@ class PkiTrustPage {
   private static storeOf(row: Json, ctx: Json): string {
     const t = ctx.t;
     const writable = !row.readOnly && row.kind === 'named' && ctx.write;
-    if (row.storeKind === 'jwks') {
+    if (row.storeKind === 'jwks' || row.storeKind === 'ssh') {
       return PkiTrustPage.keySetOf(row, writable, ctx);
     }
     const holds = t.html('consolePkiTrust.holds', {
@@ -360,7 +374,8 @@ class PkiTrustPage {
         'id="truststore-kind" name="kind"><option value="x509">' +
         t.html('consolePkiTrust.createKindX509') + '</option><option ' +
         'value="jwks">' + t.html('consolePkiTrust.createKindJwks') +
-        '</option></select></div>' +
+        '</option><option value="ssh">' +
+        t.html('consolePkiTrust.createKindSsh') + '</option></select></div>' +
         '<div class="formrow"><label for="truststore-party">' +
         t.html('consolePkiTrust.createParty') + '</label><input ' +
         'type="text" id="truststore-party" name="party" size="40" ' +
@@ -371,7 +386,10 @@ class PkiTrustPage {
         '<div class="formrow"><label for="truststore-jwks-uri">' +
         t.html('consolePkiTrust.createJwksUri') + '</label><input ' +
         'type="url" id="truststore-jwks-uri" name="jwksUri" size="48">' +
-        '</div><div class="formrow"><button type="submit">' +
+        '</div><div class="formrow"><label for="truststore-ssh-keys">' +
+        t.html('consolePkiTrust.createSshKeys') + '</label><textarea ' +
+        'id="truststore-ssh-keys" name="sshKeys" rows="3"></textarea></div>' +
+        '<div class="formrow"><button type="submit">' +
         t.html('consolePkiTrust.createButton') + '</button></div></form>')
       : kit.note(t.html('consolePkiTrust.needsWrite'));
     return '<h2 data-tab="truststores">' +
