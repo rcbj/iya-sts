@@ -1471,6 +1471,10 @@
     "en": "065f403ac7419f76",
     "text": "أُسقط صف مسكوك لم يكن ليمكن إيداعه أبدًا"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "أُعيدت قراءة شهادة العميل لقاعدة البيانات وتغيّرت"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "غيّر المسؤول إعداد aud_sub لشخص"

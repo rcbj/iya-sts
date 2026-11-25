@@ -1471,6 +1471,10 @@
     "en": "065f403ac7419f76",
     "text": "已丢弃一条永远无法提交的已签发记录"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "已重新读取数据库客户端证书，且证书已更改"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "管理员更改了某人的 aud_sub 设置"

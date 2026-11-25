@@ -1471,6 +1471,10 @@
     "en": "065f403ac7419f76",
     "text": "Une ligne frappée qui ne pouvait jamais être validée a été abandonnée"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "Le certificat client de la base de données a été relu et a changé"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "Le paramètre aud_sub d’une personne a été modifié par un administrateur"

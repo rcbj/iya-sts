@@ -1471,6 +1471,10 @@
     "en": "065f403ac7419f76",
     "text": "Eine geprägte Zeile, die niemals einen Commit erreichen konnte, wurde verworfen"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "Das Client-Zertifikat für die Datenbank wurde erneut gelesen und geändert"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "Die aud_sub-Einstellung einer Person wurde von einem Administrator geändert"
