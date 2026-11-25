@@ -130,7 +130,7 @@ the modules in it.
 | [Kerberos and SPNEGO](docs/v1.2.0/kerberos.md) | RFC 4120, RFC 4121, RFC 4178, RFC 4559, MS-KKDCP, MS-SFU | A KDC on TCP/UDP 88, a Kerberized service, and SPNEGO sign-in over HTTP. |
 | [LDAP](docs/v1.2.0/ldap.md) | RFC 4511 | The embedded directory on 389 and LDAPS 636 — the store for people, groups and applications. |
 | [SCIM](docs/v1.2.0/scim.md) | RFC 7642, RFC 7643, RFC 7644 | Provisioning into that same directory. |
-| [Authentication](docs/v1.2.0/authentication.md) | WebAuthn Level 3, CTAP 2.1, FIDO U2F, RFC 6238 | Passwords, passkeys (including credProtect and imported U2F keys), recovery codes and emailed codes. |
+| [Authentication](docs/v1.2.0/authentication.md) | WebAuthn Level 3, CTAP 2.1, FIDO U2F, RFC 6238, [W3C Device Bound Session Credentials](docs/v1.2.0/sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials) (draft) | Passwords, passkeys (including credProtect and imported U2F keys), recovery codes and emailed codes; a sign-on session bound to a key the browser holds. |
 | [One-time code tokens](docs/v1.2.0/one-time-code-tokens.md) | RFC 4226 (HOTP), RFC 6030 (PSKC) | A counter-based second factor from a YubiKey HOTP slot or a vendor seed file. |
 | [YubiKey OTP](docs/v1.2.0/yubiotp.md) | Yubico OTP, YK-VAL 2.0 | Local validation of a YubiKey OTP, and an optional YK-VAL 2.0 server. Nothing is sent to YubiCloud. |
 | [Hardware tokens](docs/v1.2.0/hardware-tokens.md) | NIST SP 800-73-4, FIPS 201-3, YubiKey PIV attestation, WebAuthn enterprise attestation | A register of physical keys, PIV certificates from attested keys, and lost-token retirement. |
