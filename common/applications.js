@@ -13138,7 +13138,7 @@ async function sweepClientSecretsInSlices(nowMs) {
 //   * A SECRET DESTINATION (#221 P3, `common/secret_destinations.ts`): the
 //     new secret is PUSHED to the named secret in the operator's secrets
 //     manager BEFORE it is committed here — the service accounts' rule — so
-//     a push that fails rotates nothing, is audited (STS-REG-0374), and is
+//     a push that fails rotates nothing, is audited (STS-REG-0375), and is
 //     tried again at the next run while the old secret still works; the
 //     client reads its secret from that store.
 //   * RFC 7592 CLIENT CONFIGURATION: without a destination the new secret
@@ -13235,7 +13235,7 @@ async function autoRotateClientSecrets(nowS) {
                   overlapUntil: done.overlapUntil || 0 } });
     } else {
       out.failed.push(identifier);
-      log.warn(errorCodes.tag('STS-REG-0374') + 'applications: the client ' +
+      log.warn(errorCodes.tag('STS-REG-0375') + 'applications: the client ' +
                'secret of "' + identifier + '" was not rotated: ' +
                ((done && done.errors) || []).join(' '));
     }
@@ -13261,13 +13261,13 @@ async function pushRotatedClientSecret(identifier, where, secret) {
     answer = { ok: false, error: String((e && e.message) || e) };
   }
   if (!answer || !answer.ok) {
-    log.warn(errorCodes.tag('STS-REG-0374') + 'applications: the new client ' +
+    log.warn(errorCodes.tag('STS-REG-0375') + 'applications: the new client ' +
              'secret of "' + identifier + '" could not be pushed to ' +
              where.destination + ', so it was not rotated; the old one ' +
              'still authenticates. ' + String((answer && answer.error) || ''));
     audit.audit({ action: 'application.secret-rotated', actor: 'scheduler',
       protocol: 'console', channel: 'internal', target: String(identifier),
-      outcome: 'failure', errorCode: 'STS-REG-0374',
+      outcome: 'failure', errorCode: 'STS-REG-0375',
       summary: 'Application "' + identifier + '": the automatic rotation ' +
                'did not happen, because the new secret could not be pushed ' +
                'to ' + where.destination,

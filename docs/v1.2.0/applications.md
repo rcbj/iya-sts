@@ -161,7 +161,7 @@ gets the new secret:
 * `client_id=destination/secret-name` pushes the new secret to that
   [secret destination](#a-secret-push-destination) **before** it is
   committed. A push that fails rotates nothing, is audited with
-  `STS-REG-0374`, and is tried again the next day while the old secret still
+  `STS-REG-0375`, and is tried again the next day while the old secret still
   works. The client reads its secret from that secrets manager.
 * `client_id` alone relies on RFC 7592: the client reads its configuration
   (`GET` on its `registration_client_uri`, with its registration access

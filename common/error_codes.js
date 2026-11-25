@@ -31652,7 +31652,7 @@ const CODES = [
       'Logged at the request; remove the certificate from all but one ' +
       '(#1668).',
     spec: 'none (logged; the request is then refused STS-WSTRUST-0075)' },
-  { code: 'STS-REG-0374',
+  { code: 'STS-REG-0375',
     summary: 'An application listed in oauth2.clientSecretAutoRotate was ' +
       'not rotated by the daily job (#2220): its new secret could not be ' +
       'pushed to its secret destination, or the rotation was refused. ' +

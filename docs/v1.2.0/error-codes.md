@@ -6841,7 +6841,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0371` | An application's WS-Trust decryption private key could not be sealed under the key-encryption key where keys persist, so the key pair was not written: a private key is never stored in the clear there (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0372` | The directory refused the write of an application's WS-Trust decryption key pair (the certificate, its chain, the sealed private key and its source, written together). Nothing changed (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0373` | More than one application holds the same WS-Trust decryption certificate, so a request whose EncryptedKey names it is opened by none of them: the key would otherwise decide whose request it was. Logged at the request; remove the certificate from all but one (#1668). | none (logged; the request is then refused STS-WSTRUST-0075) |
-| `STS-REG-0374` | An application listed in oauth2.clientSecretAutoRotate was not rotated by the daily job (#2220): its new secret could not be pushed to its secret destination, or the rotation was refused. Nothing changed; the old secret still authenticates and the job tries again the next day. | Log line and audit row |
+| `STS-REG-0375` | An application listed in oauth2.clientSecretAutoRotate was not rotated by the daily job (#2220): its new secret could not be pushed to its secret destination, or the rotation was refused. Nothing changed; the old secret still authenticates and the job tries again the next day. | Log line and audit row |
 
 ## STS-DBG
 
