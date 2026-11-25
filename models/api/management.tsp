@@ -50406,6 +50406,42 @@ op `getPartnerSignals`(@js(#{`examples`:#["no-such-relationship"]}) `parameters/
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/csp-reports",
+  "get",
+  #{
+    `operationId`:"getCspReports",
+    `summary`:"The Content Security Policy violations browsers reported for this realm",
+    `description`:"What browsers reported to this realm's `/web/csp-report` since this node's front process started (#2164): `total`, and `directives` — each with its `directive`, its `count` and when it was `lastAt` (at most 64 directives a realm, the rest counted as `other`). `path` is where this realm's pages report, `since` when counting began, `maxBodyBytes` and `perAddressPerMinute` the endpoint's limits, `forwarding` whether `cspReports.forwardUrl` is set and `notForwarded` how many reports were not forwarded because too many forwards were outstanding; and the settings the page draws. The counts are this node's and are not kept across a restart.",
+    `tags`:#["Service"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The CSP reports view.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getCspReports`(`responses/200/content/application~1json/schema`: {
+    `path`: string;
+    `since`: string;
+    `total`: integer;
+    `directives`: ({
+      `directive`: string;
+      `count`: integer;
+      `lastAt`: string
+    })[];
+    `maxBodyBytes`: integer;
+    `perAddressPerMinute`: integer;
+    `forwarding`: boolean;
+    `notForwarded`: integer;
+    `settings`?: `SettingsPageDrawsDescribedSame`
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
 @endpoint("/admin-api/malware-scanning",
   "get",
   #{

@@ -122,6 +122,7 @@
   "nav.spiffe-trust-domain": "ट्रस्ट डोमेन",
   "nav.tls": "TLS / म्यूचुअल TLS",
   "nav.tls-connection": "TLS कनेक्शन",
+  "nav.csp-reports": "CSP रिपोर्टें",
   "nav.pki-trust": "PKI विश्वास",
   "nav.tls-trust": "क्लाइंट-प्रमाणपत्र ट्रस्टस्टोर",
   "nav.users": "उपयोगकर्ता",

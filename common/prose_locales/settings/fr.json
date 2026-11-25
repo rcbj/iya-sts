@@ -379,6 +379,14 @@
     "en": "ee9334d5a57de03e",
     "text": "Ajoute preload à Strict-Transport-Security, que seul le mode produit envoie, afin que le nom d'hôte puisse être soumis à la liste de préchargement des navigateurs sur hstspreload.org. Le préchargement engage tout le domaine enregistrable et chaque sous-domaine à utiliser HTTPS dans tous les navigateurs, et quitter la liste prend des mois. Envoyé seulement tant que Appliquer HSTS aux sous-domaines est activé."
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Transférer les rapports de violation CSP à"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Désactivé s'il est vide, la valeur par défaut. Une URL https qui reçoit, en JSON, chaque rapport de violation de la Content Security Policy que ce service accepte : le domaine, la directive, le chemin de la page sans sa requête, l'origine bloquée et la disposition, jamais le rapport tel que le navigateur l'a envoyé. Envoyé selon les mêmes règles sortantes que les canaux de retour de la fédération."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Accepter une assertion sans audience"

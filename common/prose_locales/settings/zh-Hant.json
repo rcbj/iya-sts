@@ -379,6 +379,14 @@
     "en": "ee9334d5a57de03e",
     "text": "在 Strict-Transport-Security 中加入 preload(僅產品模式會傳送此標頭),以便可在 hstspreload.org 將主機名稱提交至瀏覽器的預先載入清單。預先載入會使整個可註冊網域及其每個子網域在所有瀏覽器中都只能使用 HTTPS,而退出清單需要數個月。僅在「對子網域套用 HSTS」開啟時傳送。"
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "將 CSP 違規報告轉送至"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "為空時關閉,這是預設值。一個 https URL,以 JSON 形式接收本服務接受的每一份內容安全政策(Content Security Policy)違規報告:領域、指令、不含查詢的頁面路徑、被封鎖的來源和處置方式,絕不是瀏覽器傳送的原始報告。依照與聯合身分反向通道相同的對外規則傳送。"
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "接受未指定受眾的判斷提示"

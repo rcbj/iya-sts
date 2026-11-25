@@ -117,6 +117,7 @@
   "title.ssf-dead-letters": "Obeställbara",
   "title.ssf-transmitters": "Signaler från partner",
   "title.tls-connection": "TLS-anslutning",
+  "title.csp-reports": "CSP-rapporter",
   "title.pki-trust": "PKI-förtroende",
   "title.tls-trust": "Förtroendelager för klientcertifikat",
   "title.token-lifetimes": "Tokenlivslängder",

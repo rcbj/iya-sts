@@ -117,6 +117,7 @@
   "title.ssf-dead-letters": "死信",
   "title.ssf-transmitters": "来自合作方的信号",
   "title.tls-connection": "TLS 连接",
+  "title.csp-reports": "CSP 报告",
   "title.pki-trust": "PKI 信任",
   "title.tls-trust": "客户端证书信任库",
   "title.token-lifetimes": "令牌有效期",

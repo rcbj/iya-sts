@@ -3150,7 +3150,11 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/worker-pools', '/admin-api/worker-pools',
                           '/admin/node-health', '/admin-api/node-health',
                           '/admin/listeners', '/admin-api/listeners',
-                          '/admin/scheduler', '/admin-api/scheduler'];
+                          '/admin/scheduler', '/admin-api/scheduler',
+                          // #2164: the counts and the per-address limit are
+                          // the front's, so a report and the read of them
+                          // land in this process (`common/csp_reports.ts`).
+                          '/web/csp-report', '/admin-api/csp-reports'];
 
 // ---------------------------------------------------------------------------
 // THE LIVENESS PROBE IS ANSWERED HERE, AT ONCE, AND WAITS FOR NOTHING (#624,

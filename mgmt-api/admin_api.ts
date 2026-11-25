@@ -3437,6 +3437,24 @@ class AdminApi {
       // listeners and the mapping are set here, because the mapping's write
       // is the one that may need `confirm` (rcbj's D6).
       // ---------------------------------------------------------------------
+      // CSP VIOLATION REPORTS (#2164): Monitoring > CSP reports, the counts
+      // `common/csp_reports.ts` keeps of what browsers reported to
+      // `/web/csp-report`, in the realm the call is in. Under
+      // `request_pool.js`'s NEVER_DISPATCHED with the endpoint, because the
+      // counts are the front process's.
+      { method: 'GET', path: BASE + '/csp-reports', tag: 'Service',
+        operationId: 'getCspReports',
+        mirrors: 'GET /admin/csp-reports',
+        handler: function (req, res) {
+          log.debug("Entering the management API CSP reports endpoint.");
+          const cspReports = require('../common/csp_reports');
+          self.sendJson(res, 200, Object.assign(cspReports.view(), {
+            settings: require('../admin-ui/admin')
+              .configSettingsJson(cspReports.PAGE)
+          }));
+          log.debug("Leaving the management API CSP reports endpoint.");
+        } },
+
       // MALWARE SCANNING (#1501).
       { method: 'GET', path: BASE + '/malware-scanning', tag: 'Service',
         operationId: 'getMalwareScanning',

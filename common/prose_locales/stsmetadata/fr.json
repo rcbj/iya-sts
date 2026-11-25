@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. L’icône qu’un navigateur demande de lui-même sur chaque page : la marque carrée du logo (common/favicon.ico). Servie sur chaque écouteur ; conservée un jour."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). Le récepteur de ce que CSP Level 3 et la Reporting API font envoyer à un navigateur : la politique de chaque page le nomme dans report-uri et report-to, avec un en-tête Reporting-Endpoints. POST seulement, sans authentifiant, au plus 16 Kio et 60 rapports par minute d'une même adresse ; il enregistre la directive, le chemin de la page sans sa requête et l'origine bloquée, journalise STS-HTTP-0027 et répond 204 sans corps. Répondu par le processus frontal (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Les règles de la carte de l’écran de connexion et du sélecteur de langue, en une seule feuille de style que lie le shell d’une surface publique statique (common/web_card_css.ts). Servie sur chaque écouteur ; une adresse portant le ?v= de ce build est mise en cache définitivement."
@@ -2434,6 +2438,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Une page des résidents d’une autre cellule, renvoyée par cette cellule uniquement lorsque sa politique de divulgation le permet."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports en JSON : les violations de la Content Security Policy que les navigateurs ont signalées pour ce domaine, comptées par directive par le processus frontal de ce nœud, et le paramètre de transfert. Il ne change rien."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

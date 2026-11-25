@@ -379,6 +379,14 @@
     "en": "ee9334d5a57de03e",
     "text": "Fügt preload zu Strict-Transport-Security hinzu, das nur der Produktmodus sendet, sodass der Hostname bei hstspreload.org für die Preload-Liste der Browser eingereicht werden kann. Das Preloading verpflichtet die gesamte registrierbare Domäne und jede Subdomäne in jedem Browser auf HTTPS, und das Verlassen der Liste dauert Monate. Wird nur gesendet, solange HSTS auf Subdomänen anwenden eingeschaltet ist."
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "CSP-Verstoßberichte weiterleiten an"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Aus, wenn leer, der Standard. Eine https-URL, die jeden Bericht über einen Verstoß gegen die Content Security Policy, den dieser Dienst annimmt, als JSON erhält: den Realm, die Direktive, den Pfad der Seite ohne ihre Abfrage, den blockierten Ursprung und die Disposition, nie den Bericht so, wie der Browser ihn gesendet hat. Gesendet nach denselben Regeln für ausgehende Anfragen wie die Rückkanäle der Föderation."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Eine Assertion annehmen, die keine Audience nennt"

@@ -379,6 +379,14 @@
     "en": "ee9334d5a57de03e",
     "text": "Lägger till preload i Strict-Transport-Security, som bara produktläget skickar, så att värdnamnet kan skickas in till webbläsarnas förladdningslista på hstspreload.org. Förladdning binder hela den registrerbara domänen och varje underdomän till HTTPS i alla webbläsare, och att lämna listan tar månader. Skickas bara medan Tillämpa HSTS på underdomäner är på."
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Vidarebefordra rapporter om CSP-överträdelser till"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Av när den är tom, standardvärdet. En https-URL som tar emot varje rapport om en överträdelse av Content Security Policy som tjänsten tar emot, som JSON: sfären, direktivet, sidans sökväg utan frågan, det blockerade ursprunget och dispositionen, aldrig rapporten så som webbläsaren skickade den. Skickas enligt samma regler för utgående anrop som federationens bakkanaler."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Acceptera ett påstående utan målgrupp"

@@ -1,0 +1,14 @@
+{
+  "intro": "Browsers report here each time a page of this realm broke its Content Security Policy: the policy stopped a script, a frame, a style or another resource from loading or running. A report says what a browser claims, and anybody can send one, so read these as signals: a run of reports for one directive after a change is a page the change broke, and a blocked origin nobody here uses can be an injection a browser stopped.",
+  "tileTotal": "Reports",
+  "tileDirectives": "Directives",
+  "since": "Counted by this node's front process since {since}; the counts are not kept across a restart.",
+  "none": "No browser has reported a violation since then.",
+  "colDirective": "Directive",
+  "colCount": "Reports",
+  "colLast": "Last reported",
+  "limits": "Pages report to <code>{path}</code>. It reads a body of at most {bytes} bytes and {perMinute} reports a minute from one address, records the directive, the page's path without its query and the blocked origin, and writes each report to the service log.",
+  "forwardOn": "Each accepted report is also forwarded to the collector set below.",
+  "forwardOff": "Reports are not forwarded. Set the collector below to forward them.",
+  "notForwarded": "{count} reports were not forwarded because too many forwards were outstanding."
+}
