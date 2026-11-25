@@ -3853,8 +3853,9 @@ const ssfAllowedCount = cacheRegistry.register({
  * building a view; the answer is cached until `ou=applications` changes.
  *
  * @param principal - the stream owner's name
- * @returns the owning application's identifier, receiver ids and allowed
- *   events, or null when no application owns it
+ * @returns the owning application's identifier, receiver ids, allowed
+ *   events, family identifiers (`names`) and kinds, or null when no
+ *   application owns it
  */
 function ssfAllowedEventsFor(principal) {
   log.debug("Entering ssfAllowedEventsFor().");
@@ -3971,10 +3972,26 @@ function findSsfOwner(backing, wanted) {
         }
       }
     });
+    // `names` (#2234): every identifier the entry answers to in a family
+    // (`identifiersOf()`'s attributes — a client_id, an entityID, a
+    // wtrealm, a GNAP instance id), which is what a sign-on session records
+    // a relying party under; and `kinds`, what it has been seen as. Read
+    // here so `ssf/application_sessions.ts` asks the registry nothing more
+    // per event than this cached answer.
+    const names = [];
+    IDENTIFIER_ATTRIBUTES.forEach(function (row) {
+      valuesOf(indexed[row.attribute.toLowerCase()]).forEach(function (one) {
+        if (one && names.indexOf(String(one)) < 0) {
+          names.push(String(one));
+        }
+      });
+    });
     return { identifier: firstValue(indexed, 'appIdentifier') ||
                          firstValue(indexed, 'cn') || wanted,
              values: valuesOf(indexed.ssfallowedevents),
              receiverIds: valuesOf(indexed.ssfreceiverid),
+             names: names,
+             kinds: valuesOf(indexed.appkind),
              overrides: overrides };
   };
   const direct = backing.readApplication(wanted);

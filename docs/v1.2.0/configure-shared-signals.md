@@ -163,7 +163,14 @@ key on every call (`curl --cert chain.pem --key key.pem ...`). It owns its
 streams as `ssf-conf-a`. See
 [Shared Signals](shared-signals.md#authentication-four-schemes-two-scopes).
 A stream created with a person's own credential carries only events about
-that person while `ssf.personStreamsSelfOnly` is on (the default).
+that person while `ssf.personStreamsSelfOnly` is on (the default). A stream
+the application creates carries events only about people with an active
+session on that application while `ssf.applicationStreamScope` is
+`active-sessions` (the default since 1.2.0); a conformance run whose plans
+name subjects nobody signed in to the receiver sets it to `all` in its realm:
+```bash
+api config/set '{"key":"ssf.applicationStreamScope","value":"all"}'
+```
 
 **Optional: more names for the receiver.** A stream's `aud` is the identifier
 the receiver authenticated as. To let it ask for another, add that name to

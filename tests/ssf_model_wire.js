@@ -673,8 +673,13 @@ function capture() {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
+      // THE ANSWERS WERE RECORDED BEFORE #2234, when an application's stream
+      // heard about everybody; the wire receiver here names subjects nobody
+      // signed in to it, so the child keeps that behaviour
+      // (`ssf.applicationStreamScope`, `tests/ssf_application_sessions.js`).
       env: Object.assign(clean,
-                         { LOG_LEVEL: 'fatal', SW_ROOT: ROOT, SW_OUT: out }),
+                         { LOG_LEVEL: 'fatal', SW_ROOT: ROOT, SW_OUT: out,
+                           STS_SSF_APPLICATION_STREAM_SCOPE: 'all' }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });
   let record = null;

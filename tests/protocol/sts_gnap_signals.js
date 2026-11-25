@@ -215,6 +215,12 @@ async function test() {
   // =========================================================================
   log.info("=== 0. the realm and two web applications ===");
   await h.createRealm("GNAP signals");
+  // THE CONTROL STREAM BELOW IS UNSCOPED ON PURPOSE: an application's own
+  // stream hears only about people signed in to it since #2234
+  // (`ssf.applicationStreamScope`), and the control is the stream that hears
+  // about everybody. The GNAP web application's own scope (who approved it)
+  // is unaffected by this setting.
+  await h.setting("ssf.applicationStreamScope", "all");
   await h.setting("gnap.continueWaitS", 0);
   // The resource server sections 5 and 8-10 present tokens at (#586).
   await h.usePeer();

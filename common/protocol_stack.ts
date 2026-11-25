@@ -2034,6 +2034,12 @@ class ProtocolStack {
                require('../ssf/ssf_dead_letter_report'),
                'DeadLetterReport');
     this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
+    // An application's stream is about the people signed in to it (#2234):
+    // a library, no route, built before `ssf/ssf`, whose hooks register it
+    // as a subject scope. Everything it reads is reached lazily.
+    this.build('ssf/application_sessions',
+               require('../ssf/application_sessions'),
+               'ApplicationSessions');
     this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
     // 23b-v. FOREIGN TRANSMITTERS (#153): this realm as the receiver of

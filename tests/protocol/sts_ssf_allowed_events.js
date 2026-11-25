@@ -217,7 +217,12 @@ async function test() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
                                                 domain: REALM + ".example.net",
                                                 name: "SSF " +
-      "allowed events" }, "created " +
+      "allowed events",
+      // EVERY PERSON'S EVENTS ON AN APPLICATION'S STREAM, AS BEFORE #2234:
+      // this job's receivers hear about people never signed in to them
+      // (`ssf.applicationStreamScope`; the scope itself is
+      // `sts_ssf_application_sessions.js`'s).
+      overrides: { "ssf.applicationStreamScope": "all" } }, "created " +
       "the realm");
   const refusedCreate = await call("POST", realmApi + "/applications/create",
     application("ssf-bad-" + REALM, ["oauth2", "ssf"],

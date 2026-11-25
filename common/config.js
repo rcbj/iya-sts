@@ -17513,6 +17513,35 @@ const SETTINGS = [
                  'application\'s and this service\'s own receivers are not ' +
                  'affected.' },
 
+  { key: 'ssf.applicationStreamScope', group: 'SSF',
+    label: 'Which people an application\'s stream hears about',
+    env: 'STS_SSF_APPLICATION_STREAM_SCOPE', type: 'enum',
+    enumValues: ['active-sessions', 'all'], dflt: 'active-sessions',
+    runtime: true,
+    description: 'A stream an APPLICATION owns (created with its client ' +
+                 'credentials, a GNAP key or its certificate — not a ' +
+                 'person\'s token) carries a CAEP or RISC event about a ' +
+                 'person only while that person has an active session on ' +
+                 'that application: a live sign-on session the ' +
+                 'application is a relying party of (an OpenID Connect or ' +
+                 'OAuth client, a SAML 2.0 or 1.1 service provider, a ' +
+                 'WS-Federation relying party), or a live GNAP grant the ' +
+                 'person approved to it. The event that ENDS such a ' +
+                 'session still reaches the application whose session it ' +
+                 'ended. Events with no subject, and events about no ' +
+                 'person, are unaffected, and Add Subject naming a person ' +
+                 'with no active session on the application is refused ' +
+                 '(403). default_subjects stays ALL, meaning every subject ' +
+                 'with an active session on the receiver\'s application ' +
+                 '(SSF 1.0 sections 7.1, 9.2 and 10.1). all is the ' +
+                 'behaviour before #2234: an application\'s stream hears ' +
+                 'about everybody in the realm, which a deployment that ' +
+                 'relies on all-subject streams (an MDM or EDR receiver) ' +
+                 'chooses deliberately. A person\'s own stream ' +
+                 '(ssf.personStreamsSelfOnly), this service\'s own ' +
+                 'receivers and a GNAP resource server\'s stream are not ' +
+                 'affected.' },
+
   { key: 'ssf.streamStatusOnCreate', group: 'SSF',
     label: 'Status a new stream is created in',
     env: 'STS_SSF_STREAM_STATUS_ON_CREATE', type: 'enum',

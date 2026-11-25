@@ -535,6 +535,10 @@ const CELL_MINTED = [
   // An announcement a surface's receiver took in (#1086), for its own tabs:
   // minted here, beside the inbox it came out of.
   'ssf_receivers.announcements',
+  // The relying parties a sign-on session carried when it ended (#2234),
+  // for a few minutes, so the event that ended it still reaches them: a
+  // session's own facts, minted here beside the sessions.
+  'ssf_application_sessions.ended',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.streams', 'tls.listenerAnnounced',
   // Each node's own listener key (2026-10-08), sealed: a node is a member of

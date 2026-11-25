@@ -81,7 +81,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_subject.ts` | sub_ids and the `id_token` / `saml2` assertions |
 | `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
-| `gnap_signals.ts` | CAEP emission and the SSF subject scope — a web application's and, since #432, a resource server's |
+| `gnap_signals.ts` | CAEP emission and the SSF subject scope — a web application's and, since #432, a resource server's. Since #2234 a GNAP CLIENT's stream is also held to `ssf/application_sessions.ts`'s active-session scope: a person counts while they hold a LIVE grant they approved to it (`gnap_store.ts`'s `grantsApprovedTo()`, an index on the grants), and a resource server's stream is left to `rsCovers()` |
 | `gnap_revocation.ts` | what ends a grant from OUTSIDE the protocol (#432) — a sign-out, a disable, a deleted client or its key removed, a compromised device, a partner's signal — and the check at use; see *What ends a grant from outside the protocol* |
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_rights.ts` | each access right against the access-type catalogue and the issuance policy (#432 phases 3 and 4): well-formedness, the `issue-gnap-right` facts and verdicts, narrowing, "derivable from", the introspection view — see *Each right a policy question* below |

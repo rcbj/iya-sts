@@ -3566,6 +3566,23 @@ class Logout {
         ctx.endingSessions[session.id] = true;
       }
     });
+    // AND THE PARTIES EACH OF THEM CARRIES ARE KEPT NOW (#2234), before the
+    // `wsfed-rp` and `saml2-sp` rows below take their realm and service
+    // provider off the session, so the session-revoked `dropSession()` sends
+    // at the end still reaches every application the session was signed in
+    // to (`ssf/application_sessions.ts`). Lazily: a library that requires
+    // nothing of this module's, reached only when something ends.
+    ctx.sessions.forEach((session) => {
+      if (!ctx.endingSessions[session.id]) {
+        return;
+      }
+      try {
+        require('../ssf/application_sessions').noteEnded(session);
+      } catch (e) {
+        log.debug("Caught in Logout.terminate(): " + ((e && e.message) || e));
+        // No Shared Signals here: nothing to keep the parties for.
+      }
+    });
 
     // See the block above: the ending order is not the reading order, and a
     // copy is sorted rather than FAMILIES itself — the table's own order is

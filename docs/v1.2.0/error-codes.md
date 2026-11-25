@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6151** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6153** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 78
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 144
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 45
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
@@ -4477,6 +4477,8 @@ Raised from: ssf/.
 | `STS-SSF-0161` | A Security Event Token this service built carried a claim models/ssf/ssf.tsp does not name, one of a type it does not allow, or lacked one RFC 8417 requires (#1579). The SET is sent as it was built; this is a model gap to close. | none (recorded only; the SET is unchanged) |
 | `STS-SSF-0162` | A document this realm exchanged with a federation partner's Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives it (#1579): a configuration or a SET the partner sent, or a stream request or poll this realm sent. Recorded; what was received is still judged by the receiver's own checks, and what is sent is sent unchanged. | none (recorded only) |
 | `STS-SSF-0163` | X-Iya-Pep-Name was sent and is not a PEP name: one token of 1 to 128 letters, digits, ".", "_" or "-". A cluster member sends its registered name so its CAEP/RISC stream is its own; a header that is not one is refused rather than read as no header (#1760 phase 3). | HTTP 400 |
+| `STS-SSF-0164` | An Add Subject request on a stream an APPLICATION owns named a person who has no active session on that application, and ssf.applicationStreamScope is active-sessions (#2234): no live sign-on session the application is a relying party of, and no live GNAP grant the person approved to it. The stream would carry nothing about them, so the add is refused rather than ignored (SSF 1.0 section 8.1.3.2). | HTTP 403 access_denied |
+| `STS-SSF-0165` | Whether a person has an active session on an application could not be decided, because the sessions or the GNAP grants could not be read (#2234). The event is withheld from that application's stream, and an Add Subject is refused, rather than sent to a receiver that may not be entitled to it (SSF 1.0 section 10.1). | none (logged); the event is not delivered to that stream |
 
 ## STS-RISK
 
