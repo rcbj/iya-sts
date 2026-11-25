@@ -4934,6 +4934,9 @@ class AdminConsole {
     // `web_runtime.ts`, only where one is not this listener — so a service
     // with no custom listener draws the shell it always did.
     const there = elsewhere || {};
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from the `browser`
+    // catalog; the English is the words it always had.
+    const t = ShellDocument.translator();
     // ONE WRITER FOR EVERY STATIC SURFACE'S SHELL (#570): the bytes are
     // what this method drew by hand until then.
     const html = ShellDocument.document({
@@ -4951,10 +4954,13 @@ class AdminConsole {
                              'in at this address.'),
                     'This console cannot sign in here')
         : null,
-      noscript: this.warn('This console is a script that runs ' +
+      noscript: this.warn(ShellDocument.said(t, 'browser.noscript.console',
+        'This console is a script that runs ' +
         'in your browser and draws every page from <code>/admin-api' +
-        '</code>; with scripts blocked there is nothing it can show.',
-        'Scripts are blocked'),
+        '</code>; with scripts blocked there is nothing it can show.'),
+        t && t.has('browser.noscript.console.title')
+          ? t.text('browser.noscript.console.title') : 'Scripts are blocked'),
+      translator: t,
       loading: '<p class="lede">Signing in&hellip;</p>',
       esc: (value: unknown) => this.esc(value)
     });

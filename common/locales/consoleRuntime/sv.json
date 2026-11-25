@@ -5,6 +5,7 @@
   "reauth.here": "Logga in på den här sidan",
   "reauth.hereInstead": "Logga in på den här sidan i stället",
   "reauth.noPopup": "Den här webbläsaren kan inte lämna tillbaka en inloggning från ett annat fönster, så logga in på den här sidan.",
+  "reauth.popupBlocked": "Inloggningsfönstret blockerades. Tillåt popup-fönster för den här webbplatsen, eller logga in på den här sidan.",
   "reauth.finish": "Slutför inloggningen i fönstret som öppnades.",
   "otherPerson.waiting": "En annan person loggade in, så det som väntade på den här sidan skickades inte.",
   "otherPerson.typed": "En annan person loggade in, så det som tidigare skrevs på den här sidan lades inte tillbaka.",

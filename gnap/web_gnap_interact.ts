@@ -269,7 +269,10 @@ class GnapInteractSurface extends WebSurface {
 declare const window: any;
 declare const document: any;
 
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+// NOT WHERE THE BROWSER CHECK SAID THIS BROWSER FALLS SHORT (#2220): its
+// notice is the page.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' &&
+    !GnapInteractSurface.browserFellShort(document)) {
   new GnapInteractSurface({
     fetch: window.fetch.bind(window), location: window.location,
     history: window.history, document: document,

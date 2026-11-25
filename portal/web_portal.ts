@@ -19,11 +19,14 @@ import PortalRuntime = require('./web_portal_runtime');
 declare const window: any;
 declare const document: any;
 
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+// NOT WHERE THE BROWSER CHECK SAID THIS BROWSER FALLS SHORT (#2220): its
+// notice is the page.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' &&
+    !PortalRuntime.browserFellShort(document)) {
   new PortalRuntime({
     fetch: window.fetch.bind(window), crypto: window.crypto,
     location: window.location, history: window.history,
-    document: document, sessionStorage: window.sessionStorage,
+    document: document, sessionStorage: PortalRuntime.storageOf(window),
     navigator: window.navigator, window: window
   }).start();
 }

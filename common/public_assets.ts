@@ -21,6 +21,9 @@
 //                                           chooser's rules
 //   GET /web/footer.css                     `WebFooter`: the page footer
 //                                           every shell draws
+//   GET /web/browser-check.js               the ES5 check every shell runs
+//                                           before its bundle (#2220,
+//                                           `web_browser_check.ts`)
 //   GET /web/locales/catalogs.json          the catalog index: which
 //                                           catalogs exist, their status, and
 //                                           what the chooser offers
@@ -89,6 +92,7 @@ const PATHS = {
   favicon: '/favicon.ico',
   card: '/web/card.css',
   footer: '/web/footer.css',
+  browserCheck: '/web/browser-check.js',
   index: '/web/locales/catalogs.json',
   catalog: '/web/locales/:ns/:file'
 };
@@ -110,6 +114,8 @@ class PublicAssets {
   static readonly PATHS = PATHS;
   // The icon's bytes, read at its first request (`faviconFile()`).
   private favicon: Json = null;
+  // The browser check as built, read at its first request (#2220).
+  private check: Json = null;
 
   /**
    * Builds the module over its dependencies.
@@ -242,7 +248,28 @@ class PublicAssets {
   }
 
   /**
-   * Registers the five routes; `common/protocol_stack.ts` calls it.
+   * The browser check every shell runs first (#2220), as the image build
+   * wrote it (`common/browser-check.js`), read once. A tree that was never
+   * built has none, and answers a script that checks nothing: the page then
+   * runs its bundle as it did before the check existed.
+   *
+   * @returns `ShellDocument.readFile()`'s `{ raw, br, gzip, built }`
+   */
+  private checkFile(): Json {
+    this.deps.log.debug("Entering PublicAssets.checkFile().");
+    if (!this.check) {
+      this.check = ShellDocument.readFile(__dirname, 'browser-check.js',
+        '// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC\n' +
+        '// SPDX-License-Identifier: BUSL-1.1\n' +
+        '// Not built: build-typescript.sh writes this file.\n');
+    }
+    this.deps.log.debug("Leaving PublicAssets.checkFile(). " +
+                        (this.check.built ? 'Built.' : 'The placeholder.'));
+    return this.check;
+  }
+
+  /**
+   * Registers the six routes; `common/protocol_stack.ts` calls it.
    *
    * @param app - the shared express app
    * @returns nothing
@@ -282,6 +309,15 @@ class PublicAssets {
          .set('Cache-Control', self.cachingFor(req));
       ShellDocument.sendCompressed(req, res, WebFooter.CSS, null, null);
       log.debug("Leaving GET " + PATHS.footer + ".");
+    });
+    // THE BROWSER CHECK (#2220): `no-cache` as every surface's script is
+    // (`ShellDocument.sendFile()`), so a new build is picked up on the next
+    // load; compressed where the request accepts it.
+    app.get(PATHS.browserCheck, function (req: Json, res: Json) {
+      log.debug("Entering GET " + PATHS.browserCheck + ".");
+      ShellDocument.sendFile(req, res, self.checkFile(),
+                             'application/javascript');
+      log.debug("Leaving GET " + PATHS.browserCheck + ".");
     });
     app.get(PATHS.index, function (req: Json, res: Json) {
       log.debug("Entering GET " + PATHS.index + ".");

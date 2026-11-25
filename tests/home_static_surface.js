@@ -116,7 +116,7 @@ function childMain() {
          r.text.indexOf('<link rel="stylesheet" href="/web/card.css">') > 0 &&
          r.text.indexOf('<link rel="stylesheet" href="/home.css">') > 0 &&
          r.text.indexOf('<script src="/home.js" defer></script>') > 0 &&
-         r.text.indexOf('<noscript>') > 0,
+         /<noscript[ >]/.test(r.text),
          '1b. it is the shell: the card\'s and the page\'s stylesheets, the ' +
          'deferred script and the notice', r.text.slice(0, 600));
     note(r.text.indexOf(' data-sts-version="' + version.load().version +

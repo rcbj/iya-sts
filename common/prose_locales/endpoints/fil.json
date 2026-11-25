@@ -527,6 +527,10 @@
     "en": "b1ae9012425d7c77",
     "text": "Ang stylesheet ng footer ng pahina"
   },
+  "endpoints.route./web/browser-check.js.name": {
+    "en": "c00f945d4a14cdbe",
+    "text": "Ang pagsusuri sa browser na unang pinapatakbo ng bawat shell"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "Ang stylesheet ng itsura ng pag-sign in ng isang realm"

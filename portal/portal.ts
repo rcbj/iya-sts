@@ -270,6 +270,9 @@ class Portal {
     log.debug("Entering Portal.shellDocument().");
     const refused = registered && registered.ok === false;
     const there = elsewhere || {};
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from the `browser`
+    // catalog; the English is the words it always had.
+    const t = ShellDocument.translator();
     // ONE WRITER FOR EVERY STATIC SURFACE'S SHELL (#570): the bytes are
     // what this method drew by hand until then.
     const html = ShellDocument.document({
@@ -291,9 +294,11 @@ class Portal {
         ? '<div class="err">' + kit.esc(registered.why ||
             'The portal cannot sign in at this address.') + '</div>'
         : null,
-      noscript: '<div class="err">This portal is a script that runs in ' +
+      noscript: '<div class="err">' + ShellDocument.said(t,
+        'browser.noscript.portal', 'This portal is a script that runs in ' +
         'your browser and draws every page from <code>/account-api</code>' +
-        '; with scripts blocked there is nothing it can show.</div>',
+        '; with scripts blocked there is nothing it can show.') + '</div>',
+      translator: t,
       loading: '<p class="sub">Loading&hellip;</p>',
       esc: kit.esc
     });
