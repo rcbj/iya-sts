@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6113** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6114** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 306
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 307
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
@@ -6307,6 +6307,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0955` | The console's certificate inspection helper was asked for an action it does not have; the refusal names the one it has (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0956` | /admin-api/truststores was asked for an action it does not have; the refusal names the seven it has (#2118). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0957` | A named truststore write was not made and the truststore registry gave no code of its own for why: the directory carried out nothing (#2118). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0969` | A password reset for a Kerberos keytab was refused because the person must change their password at their next sign-in (pwdReset), where passwords are verified: the KDC refuses that password, so the keytab would not work, and the reset no longer clears the forced change (#2160). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

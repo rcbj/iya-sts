@@ -493,7 +493,12 @@ refused.
     nobody is shown. **This changes their password**: the old one stops
     working everywhere, they are signed out, and the kvno moves up by one.
     They are not asked to change it at their next sign-in, because that would
-    end the keytab. The same act over the API is
+    end the keytab. **Since 1.2.0 (#2160) it no longer cancels a change they
+    already owe**: in product mode, a reset for somebody who must change
+    their password is refused (`STS-ADMIN-0969`) and changes nothing, because
+    the KDC refuses a password that must be changed, so the keytab would not
+    work. They sign in and choose their own password first. The same act
+    over the API is
     `POST /admin-api/kerberos/principals/reset-person-keytab`.
 
   On the portal the typed password is verified first — it is also the

@@ -126,6 +126,7 @@
 // arrangement tests/wait_for.js has, and for the same reason.
 // The sign-in screen over `/authn-api` (#571).
 var authnSignin = require("./authn_signin");
+var ownPassword = require("./own_password");
 var bunyan = require("bunyan");
 var assert = require("assert");
 var log = bunyan.createLogger({
@@ -1159,22 +1160,38 @@ function pkce() {
 // A person with a real password, created through `/admin-api/users/create`
 // with the attributes a real account carries. A name already there is given
 // the password instead, so a second run against a kept service still signs in.
+//
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses
+// `password` at the sign-in screen's change step (`own_password.js`; in
+// development it is simply set). Once per name, base and password in this
+// process, since the password history refuses the same value twice.
+var settledPeople = {};
 async function ensurePerson(base, username, password) {
   log.debug("Entering ensurePerson(). " + username);
+  var key = base + " " + username + " " + password;
+  if (settledPeople[key]) {
+    log.debug("Leaving ensurePerson(). Already theirs.");
+    return;
+  }
   var created = await adminPost(base, "/users/create", {
     username: username, invent: false, credential: "password",
-    password: password,
+    password: ownPassword.temporaryFor(password),
     attributes: { cn: "Test " + username, givenName: "Test",
                   sn: String(username), displayName: "Test " + username,
                   mail: String(username) + "@suite.example.test" }
   });
-  if (!(created && created.ok)) {
-    var set = await adminPost(base, "/users/set-password",
-                              { user: username, password: password });
-    assert.ok(set && set.ok, "could not create " + username + " or set its " +
-      "password: " + JSON.stringify(created).slice(0, 200) + " / " +
-      JSON.stringify(set).slice(0, 200));
-  }
+  await ownPassword.ownPassword(base, username, password,
+    function (who, value) {
+      return adminPost(base, "/users/set-password",
+                       { user: who, password: value });
+    }).catch(function (e) {
+      log.debug("Caught in ensurePerson(): " + ((e && e.message) || e));
+      assert.fail("could not create " + username + " or give it its " +
+        "password: " + JSON.stringify(created).slice(0, 200) + " / " +
+        ((e && e.message) || e));
+    });
+  settledPeople[key] = true;
   log.debug("Leaving ensurePerson().");
 }
 

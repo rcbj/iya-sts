@@ -40,6 +40,7 @@
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const ownPassword = require("./own_password");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -251,12 +252,19 @@ async function setUp() {
   // The realm's attribute policy (#396) requires givenName, sn and mail of
   // every person in product mode.
   for (const who of [PERSON, PROTECTED]) {
+    // Temporary, then the person's own (#2160, `own_password.js`): a
+    // keytab reset is refused while a change is owed, in product.
     await ok("/users/create", { username: who, invent: false,
-                                credential: "password", password: PASSWORD,
+                                credential: "password",
+                                password: ownPassword.temporaryFor(PASSWORD),
                                 attributes: { cn: who, givenName: "S4U",
                                               sn: who,
                                               mail: who + "@s4u.test" } },
              "created " + who);
+    await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+      return call("POST", "/users/set-password",
+                  { user: one, password: value });
+    });
   }
   await ok("/users/set-not-delegated", { user: PROTECTED, value: true },
            "set stsNotDelegated on " + PROTECTED);

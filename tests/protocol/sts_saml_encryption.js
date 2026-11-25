@@ -74,6 +74,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require('./authn_signin');
+const ownPassword = require('./own_password');
 const assert = require('assert');
 const http = require('http');
 const https = require('https');
@@ -531,13 +532,15 @@ async function main() {
   const certB64 = selfSignedCertificate(keys, 'sp.example.com');
   signingKeys = keys;
   signingCertB64 = certB64;
-  const person = await api('/users/create', {
-    username: USER, invent: false, credential: 'password', password: PASSWORD,
+  // Temporary, then the person's own (#2160, `own_password.js`).
+  await api('/users/create', {
+    username: USER, invent: false, credential: 'password',
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: 'SAML ' + USER, givenName: 'SAML', sn: USER,
                   displayName: 'SAML ' + USER, mail: USER + '@saml2enc.test' } });
-  if (!(person.status === 200 && person.json.ok)) {
-    await api('/users/set-password', { user: USER, password: PASSWORD });
-  }
+  await ownPassword.ownPassword(BASE, USER, PASSWORD, function (who, value) {
+    return api('/users/set-password', { user: who, password: value });
+  });
 
   log.info('THE ROUND TRIP: an assertion encrypted to a key this service never held');
   await provision(SP_GCM, {

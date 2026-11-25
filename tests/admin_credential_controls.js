@@ -245,7 +245,9 @@ function childMain() {
       const typed = actions.usersAction({ action: 'set-password',
         user: 'ctl-typed', password: 'A-long-typed-passphrase' }, context);
       note(typed.ok && !credentials.passwordResetRequired('ctl-typed'),
-           '1b-iii. and one an administrator typed need not be',
+           '1b-iii. and one an administrator typed need not be, in ' +
+           'development (product: #2160, ' +
+           'tests/admin_typed_password_temporary.js)',
            JSON.stringify(typed.errors || []));
       let sets = await waitFor('ctl-alice', 2);
       const change1 = sets.map(function (c) {

@@ -29298,6 +29298,13 @@ const CODES = [
       'registry gave no code of its own for why: the directory carried out ' +
       'nothing (#2118).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0969',
+    summary: 'A password reset for a Kerberos keytab was refused because the ' +
+      'person must change their password at their next sign-in (pwdReset), ' +
+      'where passwords are verified: the KDC refuses that password, so the ' +
+      'keytab would not work, and the reset no longer clears the forced ' +
+      'change (#2160). Nothing was changed.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
