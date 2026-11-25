@@ -27,9 +27,13 @@
 //   1. the dates file knows every registry package of the two lockfiles the
 //      images install from (the root's and sdk/'s), so a lockfile change
 //      without a refresh fails here rather than going unseen;
-//   2. every such package whose last release is more than three years old
-//      TODAY is listed on the page — so a package that crosses the line
-//      fails the day it crosses, not the day somebody looks;
+//   2. every such package whose last release is more than three years
+//      before the file's `asOf` — the day release-dates.js read the
+//      registry — is listed on the page. Measured from `asOf` and never from
+//      the day the test runs, so CI never turns red because of time alone:
+//      the verdict moves only when somebody refreshes the file on purpose
+//      (#2220's review, in the spirit of rcbj narrowing the daily review to
+//      advisories, #2219);
 //   3. every package the page lists is still installed, and the date the
 //      page gives is the date the file has, so the list cannot go stale in
 //      either direction;
@@ -37,8 +41,8 @@
 //      version the submodule declares, and where git can read the
 //      checkout's submodule pin, that the file recorded THAT pin.
 //
-// The packages within ninety days of the line are logged, not failed, so
-// whoever reads the run sees the next ones coming.
+// The packages within ninety days of the line (from `asOf`) are logged, not
+// failed, so whoever next refreshes the file sees which ones it will add.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -110,11 +114,15 @@ function run(t) {
   const tool = require(path.join(ROOT, 'tests', 'tools', 'release-dates.js'));
   const dates = JSON.parse(fs.readFileSync(tool.OUT, 'utf8'));
   const packages = dates.packages || {};
-  const now = Date.now();
+  // Three years are counted back from the day the dates were read.
+  const asOf = Date.parse(String(dates.asOf || '') + 'T00:00:00Z');
 
   t.log.info('=== 1. the dates file covers both lockfiles ===');
   t.equal(JSON.stringify(dates.lockfiles), JSON.stringify(tool.LOCKFILES),
           'the dates were read from the lockfiles the images install from');
+  t.check(/^\d{4}-\d{2}-\d{2}$/.test(String(dates.asOf)) && !isNaN(asOf),
+          'the dates file says the day it read them (asOf ' + dates.asOf +
+          '), which every age below is measured from');
   const names = tool.lockedNames();
   const undated = names.filter(function (name) {
     return !packages[name] || !/^\d{4}-\d{2}-\d{2}$/
@@ -130,7 +138,7 @@ function run(t) {
   const onPage = listed(text);
   const old = names.filter(function (name) {
     return packages[name] &&
-      now - Date.parse(packages[name].lastRelease) > LIMIT_MS;
+      asOf - Date.parse(packages[name].lastRelease) > LIMIT_MS;
   });
   const unlisted = old.filter(function (name) {
     return !onPage[name];
@@ -138,14 +146,15 @@ function run(t) {
   t.equal(unlisted.map(function (name) {
     return name + ' (' + packages[name].lastRelease + ')';
   }).join(', '), '',
-  'each of the ' + old.length + ' packages with no release in three years ' +
-  'is listed with its date, why it is kept and its replacement plan');
+  'each of the ' + old.length + ' packages with no release in the three ' +
+  'years before ' + dates.asOf + ' is listed with its date, why it is ' +
+  'kept and its replacement plan');
   const soon = names.filter(function (name) {
     const age = packages[name] ?
-      now - Date.parse(packages[name].lastRelease) : 0;
+      asOf - Date.parse(packages[name].lastRelease) : 0;
     return age <= LIMIT_MS && age > LIMIT_MS - SOON_MS;
   });
-  t.log.info('within 90 days of three years: ' +
+  t.log.info('within 90 days of three years as of ' + dates.asOf + ': ' +
              (soon.map(function (name) {
                return name + ' (' + packages[name].lastRelease + ')';
              }).join(', ') || 'none'));
@@ -165,10 +174,10 @@ function run(t) {
   }).join('; '), '', 'and the page gives each the date the file has');
   const young = Object.keys(onPage).filter(function (name) {
     return packages[name] &&
-      now - Date.parse(packages[name].lastRelease) <= LIMIT_MS;
+      asOf - Date.parse(packages[name].lastRelease) <= LIMIT_MS;
   });
   t.equal(young.join(', '), '',
-          'and none of them has released within three years since');
+          'and none of them released in the three years before asOf');
 
   t.log.info('=== 4. the node-ldapjs fork ===');
   const fork = dates.fork || {};

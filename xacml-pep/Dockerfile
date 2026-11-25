@@ -36,8 +36,8 @@
 # (300.6.1+3.6.3 is OpenSSL 3.6.3); tests/xacml_pep.js holds
 # docs/v1.2.0/risky-components.md to that version. The tool is pinned and
 # installed `--locked`, in a layer of its own so a source change does not
-# rebuild it. Advisories in Cargo.lock are the CI `rust` job's `cargo audit`
-# (rust/.cargo/audit.toml).
+# rebuild it. Advisories in Cargo.lock are the daily workflow's `cargo audit`
+# (.github/workflows/dependency-windows.yml, rust/.cargo/audit.toml).
 # ---------------------------------------------------------------------------
 FROM rust:1.97-bookworm AS build
 WORKDIR /usr/src/rust

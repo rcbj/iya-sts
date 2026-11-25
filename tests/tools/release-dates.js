@@ -18,7 +18,8 @@
 // them out), the publication date of its newest version and that version,
 // from the npm registry. It also records the node-ldapjs submodule's pin and
 // that commit's date, read with git, because the fork has no registry
-// release to date.
+// release to date, and `asOf`, the day it read them, which is the day the
+// test measures three years from.
 //
 // Run it after a lockfile changes, and now and then besides:
 //
@@ -216,7 +217,10 @@ async function main() {
   const doc = {
     '//': 'Written by tests/tools/release-dates.js; read by ' +
           'tests/long_unreleased_packages.js. Do not edit by hand.',
-    refreshed: new Date().toISOString().slice(0, 10),
+    // The day these dates were read. The test measures three years from
+    // HERE, not from the day it runs, so its verdict changes only when
+    // somebody refreshes this file on purpose.
+    asOf: new Date().toISOString().slice(0, 10),
     lockfiles: LOCKFILES,
     fork: forkPin(),
     packages: sorted

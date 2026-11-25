@@ -1,6 +1,6 @@
 {
   "//": "Written by tests/tools/release-dates.js; read by tests/long_unreleased_packages.js. Do not edit by hand.",
-  "refreshed": "2026-11-25",
+  "asOf": "2026-11-25",
   "lockfiles": [
     "package-lock.json",
     "sdk/package-lock.json"

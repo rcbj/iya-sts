@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# rust/.cargo/audit.toml — what `cargo audit` (the CI `rust` job, #2220) is
-# told to let through, and why. `cargo audit` fails the job on every
+# rust/.cargo/audit.toml — what `cargo audit` (the daily workflow,
+# .github/workflows/dependency-windows.yml, #2220) is told to let through,
+# and why. `cargo audit` fails that run on every
 # RustSec vulnerability in Cargo.lock that is not listed here, so an entry
 # is a REVIEWED exception: the advisory, why it does not reach the remote
 # PEP or cannot be fixed yet, and what removes it. Remove the entry in the

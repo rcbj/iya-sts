@@ -25,6 +25,15 @@
 # to the same windows; the PEP's crates and its built-in OpenSSL are seen
 # through the CycloneDX SBOM its image carries. Three builds where there was
 # one, so the job's limit went from 45 minutes to 90.
+#
+# AND THE RUSTSEC AUDIT OF rust/Cargo.lock (#2220): `cargo audit`, which is
+# what names an advisory in the PEP's crates and in the OpenSSL its
+# `openssl-src` crate builds. It is HERE and not in tests.yml's `rust` job
+# on purpose: that job gates the merge queue, and an advisory published
+# today would block every merge until somebody bumped the crate. A finding
+# fails this run instead; a reviewed exception is recorded, with its reason,
+# in rust/.cargo/audit.toml. It runs even when the image windows failed, so
+# one run reports both.
 name: Dependency windows
 
 on:
@@ -123,3 +132,10 @@ jobs:
           --image-report=iya-sts-xacml-pep-report.json
           --image-report=iya-sts-icap-clamav-report.json
           --image-report=clamav-report.json
+      - name: Audit rust/Cargo.lock against the RustSec advisories
+        if: ${{ !cancelled() }}
+        run: >-
+          docker run --rm -v "${PWD}:/src" -w /src/rust
+          -e CARGO_TERM_COLOR=always
+          ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
+          bash -c "cargo install cargo-audit --version 0.22.2 --locked --quiet && cargo audit"

@@ -216,7 +216,13 @@ async function run(t) {
   t.check(/^ignore = \[/m.test(fs.readFileSync(
     path.join(ROOT, 'rust', '.cargo', 'audit.toml'), 'utf8')),
   'rust/.cargo/audit.toml, where a reviewed RustSec exception is recorded, ' +
-  'is there for the CI `cargo audit`');
+  'is there for the daily `cargo audit`');
+  // The audit is daily (dependency-windows.yml, which the tests image does
+  // not carry), never in the merge-gating `rust` job: an advisory published
+  // today must fail the check that watches for it, not every merge.
+  t.check(!/cargo audit/.test(fs.readFileSync(
+    path.join(ROOT, '.github', 'workflows', 'tests.yml'), 'utf8')),
+  'and no job of tests.yml, which gates the merge queue, runs it');
 
   // -------------------------------------------------------------------------
   // 2. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE — THROUGH ONE TABLE.

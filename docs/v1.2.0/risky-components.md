@@ -104,19 +104,23 @@ clients. They speak only to infrastructure an operator configures.
 | **Node.js** 24.22.1, with its bundled OpenSSL 3.5, HTTP/1.1 and HTTP/2 parsers and zlib | Every TLS handshake, certificate check, HTTP request and decompression; most cryptography | Native code parsing every connection | The image copies the `node` binary from `node:24.22.1-bookworm-slim`. Compressed messages are inflated up to a fixed limit | The base image tag, and the daily image scan |
 | **Debian bookworm-slim** packages: `iproute2`, `curl`, `jq`, `ca-certificates` | `ip addr` for per-realm SPIFFE addresses, and tools for an operator | Native code | The service passes no untrusted input to them | The daily image scan |
 | **ClamAV** (`clamav/clamav:1.5.4`) and **c-icap** with its virus-scan module, from Debian | Malware scanning of uploads | Native code that parses files assumed to be hostile | Separate containers, started with a scale of 0 by default. Scanning is off by default (`malwareScan.enabled`), and product mode reaches the scanner over TLS only. See [Malware scanning](malware-scanning.md) | The compose image tag for ClamAV; c-icap, its library and its virus-scan module pinned to Debian's versions in `icap-clamav/Dockerfile`. Both images are in the daily image scan |
-| **The remote PEP** (Rust): hyper 1.11.1, h2 0.4.19, roxmltree 0.21.1, regex 1.13.1, serde_json 1.0.151, reqwest 0.12.28, and OpenSSL 3.6.3 built in (`openssl-src` 300.6.1) | The remote XACML PEP container | Parses HTTP and XML from the requests it guards. Links native OpenSSL | A separate container, not part of the service. The workspace forbids `unsafe` code in its own crates. See [Remote PEP](remote-pep.md) | `rust/Cargo.lock`, built `--locked`, audited against the RustSec advisories on every CI run, and inventoried in the image's SBOM, OpenSSL included. The image is in the daily image scan |
+| **The remote PEP** (Rust): hyper 1.11.1, h2 0.4.19, roxmltree 0.21.1, regex 1.13.1, serde_json 1.0.151, reqwest 0.12.28, and OpenSSL 3.6.3 built in (`openssl-src` 300.6.1) | The remote XACML PEP container | Parses HTTP and XML from the requests it guards. Links native OpenSSL | A separate container, not part of the service. The workspace forbids `unsafe` code in its own crates. See [Remote PEP](remote-pep.md) | `rust/Cargo.lock`, built `--locked`, audited against the RustSec advisories every day, and inventoried in the image's SBOM, OpenSSL included. The image is in the daily image scan |
 
 ## Packages with no release in three years
 
 A package whose upstream has stopped releasing gets no fix when an advisory
 arrives. These are every package the images install, from the root and `sdk/`
 lockfiles, whose newest release is more than three years old, each with that
-date (the npm registry's), why it is kept and what would replace it. The test
-`tests/long_unreleased_packages.js` fails when a package crosses the line and
-is not listed here, when a listed package has released since or is no longer
-installed, and when a date here differs from the one the registry gave. The
+date (the npm registry's), why it is kept and what would replace it. The
 dates are in `tests/package_release_dates.json`, written by
-`node tests/tools/release-dates.js`, so the test needs no network.
+`node tests/tools/release-dates.js` with the day it read them (`asOf`), so
+the test `tests/long_unreleased_packages.js` needs no network. It fails when
+a package more than three years past its last release on that day is not
+listed here, when a listed package has released since or is no longer
+installed, and when a date here differs from the one the registry gave. Three
+years are counted from `asOf`, not from the day the test runs, so the list
+changes when the file is refreshed (after a lockfile change, and from time to
+time), never because a day passed.
 
 Most of these are small modules that do one finished thing (a byte-count
 parser, a stream splitter, a lodash function on its own) and have no reason to
@@ -176,11 +180,13 @@ leave with it.
   `sdk/`'s. It fails when an advisory is past the window
   [`SECURITY.md`](https://github.com/rcbj/iya-sts/blob/main/SECURITY.md) sets:
   7 days for critical, 30 for high, 90 for moderate, counted from publication.
-* **The remote PEP's advisories.** The CI `rust` job runs `cargo audit` over
-  `rust/Cargo.lock` on every run, against the RustSec database, which names
-  advisories in the OpenSSL that `openssl-src` builds as well as in the
-  crates. It fails on every vulnerability not recorded, with its reason, in
-  `rust/.cargo/audit.toml`. The one recorded is RUSTSEC-2023-0071 in `rsa`
+* **The remote PEP's advisories.** The same daily workflow runs `cargo audit`
+  over `rust/Cargo.lock` against the RustSec database, which names advisories
+  in the OpenSSL that `openssl-src` builds as well as in the crates. It fails
+  the daily run on every vulnerability not recorded, with its reason, in
+  `rust/.cargo/audit.toml`. It is daily rather than on every push so that an
+  advisory published today fails the check meant to catch it, not every
+  merge. The one recorded is RUSTSEC-2023-0071 in `rsa`
   0.9, which has no fixed release.
 * **The image scan.** A daily workflow (`.github/workflows/dependency-windows.yml`)
   scans four images with Trivy: the iya-sts image, the remote PEP's, the ICAP
