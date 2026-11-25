@@ -944,8 +944,10 @@ function firstDifference(a, b, where) {
     }
   }
   log.debug("Leaving firstDifference().");
-  return where + ': ' + JSON.stringify(b).slice(0, 400) + ' where ' +
-    JSON.stringify(a).slice(0, 400) + ' was recorded';
+  // String(): JSON.stringify(undefined) is undefined, and a member present on
+  // one side only is exactly the difference this is asked to name.
+  return where + ': ' + String(JSON.stringify(b)).slice(0, 400) + ' where ' +
+    String(JSON.stringify(a)).slice(0, 400) + ' was recorded';
 }
 
 // The SAML messages of every recorded step, decoded: what
