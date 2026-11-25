@@ -39,10 +39,11 @@
 // THE PLAN IS EVERY SCRIPT tlsfuzzer SHIPS, EACH ONE OF THREE THINGS:
 //
 //   * RUN, with the arguments that fit this service (its groups, signature
-//     algorithms, ticket count), and every probe that does not pass named
-//     with -x (expected to fail, with the alert it must fail with: -X) or -e
-//     (not run) and the REASON — `design` (a choice this service made and
-//     documents), `openssl` (Node/OpenSSL behaviour this service cannot
+//     algorithms, ticket count, whether the listener staples OCSP: #2265),
+//     and every probe that does not pass named with -x (expected to fail,
+//     with the alert it must fail with: -X) or -e (not run) and the
+//     REASON — `design` (a choice this service made and documents),
+//     `openssl` (Node/OpenSSL behaviour this service cannot
 //     change) or `tool` (the probe cannot be pointed at this service). A
 //     probe marked -x that passes fails the script (XPASS), so a behaviour
 //     that changes cannot go unnoticed;
@@ -735,8 +736,15 @@ const PLAN = [
   { script: "test-message-skipping.py" },
   { script: "test-no-heartbeat.py" },
   { script: "test-no-mlkem-in-old-tls.py" },
+  // #2265: every probe of this script SENDS status_request, so a listener
+  // that staples answers each one with status_request in its ServerHello
+  // and a CertificateStatus (RFC 6066 section 8) — which is what
+  // `tls.ocspStapling` does, `auto` being on in product (#2254). The
+  // script's default expects exactly that; `--no-status` expects neither,
+  // and is passed only where the listener is not to staple
+  // (staplesOcsp()). The renegotiating probes still meet the refusal.
   { script: "test-ocsp-stapling.py",
-    args: ["--no-status"],
+    stapleArgs: { off: ["--no-status"] },
     exceptions: [ex(/^renegotiate/, "no_renegotiation", "renegotiation")] },
   { script: "test-openssl-3712.py",
     exceptions: [ex("weaved app data and handshake proto",
@@ -1004,11 +1012,16 @@ function argsFor(entry, listener, target) {
   argv.push("--tls12-aead");
   argv.push(path.join(TLSFUZZER_DIR, "tlsfuzzer", "scripts", entry.script),
             "-h", target.host, "-p", String(target.port));
-  // A script's own option for the key, where it has one (#1303).
+  // A script's own option for the key, where it has one (#1303), and for
+  // whether the listener staples an OCSP response (#2265): `target.staples`,
+  // which staplesOcsp() works out, and off when it is not given.
   (entry.args || []).concat((entry.keyArgs &&
-    entry.keyArgs[target.serverKey || "rsa"]) || []).forEach(function (one) {
-    argv.push(one);
-  });
+    entry.keyArgs[target.serverKey || "rsa"]) || [])
+    .concat((entry.stapleArgs &&
+      entry.stapleArgs[target.staples ? "on" : "off"]) || [])
+    .forEach(function (one) {
+      argv.push(one);
+    });
   if (entry.certificate) {
     const pair = target.certificates && target.certificates[entry.certificate];
     if (!pair) {
@@ -1294,8 +1307,9 @@ function curveName(named) {
   return curve;
 }
 
-// The key type and curve of the certificate a listener presents. type is
-// "" when the handshake fails, which the caller reads as "not detected".
+// The key type and curve of the certificate a listener presents, and
+// whether it is self-signed (#2265). type is "" when the handshake fails,
+// which the caller reads as "not detected".
 //
 // THE HANDSHAKE IS VERIFIED (2026-11-20), against `ca` when given (an
 // in-process test's own listener, tests/tlsfuzzer_plan.js) and otherwise
@@ -1321,10 +1335,13 @@ function presentedCertificate(host, port, ca) {
       options.servername = host;
     }
     const socket = tls.connect(options, function () {
-        const found = { type: "", curve: "" };
+        const found = { type: "", curve: "", selfSigned: false };
         try {
           const raw = socket.getPeerCertificate(false).raw;
-          const key = new nodeCrypto.X509Certificate(raw).publicKey;
+          const x509 = new nodeCrypto.X509Certificate(raw);
+          const key = x509.publicKey;
+          // #2265: a self-signed certificate is never stapled.
+          found.selfSigned = x509.issuer === x509.subject;
           found.type = String(key.asymmetricKeyType || "");
           const details = key.asymmetricKeyDetails;
           found.curve = curveName(details && details.namedCurve);
@@ -1348,6 +1365,77 @@ function presentedCertificate(host, port, ca) {
     });
   });
   log.debug("Leaving presentedCertificate().");
+  return answer;
+}
+
+// ---------------------------------------------------------------------------
+// WHETHER A LISTENER STAPLES AN OCSP RESPONSE (#2265), as the service decides
+// it (tls/ocsp_stapling.ts, `OcspStapling.enabled()`): `tls.ocspStapling`
+// `on` or `off` forces it, and `auto` (the default) is `mode.staplesOcsp()`,
+// on in product and off in development. A certificate from an outside
+// authority (`tls.certificateFile`, which the main port and LDAPS share) is
+// never stapled, by choice: `pki_revocation.stapleFor()` finds no authority
+// of this service that issued it. Nor is a SELF-SIGNED one, the fallback a
+// process with no certificate authority presents (an in-process listener,
+// tests/tlsfuzzer_debugger.js): its context sends no issuer, so node hands
+// `OCSPRequest` none and the service answers no staple — seen 2026-11-25.
+// tests/tlsfuzzer_plan.js holds this
+// function to `OcspStapling.enabled()` for every value in both modes, so
+// the two cannot drift.
+//
+//   facts.setting          `tls.ocspStapling` ("auto" when empty)
+//   facts.product          `global.mode` is "product"
+//   facts.certificateFile  `tls.certificateFile` (empty: this service's own)
+//   facts.selfSigned       the listener presents a self-signed certificate
+//                          (presentedCertificate()'s `selfSigned`)
+// ---------------------------------------------------------------------------
+function staplesOcsp(facts) {
+  log.debug("Entering staplesOcsp().");
+  const given = facts || {};
+  const value = String(given.setting || "auto");
+  const on = value === "on" ? true
+    : value === "off" ? false
+      : !!given.product;
+  const staples = on && !given.certificateFile && !given.selfSigned;
+  log.debug("Leaving staplesOcsp(). " + staples);
+  return staples;
+}
+
+// Whether one handshake that ASKS for the certificate status (RFC 6066
+// status_request, node's `requestOCSP`) is answered with a staple. VERIFIED
+// as presentedCertificate() is; a handshake that fails answers false, and
+// one this client refused rejects.
+function stapled(host, port, ca) {
+  log.debug("Entering stapled().");
+  const answer = new Promise(function (resolve, reject) {
+    let staple = false;
+    const options = { host: host, port: Number(port), requestOCSP: true,
+      ca: ca || serviceTrust.trustedCa() };
+    if (!/^[0-9.]+$/.test(host) && host.indexOf(":") < 0) {
+      options.servername = host;
+    }
+    const socket = tls.connect(options, function () {
+      socket.end();
+    });
+    socket.on("OCSPResponse", function (response) {
+      staple = !!(response && response.length);
+    });
+    socket.on("error", function (e) {
+      log.debug("Caught in stapled(): " + ((e && e.message) || e));
+      if (serviceTrust.isUntrusted(e)) {
+        reject(e);
+        return;
+      }
+      resolve(false);
+    });
+    socket.on("close", function () {
+      resolve(staple);
+    });
+    socket.setTimeout(20000, function () {
+      socket.destroy();
+    });
+  });
+  log.debug("Leaving stapled().");
   return answer;
 }
 
@@ -1434,6 +1522,8 @@ module.exports = {
   exceptionsFor: exceptionsFor,
   curveName: curveName,
   presentedCertificate: presentedCertificate,
+  staplesOcsp: staplesOcsp,
+  stapled: stapled,
   planFor: planFor,
   declineReason: declineReason,
   WHY: WHY
@@ -1459,19 +1549,29 @@ if (require.main === module) {
     });
   }
   // The plan follows the certificate the listener presents, as the jobs'
-  // does (#321); until #1303 a hand run always ran the RSA plan.
-  presentedCertificate(host, port).then(function (seen) {
+  // does (#321); until #1303 a hand run always ran the RSA plan. A hand run
+  // has no /admin-api to read `tls.ocspStapling` from (#2265), so it takes
+  // whether the listener staples from a handshake that asks; the job works
+  // it out from the setting instead (staplesOcsp()).
+  const byHand = async function () {
+    log.debug("Entering byHand().");
+    const seen = await presentedCertificate(host, port);
     const declined = declineReason({ main: seen });
     if (declined) {
       process.stdout.write("declined: " + declined + "\n");
-      process.exit(0);
+      log.debug("Leaving byHand(). Declined.");
+      return [];
     }
     const cert = planFor(seen, { type: "", curve: "" });
+    const staples = await stapled(host, port);
     process.stdout.write("the listener presents " + cert.type +
-                         (cert.curve ? " " + cert.curve : "") + "\n");
+                         (cert.curve ? " " + cert.curve : "") + " and " +
+                         (staples ? "staples" : "does not staple") +
+                         " an OCSP response\n");
+    log.debug("Leaving byHand().");
     return runPlan({ host: host, port: Number(port),
                      certificates: certificates, serverKey: cert.type,
-                     curve: cert.curve },
+                     curve: cert.curve, staples: staples },
           listener, { only: only, concurrency: Number(process.env
             .STS_TLSFUZZER_CONCURRENCY || 6),
           onResult: function (r) {
@@ -1482,13 +1582,13 @@ if (require.main === module) {
                 r.output);
             }
           } });
-  })
-    .then(function (results) {
-      const bad = results.filter(function (r) {
-        return !r.ok;
-      });
-      process.stdout.write(results.length + " script(s), " + bad.length +
-                           " failed\n");
-      process.exit(bad.length ? 1 : 0);
+  };
+  byHand().then(function (results) {
+    const bad = results.filter(function (r) {
+      return !r.ok;
     });
+    process.stdout.write(results.length + " script(s), " + bad.length +
+                         " failed\n");
+    process.exit(bad.length ? 1 : 0);
+  });
 }

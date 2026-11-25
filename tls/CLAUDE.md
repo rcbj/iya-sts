@@ -2436,4 +2436,11 @@ module's header argues it in full; what is easy to get wrong:
 `tests/tls_ocsp_stapling.js` holds it as handshakes verified by
 `openssl ocsp`: each listener kind, TLS 1.2 and 1.3, the ML-DSA leaf's
 answer, revoked after a refresh, the setting off, the job, and a responder
-that throws or never answers.
+that throws or never answers. **tlsfuzzer's `test-ocsp-stapling` follows the
+setting (#2265)**: `sts_tlsfuzzer` works out from `tls.ocspStapling`,
+`global.mode`, `tls.certificateFile` and whether the certificate is
+self-signed (no issuer, so never stapled) whether the main port and LDAPS
+staple (`tests/protocol/tlsfuzzer_kit.js` `staplesOcsp()`, held to
+`OcspStapling.enabled()` by `tests/tlsfuzzer_plan.js`), and passes
+`--no-status` only where they do not — so a change to what `auto` means
+owes the same change there.
