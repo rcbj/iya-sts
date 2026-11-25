@@ -18,8 +18,10 @@ every third-party component this service ships, directly or transitively.
 
 * The clock starts when the advisory is **published**, not when someone next
   looks.
-* Every direct dependency is reviewed for an update at least every **90 days**,
-  whether or not there is an advisory against it. A package another one pulls in
+* Every direct dependency of the service (the root `package.json`) is
+  reviewed for an update at least every **90 days**, whether or not there is
+  an advisory against it. The optional SDKs pinned in `sdk/` are held to the
+  advisory windows above and not to this review. A package another one pulls in
   moves with its parent, and is held to the advisory windows above.
 * Remediated means upgraded, removed, or shown not to be reachable from this
   service, with the reasoning recorded on a ticket.
@@ -34,7 +36,10 @@ the Node runtime and everything else shipped are covered and an advisory cannot
 pass its window between merges. A finding with no fixed version yet is listed
 and cannot fail the check.
 
-The same daily run fails on a direct dependency whose first newer release was
-published more than 90 days ago, unless `.github/dependency-reviews.json` records
-a review of that pinned version within the last 90 days and the reason it stays. Builds install exactly what the lockfiles
+The daily run checks security advisories only. The 90-day review is run when
+asked for, by dispatching that workflow with `updates` or by running
+`node tests/tools/dependency-windows.js --updates`: it fails on a direct
+dependency of the root lockfile whose first newer release was published more
+than 90 days ago, unless `.github/dependency-reviews.json` records a review of
+that pinned version within the last 90 days and the reason it stays. Builds install exactly what the lockfiles
 name (`npm ci`), so an image cannot pick up a version nobody reviewed.
