@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "Pensionerade signeringsnycklar vars respitperiod löpt ut togs bort"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "En certifikatutfärdares certifikat förnyades över sin egen nyckel"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "Lyssnarens certifikat förnyades"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "Den dedikerade intygssignerarens nycklar roterades"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "Krypteringsnycklarna för begäransobjekt, KEM och intygsbegäranden roterades"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "En delad klusterhemlighet roterades"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "En applikations klienthemlighet roterades automatiskt"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "Databaslösenordet lästes om och ändrades"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "Datakrypteringsnycklar roterades"

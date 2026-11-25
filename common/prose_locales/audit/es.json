@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "Se descartaron claves de firma retiradas cuyo periodo de gracia había pasado"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "Se renovó el certificado de una autoridad de certificación sobre su propia clave"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "Se renovó el certificado del listener"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "Se rotaron las claves del firmante dedicado de credenciales"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "Se rotaron las claves de cifrado de objetos de solicitud, KEM y solicitudes de credenciales"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "Se rotó un secreto compartido del clúster"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "Se rotó automáticamente el secreto de cliente de una aplicación"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "Se volvió a leer la contraseña de la base de datos y cambió"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "Se rotaron las claves de cifrado de datos"

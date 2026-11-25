@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "已超过宽限期的退役签名密钥被丢弃"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "证书颁发机构的证书已在其自身密钥上续期"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "监听器证书已续期"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "专用凭证签名者的密钥已轮换"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "请求对象、KEM 和凭证请求的加密密钥已轮换"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "一个共享集群机密已轮换"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "应用程序的客户端密钥已自动轮换"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "已重新读取数据库密码，且密码已更改"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "数据加密密钥被轮换"
