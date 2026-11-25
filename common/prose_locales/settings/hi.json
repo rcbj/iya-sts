@@ -2399,6 +2399,66 @@
     "en": "d51b3caaa6125e92",
     "text": "प्रारंभ पर एक बार पढ़ा जाता है"
   },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "पिछली सेल कुंजी-एन्क्रिप्शन कुंजी कहाँ से पढ़ी जाती है"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "इस सेल की कुंजी-एन्क्रिप्शन कुंजी को घुमाने के लिए: keys.cellKek* को नई कुंजी पर और इसे पुरानी पर इंगित करें, और प्रारंभ करें। इस सेल की पुरानी कुंजी के अंतर्गत अभी भी लिपटी प्रत्येक डेटा एन्क्रिप्शन कुंजी नई के अंतर्गत पुनः लिपटी जाती है और वापस लिखी जाती है; जब सेल का प्रत्येक नोड उस तरह प्रारंभ हो जाए, इसे वापस none पर सेट करें। सेल कुंजी के बिना अस्वीकार।"
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "कुंजी एक बार पढ़ी जाती है, भंडार पुनर्स्थापित होने से पहले"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "पिछली सेल कुंजी-एन्क्रिप्शन कुंजी का स्थान"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "पिछली सेल कुंजी कहाँ है, उस प्रदाता में जिसे keys.previousCellKekProvider नाम देता है: एक पथ, एक ARN, एक संसाधन या एक Vault रीड पथ। इसका कोई फ़ॉलबैक नहीं है।"
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "आरंभ पर एक बार पढ़ी जाती है"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "वह फ़ील्ड जिसमें पिछली सेल कुंजी है"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "JSON सीक्रेट का वह सदस्य जिसमें पिछली सेल कुंजी है। खाली होने पर मान पूरा लिया जाता है।"
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "आरंभ पर एक बार पढ़ी जाती है"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "पिछली सेल कुंजी का AWS क्षेत्र"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "वह AWS क्षेत्र जहाँ से पिछली सेल कुंजी पढ़ी जाती है। खाली होने पर SDK का अपना समाधान उपयोग होता है।"
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "आरंभ पर एक बार पढ़ी जाती है"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "पिछली सेल कुंजी का Key Vault URL"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "वह Azure Key Vault URL या HashiCorp Vault एंडपॉइंट जहाँ से पिछली सेल कुंजी पढ़ी जाती है। इसका कोई फ़ॉलबैक नहीं है।"
+  },
+  "keys.previousCellKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "आरंभ पर एक बार पढ़ी जाती है"
+  },
   "global.mode|label": {
     "en": "5e23ec6a300dc60a",
     "text": "मोड"
@@ -3130,6 +3190,22 @@
   "oauth2.clientSecretsMax|description": {
     "en": "c20e5f5d3aa6062e",
     "text": "एक अनुप्रयोग एक साथ कितने क्लाइंट सीक्रेट रख सकता है (प्रत्येक oauthClientSecret पर अपनी समाप्ति वाला रिकॉर्ड)। इससे आगे सीक्रेट जोड़ना या घुमाकर लाना अस्वीकार होता है (STS-REG-0208); पहले एक हटाएँ। समाप्त सीक्रेट तब तक गिने जाते हैं जब तक दैनिक जॉब oauth2.client-secret-expiry उन्हें न हटा दे।"
+  },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "इन क्लाइंट के सीक्रेट अपने-आप घुमाएँ"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "वे अनुप्रयोग जिनका क्लाइंट सीक्रेट दैनिक oauth2.client-secret-expiry जॉब समाप्त होने से पहले घुमाता (ROTATE) है, अल्पविराम से अलग। प्रत्येक प्रविष्टि एक `client_id` है, या `client_id=destination/secret-name` ताकि नया सीक्रेट कमिट होने से पहले उस सीक्रेट गंतव्य (Directory → Secret destinations) पर भेजा जाए; विफल पुश कुछ नहीं घुमाता और अगले दिन फिर आज़माया जाता है। गंतव्य के बिना क्लाइंट अपना नया सीक्रेट अपने RFC 7592 क्लाइंट कॉन्फ़िगरेशन एंडपॉइंट से पढ़ता है। पुराना सीक्रेट oauth2.clientSecretOverlapS तक प्रमाणीकरण करता रहता है। sts-api-client यहाँ कभी नहीं घुमाया जाता। खाली: कोई क्लाइंट नहीं घुमाया जाता, और प्रत्येक के लिए समाप्ति से पहले चेतावनी दी जाती है।"
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "सूचीबद्ध क्लाइंट का सीक्रेट इतने दिन पहले घुमाएँ"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "oauth2.clientSecretAutoRotate में सूचीबद्ध अनुप्रयोग को उसके प्राथमिक क्लाइंट सीक्रेट के समाप्त होने से कितने समय पहले घुमाया जाता है। जो सीक्रेट कभी समाप्त नहीं होता वह कभी नहीं घुमाया जाता।"
   },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
@@ -11487,6 +11563,14 @@
     "en": "81c3618a73d5aca7",
     "text": "आरंभ पर एक बार पढ़ा जाता है, पूल खुलने से पहले"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "डेटाबेस पासवर्ड हर इतने (सेकंड) में फिर पढ़ें"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "प्रत्येक प्रक्रिया डेटाबेस पासवर्ड को `persistence.databasePasswordProvider` द्वारा नामित सीक्रेट स्टोर से कितनी बार फिर पढ़ती है (persistence.database-password-refresh जॉब)। बदला हुआ पासवर्ड उसके बाद बने हर कनेक्शन के लिए बिना पुनरारंभ के उपयोग होता है; खुले कनेक्शन चलते रहते हैं। जब डेटाबेस लॉगिन अस्वीकार करता है तब भी इसे तुरंत फिर पढ़ा जाता है। डेटाबेस में पासवर्ड बदलना सीक्रेट स्टोर या ऑपरेटर का काम है, और पुराना वहाँ कम से कम इतनी देर वैध रहना चाहिए। 0 इसे केवल आरंभ पर और अस्वीकृत लॉगिन के बाद पढ़ता है।"
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "डेटाबेस प्रमाणपत्र सत्यापित करें"
@@ -11730,6 +11814,22 @@
   "cluster.acceptMissingCapabilities|restartReason": {
     "en": "43d39d2a6820f37a",
     "text": "क्षमता जाँच एक बार चलती है, जब नोड जुड़ता है"
+  },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "साझा सीक्रेट हर इतने (दिन) में घुमाएँ"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "cluster.secret-rotate जॉब हर साझा सीक्रेट को, जो एक कुंजी है, कितनी बार बदलता है: CSRF कुंजी, ACME नॉन्स कुंजी, Shared Signals रिसीवर सीक्रेट, OpenID Federation पेज कुंजी, साइन-आउट परिणाम कुंजी और DBSC कुंजी। नया मान पहले प्रकाशित होता है और दस मिनट बाद, जब हर प्रक्रिया उसे पढ़ ले, वर्तमान बनता है, और पुराना `cluster.secretOverlapS` तक स्वीकार रहता है। pairwise सब्जेक्ट सीक्रेट और बूटस्ट्रैप नाम सीक्रेट पहचानकर्ता हैं और कभी नहीं घुमाए जाते, और पर्यावरण चर से सेट मान को बदलना ऑपरेटर का काम है। 0 रोटेशन बंद कर देता है। पिछली रिलीज़ द्वारा संग्रहीत सीक्रेट पर जॉब की पहली चलन में तारीख़ डाली जाती है और वह इतने दिन बाद पहली बार घुमाया जाता है, अपग्रेड पर कभी नहीं।"
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "घुमाया गया साझा सीक्रेट इतनी देर (सेकंड) स्वीकार करें"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "रोटेशन द्वारा बदला गया साझा सीक्रेट नए के साथ कितनी देर स्वीकार रहता है, ताकि रोटेशन से ठीक पहले बना फ़ॉर्म, नॉन्स, पेज पॉइंटर या बाउंड कुकी उसके बाद भी काम करे। इससे कुछ नया नहीं बनाया जाता। डिफ़ॉल्ट एक दिन।"
   },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
@@ -12218,6 +12318,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "JSON मान का वह सदस्य जो लिया जाए। खाली होने का अर्थ `dkimKey` है।"
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "अगला DKIM चयनकर्ता"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "DKIM कुंजी घुमाने के लिए: नई कुंजी का चयनकर्ता, जिसका रिकॉर्ड हस्ताक्षर के उस पर जाने से पहले <selector>._domainkey.<domain> पर प्रकाशित होता है। प्रकाशित करने का रिकॉर्ड ट्रांसपोर्ट बनने पर लॉग होता है। खाली: कोई रोटेशन जारी नहीं।"
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "अगली DKIM निजी कुंजी का फ़ील्ड"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "DKIM कुंजी के सीक्रेट (जिसे mail.dkimKeyProvider और mail.dkimKeyRef नाम देते हैं) का वह सदस्य जिसमें अगले चयनकर्ता की PEM निजी कुंजी है। खाली का अर्थ `dkimNextKey` है।"
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "अगले DKIM चयनकर्ता से हस्ताक्षर कब से"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "संदेशों पर mail.dkimNextSelector से हस्ताक्षर कब शुरू होते हैं, ISO 8601 समय के रूप में (2026-12-01T00:00:00Z) — और केवल तब जब DNS अगले चयनकर्ता के नाम का उत्तर उसकी कुंजी से दे; तब तक वर्तमान चयनकर्ता चेतावनी के साथ हस्ताक्षर करता है। स्विच के बाद एक सप्ताह तक पुराने चयनकर्ता का रिकॉर्ड प्रकाशित रखें, फिर अगले चयनकर्ता को mail.dkimSelector बनाएँ और ये तीनों खाली करें। खाली: कभी स्विच नहीं।"
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",

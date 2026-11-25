@@ -2399,6 +2399,66 @@
     "en": "d51b3caaa6125e92",
     "text": "einmal beim Start gelesen"
   },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "Woher der vorherige Schlüsselverschlüsselungsschlüssel der Zelle gelesen wird"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "Um den Schlüsselverschlüsselungsschlüssel dieser Zelle zu rotieren: richten Sie keys.cellKek* auf den NEUEN Schlüssel und dies auf den ALTEN und starten Sie. Jeder Datenverschlüsselungsschlüssel dieser Zelle, der noch unter dem alten Schlüssel umhüllt ist, wird unter dem neuen neu umhüllt und zurückgeschrieben; sobald jeder Knoten der Zelle so gestartet wurde, setzen Sie dies zurück auf none. Ohne Zellenschlüssel abgelehnt."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "der Schlüssel wird einmal gelesen, bevor der Speicher wiederhergestellt wird"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "Ort des vorherigen Zellen-Schlüsselverschlüsselungsschlüssels"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "Wo der vorherige Zellenschlüssel liegt, bei dem Anbieter, den keys.previousCellKekProvider nennt: ein Pfad, eine ARN, eine Ressource oder ein Vault-Lesepfad. Er hat keinen Rückfall."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "einmal beim Start gelesen"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "Das Feld, in dem der vorherige Zellenschlüssel liegt"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "Das Mitglied eines JSON-Secrets, das den vorherigen Zellenschlüssel enthält. Leer nimmt den Wert als Ganzes."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "einmal beim Start gelesen"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "AWS-Region des vorherigen Zellenschlüssels"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "Die AWS-Region, aus der der vorherige Zellenschlüssel gelesen wird. Leer verwendet die eigene Auflösung des SDK."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "einmal beim Start gelesen"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "Key-Vault-URL des vorherigen Zellenschlüssels"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "Die URL von Azure Key Vault oder der Endpunkt von HashiCorp Vault, aus dem der vorherige Zellenschlüssel gelesen wird. Er hat keinen Rückfall."
+  },
+  "keys.previousCellKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "einmal beim Start gelesen"
+  },
   "global.mode|label": {
     "en": "5e23ec6a300dc60a",
     "text": "Modus"
@@ -3130,6 +3190,22 @@
   "oauth2.clientSecretsMax|description": {
     "en": "c20e5f5d3aa6062e",
     "text": "Wie viele Client-Geheimnisse eine Anwendung gleichzeitig halten darf (jedes ein Datensatz auf oauthClientSecret mit eigenem Ablauf). Das Hinzufügen oder Hineinrotieren eines Geheimnisses über diese Zahl hinaus wird abgelehnt (STS-REG-0208); entfernen Sie zuerst eines. Abgelaufene Geheimnisse zählen, bis der tägliche Job oauth2.client-secret-expiry sie entfernt."
+  },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "Secrets dieser Clients automatisch rotieren"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "Die Anwendungen, deren Client-Secret der tägliche Job oauth2.client-secret-expiry ROTIERT, bevor es abläuft, kommagetrennt. Jeder Eintrag ist eine `client_id` oder `client_id=destination/secret-name`, um das neue Secret an dieses Secret-Ziel (Verzeichnis → Secret-Ziele) zu übertragen, bevor es festgeschrieben wird; eine fehlgeschlagene Übertragung rotiert nichts und wird am nächsten Tag erneut versucht. Ohne Ziel liest der Client sein neues Secret von seinem RFC-7592-Client-Konfigurationsendpunkt. Das alte Secret authentifiziert noch für oauth2.clientSecretOverlapS. sts-api-client wird hier nie rotiert. Leer: kein Client wird rotiert, und vor dem Ablauf wird für jeden gewarnt."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "Das Secret eines aufgelisteten Clients so viele Tage vorher rotieren"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "Wie lange bevor sein primäres Client-Secret abläuft eine in oauth2.clientSecretAutoRotate aufgelistete Anwendung rotiert wird. Ein Secret, das nie abläuft, wird nie rotiert."
   },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
@@ -11487,6 +11563,14 @@
     "en": "81c3618a73d5aca7",
     "text": "Wird einmal beim Start gelesen, bevor der Pool geöffnet wird"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "Das Datenbankpasswort erneut lesen alle (Sekunden)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "Wie oft jeder Prozess das Datenbankpasswort erneut aus dem Secret-Speicher liest, den `persistence.databasePasswordProvider` nennt (der Job persistence.database-password-refresh). Ein geändertes Passwort wird für jede danach aufgebaute Verbindung ohne Neustart verwendet; offene Verbindungen funktionieren weiter. Es wird auch sofort erneut gelesen, wenn die Datenbank eine Anmeldung ablehnt. Das Passwort in der Datenbank zu rotieren ist Aufgabe des Secret-Speichers oder des Betreibers, und das alte muss dort mindestens so lange gültig bleiben. 0 liest es nur beim Start und nach einer abgelehnten Anmeldung."
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "Das Zertifikat der Datenbank prüfen"
@@ -11730,6 +11814,22 @@
   "cluster.acceptMissingCapabilities|restartReason": {
     "en": "43d39d2a6820f37a",
     "text": "Die Fähigkeitsprüfung läuft einmal, wenn der Knoten beitritt"
+  },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "Die gemeinsamen Secrets rotieren alle (Tage)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "Wie oft der Job cluster.secret-rotate jedes gemeinsame Secret ersetzt, das ein Schlüssel ist: den CSRF-Schlüssel, den ACME-Nonce-Schlüssel, das Secret des Shared-Signals-Empfängers, den OpenID-Federation-Seitenschlüssel, den Abmeldeergebnis-Schlüssel und den DBSC-Schlüssel. Ein neuer Wert wird zuerst veröffentlicht und zehn Minuten später gültig gemacht, sobald jeder Prozess ihn gelesen hat, und der alte wird noch für `cluster.secretOverlapS` akzeptiert. Das Pairwise-Subject-Secret und das Bootstrap-Namens-Secret sind Bezeichner und rotieren nie, und ein per Umgebungsvariable gesetzter Wert ist vom Betreiber zu ändern. 0 schaltet die Rotation aus. Ein von einer früheren Version gespeichertes Secret wird beim ersten Lauf des Jobs datiert und erst so viele Tage später erstmals rotiert, nie beim Upgrade."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "Ein rotiertes gemeinsames Secret noch so lange akzeptieren (Sekunden)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "Wie lange ein durch eine Rotation ersetztes gemeinsames Secret neben dem neuen noch akzeptiert wird, damit ein Formular, eine Nonce, ein Seitenverweis oder ein gebundenes Cookie, die kurz vor der Rotation erzeugt wurden, auch danach noch funktionieren. Damit wird nichts Neues erzeugt. Standardmäßig ein Tag."
   },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
@@ -12218,6 +12318,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "Das Mitglied eines JSON-Werts, das genommen wird. Leer bedeutet `dkimKey`."
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "Der nächste DKIM-Selektor"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "Um den DKIM-Schlüssel zu rotieren: der Selektor des NEUEN Schlüssels, dessen Eintrag unter <selector>._domainkey.<domain> veröffentlicht wird, bevor das Signieren auf ihn wechselt. Der zu veröffentlichende Eintrag wird beim Aufbau des Transports protokolliert. Leer: keine Rotation im Gange."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "Das Feld des nächsten privaten DKIM-Schlüssels"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "Das Mitglied des Secrets des DKIM-Schlüssels (das, das mail.dkimKeyProvider und mail.dkimKeyRef nennen), das den privaten PEM-Schlüssel des nächsten Selektors enthält. Leer bedeutet `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "Mit dem nächsten DKIM-Selektor signieren ab"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "Wann Nachrichten mit mail.dkimNextSelector signiert werden, als ISO-8601-Zeit (2026-12-01T00:00:00Z) — und erst, sobald DNS den Namen des nächsten Selektors mit seinem Schlüssel beantwortet; bis dahin signiert der aktuelle Selektor, mit einer Warnung. Lassen Sie den Eintrag des alten Selektors nach dem Wechsel noch eine Woche veröffentlicht, machen Sie dann den nächsten Selektor zu mail.dkimSelector und leeren Sie diese drei. Leer: nie wechseln."
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",

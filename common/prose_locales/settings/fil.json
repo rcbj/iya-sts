@@ -2399,6 +2399,66 @@
     "en": "d51b3caaa6125e92",
     "text": "binabasa nang isang beses sa startup"
   },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "Saan binabasa ang naunang key-encryption key ng cell"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "Para i-rotate ang key-encryption key ng cell na ito: ituro ang keys.cellKek* sa BAGONG key at ito sa LUMA, at mag-start. Bawat data encryption key ng cell na ito na nakabalot pa sa ilalim ng lumang key ay muling binabalot sa ilalim ng bago at isinusulat pabalik; kapag nag-start na sa ganoong paraan ang bawat node ng cell, ibalik ito sa none. Tinatanggihan kung walang cell key."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "isang beses binabasa ang key, bago i-restore ang store"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "Lokasyon ng naunang key-encryption key ng cell"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "Kung nasaan ang naunang cell key, sa provider na pinangalanan ng keys.previousCellKekProvider: isang path, isang ARN, isang resource o isang Vault read path. Walang fallback ito."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "binabasa nang isang beses sa pag-start"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "Ang field kung nasaan ang naunang cell key"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "Ang member ng isang JSON secret na may hawak ng naunang cell key. Kapag walang laman, kinukuha ang value nang buo."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "binabasa nang isang beses sa pag-start"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "AWS region ng naunang cell key"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "Ang AWS region na pinagbabasahan ng naunang cell key. Kapag walang laman, ginagamit ang sariling resolution ng SDK."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "binabasa nang isang beses sa pag-start"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "Key Vault URL ng naunang cell key"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "Ang Azure Key Vault URL o ang HashiCorp Vault endpoint na pinagbabasahan ng naunang cell key. Walang fallback ito."
+  },
+  "keys.previousCellKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "binabasa nang isang beses sa pag-start"
+  },
   "global.mode|label": {
     "en": "5e23ec6a300dc60a",
     "text": "Mode"
@@ -3130,6 +3190,22 @@
   "oauth2.clientSecretsMax|description": {
     "en": "c20e5f5d3aa6062e",
     "text": "Ilang client secret ang puwedeng sabay-sabay na hawak ng isang application (bawat isa ay record sa oauthClientSecret na may sariling expiry). Tinatanggihan ang pagdagdag o pag-rotate ng secret na lampas dito (STS-REG-0208); mag-alis muna ng isa. Binibilang ang mga expired na secret hanggang alisin ng araw-araw na job na oauth2.client-secret-expiry."
+  },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "I-rotate nang awtomatiko ang mga secret ng mga client na ito"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "Ang mga application na ang client secret ay ROTINE-ROTATE ng araw-araw na job na oauth2.client-secret-expiry bago ito mag-expire, pinaghihiwalay ng kuwit. Bawat entry ay isang `client_id`, o `client_id=destination/secret-name` para i-push ang bagong secret sa secret destination na iyon (Directory → Secret destinations) bago ito i-commit; ang push na pumalya ay walang ini-rotate at inuulit kinabukasan. Kapag walang destination, binabasa ng client ang bago nitong secret mula sa RFC 7592 client configuration endpoint nito. Patuloy na nag-a-authenticate ang lumang secret sa loob ng oauth2.clientSecretOverlapS. Ang sts-api-client ay hindi kailanman nire-rotate dito. Walang laman: walang client na ni-rotate, at binababalaan ang bawat isa bago mag-expire."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "I-rotate ang secret ng nakalistang client nang ganito karaming araw nang mas maaga"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "Gaano katagal bago mag-expire ang pangunahing client secret nito ni-rorotate ang isang application na nakalista sa oauth2.clientSecretAutoRotate. Ang secret na hindi nag-e-expire ay hindi kailanman nire-rotate."
   },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
@@ -11487,6 +11563,14 @@
     "en": "81c3618a73d5aca7",
     "text": "binabasa nang isang beses sa startup, bago buksan ang pool"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "Basahin ulit ang database password tuwing (segundo)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "Gaano kadalas binabasa ulit ng bawat process ang database password mula sa secret store na pinangalanan ng `persistence.databasePasswordProvider` (ang job na persistence.database-password-refresh). Ang nabagong password ay ginagamit sa bawat koneksiyong gagawin pagkatapos nito, nang walang restart; patuloy na gumagana ang mga bukas na koneksiyon. Binabasa rin ito ulit agad kapag tinanggihan ng database ang isang login. Ang pag-rotate ng password sa database ay trabaho ng secret store o ng operator, at dapat manatiling valid doon ang luma nang hindi bababa sa haba ng oras na ito. Ang 0 ay binabasa lang ito sa pag-start at pagkatapos ng tinanggihang login."
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "I-verify ang certificate ng database"
@@ -11730,6 +11814,22 @@
   "cluster.acceptMissingCapabilities|restartReason": {
     "en": "43d39d2a6820f37a",
     "text": "isang beses tumatakbo ang capability check, kapag sumali ang node"
+  },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "I-rotate ang mga shared secret tuwing (araw)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "Gaano kadalas pinapalitan ng job na cluster.secret-rotate ang bawat shared secret na isang key: ang CSRF key, ang ACME nonce key, ang Shared Signals receiver secret, ang OpenID Federation page key, ang sign-out result key at ang DBSC key. Ang bagong value ay inilalathala muna at ginagawang kasalukuyan makalipas ang sampung minuto, kapag nabasa na ito ng bawat process, at tinatanggap pa rin ang luma sa loob ng `cluster.secretOverlapS`. Ang pairwise subject secret at ang bootstrap name secret ay mga identifier at hindi kailanman nire-rotate, at ang value na itinakda ng environment variable ay ang operator ang magpapalit. Pinapatay ng 0 ang rotation. Ang secret na itinago ng naunang release ay binibigyan ng petsa sa unang takbo ng job at unang ni-rorotate makalipas ang ganito karaming araw, hindi kailanman sa upgrade."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "Tanggapin ang na-rotate na shared secret sa loob ng (segundo)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "Gaano katagal tinatanggap pa rin ang shared secret na pinalitan ng isang rotation katabi ng bago, para gumana pa rin pagkatapos nito ang form, nonce, page pointer o bound cookie na ginawa bago lang ang rotation. Walang bagong ginagawa gamit ito. Isang araw bilang default."
   },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
@@ -12218,6 +12318,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "Ang member ng JSON value na kukunin. Ang walang laman ay nangangahulugang `dkimKey`."
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "Ang susunod na DKIM selector"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "Para i-rotate ang DKIM key: ang selector ng BAGONG key, na inilalathala ang record sa <selector>._domainkey.<domain> bago lumipat dito ang pagpirma. Nila-log ang record na ilalathala kapag binuo ang transport. Walang laman: walang rotation na isinasagawa."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "Ang field ng susunod na DKIM private key"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "Ang member ng secret ng DKIM key (ang pinangalanan ng mail.dkimKeyProvider at mail.dkimKeyRef) na may hawak ng PEM private key ng susunod na selector. Ang walang laman ay nangangahulugang `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "Pumirma gamit ang susunod na DKIM selector simula"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "Kung kailan magsisimulang pirmahan ang mga mensahe gamit ang mail.dkimNextSelector, bilang ISO 8601 na oras (2026-12-01T00:00:00Z) — at kapag sumasagot na lang ang DNS sa pangalan ng susunod na selector gamit ang key nito; hanggang doon, pumipirma ang kasalukuyang selector, na may babala. Panatilihing nakalathala ang record ng lumang selector sa loob ng isang linggo pagkatapos ng paglipat, saka gawing mail.dkimSelector ang susunod na selector at i-clear ang tatlong ito. Walang laman: hindi lilipat kailanman."
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6130** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6136** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -53,9 +53,9 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 113
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 88
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 117
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 36
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 89
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 202
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 296
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 44
+* [Mail (`STS-MAIL`)](#sts-mail) — 45
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
 * [Device register (`STS-DEVICE`)](#sts-device) — 54
@@ -103,7 +103,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 191
+* [Registries (`STS-REG`)](#sts-reg) — 192
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 61
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 21
@@ -474,6 +474,7 @@ Raised from: persistence/.
 | `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
 | `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it only once the flush is stuck (STS-STORE-0177). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
 | `STS-STORE-0177` | A request worker's own flush has been out four times workers.readBarrierTimeoutMs (2 minutes by default), so the worker asks the front process to replace it (STS-WORKER-0055). Its drain waits for that flush to settle until ten times the bound after it began, so a flush that is only slow keeps its writes. | Log line |
+| `STS-STORE-0178` | The database password could not be read again from its secret store (persistence.database-password-refresh, or after the database refused a login, #2220); new connections go on using the password already held. | Log line and audit row |
 
 ## STS-CLUSTER
 
@@ -517,6 +518,8 @@ Raised from: cluster/.
 | `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
 | `STS-CLUSTER-0165` | Taking over a lease is waiting for writes the previous holder still has in flight under it: the ask is bounded by the heartbeat's own bound, rolls back when the bound runs out, and is made again on the next heartbeat, so this node's own renewal never waits behind it (#770). Logged once per wait; one that repeats for a node lifetime names a write that does not finish. | — |
 | `STS-CLUSTER-0166` | A response's writes committed, and a check deferred onto that commit refused it, so it was answered 503 with Retry-After instead of its success (#884's review). The one check today is an access-token status index published without its own commit wait, whose row the flush dropped because the block claim's fence was gone: the token in the discarded body is not delivered. | RFC 9110 section 15.6.4 |
+| `STS-CLUSTER-0167` | A shared secret could not be read again from the store by the per-process refresh (cluster.secret-refresh, #2220); the process keeps the value it holds and tries again at the next run. | Log line |
+| `STS-CLUSTER-0168` | A step of a shared secret's rotation (cluster.secret-rotate, #2220) failed: the stored value would not open or the new one would not seal. The secret keeps its value and the step is tried again at the next run. | Log line |
 
 ## STS-CELL
 
@@ -614,6 +617,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
 | `STS-CELL-0210` | A cell conversion found a sealed directory entry it could not open, so it could not decide the entry's tier; nothing was converted (#391). | cell_convert — refused |
 | `STS-CELL-0211` | A provider's server-to-server notification could not reach every cell (#727): it is answered 503 and its once-ever claim is released, so the provider's retry is accepted and fanned out again. | HTTP 503 with Retry-After |
+| `STS-CELL-0212` | keys.previousCellKekProvider is set and its location is empty, or no cell key is configured for it to be the previous one of (#2220); the service does not start. | Log line (fatal at start) |
 
 ## STS-SCHED
 
@@ -4579,6 +4583,7 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0241` | A message was not queued because the encryption the person chose cannot be honoured now (no usable OpenPGP encryption key, no S/MIME certificate that can receive); it is not sent in the clear against their choice (#1955). | log only (the use refuses as for any unsent message) |
 | `STS-MAIL-0242` | An encrypted message cannot be carried by the realm's transport: Azure Communication Services takes structured content and cannot send a MIME entity this service composed (#1955). | log only |
 | `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
+| `STS-MAIL-0244` | A DKIM selector switch is held back (#2220): mail.dkimNextSelector's key cannot sign, or mail.dkimSwitchAt has passed and DNS does not answer the next selector with its key. Messages are signed with the current selector until it does. | RFC 6376 section 3.6.1 (log only) |
 
 ## STS-I18N
 
@@ -6836,6 +6841,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0371` | An application's WS-Trust decryption private key could not be sealed under the key-encryption key where keys persist, so the key pair was not written: a private key is never stored in the clear there (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0372` | The directory refused the write of an application's WS-Trust decryption key pair (the certificate, its chain, the sealed private key and its source, written together). Nothing changed (#1668). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0373` | More than one application holds the same WS-Trust decryption certificate, so a request whose EncryptedKey names it is opened by none of them: the key would otherwise decide whose request it was. Logged at the request; remove the certificate from all but one (#1668). | none (logged; the request is then refused STS-WSTRUST-0075) |
+| `STS-REG-0374` | An application listed in oauth2.clientSecretAutoRotate was not rotated by the daily job (#2220): its new secret could not be pushed to its secret destination, or the rotation was refused. Nothing changed; the old secret still authenticates and the job tries again the next day. | Log line and audit row |
 
 ## STS-DBG
 

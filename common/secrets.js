@@ -306,6 +306,31 @@ const CELL_KEK = {
 };
 
 // ---------------------------------------------------------------------------
+// THE PREVIOUS CELL KEY (#2220): the cell key rotated the way the service key
+// is — the new key in `keys.cellKek*`, the old one here, one start, and every
+// data key of this cell's scope that unwraps only under the old key is
+// re-wrapped under the new one. No fallback, for the cell key's reason: a
+// fallback would read some other key under this one's name.
+// ---------------------------------------------------------------------------
+/**
+ * The previous cell key-encryption key's descriptor (#2220): its own
+ * provider, location, field, region and vault, and no fallback.
+ */
+const PREVIOUS_CELL_KEK = {
+  id: 'previous-cell-kek',
+  label: 'the previous cell key-encryption key',
+  provider: 'keys.previousCellKekProvider',
+  file: 'keys.previousCellKekRef',
+  ref: 'keys.previousCellKekRef',
+  field: 'keys.previousCellKekField',
+  defaultField: '',
+  fallbackRef: null,
+  vault: 'keys.previousCellKekVault',
+  region: 'keys.previousCellKekRegion',
+  token: null
+};
+
+// ---------------------------------------------------------------------------
 // THE PREVIOUS KEY-ENCRYPTION KEY (#391 P2). Rotating the key-encryption key
 // re-wraps the data encryption keys rather than re-encrypting the store, and a
 // DEK can only be re-wrapped by a process that can unwrap it — so for one
@@ -377,6 +402,19 @@ const MAIL_SMTP_PASSWORD = mailSecret('mail-smtp-password',
  */
 const MAIL_DKIM_KEY = mailSecret('mail-dkim-key',
   'the DKIM private key', 'mail.dkimKey', 'dkimKey');
+/**
+ * The NEXT DKIM private key's descriptor (#2220): the same secret as the DKIM
+ * key — its provider and location — under a field of its own, so one secret
+ * holds both while a selector is switched. Not a separate row of the store
+ * report, which is about where secrets are, and this one is where the DKIM
+ * key is.
+ */
+const MAIL_DKIM_NEXT_KEY = Object.assign({}, MAIL_DKIM_KEY, {
+  id: 'mail-dkim-next-key',
+  label: 'the next DKIM private key',
+  field: 'mail.dkimNextKeyField',
+  defaultField: 'dkimNextKey'
+});
 /**
  * The Azure Communication Services connection string's descriptor (#63).
  */
@@ -2456,7 +2494,8 @@ async function read(spec) {
   // still may not: nothing has asked for one and `keystore.js`'s cell path
   // was held to bytes until then.
   if (provider.remote && KMS_CAPABLE.indexOf(spec.id) < 0 &&
-      !(spec.id === 'cell-kek' && provider.servesCellKek)) {
+      !((spec.id === 'cell-kek' || spec.id === 'previous-cell-kek') &&
+        provider.servesCellKek)) {
     const bad = errorCodes.mark(new Error(spec.provider + ' is "' +
       provider.id + '", a key management service that wraps keys and holds ' +
       'no secret to read; only keys.kekProvider and ' +
@@ -2702,6 +2741,41 @@ async function readPreviousKek() {
 }
 
 // ---------------------------------------------------------------------------
+// THE PREVIOUS CELL KEY (#2220): null where it is not configured, refused
+// when its location is empty (it has no fallback), and read as the cell key
+// is otherwise — a handle where the provider serves one (`pkcs11`).
+// ---------------------------------------------------------------------------
+/**
+ * Reads the previous cell key-encryption key, for re-wrapping this cell's
+ * data encryption keys after the cell key was rotated.
+ *
+ * @returns the key as the provider returned it, or null when
+ *   `keys.previousCellKekProvider` is `none`
+ * @throws an Error (STS-CELL-0212) when its location is empty, or the
+ *   provider's error when the read fails
+ */
+async function readPreviousCellKek() {
+  log.debug('Entering readPreviousCellKek().');
+  if (!configuredFor(PREVIOUS_CELL_KEK)) {
+    log.debug('Leaving readPreviousCellKek(). Not configured.');
+    return null;
+  }
+  refuseFileKek(PREVIOUS_CELL_KEK.provider);
+  const provider = String(config.value(PREVIOUS_CELL_KEK.provider) || '');
+  const own = locationOf(PREVIOUS_CELL_KEK,
+                         provider === 'file' ? 'file' : 'ref');
+  if (!own.where) {
+    throw new Error(errorCodes.tag('STS-CELL-0212') +
+                    PREVIOUS_CELL_KEK.provider + ' is "' + provider +
+                    '" and keys.previousCellKekRef is empty. The previous ' +
+                    'cell key has no fallback location.');
+  }
+  const value = await read(PREVIOUS_CELL_KEK);
+  log.debug('Leaving readPreviousCellKek().');
+  return value;
+}
+
+// ---------------------------------------------------------------------------
 // ONE OF THE MAIL SECRETS AS TEXT (#63): `null` when its provider is `none`,
 // and otherwise what is stored, decoded and trimmed — the database
 // password's rule, and for its reason. A read that finds nothing is refused
@@ -2719,7 +2793,7 @@ async function readPreviousKek() {
  */
 async function readSecretText(spec) {
   log.debug('Entering readSecretText(). secret=' + (spec && spec.id));
-  if (MAIL_SECRETS.indexOf(spec) < 0) {
+  if (MAIL_SECRETS.indexOf(spec) < 0 && spec !== MAIL_DKIM_NEXT_KEY) {
     log.debug('Leaving readSecretText(). Not a mail secret.');
     throw new Error('readSecretText() reads the mail secrets only');
   }
@@ -4361,7 +4435,7 @@ const MAIL_SECRETS = [MAIL_SMTP_PASSWORD, MAIL_DKIM_KEY,
  * password and the four mail secrets.
  */
 const SECRETS = [KEK, DATABASE_PASSWORD, GLOBAL_DATABASE_PASSWORD, CELL_KEK,
-                 PREVIOUS_KEK].concat(MAIL_SECRETS);
+                 PREVIOUS_KEK, PREVIOUS_CELL_KEK].concat(MAIL_SECRETS);
 
 // Which store a secret lives in, as a key that is equal for two secrets in the
 // same place. The location is part of it for `file` — two mounted files are
@@ -5141,9 +5215,12 @@ module.exports = {
   GLOBAL_DATABASE_PASSWORD: GLOBAL_DATABASE_PASSWORD,
   CELL_KEK: CELL_KEK,
   PREVIOUS_KEK: PREVIOUS_KEK,
+  PREVIOUS_CELL_KEK: PREVIOUS_CELL_KEK,
+  MAIL_DKIM_NEXT_KEY: MAIL_DKIM_NEXT_KEY,
   readPreviousKek: readPreviousKek,
   readGlobalDatabasePassword: readGlobalDatabasePassword,
   readCellKek: readCellKek,
+  readPreviousCellKek: readPreviousCellKek,
   // The mail channel's four (#63), and the one reader they share.
   MAIL_SMTP_PASSWORD: MAIL_SMTP_PASSWORD,
   MAIL_DKIM_KEY: MAIL_DKIM_KEY,

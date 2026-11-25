@@ -4331,6 +4331,23 @@ calls this rather than copying the injection**, because the encoding above is
 exactly the kind of detail a copy gets wrong. Requiring this module does not
 open anything (only `start()` does), so a CLI may load it.
 
+
+**READ AGAIN WHILE RUNNING SINCE #2220.** A password rotated in the secret store
+used to need a restart of every node. Now each process reads it again every
+`persistence.databasePasswordRefreshS` (the per-process job
+`persistence.database-password-refresh`, registered by `start()`) and at once
+when the database refuses a login (28P01, 28000, MariaDB's 1045 — seen as
+tarn's `createFail` on the writer's pools, at most every 30 s), and a changed
+string is handed to the driver's `useConnectionString()`. **That replaces
+Knex's `client.connectionSettings` on the writer's pools** (`StorePool.
+setConnectionString()`), which Knex dials every new connection with — pooled
+and dedicated alike — and leaves open sessions alone. Not a connection
+FUNCTION: Knex resolves a function lazily in the pool only, and
+`acquireRawConnection()` (the LISTEN and liveness connections) would read an
+unset value. Rotating the password AT the database stays the operator's or the
+secret store's job (OpenBao's database engine), and the old one must outlive a
+refresh interval there. The global tier's password is still read at start
+only.
 ## THE `ldif` STORE HAD STOPPED WRITING THE DIRECTORY (fixed 2026-09-12)
 
 The journalled flush (2026-09-08) hands the driver `all: null` when it knows

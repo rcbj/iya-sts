@@ -14079,6 +14079,45 @@ function dkimSign(raw, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// THE DNS RECORD A SELECTOR PUBLISHES (#2220): what the operator puts in the
+// TXT record `<selector>._domainkey.<domain>` before mail is signed with the
+// key, and what the selector switch compares DNS's answer with. RFC 6376
+// section 3.6.1: `p=` is the base64 of the public key — for RSA its
+// SubjectPublicKeyInfo DER, for Ed25519 (RFC 8463 section 4.2) the bare 32
+// bytes.
+// ---------------------------------------------------------------------------
+/**
+ * Builds the DKIM key record (RFC 6376 section 3.6.1, RFC 8463) a private
+ * key's selector publishes in DNS.
+ *
+ * @param privateKeyPem - the selector's private key
+ * @returns `{ record, p }`: the TXT record's text, and its `p=` value alone
+ * @throws Error when the key is neither RSA nor Ed25519
+ */
+function dkimDnsRecord(privateKeyPem) {
+  log.debug('Entering dkimDnsRecord().');
+  const key = nodeCrypto.createPublicKey(nodeCrypto.createPrivateKey(
+    privateKeyPem));
+  let p;
+  let k;
+  if (key.asymmetricKeyType === 'rsa') {
+    k = 'rsa';
+    p = key.export({ type: 'spki', format: 'der' }).toString('base64');
+  } else if (key.asymmetricKeyType === 'ed25519') {
+    k = 'ed25519';
+    // The last 32 bytes of the 44-byte SubjectPublicKeyInfo are the key.
+    p = key.export({ type: 'spki', format: 'der' }).subarray(-32)
+      .toString('base64');
+  } else {
+    log.debug('Leaving dkimDnsRecord(). Not RSA or Ed25519.');
+    throw new Error('a DKIM key is RSA or Ed25519; this key is ' +
+                    (key.asymmetricKeyType || 'unknown'));
+  }
+  log.debug('Leaving dkimDnsRecord(). ' + k + '.');
+  return { record: 'v=DKIM1; k=' + k + '; p=' + p, p: p };
+}
+
+// ---------------------------------------------------------------------------
 // A VERIFIER, for this service's own tests and for the console's "is my DKIM
 // key the one DNS publishes" check — never for a message somebody else sent,
 // because this service receives no mail. `publicKeyPem` is the selector's key
@@ -22694,6 +22733,7 @@ module.exports = {
   // --- section 12: DKIM (#63) ---
   DKIM_ALGORITHMS: DKIM_ALGORITHMS,
   dkimSign: dkimSign,
+  dkimDnsRecord: dkimDnsRecord,
   dkimVerify: dkimVerify,
   dkimRelaxedBody: dkimRelaxedBody,
   dkimRelaxedHeader: dkimRelaxedHeader,

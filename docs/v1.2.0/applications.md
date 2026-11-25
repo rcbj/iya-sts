@@ -144,6 +144,53 @@ secret is refused. With the API, send `lifetimeDays` on
 application's **Credentials** tab, which takes the same field.
 [The schema, and what "schema" means here](#the-schema-and-what-schema-means-here).
 
+### Automatic rotation
+
+A client secret expires `oauth2.clientSecretLifetimeDays` after it is made, and
+the daily `oauth2.client-secret-expiry` job warns
+`oauth2.clientSecretExpiryWarningDays` ahead. That is all it does for most
+applications, because delivering a new secret needs the client's help.
+
+An application named in `oauth2.clientSecretAutoRotate` is **rotated** by that
+job once its primary secret expires within
+`oauth2.clientSecretAutoRotateDays` (30). A new secret is added and the old one
+still authenticates for `oauth2.clientSecretOverlapS`, exactly as **Rotate
+secret** does. The setting is per realm, and each entry names how the client
+gets the new secret:
+
+* `client_id=destination/secret-name` pushes the new secret to that
+  [secret destination](#a-secret-push-destination) **before** it is
+  committed. A push that fails rotates nothing, is audited with
+  `STS-REG-0374`, and is tried again the next day while the old secret still
+  works. The client reads its secret from that secrets manager.
+* `client_id` alone relies on RFC 7592: the client reads its configuration
+  (`GET` on its `registration_client_uri`, with its registration access
+  token) inside the overlap and finds the new `client_secret` there.
+
+A secret that never expires is never rotated. `sts-api-client` is never
+rotated by the job.
+
+### The management API client's secret
+
+`sts-api-client`'s secret is pinned by `adminApi.clientSecret`
+(`ADMIN_API_CLIENT_SECRET`). It now has an expiry like every other secret: a
+newly seeded entry's secret expires after `oauth2.clientSecretLifetimeDays`,
+and the expiry job warns ahead of it. An entry seeded by an earlier release
+keeps the expiry it has. There are two ways to rotate it, each with an
+overlap of `oauth2.clientSecretOverlapS`:
+
+* **Rotate secret** on the console, or `rotate-secret` on `/admin-api`. The
+  answer carries the new secret and the time the old one stops working. Set
+  `adminApi.clientSecret` to the new secret and restart every node before
+  then.
+* Change `adminApi.clientSecret` and restart. At start, a value the entry does
+  not hold is added as a new secret, and the secrets it replaces still
+  authenticate for the overlap.
+
+**Regenerate** is still refused while the setting pins the secret
+(`STS-REG-0061`), because it would remove the secret every token for
+`/admin-api` is minted with, at once.
+
 ## What a second name leaves unchanged
 
 A protocol name, a display name, an audience and a DID are further

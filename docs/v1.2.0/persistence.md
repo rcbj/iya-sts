@@ -389,6 +389,47 @@ before the HTTP listener binds.
 `/admin/persistence` and `GET /admin-api/persistence` report the host, port,
 database and user parsed out of it.
 
+### Rotating the database password
+
+Rotating the password **at the database** is the job of your secret store or
+yours, not this service's. What this service does is pick up the new password
+without a restart, when it comes from a secret store
+(`persistence.databasePasswordProvider`):
+
+* Each process reads the password again every
+  `persistence.databasePasswordRefreshS` (3600 seconds; the
+  `persistence.database-password-refresh` job), and at once when the database
+  refuses a login.
+* A changed password is used for every connection made after it. Open
+  connections keep working, because PostgreSQL and MariaDB do not end a
+  session when its password changes.
+* A failed read is logged and audited (`STS-STORE-0178`), and the password
+  already held stays in use.
+
+So the old password has to stay valid at the database until every node has
+read the new one: at least one refresh interval. With OpenBao (or HashiCorp
+Vault), the database secrets engine does the rotation for you with a **static
+role**, which changes the role's password in the database and in the store
+together on a schedule:
+
+```bash
+bao secrets enable database
+bao write database/config/sts plugin_name=postgresql-database-plugin \
+  connection_url='postgresql://{{username}}:{{password}}@sts-postgres:5432/sts?sslmode=verify-full' \
+  username=vault_admin password=… allowed_roles=sts
+bao write database/static-roles/sts db_name=sts username=sts \
+  rotation_period=720h
+```
+
+Point `persistence.databasePasswordProvider` at `vault`, the location at the
+static role's credentials (`persistence.databasePasswordRef` set to
+`database/static-creds/sts`) and the field at `password`. Set
+`persistence.databasePasswordRefreshS` well below the time a rotated-out
+password still works for your clients; with a static role, the old password
+stops working at the rotation, so a refused login triggers the re-read at
+once. The global tier's password (`persistence.globalDatabasePassword*`, cells
+only) is still read at start.
+
 ## Things worth knowing before you rely on it
 
 <a id="with-postgres-a-write-is-answered-only-after-it-has-committed"></a>

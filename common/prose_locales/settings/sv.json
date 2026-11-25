@@ -2399,6 +2399,66 @@
     "en": "d51b3caaa6125e92",
     "text": "läses en gång vid start"
   },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "Varifrån den föregående cellnyckelkrypteringsnyckeln läses"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "För att rotera den här cellens nyckelkrypteringsnyckel: peka keys.cellKek* på den NYA nyckeln och den här på den GAMLA, och starta. Varje datakrypteringsnyckel i den här cellen som fortfarande är omsluten under den gamla nyckeln omsluts på nytt under den nya och skrivs tillbaka; när varje nod i cellen har startat så, sätt tillbaka den till none. Vägras utan cellnyckel."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "nyckeln läses en gång, innan lagret återställs"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "Platsen för den föregående cellnyckelkrypteringsnyckeln"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "Var den föregående cellnyckeln finns, hos den leverantör som keys.previousCellKekProvider namnger: en sökväg, ett ARN, en resurs eller en lässökväg i Vault. Den har ingen reservlösning."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "Fältet som den föregående cellnyckeln finns i"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "Den medlem i en JSON-hemlighet som innehåller den föregående cellnyckeln. Tomt tar hela värdet."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "Den föregående cellnyckelns AWS-region"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "AWS-regionen som den föregående cellnyckeln läses från. Tomt använder SDK:ts egen upplösning."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "Den föregående cellnyckelns Key Vault-URL"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "URL:en till Azure Key Vault eller HashiCorp Vault-slutpunkten som den föregående cellnyckeln läses från. Den har ingen reservlösning."
+  },
+  "keys.previousCellKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
   "global.mode|label": {
     "en": "5e23ec6a300dc60a",
     "text": "Läge"
@@ -3130,6 +3190,22 @@
   "oauth2.clientSecretsMax|description": {
     "en": "c20e5f5d3aa6062e",
     "text": "Hur många klienthemligheter en applikation får ha samtidigt (var och en en post i oauthClientSecret med egen utgång). Att lägga till eller rotera in en hemlighet utöver detta vägras (STS-REG-0208); ta bort en först. Utgångna hemligheter räknas tills det dagliga jobbet oauth2.client-secret-expiry tar bort dem."
+  },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "Rotera de här klienternas hemligheter automatiskt"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "De applikationer vars klienthemlighet det dagliga jobbet oauth2.client-secret-expiry ROTERAR innan den går ut, kommaseparerade. Varje post är en `client_id`, eller `client_id=destination/secret-name` för att skicka den nya hemligheten till den hemlighetsdestinationen (Katalog → Hemlighetsdestinationer) innan den förbinds; en överföring som misslyckas roterar ingenting och görs om nästa dag. Utan destination läser klienten sin nya hemlighet från sin klientkonfigurationsslutpunkt enligt RFC 7592. Den gamla hemligheten autentiserar fortfarande under oauth2.clientSecretOverlapS. sts-api-client roteras aldrig här. Tomt: ingen klient roteras, och var och en varnas för i förväg innan den går ut."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "Rotera en listad klients hemlighet så här många dagar i förväg"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "Hur lång tid innan dess primära klienthemlighet går ut som en applikation som listas i oauth2.clientSecretAutoRotate roteras. En hemlighet som aldrig går ut roteras aldrig."
   },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
@@ -11487,6 +11563,14 @@
     "en": "81c3618a73d5aca7",
     "text": "läses en gång vid start, innan poolen öppnas"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "Läs databaslösenordet på nytt var (sekunder)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "Hur ofta varje process läser databaslösenordet på nytt från den hemlighetslagring som `persistence.databasePasswordProvider` namnger (jobbet persistence.database-password-refresh). Ett ändrat lösenord används för varje anslutning som görs efter det, utan omstart; öppna anslutningar fortsätter fungera. Det läses också på nytt direkt när databasen vägrar en inloggning. Att rotera lösenordet i databasen är hemlighetslagringens eller operatörens uppgift, och det gamla måste förbli giltigt där minst så här länge. 0 läser det bara vid start och efter en vägrad inloggning."
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "Verifiera databasens certifikat"
@@ -11730,6 +11814,22 @@
   "cluster.acceptMissingCapabilities|restartReason": {
     "en": "43d39d2a6820f37a",
     "text": "förmågekontrollen körs en gång, när noden ansluter"
+  },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "Rotera de delade hemligheterna var (dagar)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "Hur ofta jobbet cluster.secret-rotate ersätter varje delad hemlighet som är en nyckel: CSRF-nyckeln, ACME-nonce-nyckeln, mottagarhemligheten för Shared Signals, nyckeln för OpenID Federation-sidan, nyckeln för utloggningsresultatet och DBSC-nyckeln. Ett nytt värde publiceras först och görs aktuellt tio minuter senare, när varje process har läst det, och det gamla accepteras fortfarande under `cluster.secretOverlapS`. Den parvisa subjekthemligheten och bootstrap-namnhemligheten är identifierare och roteras aldrig, och ett värde som sätts med en miljövariabel är operatörens att ändra. 0 stänger av rotationen. En hemlighet som lagrats av en tidigare version dateras vid jobbets första körning och roteras först så här många dagar senare, aldrig vid uppgraderingen."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "Acceptera en roterad delad hemlighet i (sekunder)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "Hur länge en delad hemlighet som en rotation har ersatt fortfarande accepteras vid sidan av den nya, så att ett formulär, en nonce, en sidpekare eller en bunden cookie som skapades strax före rotationen fortfarande fungerar efter den. Inget nytt skapas med den. Ett dygn som standard."
   },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
@@ -12218,6 +12318,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "Den medlem i ett JSON-värde som ska tas. Tomt betyder `dkimKey`."
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "Nästa DKIM-selektor"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "För att rotera DKIM-nyckeln: selektorn för den NYA nyckeln, vars post publiceras på <selector>._domainkey.<domain> innan signeringen flyttas till den. Posten som ska publiceras loggas när transporten byggs. Tomt: ingen rotation pågår."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "Fältet för nästa DKIM-privata nyckel"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "Den medlem i DKIM-nyckelns hemlighet (den som mail.dkimKeyProvider och mail.dkimKeyRef namnger) som innehåller nästa selektors privata PEM-nyckel. Tomt betyder `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "Signera med nästa DKIM-selektor från"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "När meddelanden börjar signeras med mail.dkimNextSelector, som en tid enligt ISO 8601 (2026-12-01T00:00:00Z) — och först när DNS svarar på nästa selektors namn med dess nyckel; till dess signerar den nuvarande selektorn, med en varning. Behåll den gamla selektorns post publicerad i en vecka efter bytet, gör sedan nästa selektor till mail.dkimSelector och rensa de här tre. Tomt: byt aldrig."
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",

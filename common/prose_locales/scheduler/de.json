@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "Löscht die Rate-Limit-Fenster, die abgelaufen sind, aus der Tabelle, die jeder Knoten teilt."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Aktualisierung der gemeinsamen Secrets"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Liest die gemeinsamen Secrets in diesem Prozess erneut aus dem Speicher, damit eine auf einem beliebigen Knoten erfolgte Rotation hier verwendet wird."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotation der gemeinsamen Secrets"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Rotiert jedes gemeinsame Secret, das ein Schlüssel ist (die Schlüssel für CSRF, ACME-Nonce, Shared-Signals-Empfänger, OpenID-Federation-Seite, Abmeldeergebnis und DBSC), alle cluster.secretRotationDays: ein nächster Wert wird veröffentlicht, zehn Minuten später gültig gemacht, und der alte wird noch für cluster.secretOverlapS akzeptiert. Die Secrets für Pairwise-Subject und Bootstrap-Namen sind Bezeichner und rotieren nie."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "Erneute Prüfung der Android-Attestierung"
@@ -268,8 +284,8 @@
     "text": "Ablauf des Client-Secrets"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Prüft jedes Client-Secret jeder Anwendung: eine Audit-Zeile für eine Anwendung, die eines hält, das innerhalb von oauth2.clientSecretExpiryWarningDays abläuft, und für eine, deren sämtliche Secrets abgelaufen sind; und entfernt die abgelaufenen Secrets, neben denen eine Anwendung ein nicht abgelaufenes hält — niemals ihr letztes, das bleibt und im Produktmodus abgelehnt wird."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Prüft jedes Client-Secret jeder Anwendung: eine Audit-Zeile für eine Anwendung, die eines hält, das innerhalb von oauth2.clientSecretExpiryWarningDays abläuft, und für eine, deren sämtliche Secrets abgelaufen sind; und entfernt die abgelaufenen Secrets, neben denen eine Anwendung ein nicht abgelaufenes hält — niemals ihr letztes, das bleibt und im Produktmodus abgelehnt wird. Zuerst rotiert er das Secret jeder in oauth2.clientSecretAutoRotate aufgelisteten Anwendung, das innerhalb von oauth2.clientSecretAutoRotateDays abläuft."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",

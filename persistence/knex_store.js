@@ -525,6 +525,10 @@ class StorePool {
     const mariadb = this.engine === 'mariadb';
     const pgSettings = Object.assign({}, settings);
     delete pgSettings.engine;
+    // What `setConnectionString()` rebuilds the dialect's settings from
+    // (#2220): the settings as given, and the connect timeout in force.
+    this.settings = Object.assign({}, settings);
+    this.connectMs = connectMs;
     try {
       this.knex = knex({
         client: mariadb ? 'mysql2' : 'pg',
@@ -583,6 +587,57 @@ class StorePool {
       throw notInstalled(err);
     }
     log.debug("Leaving StorePool.constructor().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A NEW PASSWORD FOR NEW CONNECTIONS (#2220). The database password is read
+  // again from its secret store while the service runs, and a changed one
+  // must reach the connections made AFTER it without a restart. Knex keeps
+  // the dialect's settings as `client.connectionSettings` and dials every
+  // new connection — pooled or dedicated (`StoreConnection`) — with what it
+  // holds then, so replacing that object is the whole change: a connection
+  // already open keeps its session (PostgreSQL and MariaDB do not end a
+  // session when its role's password changes), and the next one made logs
+  // in with the new password. It is the dialect's own settings object, as
+  // the constructor would build it, never a function: a function would make
+  // Knex resolve it lazily in the pool and not in `acquireRawConnection()`.
+  // -------------------------------------------------------------------------
+  /**
+   * Dials every connection made from now on with another connection string —
+   * the same database, a new password.
+   *
+   * @param connectionString - the string, already decided by `dialOptions()`
+   */
+  setConnectionString(connectionString) {
+    log.debug("Entering StorePool.setConnectionString().");
+    const next = Object.assign({}, this.settings,
+                               { connectionString: String(connectionString) });
+    this.settings = next;
+    const built = this.engine === 'mariadb'
+      ? mariadbConnection(Object.assign({}, next,
+                                        { connectionTimeoutMillis:
+                                            this.connectMs }))
+      : Object.assign({}, next, { connectionTimeoutMillis: this.connectMs });
+    delete built.engine;
+    this.knex.client.connectionSettings = built;
+    log.debug("Leaving StorePool.setConnectionString().");
+  }
+
+  /**
+   * Calls `fn(err)` whenever making a pooled connection fails — the way a
+   * refused password shows itself (#2220).
+   *
+   * @param fn - the listener
+   */
+  onCreateFailure(fn) {
+    log.debug("Entering StorePool.onCreateFailure().");
+    const p = this.knex.client.pool;
+    if (p && typeof p.on === 'function') {
+      p.on('createFail', function (_eventId, err) {
+        fn(err);
+      });
+    }
+    log.debug("Leaving StorePool.onCreateFailure().");
   }
 
   // An idle connection's error goes to the pool's listeners, as `pg-pool`

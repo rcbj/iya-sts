@@ -177,6 +177,8 @@ var config = {
     softwareStatementLifetimeS: 31536000,          // Issued software statement lifetime (s)
     clientSecretOverlapS: 604800,                  // Keep a rotated client secret working for (seconds)
     clientSecretsMax: 5,                           // Client secrets an application may hold
+    clientSecretAutoRotate: "",                    // Rotate these clients' secrets automatically
+    clientSecretAutoRotateDays: 30,                // Rotate a listed client's secret this many days ahead
     clientSecretExpiryWarningDays: 14,             // Warn about an expiring client secret this many days ahead
     clientSecretLifetimeDays: 365,                 // Client secret lifetime (days)
     registeredClientIdPrefix: "sts-client-",       // Dynamically registered client_id prefix
@@ -344,6 +346,7 @@ var config = {
     databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
     databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
     databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databasePasswordRefreshS: 3600,                        // Read the database password again every (seconds)
     databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
     databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
     globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
@@ -659,7 +662,12 @@ var config = {
     previousKekRef: "",                // The previous key-encryption key's location; restart to apply
     previousKekField: "",              // The field the previous key is in; restart to apply
     previousKekRegion: "",             // AWS region of the previous key; restart to apply
-    previousKekVault: ""               // Key Vault URL of the previous key; restart to apply
+    previousKekVault: "",              // Key Vault URL of the previous key; restart to apply
+    previousCellKekProvider: "none",   // Where the previous cell key-encryption key is read from; restart to apply
+    previousCellKekRef: "",            // The previous cell key-encryption key's location; restart to apply
+    previousCellKekField: "",          // The field the previous cell key is in; restart to apply
+    previousCellKekRegion: "",         // AWS region of the previous cell key; restart to apply
+    previousCellKekVault: ""           // Key Vault URL of the previous cell key; restart to apply
   },
 
   // --- Signing algorithms ----------------------------------------------
@@ -1700,7 +1708,9 @@ var config = {
     nodeSnapshotRetentionHours: 24, // Keep a gone node's snapshot (hours)
     heartbeatMs: 2000,              // Heartbeat interval (ms); restart to apply
     nodeTtlMs: 30000,               // Node lifetime (ms); restart to apply
-    acceptMissingCapabilities: ""   // Capabilities accepted as missing; restart to apply
+    acceptMissingCapabilities: "",  // Capabilities accepted as missing; restart to apply
+    secretRotationDays: 90,         // Rotate the shared secrets every (days)
+    secretOverlapS: 86400           // Accept a rotated shared secret for (seconds)
   },
 
   // --- Cells -----------------------------------------------------------
@@ -1779,6 +1789,9 @@ var config = {
     dkimKeyProvider: "none",              // Where the DKIM private key is read from
     dkimKeyRef: "",                       // The DKIM private key's location
     dkimKeyField: "",                     // The DKIM private key's field
+    dkimNextSelector: "",                 // The next DKIM selector
+    dkimNextKeyField: "",                 // The next DKIM private key's field
+    dkimSwitchAt: "",                     // Sign with the next DKIM selector from
     sesRegion: "",                        // Amazon SES region
     sesConfigurationSet: "",              // Amazon SES configuration set
     acsEndpoint: "",                      // Azure Communication Services endpoint
