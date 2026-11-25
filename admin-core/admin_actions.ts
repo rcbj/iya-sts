@@ -4194,9 +4194,19 @@ class AdminActions {
   // it ends the sessions a person who has just become one still holds — the
   // policy would refuse them at the next sign-in, and a session already open
   // is the same browser.
+  //
+  // AND IT CLEARS A PENDING `pwdReset` (#2236, rcbj, 2026-11-25). A service
+  // account's password is a program's, machine-managed and rotated, which is
+  // why a typed one is never made temporary for it
+  // (`typedPasswordIsTemporary()`). An account that was an ordinary person
+  // when its password was typed still carries the flag, and a program has
+  // no sign-in screen to clear it at: every door it uses would refuse its
+  // right password (STS-AUTHN-0142). So becoming a service account clears
+  // it, and the audit row says so (`passwordResetCleared`).
   // ---------------------------------------------------------------------------
   private serviceAccountAction(who, body, ctx, audited) {
-    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    const { log, serviceAccounts, serviceAccountPolicy, credentials } =
+      this.deps;
     log.debug("Entering AdminActions.serviceAccountAction().");
     const wanted = body.serviceAccount === undefined ? true
       : this.truthy(body.serviceAccount);
@@ -4213,6 +4223,18 @@ class AdminActions {
         return one.dn;
       });
     };
+    // A PENDING CHANGE, CLEARED (#2236): see the header above.
+    let resetCleared: boolean | undefined;
+    if (wanted && result.ok) {
+      const account = String((result as any).username || who);
+      if (credentials.passwordResetRequired(account)) {
+        resetCleared = credentials.setPasswordResetRequired(account, false);
+        log.info('admin: ' + account + ' became a service account, so the ' +
+                 'change of password it owed was ' +
+                 (resetCleared ? 'cleared' : 'NOT cleared (the write ' +
+                                 'failed, STS-AUTHN-0143)') + '.');
+      }
+    }
     audited(wanted ? 'admin.service-account.set'
                    : 'admin.service-account.cleared',
             (result.ok ? '' : 'could not ') +
@@ -4224,6 +4246,7 @@ class AdminActions {
                                     .map(String),
               destination: String(body.destination || ''),
               secretName: String(body.secretName || ''),
+              passwordResetCleared: resetCleared,
               errors: result.ok ? undefined
                 : ((result as any).errors || []) },
             result.ok ? 'success' : 'failure');

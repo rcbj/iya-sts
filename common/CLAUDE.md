@@ -14748,6 +14748,14 @@ is the operator's page; each file's header argues its part.
   asks. A browser session from ANY first factor is refused in
   `authn.startSession()`; a KEYED session (SCIM, SPIRE) is a program's and
   is not.
+* **BECOMING ONE CLEARS A PENDING `pwdReset`** (#2236, rcbj, 2026-11-25):
+  `set-service-account` (`AdminActions.serviceAccountAction()`) clears the
+  flag a typed password left on an ordinary person (#2160), because a
+  program has no sign-in screen to clear it at and every door it uses would
+  refuse its right password (STS-AUTHN-0142). The audit row carries
+  `passwordResetCleared`. `create` with `serviceAccount: true` sets the
+  flag before the password, so nothing is owed there; an LDAP write of the
+  flag does not go through the act and clears nothing.
 * **THE EXEMPTION** is `mfaRequirementFor()` answering nothing required and
   `secondFactorDemand()` answering nothing needed. A factor the account holds
   is still asked at the sign-in screen — the authentication policy's "there
