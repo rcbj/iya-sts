@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "अपनी अनुग्रह अवधि के बाद सेवानिवृत्त हस्ताक्षर कुंजियाँ हटा दी गईं"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "एक प्रमाणपत्र प्राधिकरण का प्रमाणपत्र उसकी अपनी कुंजी पर नवीनीकृत किया गया"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "लिसनर प्रमाणपत्र नवीनीकृत किया गया"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "समर्पित क्रेडेंशियल हस्ताक्षरकर्ता की कुंजियाँ बदली गईं"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "अनुरोध ऑब्जेक्ट, KEM और क्रेडेंशियल अनुरोध एन्क्रिप्शन कुंजियाँ बदली गईं"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "एक साझा क्लस्टर रहस्य बदला गया"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "किसी एप्लिकेशन का क्लाइंट सीक्रेट स्वचालित रूप से बदला गया"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "डेटाबेस पासवर्ड फिर से पढ़ा गया और बदल गया"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "डेटा एन्क्रिप्शन कुंजियाँ घुमाई गईं"

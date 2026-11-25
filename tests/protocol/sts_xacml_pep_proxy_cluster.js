@@ -345,23 +345,34 @@ async function until(what, probe, budgetMs) {
 // connection and the balancer's choice is made afresh each time.
 // ---------------------------------------------------------------------------
 //
-// A 502 `bad_gateway` IS SENT AGAIN, up to twice, and counted
-// (`badGateways`, logged at the end). On the hand runs of 2026-11-16 a
-// member's call to the service — POST /xacml/pep/basic or
-// /xacml/pep/session — sometimes timed out after an idle spell
-// (STS-XPEP-0075, "the PDP did not answer in time"), once twice in a row,
-// and the next call took tens of milliseconds. Nothing is forwarded before
-// that validation, so a retry cannot double a hit; it keeps that PEP-side
-// defect from deciding every assertion of this job, and the count says how
-// often it happened.
+// A PEP FAILURE IS SENT AGAIN, up to twice, and counted (`badGateways`,
+// logged at the end). On the hand runs of 2026-11-16 a member's call to the
+// service — POST /xacml/pep/basic or /xacml/pep/session — sometimes timed
+// out after an idle spell (STS-XPEP-0075, "the PDP did not answer in
+// time"), once twice in a row, and the next call took tens of
+// milliseconds. Nothing is forwarded before that validation, so a retry
+// cannot double a hit; it keeps that PEP-side defect from deciding every
+// assertion of this job, and the count says how often it happened. It was
+// a 502 `bad_gateway`; since #2208 every PEP failure is a 403
+// `access_denied`, told from a Deny by its generic description, the
+// proxy's FAILURE_DESCRIPTION (`rust/bins/xacml-pep/src/proxy.rs`).
+const PEP_FAILURE = "The enforcement point could not complete the checks " +
+  "this request needs, so the request was refused.";
+function pepFailure(answer) {
+  log.debug("Entering pepFailure().");
+  const failed = answer.status === 403 && Boolean(answer.json) &&
+    answer.json.error === "access_denied" &&
+    answer.json.error_description === PEP_FAILURE;
+  log.debug("Leaving pepFailure().");
+  return failed;
+}
 let badGateways = 0;
 async function request(method, url, options) {
   log.debug("Entering request(). " + method + " " + url);
   let answer = await requestOnce(method, url, options);
-  for (let n = 1; n < 3 && answer.status === 502 && answer.json &&
-                  answer.json.error === "bad_gateway"; n += 1) {
+  for (let n = 1; n < 3 && pepFailure(answer); n += 1) {
     badGateways += 1;
-    log.warn("A 502 bad_gateway from " + url + " (the PEP could not ask " +
+    log.warn("A PEP failure (403) from " + url + " (the PEP could not ask " +
              "the service in time); sending it again. " + told(answer));
     /* eslint-disable no-await-in-loop */
     answer = await requestOnce(method, url, options);
@@ -933,16 +944,17 @@ async function untilServed(scope) {
     log.info(one[0] + " serves " + scope.label + "'s routes (" + served.ms +
              "ms).");
     // AND ITS FIRST BASIC VALIDATION ANSWERED. On the first hand run a
-    // member's first POST /xacml/pep/basic timed out at the PEP (502,
-    // STS-XPEP-0075) and the next took 60 ms; the wait is for that warm-up
-    // and asserts nothing, so a 502 that persists still fails below.
+    // member's first POST /xacml/pep/basic timed out at the PEP (a 502
+    // then, a 403 PEP failure since #2208, STS-XPEP-0075) and the next took
+    // 60 ms; the wait is for that warm-up and asserts nothing, so a failure
+    // that persists still fails below.
     /* eslint-disable no-await-in-loop */
     const warm = await until(one[0] + " to answer a Basic credential",
                              async function () {
       const got = await request("GET", one[1] + "/pep-app/api/items", {
         headers: { authorization: basic(READER),
                    accept: "application/json" } });
-      return { ok: got.status !== 502 && got.status !== 0,
+      return { ok: !pepFailure(got) && got.status !== 0,
                note: "GET /pep-app/api/items answered " + told(got) };
     }, 60000);
     /* eslint-enable no-await-in-loop */
@@ -2686,7 +2698,7 @@ async function test() {
              knownDefects.join(", ") + ".");
   }
   if (badGateways) {
-    log.warn(badGateways + " request(s) were answered 502 bad_gateway " +
+    log.warn(badGateways + " request(s) were answered a 403 PEP failure " +
              "(STS-XPEP-0075) and sent again; see request().");
   }
   log.info(checks + " checks passed.");

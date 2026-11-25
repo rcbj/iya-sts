@@ -13786,6 +13786,29 @@ const SETTINGS = [
                  'of its validity is left. 0, the default, keeps the ' +
                  'third.' },
 
+  // OCSP STAPLING ON THIS SERVICE'S OWN LISTENERS (#2254, ASVS 5.0.0
+  // 12.1.4), tls/ocsp_stapling.ts. `auto` is mode.staplesOcsp(): on in
+  // product, off in development. Read at every handshake, so a change
+  // applies to the next one.
+  { key: 'tls.ocspStapling', group: 'TLS',
+    label: 'Staple an OCSP response on every listener',
+    env: 'STS_TLS_OCSP_STAPLING', type: 'enum', dflt: 'auto',
+    enumValues: ['auto', 'on', 'off'], runtime: true, perProcess: true,
+    description: 'Whether the main port, LDAPS, the debugger and every ' +
+                 'custom listener answer a client that asks for the ' +
+                 'certificate status (RFC 6066 status_request, in TLS 1.2 ' +
+                 'and 1.3) with a stapled OCSP response. The response is ' +
+                 'the one this service\'s own OCSP responder gives for the ' +
+                 'listener\'s certificate, made in the process holding the ' +
+                 'socket, without a network fetch, and refreshed by the ' +
+                 'tls.ocsp-staple-refresh job before its nextUpdate. A ' +
+                 'certificate from an outside authority (tls.certificateFile ' +
+                 'or a custom listener\'s own files) is not stapled. When no ' +
+                 'current response can be made the handshake goes on ' +
+                 'without one; it never fails. **`auto` is on in product ' +
+                 'mode and off in development** (mode.staplesOcsp()); `on` ' +
+                 'and `off` force it in either mode.' },
+
   // THE MAIN PORT'S CONNECTIONS, POOLED (#406, 2026-10-02). The main port
   // asks every full handshake for a client certificate, and a browser holding
   // one that matches asks its user each time: with node's 5-second keep-alive
@@ -17121,9 +17144,9 @@ const SETTINGS = [
     env: 'STS_AUTHZEN_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'When on, the AuthZEN Authorization API answers under ' +
                  '/access/v1. Off, its routes stay REGISTERED and answer ' +
-                 '501, as XACML\'s do: the feature is off, the URL is not ' +
+                 '403: the feature is off, the URL is not ' +
                  'wrong. It decides with the XACML engine, so it answers ' +
-                 '501 while xacml.enabled is off too. A caller still needs ' +
+                 '403 while xacml.enabled is off too. A caller still needs ' +
                  'the AUTHZEN_PEPS role (roles.authzenPepGroup) and an ' +
                  'application scope before it is told anything.' },
   { key: 'authzen.callerAuthentication', group: 'AuthZEN',
@@ -17161,7 +17184,7 @@ const SETTINGS = [
     runtime: true,
     description: 'When on, POST /access/v1/evaluations answers several ' +
                  'access evaluations in one request (section 7), and the ' +
-                 'metadata document names it. Off, the route answers 501 ' +
+                 'metadata document names it. Off, the route answers 403 ' +
                  'and the metadata leaves it out; /access/v1/evaluation ' +
                  'is unaffected.' },
   { key: 'authzen.maxEvaluations', group: 'AuthZEN',
@@ -17234,7 +17257,7 @@ const SETTINGS = [
                  'the permitted ones: subjects are the realm\'s directory ' +
                  'people, resources its applications, APIs and delegation ' +
                  'relationships, actions the names the policy compares ' +
-                 'action-id with. Off, the routes answer 501.' },
+                 'action-id with. Off, the routes answer 403.' },
   { key: 'authzen.searchMaxCandidates', group: 'AuthZEN',
     label: 'Candidates one search decides',
     env: 'STS_AUTHZEN_SEARCH_MAX_CANDIDATES', type: 'int', dflt: 1000,
@@ -17276,7 +17299,7 @@ const SETTINGS = [
                  'approval presented on the next evaluation reaches the ' +
                  'root policy as trusted facts. The metadata names the ' +
                  'endpoint and the capability. A denial without the advice ' +
-                 'is never requestable. Off, the routes answer 501 and no ' +
+                 'is never requestable. Off, the routes answer 403 and no ' +
                  'denial is requestable.' },
   { key: 'authzen.accessRequestDenialLifetimeS', group: 'AuthZEN',
     label: 'How long a requestable denial may be submitted (seconds)',
@@ -17371,7 +17394,7 @@ const SETTINGS = [
                  'entitlements in requested_access.entitlement, and the ' +
                  'approval carries it to the policy as a trusted fact. ' +
                  'Off, the advice\'s entitlements are ignored and the two ' +
-                 'endpoints answer 501.' },
+                 'endpoints answer 403.' },
   { key: 'authzen.accessRequestActor', group: 'AuthZEN',
     label: 'Acting parties on access requests',
     env: 'STS_AUTHZEN_ACCESS_REQUEST_ACTOR', type: 'bool', dflt: false,
@@ -17765,6 +17788,35 @@ const SETTINGS = [
                  'default_subjects ALL, is sent every event in the realm. ' +
                  'A client\'s own stream (client credentials), a GNAP ' +
                  'application\'s and this service\'s own receivers are not ' +
+                 'affected.' },
+
+  { key: 'ssf.applicationStreamScope', group: 'SSF',
+    label: 'Which people an application\'s stream hears about',
+    env: 'STS_SSF_APPLICATION_STREAM_SCOPE', type: 'enum',
+    enumValues: ['active-sessions', 'all'], dflt: 'active-sessions',
+    runtime: true,
+    description: 'A stream an APPLICATION owns (created with its client ' +
+                 'credentials, a GNAP key or its certificate — not a ' +
+                 'person\'s token) carries a CAEP or RISC event about a ' +
+                 'person only while that person has an active session on ' +
+                 'that application: a live sign-on session the ' +
+                 'application is a relying party of (an OpenID Connect or ' +
+                 'OAuth client, a SAML 2.0 or 1.1 service provider, a ' +
+                 'WS-Federation relying party), or a live GNAP grant the ' +
+                 'person approved to it. The event that ENDS such a ' +
+                 'session still reaches the application whose session it ' +
+                 'ended. Events with no subject, and events about no ' +
+                 'person, are unaffected, and Add Subject naming a person ' +
+                 'with no active session on the application is refused ' +
+                 '(403). default_subjects stays ALL, meaning every subject ' +
+                 'with an active session on the receiver\'s application ' +
+                 '(SSF 1.0 sections 7.1, 9.2 and 10.1). all is the ' +
+                 'behaviour before #2234: an application\'s stream hears ' +
+                 'about everybody in the realm, which a deployment that ' +
+                 'relies on all-subject streams (an MDM or EDR receiver) ' +
+                 'chooses deliberately. A person\'s own stream ' +
+                 '(ssf.personStreamsSelfOnly), this service\'s own ' +
+                 'receivers and a GNAP resource server\'s stream are not ' +
                  'affected.' },
 
   { key: 'ssf.streamStatusOnCreate', group: 'SSF',

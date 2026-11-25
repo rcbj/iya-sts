@@ -23,8 +23,8 @@
 //! has been received: the start page (`proxy_page::front_document`),
 //! because that is where *Go to the start page* goes. A route mounted at
 //! `/` is that route. A client that does not accept HTML still gets the
-//! 404. Until the first configuration, `/` is the 503 with every other
-//! path.
+//! 404. Until the first configuration, `/` is the 403 of `STS-XPEP-0118`
+//! with every other path.
 //!
 //! A request is answered in this order, and each step's refusal is the
 //! first one it meets: the path normalised (400), the route found (404),
@@ -34,7 +34,17 @@
 //! 302 to sign in for a browser on a `session` route), then the decision,
 //! public routes included (403; `STS-XPEP-0117` when the route's policy is
 //! not held), then deny-all for an empty method list (403), then the
-//! application (502, 504, or a streamed body over the bound: 413).
+//! identity the route sends, then the application (502, 504, or a streamed
+//! body over the bound: 413).
+//!
+//! **EVERY PEP FAILURE IS A 403** (#2208, rcbj: "Any type of PEP failure
+//! should result in a 403 being returned"): the service or one of its
+//! endpoints that cannot be asked or answers badly, no configuration held
+//! yet, a relying party that cannot be built, no room for a session, an
+//! identity that cannot be delivered — a refusal marked `failure`
+//! (`proxy_auth.rs`), never a 5xx and never forwarded. Only the APPLICATION's own failures, after the
+//! decision, are gateway errors: unreachable (502, `STS-XPEP-0069`, and its
+//! ACS `0097`), too slow (504, `0068`), or its own status passed through.
 //!
 //! **THE DESTINATION IS NEVER THE REQUEST'S.** The upstream URL is the
 //! configured upstream base, the NORMALISED path and the original query;
@@ -148,7 +158,7 @@ struct Asked<'a> {
 /// its route's authorization is recorded (`decided`): one to a route that
 /// takes its method, from the moment it matched — refused by the
 /// application's state, by authentication or by the policy, or forwarded.
-/// NOT the 503 before the first configuration (`STS-XPEP-0118`), a path
+/// NOT the 403 before the first configuration (`STS-XPEP-0118`), a path
 /// refused or matching no route, a method the route does not take, a body
 /// too large, a redirect to sign in, the proxy's own pages (the logo, the
 /// start page, `/.iya-pep/*`): none of those is a decision about access.
@@ -169,6 +179,8 @@ struct Noted {
     code: String,
     why: String,
     incident: String,
+    /// The refusal was a PEP failure (#2208): a 403 recorded as a fault.
+    failure: bool,
 }
 
 /// Changes the note, if there is one; a poisoned lock is taken back.
@@ -258,6 +270,13 @@ impl HttpBody for LimitedBody {
     }
 }
 
+/// The description every PEP failure is answered with (#2208), but the
+/// one before the first configuration: the one sentence an over-HTTP
+/// client tells a failure from a Deny by, both being 403 `access_denied`.
+pub const FAILURE_DESCRIPTION: &str =
+    "The enforcement point could not complete the checks this request \
+     needs, so the request was refused.";
+
 fn error_name(status: u16, token_refused: bool) -> &'static str {
     match status {
         400 => "invalid_request",
@@ -268,26 +287,30 @@ fn error_name(status: u16, token_refused: bool) -> &'static str {
         405 => "method_not_allowed",
         413 => "payload_too_large",
         429 => "too_many_requests",
-        503 => "temporarily_unavailable",
         504 => "gateway_timeout",
         _ => "bad_gateway",
     }
 }
 
 /// The `error_description` a refusal is answered with — the JSON answer's
-/// and the error page's alike. A 5xx's is a generic sentence (the reason
-/// may name the service's or the application's addresses), and so are a
-/// route whose application is not usable (its reason carries the service's
-/// own code) and a route whose policy is not held: those are logged.
+/// and the error page's alike. A PEP failure's and a 5xx's are generic
+/// sentences (the reason may name the service's or the application's
+/// addresses), and so are a route whose application is not usable (its
+/// reason carries the service's own code) and a route whose policy is not
+/// held: those are logged.
 fn shown_description(refusal: &Refusal) -> String {
+    if refusal.failure {
+        return match refusal.code {
+            "STS-XPEP-0118" => "This proxy has not yet received its \
+                                configuration since it started."
+                .to_string(),
+            _ => FAILURE_DESCRIPTION.to_string(),
+        };
+    }
     match (refusal.status, refusal.code) {
-        (502, _) => "The application or the identity service could not be \
-                     reached, or did not answer usably."
+        (502, _) => "The application could not be reached, or did not \
+                     answer usably."
             .to_string(),
-        (503, "STS-XPEP-0118") => "This proxy has not yet received its \
-                                   configuration since it started."
-            .to_string(),
-        (503, _) => "This proxy cannot take the request now.".to_string(),
         (504, _) => "The application did not answer in time.".to_string(),
         // Any other 5xx of the proxy's own (2026-11-16): a generic sentence
         // too, as the rule above says, never the reason it was logged with.
@@ -307,6 +330,7 @@ fn shown_description(refusal: &Refusal) -> String {
 /// account is added, so this page does not offer that itself.
 fn refusal_actions(refusal: &Refusal, asked: &Asked) -> Vec<Action> {
     let about_who = refusal.status == 403
+        && !refusal.failure
         && matches!(refusal.code, "STS-XPEP-0086" | "STS-XPEP-0095");
     let Some(route) = asked.route.filter(|r| {
         about_who && !asked.who.is_empty() && r.allows(Mechanism::Session)
@@ -580,8 +604,9 @@ impl Proxy {
 
     /// A refusal as an answer, logged under its code: the JSON answer, or
     /// for a request that accepts HTML the error page (`proxy_page.rs`),
-    /// whose incident ID the log line carries. A 5xx's description is a
-    /// generic sentence: the reason may name the service's addresses.
+    /// whose incident ID the log line carries. A PEP failure's and a 5xx's
+    /// description is a generic sentence: the reason may name the
+    /// service's addresses.
     fn refuse(
         &self,
         refusal: &Refusal,
@@ -614,11 +639,15 @@ impl Proxy {
         noting(asked.note, |n| {
             n.code = refusal.code.to_string();
             n.why = refusal.why.clone();
+            n.failure = refusal.failure;
             n.incident = incident.clone();
         });
-        // A 5xx, and a route whose policy is not held, are the operator's
-        // to see; a refusal of the request itself is information.
-        let warn = refusal.status >= 500 || refusal.code == "STS-XPEP-0117";
+        // A 5xx, a PEP failure and a route whose policy is not held are the
+        // operator's to see; a refusal of the request itself is
+        // information.
+        let warn = refusal.status >= 500
+            || refusal.failure
+            || refusal.code == "STS-XPEP-0117";
         let line = if warn {
             format!(
                 "{}xacml-pep: proxy answered {} to {} {:?}{}{}: {}.",
@@ -721,7 +750,7 @@ impl Proxy {
         actions: Vec<Action>,
     ) -> Response<Body> {
         let (title, message, background) =
-            proxy_page::wording(refusal.status, refusal.code);
+            proxy_page::wording(refusal.status, refusal.code, refusal.failure);
         let row = |label: &'static str, value: &str| Row {
             label,
             value: value.to_string(),
@@ -811,15 +840,15 @@ impl Proxy {
     }
 
     /// A proxied request's decision record: `allowed` is whether it was
-    /// forwarded, and a `fault` is a 5xx of the proxy's own, never one the
-    /// application answered.
+    /// forwarded, and a `fault` is a PEP failure (a 403 since #2208) or a
+    /// 5xx of the proxy's own, never one the application answered.
     fn record(&self, noted: Noted, status: u16, forwarded: bool) {
         self.pep.audit.record(crate::audit::Record {
             at: sts_core::time::iso_now(),
             kind: "proxy".into(),
             decision: noted.decision,
             allowed: forwarded,
-            fault: !forwarded && status >= 500,
+            fault: !forwarded && (noted.failure || status >= 500),
             code: noted.code,
             subject: noted.subject,
             resource: noted.path,
@@ -873,14 +902,14 @@ impl Proxy {
         // NOT CONFIGURED YET IS NOT "NOTHING HERE" (rcbj, 2026-11-15): until
         // the first configuration answer since the start is loaded, every
         // path — `/.iya-pep/*` included, which needs the configuration's
-        // realm and routes — is 503 with Retry-After, the poll interval,
-        // so a browser and a client try again rather than conclude the page
-        // does not exist. A configuration RECEIVED and empty or switched
-        // off is the deny-by-default 404 below, except a browser's `/`,
-        // which is the start page.
+        // realm and routes — is refused with Retry-After, the poll
+        // interval, so a browser and a client try again rather than
+        // conclude the page does not exist. A PEP FAILURE, so a 403 (#2208:
+        // it was 503). A configuration RECEIVED and empty or switched off
+        // is the deny-by-default 404 below, except a browser's `/`, which
+        // is the start page.
         if !received {
-            let mut refusal = Refusal::new(
-                503,
+            let mut refusal = Refusal::failure(
                 "STS-XPEP-0118",
                 "no proxy configuration has been received since this PEP \
                  started",
@@ -892,7 +921,7 @@ impl Proxy {
         }
         // The logo is the proxy's own path, like the account pages. It is
         // answered once a configuration has been received; before that the
-        // 503 above covers it with every other path.
+        // 403 above covers it with every other path.
         if (method == "GET" || method == "HEAD")
             && path == proxy_page::LOGO_PATH
         {
@@ -1745,8 +1774,7 @@ impl Proxy {
         {
             Ok(party) => party,
             Err(why) => {
-                return Established::Refused(Refusal::new(
-                    503,
+                return Established::Refused(Refusal::failure(
                     "STS-XPEP-0090",
                     &format!(
                         "the relying party for client {} could not be built: \
@@ -1761,8 +1789,7 @@ impl Proxy {
         let transaction = match authorized {
             Ok(transaction) => transaction,
             Err(error) => {
-                return Established::Refused(Refusal::new(
-                    502,
+                return Established::Refused(Refusal::failure(
                     "STS-XPEP-0075",
                     &format!("the sign-in could not be started: {}", error),
                 ))
@@ -1835,8 +1862,7 @@ impl Proxy {
         };
         if !self.pep.sync.proxy_sessions.has_room() {
             return self.refuse(
-                &Refusal::new(
-                    503,
+                &Refusal::failure(
                     "STS-XPEP-0085",
                     "this proxy holds PEP_PROXY_MAX_SESSIONS live sessions",
                 ),
@@ -1846,8 +1872,7 @@ impl Proxy {
         }
         let Some(id) = rp_session::random_token(32) else {
             return self.refuse(
-                &Refusal::new(
-                    503,
+                &Refusal::failure(
                     "STS-XPEP-0085",
                     "no random value could be drawn for a proxy session",
                 ),
@@ -1900,8 +1925,7 @@ impl Proxy {
         if created.is_err() {
             party.rp.remove_session(&id);
             return self.refuse(
-                &Refusal::new(
-                    503,
+                &Refusal::failure(
                     "STS-XPEP-0085",
                     "this proxy holds PEP_PROXY_MAX_SESSIONS live sessions",
                 ),
@@ -2175,9 +2199,14 @@ impl Proxy {
                     Established::Refused(refusal) => {
                         self.refuse(&refusal, asked, pulled)
                     }
-                    Established::Who(_) => {
-                        refuse(500, "STS-XPEP-0110", "no sign-in was started")
-                    }
+                    Established::Who(_) => self.refuse(
+                        &Refusal::failure(
+                            "STS-XPEP-0110",
+                            "no sign-in was started",
+                        ),
+                        asked,
+                        pulled,
+                    ),
                 }
             }
             ("POST", ACCOUNTS_SWITCH_PATH) => {
@@ -2463,8 +2492,7 @@ impl Proxy {
             }
         }
         let client = builder.build().map_err(|error| {
-            Refusal::new(
-                502,
+            Refusal::failure(
                 "STS-XPEP-0092",
                 &format!("the upstream client would not build: {}", error),
             )
@@ -2487,7 +2515,7 @@ impl Proxy {
         if let Some((kind, value)) = &who.evidence {
             return Ok((kind, value.clone()));
         }
-        let none = |why: &str| Refusal::new(502, "STS-XPEP-0098", why);
+        let none = |why: &str| Refusal::failure("STS-XPEP-0098", why);
         let Some(id) = who.session_id.clone() else {
             return Err(none(
                 "the credential gave no evidence the identity endpoint takes \
@@ -2547,8 +2575,7 @@ impl Proxy {
                     let Some(given) =
                         said.get("claims").and_then(Value::as_object)
                     else {
-                        return Err(Refusal::new(
-                            502,
+                        return Err(Refusal::failure(
                             "STS-XPEP-0095",
                             "the identity endpoint answered no claims",
                         ));
@@ -2562,8 +2589,7 @@ impl Proxy {
                 identity::render(spec, &claims)
                     .map(Delivery::Headers)
                     .map_err(|why| {
-                        Refusal::new(
-                            502,
+                        Refusal::failure(
                             "STS-XPEP-0096",
                             &format!(
                                 "an identity header was not sent: {}",
@@ -2590,8 +2616,7 @@ impl Proxy {
                 let (false, true, Some(lifetime)) =
                     (token.is_empty(), bearer, lifetime)
                 else {
-                    return Err(Refusal::new(
-                        502,
+                    return Err(Refusal::failure(
                         "STS-XPEP-0095",
                         "the identity endpoint answered no usable Bearer \
                          token for the route",
@@ -2627,7 +2652,11 @@ impl Proxy {
         config: &ProxyConfig,
         who: &Identity,
     ) -> Result<Jar, Refusal> {
-        let failed = |why: String| Refusal::new(502, "STS-XPEP-0097", &why);
+        // THE ACS IS THE APPLICATION'S (#2208): unreachable, or a 5xx, is a
+        // gateway error as `forward()`'s is; any other way the session
+        // cannot be established is a PEP failure, a 403.
+        let failed = |why: String| Refusal::failure("STS-XPEP-0097", &why);
+        let gateway = |why: String| Refusal::new(502, "STS-XPEP-0097", &why);
         let evidence = self.evidence(who, route).await?;
         let said = self
             .auth
@@ -2640,8 +2669,7 @@ impl Proxy {
             .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
             .map(|t| t.with_timezone(&chrono::Utc));
         let (false, Some(until)) = (response.is_empty(), until) else {
-            return Err(Refusal::new(
-                502,
+            return Err(Refusal::failure(
                 "STS-XPEP-0095",
                 "the identity endpoint answered no samlResponse or \
                  notOnOrAfter",
@@ -2667,11 +2695,17 @@ impl Proxy {
             .send()
             .await
             .map_err(|e| {
-                failed(format!(
+                gateway(format!(
                     "the application's ACS could not be reached: {}",
                     e
                 ))
             })?;
+        if posted.status().is_server_error() {
+            return Err(gateway(format!(
+                "the application's ACS answered {} to the assertion",
+                posted.status().as_u16()
+            )));
+        }
         if posted.status().as_u16() >= 400 {
             return Err(failed(format!(
                 "the application's ACS answered {} to the assertion",
@@ -2722,8 +2756,7 @@ impl Proxy {
             query.map(|q| format!("?{}", q)).unwrap_or_default()
         );
         let off_origin = || {
-            Refusal::new(
-                502,
+            Refusal::failure(
                 "STS-XPEP-0091",
                 "the request would not stay on the configured upstream",
             )
@@ -2784,8 +2817,7 @@ impl Proxy {
                 headers.remove(header::AUTHORIZATION);
                 let value = HeaderValue::from_str(&format!("Bearer {}", token))
                     .map_err(|_| {
-                        Refusal::new(
-                            502,
+                        Refusal::failure(
                             "STS-XPEP-0096",
                             "the access token is not a header value",
                         )
@@ -2805,8 +2837,7 @@ impl Proxy {
                     jar,
                 );
                 let value = HeaderValue::from_str(&text).map_err(|_| {
-                    Refusal::new(
-                        502,
+                    Refusal::failure(
                         "STS-XPEP-0096",
                         "the application's cookies are not a header value",
                     )

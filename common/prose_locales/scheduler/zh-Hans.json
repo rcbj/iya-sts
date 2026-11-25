@@ -759,6 +759,14 @@
     "en": "c84b42d3aab3bdde",
     "text": "在已签发证书被吊销后刷新每个领域的 OpenSSH 用户 CA KRL，并移除已过期的吊销。"
   },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "OCSP 装订刷新"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "每隔 pki.crlLifetimeMinutes 的四分之一，从本服务自己的响应器重新生成本进程每个监听器（主端口、LDAPS、调试器和自定义监听器）装订的 OCSP 响应，使装订始终远早于其 nextUpdate，且在别处做出的吊销能够到达它。在每个节点的前端进程中运行。"
+  },
   "sched.jobs.tls.server-certificate-renew.title": {
     "en": "d7afa3328270e140",
     "text": "监听器证书续期"

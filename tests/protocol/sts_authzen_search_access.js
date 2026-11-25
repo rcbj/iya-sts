@@ -277,7 +277,9 @@ async function search() {
               "a search", function () {
     return pep("POST", SEARCH, base);
   }, function (r) {
-    assert.ok(r.status >= 400, r.status + " " + r.text.slice(0, 300));
+    // 403 since #2208: AuthZEN 1.0 prescribes no status for a switched-off
+    // API, so rcbj's fallback.
+    assert.strictEqual(r.status, 403, r.status + " " + r.text.slice(0, 300));
   });
   await K.unset(realm, "authzen.searchEnabled");
   log.debug("Leaving search().");

@@ -2391,3 +2391,49 @@ the rule it asks now reads the policy's `smartCardCardAuth` row.
   `admin_scope.ts` (a realm's token is refused it). `/admin/crypto-metadata`
   composes it; `connectionView()` adds `connection.keyExchange`.
   `tests/tls_pq_listeners.js` holds both halves.
+
+## OCSP STAPLING ON EVERY LISTENER (#2254, 2026-11-25)
+
+**Every listener this process holds answers `status_request` with a staple**
+— the main port and every custom listener (`server.js`), LDAPS
+(`ldap/ldap_server.js`) and the debugger (`debugger/debugger_server.ts`),
+each through `tls/ocsp_stapling.ts`'s `install()` beside `key_exchange.ts`'s.
+**A new listener owes that line**, as it owes `onServerCertificateChange()`.
+`tls.ocspStapling` decides (`auto` is `mode.staplesOcsp()`: product). The
+module's header argues it in full; what is easy to get wrong:
+
+* **The staple is the responder's own answer.** `pki_revocation.stapleFor()`
+  builds an OCSP request for the leaves and answers it with `answerOcsp()`,
+  the function `/pki/ocsp/{scope}/{ca}` uses — same signer through
+  `common/crypto.js`, same register and catch-up, same `nextUpdate`. No
+  second reading of "is this revoked" exists to drift.
+* **node names the context's LAST certificate**, not the one OpenSSL then
+  selects for the client (seen with `rsa,ml-dsa-65`, node 22 and 24), so a
+  staple carries one SingleResponse per leaf `presentedCertificatePems()`
+  lists under the same issuer. A staple for the event's certificate alone
+  would be the wrong answer to every client handed the other leaf.
+* **Per process, keyed by (certificate, issuer) fingerprints.** A renewed
+  certificate (#2220's job, a custom listener's `renewDue()`) is a new key and
+  is made at its first handshake; `onServerCertificateChange()` drops the lot;
+  a revocation in this process re-makes at once. Bounded at 64, LRU at the
+  insert.
+* **`tls.ocsp-staple-refresh` is per process** (this file's rule: the socket
+  is one process's), every quarter of `pki.crlLifetimeMinutes`, 30 s – 15
+  min, and RE-MAKES every staple each run rather than only near its
+  `nextUpdate`: it is one signature per distinct leaf set, and it is what
+  carries a revocation made in a worker or on another node to the staple.
+* **Never an error to node's callback** — node fails the handshake on one.
+  A making slower than three seconds (one `setTimeout`, not a chain) lets the
+  handshake go unstapled; a failure keeps a still-current staple, is logged
+  when it starts (`STS-TLS-0079`) and when it ends, and is retried by a
+  handshake at most once a minute. A staple saying `revoked` is logged once
+  (`STS-TLS-0080`).
+* **An outside authority's certificate is not stapled, by choice**: no AIA
+  fetch on the front process's listener path, and a supplied certificate is
+  left alone (*A SUPPLIED CERTIFICATE IS LEFT ALONE*, above). No TLS Feature
+  (must-staple) extension is issued either.
+
+`tests/tls_ocsp_stapling.js` holds it as handshakes verified by
+`openssl ocsp`: each listener kind, TLS 1.2 and 1.3, the ML-DSA leaf's
+answer, revoked after a refresh, the setting off, the job, and a responder
+that throws or never answers.

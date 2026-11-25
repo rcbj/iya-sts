@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "أُسقطت مفاتيح توقيع متقاعدة تجاوزت مهلة السماح"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "جُدِّدت شهادة سلطة تصديق على مفتاحها نفسه"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "جُدِّدت شهادة المستمع"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "تم تدوير مفاتيح موقِّع بيانات الاعتماد المخصص"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "تم تدوير مفاتيح تشفير كائنات الطلب وKEM وطلبات بيانات الاعتماد"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "تم تدوير سر مشترك في المجموعة"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "تم تدوير سر العميل لتطبيق تلقائيًا"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "أُعيدت قراءة كلمة مرور قاعدة البيانات وتغيّرت"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "دُوّرت مفاتيح تشفير البيانات"

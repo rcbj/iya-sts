@@ -923,3 +923,17 @@ ceremonies and the code grant, one removed at each door, its session's cookie
 and refresh token refused and the other key's still good; the app, the
 recovery codes and the emailed factor with the sessions each did and did not
 complete.
+
+## THE PARTIES OF A SESSION THIS ACT ENDS ARE KEPT FIRST (#2234, 2026-11-25)
+
+An application's Shared Signals stream carries events about a person only
+while they have an active session on it, read off this model's relying-party
+lists (`ssf/CLAUDE.md`, *An application's stream is about the people signed
+in to it*), and the event that ENDS a session must still reach those parties.
+`terminate()` therefore hands every session it is about to end to
+`ssf/application_sessions.ts`'s `noteEnded()` right after `endingSessions` is
+decided and before any family runs: the `wsfed-rp` and `saml2-sp` rows take
+their realm and service provider off the session even when the session ends
+in the same act (the `oidc-rp` row leaves the client on it), so by the time
+`dropSession()` announces the end those parties were gone. A lazy require of
+a library; no Shared Signals, nothing kept.

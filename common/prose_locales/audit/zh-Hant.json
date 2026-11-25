@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "已超過寬限期的已淘汰簽署金鑰被捨棄"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "憑證授權單位的憑證已在其自身金鑰上續期"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "監聽器憑證已續期"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "專用憑證簽署者的金鑰已輪替"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "請求物件、KEM 與憑證請求的加密金鑰已輪替"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "一個共用叢集密碼已輪替"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "應用程式的用戶端密碼已自動輪替"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "已重新讀取資料庫密碼，且密碼已變更"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "資料加密金鑰已輪替"

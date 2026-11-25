@@ -586,6 +586,7 @@ preference; this table says what the constraint is and the named file says why.
 | 22 | `scim/scim`, then `scim/scim_client` | After `ldap/ldap_server`, as a plain require; `scim_client` (#552) listens to the directory filled at 21. | `scim/CLAUDE.md` |
 | 23 | `spiffe/spiffe_server` | After `ldap/ldap_server` and `tls/tls_server`; its registry's store is the directory. | `spiffe/CLAUDE.md` |
 | 23b | `ssf/ssf` | After `admin-ui/admin`, whose slots it fills; also fills `authn.setSessionObserver()`. Starts nothing. | `ssf/CLAUDE.md`, `authn/CLAUDE.md` |
+| 23b-i | `ssf/application_sessions` | Built just before `ssf/ssf` (#2234), whose hooks register it as a subject scope through its facade. A library: no route, no job; everything it reads is reached lazily. | `ssf/CLAUDE.md` |
 | 23b-ii | `common/signing_rotation` | After `ssf/ssf`, whose `signingKeyRotated()` it calls (lazily, so the order is for a reader). A library: scheduler jobs, no route. | `common/signing_rotation.ts` (#42) |
 | 23b-vi | `oauth-oidc/oauth_grant_signals` | After `ssf/ssf` (23b), which it delivers through lazily, so the order is for a reader. Filling `admin_stats.setRevocationObserver()` is its whole installation (#239). | `oauth-oidc/CLAUDE.md` |
 | 23b-vii | `common/cell_sessions` | After `ssf/ssf` and the grant signals, for a reader (#98); `app.js` loads it for its middleware at #2. | `common/cell_sessions.ts` |

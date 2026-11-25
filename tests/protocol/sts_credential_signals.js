@@ -288,7 +288,13 @@ async function test() {
   log.info("=== 0. a throwaway product realm " + REALM + ", a stream ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Credential signals " + STAMP,
-    overrides: { "global.mode": "product" } }, "created the realm");
+    overrides: { "global.mode": "product",
+                 // EVERY PERSON'S EVENTS ON AN APPLICATION'S
+                 // STREAM, AS BEFORE #2234: this job's receivers hear
+                 // about people never signed in to them
+                 // (`ssf.applicationStreamScope`; the scope itself is
+                 // `sts_ssf_application_sessions.js`'s).
+                 "ssf.applicationStreamScope": "all" } }, "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
     // The Shared Signals scopes are issued only to a client that declares

@@ -675,6 +675,12 @@ async function test() {
     // default since #269: the default plus it, so the compromise section
     // can check that it still goes out where it is named.
     overrides: { "global.mode": "development",
+                 // EVERY PERSON'S EVENTS ON AN APPLICATION'S
+                 // STREAM, AS BEFORE #2234: this job's receivers hear
+                 // about people never signed in to them
+                 // (`ssf.applicationStreamScope`; the scope itself is
+                 // `sts_ssf_application_sessions.js`'s).
+                 "ssf.applicationStreamScope": "all",
                  "risc.autoEmitTypes": "account-purged,account-disabled," +
                    "account-enabled,identifier-changed,identifier-recycled," +
                    "account-credential-change-required," +

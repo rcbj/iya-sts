@@ -759,6 +759,14 @@
     "en": "c84b42d3aab3bdde",
     "text": "Uppdaterar varje sfärs KRL för OpenSSH-användar-CA:n efter återkallelser av utfärdade certifikat och tar bort utgångna återkallelser."
   },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "Förnyelse av häftat OCSP-svar"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "Skapar om det OCSP-svar som varje lyssnare i den här processen häftar (huvudporten, LDAPS, felsökaren och de anpassade lyssnarna) från den här tjänstens egen svarare, varje fjärdedel av pki.crlLifetimeMinutes, så att ett häftat svar alltid ligger långt före sin nextUpdate och en återkallelse som gjorts någon annanstans når det. Körs i varje nods frontprocess."
+  },
   "sched.jobs.tls.server-certificate-renew.title": {
     "en": "d7afa3328270e140",
     "text": "Förnyelse av lyssnarcertifikatet"

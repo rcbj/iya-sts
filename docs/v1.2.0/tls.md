@@ -232,6 +232,49 @@ offered signature schemes by policy.
   key. **Pin the Root, not the leaf.** [Shared Signals](shared-signals.md)
   has the event.
 
+### OCSP stapling
+
+A client that asks for the certificate status (RFC 6066 `status_request`,
+which every browser sends) gets a **stapled OCSP response** on the main port,
+LDAPS 636, the debugger listener and every custom listener, in TLS 1.2 and
+TLS 1.3, while `tls.ocspStapling` is in force: **`auto` staples in product
+mode and not in development**; `on` and `off` force it in either mode.
+
+* **The response is this service's own responder's answer**, the one
+  `/pki/ocsp/{scope}/{ca}` gives for the certificate: signed by the issuing
+  CA (in software or in a hardware security module, as every other signature
+  here), with the same status, `thisUpdate` and `nextUpdate`
+  (`pki.crlLifetimeMinutes`). It is made in the process that holds the
+  socket; nothing is fetched over the network.
+* **Every leaf the port presents is in it.** With `tls.certificateAlgorithms`
+  naming RSA and ML-DSA, the staple carries an answer for each, and a client
+  reads the one about the certificate it was given.
+* **It is refreshed before its `nextUpdate`** by the per-process job
+  `tls.ocsp-staple-refresh`, every quarter of `pki.crlLifetimeMinutes`
+  (between 30 seconds and 15 minutes), and re-made at once when the listener
+  certificate is renewed or replaced, or when this process revokes it. A
+  revocation made on another node or in a request worker reaches the staple
+  at the job's next run, so a client is told within that interval.
+* **A certificate from an outside authority is not stapled**:
+  `tls.certificateFile`, or a custom listener's own `certificateFile`. A
+  client asks the responder that certificate names, as it always did; staple
+  it at the TLS terminator in front, where such a certificate usually lives.
+* **A staple never fails a handshake.** When none can be made — the setting
+  off, a responder or signer failing (`STS-TLS-0079`, logged once when it
+  starts), a first handshake that would wait more than three seconds — the
+  handshake goes on without one. A staple that says the certificate is
+  revoked is logged once (`STS-TLS-0080`).
+* **The certificates carry no TLS Feature (must-staple) extension**, so no
+  client is told to refuse a handshake without a staple.
+
+```bash
+openssl s_client -connect localhost:8081 -status </dev/null 2>/dev/null \
+  | sed -n '/OCSP response:/,/^---/p'
+```
+
+prints `OCSP Response Status: successful` and `Cert Status: good` when
+stapling is on.
+
 ### When a browser refuses the certificate
 
 A browser trusts this service's certificate only once the service's **Root
@@ -703,6 +746,7 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 | | Development | Product |
 |---|---|---|
 | Revocation (`pki.revocationCheck=auto`) | **soft-fail**: revoked is refused, an undeterminable status is accepted and reported | **hard-fail**: an undeterminable status is refused too |
+| OCSP stapling (`tls.ocspStapling=auto`) | off | **on**: every listener staples its certificate's status |
 | Which realm's mode decides the truststore | the **default** realm's, because the anchors are one list for the whole process | the same |
 
 Everything else — the certificate, the sign-in order, the identity gate, the
@@ -731,6 +775,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `certSignIn.handoff` | `STS_CERT_SIGN_IN_HANDOFF` | `false` | yes | Offer **Sign in with a smart card or certificate** on the sign-in screen, on the listener the `certificate-sign-in` application is mapped to. |
 | `tls.trustedProxyCertificates` | `STS_TLS_TRUSTED_PROXY_CERTIFICATES` | *(empty)* | yes | The SHA-256 fingerprints of the client certificates of TLS-terminating proxies whose RFC 9440 `Client-Cert` headers are read, in hex; `spki:<hex>` pins the SHA-256 of the certificate's SubjectPublicKeyInfo instead, which survives a renewal under the same key. |
 | `tls.trustedProxyAddresses` | `STS_TLS_TRUSTED_PROXY_ADDRESSES` | *(empty)* | yes | The addresses or CIDR ranges those proxies connect from; both settings are required. |
+| `tls.ocspStapling` | `STS_TLS_OCSP_STAPLING` | `auto` | yes, per process | Staple this service's own OCSP response for the listener certificate on every listener: `auto` in product mode only, `on` and `off` in either mode. See [OCSP stapling](#ocsp-stapling). |
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` (`3072` in product) | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `iya-sts` | no | The O= of its subject. |

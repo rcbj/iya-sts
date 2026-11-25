@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "在監聽器憑證到期前這麼多天續期它，前提是這早於剩餘三分之一有效期的時間點。預設值 0 保持三分之一。"
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "在每個監聽器上裝訂 OCSP 回應"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "主連接埠、LDAPS、偵錯器和每個自訂監聽器是否以裝訂的 OCSP 回應答覆詢問憑證狀態的用戶端（RFC 6066 status_request，適用於 TLS 1.2 與 1.3）。該回應就是本服務自己的 OCSP 回應器為該監聽器憑證所給的回應，在持有通訊端的程序中產生，不經網路擷取，並由 tls.ocsp-staple-refresh 工作在其 nextUpdate 之前重新整理。來自外部機構的憑證（tls.certificateFile 或自訂監聽器自己的檔案）不裝訂。無法產生目前的回應時，交握在沒有它的情況下繼續；絕不會失敗。**`auto` 在產品模式下開啟、在開發模式下關閉**（mode.staplesOcsp()）；`on` 與 `off` 在任一模式下強制設定。"
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "主連接埠共用叢集工作階段票證金鑰"
@@ -8844,8 +8852,8 @@
     "text": "啟用 AuthZEN"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "開啟時，AuthZEN Authorization API 會在 /access/v1 下回應。關閉時，其路由仍保持「已註冊」並回應 501，與 XACML 的路由相同：功能已關閉，URL 並沒有錯。它以 XACML 引擎做決定，因此在 xacml.enabled 關閉時也會回應 501。呼叫端仍須持有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）與應用程式範圍，才會得到任何回覆。"
+    "en": "ab2a36497d9bc637",
+    "text": "開啟時，AuthZEN Authorization API 會在 /access/v1 下回應。關閉時，其路由仍保持「已註冊」並回應 403：功能已關閉，URL 並沒有錯。它以 XACML 引擎做決定，因此在 xacml.enabled 關閉時也會回應 403。呼叫端仍須持有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）與應用程式範圍，才會得到任何回覆。"
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8876,8 @@
     "text": "啟用批次評估"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "開啟時，POST /access/v1/evaluations 在一個請求中回應多個存取評估（第 7 節），中繼資料文件也會列出它。關閉時該路由回應 501，中繼資料不列出它；/access/v1/evaluation 不受影響。"
+    "en": "30f1730e7cc2e19f",
+    "text": "開啟時，POST /access/v1/evaluations 在一個請求中回應多個存取評估（第 7 節），中繼資料文件也會列出它。關閉時該路由回應 403，中繼資料不列出它；/access/v1/evaluation 不受影響。"
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8924,8 @@
     "text": "啟用 Search APIs"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "開啟時，三種 AuthZEN 搜尋在 /access/v1/search 下回應（主體、資源、動作），中繼資料會列出它們。一次搜尋以領域的根原則對本服務能列出的每個候選作出決定，並回應被允許者：主體是領域目錄中的人員，資源是其應用程式、API 與委派關係，動作是原則用來與 action-id 比較的名稱。關閉時，這些路由回應 501。"
+    "en": "058f0be9c553b3f0",
+    "text": "開啟時，三種 AuthZEN 搜尋在 /access/v1/search 下回應（主體、資源、動作），中繼資料會列出它們。一次搜尋以領域的根原則對本服務能列出的每個候選作出決定，並回應被允許者：主體是領域目錄中的人員，資源是其應用程式、API 與委派關係，動作是原則用來與 action-id 比較的名稱。關閉時，這些路由回應 403。"
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8956,8 @@
     "text": "存取請求與核准"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "AuthZEN 存取請求與核准設定檔（草案）及其回呼配套規範。開啟時，XACML 回應中攜帶 advice urn:sts:xacml:advice:access-request 的 Deny 會回應 false 並附帶 context.access_request；PEP 將其提交到 POST /access/v1/access-requests，由該 advice 指名的核准者在入口網站或主控台中作出決定，下一次評估時出示的核准會作為可信事實到達根原則。中繼資料會寫明該端點與該能力。不帶該 advice 的拒絕永遠不可請求。關閉時，這些路由回應 501，任何拒絕都不可請求。"
+    "en": "2851b5ede62f62db",
+    "text": "AuthZEN 存取請求與核准設定檔（草案）及其回呼配套規範。開啟時，XACML 回應中攜帶 advice urn:sts:xacml:advice:access-request 的 Deny 會回應 false 並附帶 context.access_request；PEP 將其提交到 POST /access/v1/access-requests，由該 advice 指名的核准者在入口網站或主控台中作出決定，下一次評估時出示的核准會作為可信事實到達根原則。中繼資料會寫明該端點與該能力。不帶該 advice 的拒絕永遠不可請求。關閉時，這些路由回應 403，任何拒絕都不可請求。"
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9036,8 @@
     "text": "存取申請的目錄"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "AuthZEN Access Request Catalog 設定檔（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已記錄可申請拒絕帶有 request_catalogs_url，其 Catalogs Document 與 Catalog Endpoint 只回應該拒絕所回應的呼叫端，提交必須在 requested_access.entitlement 中選擇其中一項權限，核准會將其作為可信事實帶給政策。關閉時忽略 advice 的權限，兩個端點回應 501。"
+    "en": "5809e31e9afa317e",
+    "text": "AuthZEN Access Request Catalog 設定檔（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已記錄可申請拒絕帶有 request_catalogs_url，其 Catalogs Document 與 Catalog Endpoint 只回應該拒絕所回應的呼叫端，提交必須在 requested_access.entitlement 中選擇其中一項權限，核准會將其作為可信事實帶給政策。關閉時忽略 advice 的權限，兩個端點回應 403。"
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",
@@ -9294,6 +9302,14 @@
   "ssf.personStreamsSelfOnly|description": {
     "en": "581ff0b61393c1af",
     "text": "以「人員」認證建立的串流——用戶端為其取得的存取權杖，或其本人透過 Basic 的名稱與密碼——只關於該人員：關於其他任何人的事件都不會傳遞給它，不論其主體清單與 default_subjects 為何，而 Add Subject 也會拒絕指名其他人（403）。SSF 1.0 section 10.1 要求只有獲授權方才能存取共用訊號，而人員對其本人的訊號即為獲授權方。關閉時，人員的串流會被視同用戶端的串流，在 default_subjects 為 ALL 時會收到領域中的每個事件。用戶端自己的串流（client credentials）、GNAP 應用程式的串流以及此服務自己的接收端不受影響。"
+  },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "應用程式的串流可以得知哪些人的事件"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "由應用程式擁有的串流（以其用戶端憑證、GNAP 金鑰或其憑證建立，而非某人的權杖）僅在某人於該應用程式有作用中工作階段時，才會傳遞關於此人的 CAEP 或 RISC 事件：即該應用程式作為信賴方的作用中登入工作階段（OpenID Connect 或 OAuth 用戶端、SAML 2.0 或 1.1 服務提供者、WS-Federation 信賴方），或此人核准給該應用程式的作用中 GNAP 授權。結束此類工作階段的事件仍會送達其工作階段被結束的應用程式。沒有主體的事件以及不涉及任何人的事件不受影響；Add Subject 若指名在該應用程式沒有作用中工作階段的人，將被拒絕（403）。default_subjects 仍為 ALL，現在表示在接收方應用程式有作用中工作階段的每個主體（SSF 1.0 第 7.1、9.2 與 10.1 節）。all 是 #2234 之前的行為：應用程式的串流會得知領域中每個人的事件，依賴全主體串流的部署（MDM 或 EDR 接收方）會刻意選擇它。個人自己的串流（ssf.personStreamsSelfOnly）、本服務自己的接收方以及 GNAP 資源伺服器的串流不受影響。"
   },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",

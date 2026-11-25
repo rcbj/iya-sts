@@ -189,6 +189,8 @@
   "sched.jobs.ssh-user-ca.entries.describe": "Writes onto their holders' entries (stsSshUserCertificate) the SSH user certificates whose entry write failed at issuance, takes expired ones off, and on its first run in a process copies the certificates issued before they were kept on entries onto their holders.",
   "sched.jobs.ssh-user-ca.krl.title": "SSH user CA revocation list",
   "sched.jobs.ssh-user-ca.krl.describe": "Refreshes each realm's OpenSSH user CA KRL after issued certificate revocations and removes expired revocations.",
+  "sched.jobs.tls.ocsp-staple-refresh.title": "OCSP staple refresh",
+  "sched.jobs.tls.ocsp-staple-refresh.describe": "Re-makes the OCSP response each listener of this process staples (the main port, LDAPS, the debugger and the custom listeners), from this service's own responder, every quarter of pki.crlLifetimeMinutes, so a staple is always well before its nextUpdate and a revocation made elsewhere reaches it. Runs in every node's front process.",
   "sched.jobs.tls.server-certificate-renew.title": "Listener certificate renewal",
   "sched.jobs.tls.server-certificate-renew.describe": "Renews the certificate this process's main port, LDAPS and debugger listeners present, over the same key, once less than a third of its validity is left or it is inside tls.serverCertificateRenewLeadDays, and puts it on every socket without a restart. Runs in every node's front process, which hands the renewed certificate to its request workers.",
   "sched.jobs.tls.ticket-key-rotate.title": "TLS session-ticket key rotation",

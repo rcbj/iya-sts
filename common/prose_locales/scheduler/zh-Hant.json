@@ -759,6 +759,14 @@
     "en": "c84b42d3aab3bdde",
     "text": "在已簽發憑證被撤銷後重新整理每個領域的 OpenSSH 使用者 CA KRL，並移除已過期的撤銷。"
   },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "OCSP 裝訂重新整理"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "每隔 pki.crlLifetimeMinutes 的四分之一，從本服務自己的回應器重新產生本程序每個監聽器（主連接埠、LDAPS、偵錯器和自訂監聽器）裝訂的 OCSP 回應，使裝訂始終遠早於其 nextUpdate，且在別處做出的撤銷能夠到達它。在每個節點的前端程序中執行。"
+  },
   "sched.jobs.tls.server-certificate-renew.title": {
     "en": "d7afa3328270e140",
     "text": "監聽器憑證續期"

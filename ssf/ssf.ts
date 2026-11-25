@@ -189,6 +189,11 @@ import risc = require('./risc');
 // riscAutoEmit().
 import directory = require('../ldap/ldap_server');
 import streams = require('./ssf_streams');
+// AN APPLICATION'S STREAM IS ABOUT THE PEOPLE SIGNED IN TO IT (#2234): the
+// subject scope installHooks() registers, the ended-session record the
+// session observer keeps, and the Add Subject refusal. A LIBRARY that
+// requires nothing here, so the require cannot close a cycle.
+import appSessions = require('./application_sessions');
 // THIS SERVICE'S OWN TWO RECEIVERS. A LIBRARY (rule 3) — the two receive
 // endpoints and the two inbox pages are registered by the SURFACES, because a
 // receiver hosts its own endpoint; what this module does with it is SEED the
@@ -265,6 +270,7 @@ interface SharedSignalsDeps {
   risc: typeof risc;
   directory: typeof directory;
   streams: typeof streams;
+  appSessions: typeof appSessions;
   receivers: typeof receivers;
   transport: typeof transport;
   deadLetterReport: typeof deadLetterReport;
@@ -2760,6 +2766,26 @@ class SharedSignals {
         log.debug('Leaving POST /ssf/subjects/add. Not the owner.');
         return;
       }
+      // AN APPLICATION MAY NAME ONLY A PERSON WITH AN ACTIVE SESSION ON IT
+      // (#2234), for #336's reason: section 8.1.3.2 lets a transmitter refuse
+      // or silently ignore the request, and a receiver that believed it had
+      // subscribed would wait for events delivery refuses anyway
+      // (`application_sessions.ts`'s scope). The subject stays on the list
+      // once added; delivery stops when the session ends.
+      if (wellFormed && this.deps.appSessions.scope(streams.getStream(id),
+          this.subjectUnderStreamIssuer(streams.getStream(id),
+                                        body.subject)) === false) {
+        errorCodes.mark(res, 'STS-SSF-0164');
+        this.fail(res, 403, 'access_denied',
+                  'This stream belongs to an application, and it carries ' +
+                  'events only about people with an active session on that ' +
+                  'application (ssf.applicationStreamScope). The subject ' +
+                  'names a person who has no live sign-on session this ' +
+                  'application is a relying party of, and no live GNAP ' +
+                  'grant they approved to it.');
+        log.debug('Leaving POST /ssf/subjects/add. No active session.');
+        return;
+      }
       const added: Json = streams.addSubject(id, body.subject,
         body.verified !== false,
         { criticalMembers: this.criticalMembers() });
@@ -3612,6 +3638,15 @@ class SharedSignals {
     if (!this.enabled()) {
       log.debug('Leaving SharedSignals.caepAutoEmit(). SSF is off.');
       return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    // THE PARTIES OF A SESSION THAT IS ENDING ARE KEPT FIRST (#2234), before
+    // its session-revoked is built and its candidate streams chosen, so the
+    // event that ends a session on an application still reaches that
+    // application's stream — and so does a RISC event about the same act,
+    // whichever order its door sends the two in. `application_sessions.ts`
+    // argues it.
+    if (notice && notice.kind === 'revoked' && notice.session) {
+      this.deps.appSessions.noteEnded(notice.session);
     }
     // THE ISSUER IS ADDED HERE AND NOT IN `authn.js`, because it is an SSF fact
     // and that module has no business knowing one. It matters more than it
@@ -6184,6 +6219,14 @@ class SharedSignals {
     // that works — see setSessionObserver()'s header over there.
     authn.setSessionObserver(this.caepAutoEmit.bind(this));
 
+    // AN APPLICATION'S STREAM IS ABOUT THE PEOPLE SIGNED IN TO IT (#2234):
+    // a subject scope, which can only take events away. Through the facade,
+    // so the instance the composition root installed is the one asked.
+    this.deps.streams.setSubjectScope('application-sessions',
+      (record: Json, subject: Json) => {
+        return this.deps.appSessions.scope(record, subject);
+      });
+
     adminConsole.setCaepReporter({
       report: this.caepReport.bind(this),
       action: this.caepAction.bind(this),
@@ -6378,6 +6421,7 @@ class SharedSignals {
       risc: risc,
       directory: directory,
       streams: streams,
+      appSessions: appSessions,
       receivers: receivers,
       transport: transport,
       deadLetterReport: deadLetterReport,

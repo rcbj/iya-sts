@@ -208,7 +208,7 @@ naming the application in `context.application`, to this realm's
 This service decides it against the application's policy, as above, and the
 edge passes the answer back. An error here — the `500` for a policy that
 cannot be used, a refusal of the PEP, no answer — is an error there, never
-`false`. So the PEP's directory entry must hold `AUTHZEN_PEPS` and have the
+`false`; the edge answers it `403`, because every PEP failure is a `403`. So the PEP's directory entry must hold `AUTHZEN_PEPS` and have the
 application in its scope, and a policy here sees the **PEP** as the caller.
 [The remote PEP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded)
 has the details.
@@ -432,10 +432,15 @@ evaluated gets an error status and a body of the form
 |---|---|
 | 400 | the request is not valid: a missing member, a value that breaks the rules below, an undeclared property, or several applications in scope and none named |
 | 401 | the caller did not authenticate; `WWW-Authenticate: Bearer realm="<issuer>"` when tokens are accepted |
-| 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named |
+| 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named; or the part of the API asked is switched off: AuthZEN, or XACML, turned off in the realm, no `sts-authzen-api` application, the batch, the searches, access requests or their catalogs turned off |
 | 415 | the request's `Content-Type` is not `application/json` (a `charset` parameter is fine), or it has none: section 10.1 requires it. The evaluation, the batch, the three searches and an access request's submission answer this once the caller is admitted (the submission as `application/problem+json`), and so do the remote PEP's evaluation and batch |
 | 500 | the policy could not be evaluated (for example the root policy does not load, or the application enforces fine-grained authorization and its policy is disabled or missing) — never reported as `false` |
-| 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
+
+A switched-off API answered `501` before 2026-11-25. AuthZEN 1.0 prescribes
+no status for that case: section 10.1.2 defines `400`, `401`, `403` and
+`500`, and section 9.1.1 says only that an endpoint absent from the
+metadata tells a PEP the PDP "is not capable" of that API. So it is a `403`
+now, and the metadata still leaves out whatever is off.
 
 ### Several evaluations at once
 
@@ -563,7 +568,7 @@ only while one is on: `urn:openid:authzen:capability:access-request` with
 `iss` the PDP identifier, signed with the realm's key the way the OAuth
 metadata is and verifiable with the realm's JWKS (`/oauth2/jwks`).
 `authzen.signedMetadata` turns it off. While the API is off in the realm the
-document answers 501.
+document answers 403.
 
 ### Who may call it
 
@@ -1108,7 +1113,7 @@ permits nothing by itself.
 A denial whose record was not kept has no `request_catalogs_url`, as it
 has no `form_url`. With the catalogs off, the advice's entitlements are
 ignored: nothing is advertised, required or recorded, and the two
-endpoints answer `501`. Not built: `scope_params` (a single catalog has
+endpoints answer `403`. Not built: `scope_params` (a single catalog has
 nothing to scope by), `granted`, `risk_level` and `owner`, and catalogs
 over an agent protocol.
 
@@ -1201,7 +1206,7 @@ The same caller door and the `AUTHZEN_PEPS` role as an evaluation apply.
 
 | Request | Answer |
 |---|---|
-| `GET /access/v1/access-requests/schema` | the JSON Schema of those augmentations. Public. `501` while access requests are off |
+| `GET /access/v1/access-requests/schema` | the JSON Schema of those augmentations. Public. `403` while access requests are off |
 | `POST /access/v1/access-requests` | the denied `subject`, `resource`, `action` and `context`, and `denial` with either the `binding_token` or the `evaluation_id` plus `expires_at` echoed unchanged. `202` with a `task`, or `201` with the result when it was decided at once. `Idempotency-Key` is honoured per caller. |
 | `GET /access/v1/access-requests/<id>` | the task. `Retry-After` while it is `pending`; once `approved`, `result` with `mode: "reevaluate"` and the `approval`, which may include `state` |
 | `POST` or `DELETE /access/v1/access-requests/<id>/cancel` | cancels a pending task; `409` once it has finished |
@@ -1414,7 +1419,7 @@ live source; this table is a copy.
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
-| `authzen.enabled` | `STS_AUTHZEN_ENABLED` | `true` | The API answers; off, its routes answer 501 |
+| `authzen.enabled` | `STS_AUTHZEN_ENABLED` | `true` | The API answers; off, its routes answer 403 |
 | `authzen.callerAuthentication` | `STS_AUTHZEN_CALLER_AUTHENTICATION` | `mtls` | `mtls`, `bearer` or `mtls+bearer` |
 | `authzen.resolveSubjectTypes` | `STS_AUTHZEN_RESOLVE_SUBJECT_TYPES` | `user` | Subject types whose id is a directory person |
 | `authzen.batchEnabled` | `STS_AUTHZEN_BATCH_ENABLED` | `true` | `POST /access/v1/evaluations` answers, and the metadata names it |

@@ -577,6 +577,13 @@ const JOBS = [
   // stream holds session-revoked (initiated by admin) and account-purged.
   // `local: true`: this repository's directory, sessions and transmitter.
   { file: 'sts_account_delete_sessions.js', browser: false },
+  // AN APPLICATION'S STREAM IS ABOUT THE PEOPLE SIGNED IN TO IT (#2234):
+  // two applications, two people each signed in to one, Add Subject's 403,
+  // a sign-out's and a disable's ending events reaching only the
+  // application whose session they ended, `all` in its own realm, and an
+  // application's own credential change unfiltered. `local: true`: this
+  // repository's sessions and transmitter.
+  { file: 'sts_ssf_application_sessions.js', browser: false, local: true },
   // A PERSON'S PAGE SHOWS EVERY WAY THEY AUTHENTICATED (rcbj, 2026-11-16):
   // one fresh person per mechanism — the code flow and its refresh,
   // GET /tls/sign-in, the password grant, an RFC 7523 self-assertion,

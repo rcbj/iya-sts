@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "在监听器证书到期前这么多天续期它，前提是这早于剩余三分之一有效期的时间点。默认值 0 保持三分之一。"
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "在每个监听器上装订 OCSP 响应"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "主端口、LDAPS、调试器和每个自定义监听器是否用装订的 OCSP 响应回答询问证书状态的客户端（RFC 6066 status_request，适用于 TLS 1.2 和 1.3）。该响应就是本服务自己的 OCSP 响应器为该监听器证书给出的响应，在持有套接字的进程中生成，不经网络获取，并由 tls.ocsp-staple-refresh 作业在其 nextUpdate 之前刷新。来自外部机构的证书（tls.certificateFile 或自定义监听器自己的文件）不装订。无法生成当前响应时，握手在没有它的情况下继续；绝不会失败。**`auto` 在产品模式下开启、在开发模式下关闭**（mode.staplesOcsp()）；`on` 和 `off` 在任一模式下强制设定。"
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "主端口共享集群会话票据密钥"
@@ -8844,8 +8852,8 @@
     "text": "启用 AuthZEN"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "开启时，AuthZEN Authorization API 在 /access/v1 下应答。关闭时，其路由仍保持注册状态并应答 501，与 XACML 的路由一样：功能已关闭，而不是 URL 有误。它使用 XACML 引擎作出决策，因此在 xacml.enabled 关闭时也会应答 501。调用方仍需拥有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）和应用范围，才会得到任何答复。"
+    "en": "ab2a36497d9bc637",
+    "text": "开启时，AuthZEN Authorization API 在 /access/v1 下应答。关闭时，其路由仍保持注册状态并应答 403：功能已关闭，而不是 URL 有误。它使用 XACML 引擎作出决策，因此在 xacml.enabled 关闭时也会应答 403。调用方仍需拥有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）和应用范围，才会得到任何答复。"
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8876,8 @@
     "text": "启用批量评估"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "开启时，POST /access/v1/evaluations 在一个请求中应答多个访问评估（第 7 节），元数据文档也会列出它。关闭时该路由应答 501，元数据不列出它；/access/v1/evaluation 不受影响。"
+    "en": "30f1730e7cc2e19f",
+    "text": "开启时，POST /access/v1/evaluations 在一个请求中应答多个访问评估（第 7 节），元数据文档也会列出它。关闭时该路由应答 403，元数据不列出它；/access/v1/evaluation 不受影响。"
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8924,8 @@
     "text": "启用 Search APIs"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "开启时，三种 AuthZEN 搜索在 /access/v1/search 下应答（主体、资源、操作），元数据会列出它们。一次搜索用领域的根策略对本服务能列出的每个候选作出决定，并应答被允许的那些：主体是领域目录中的人员，资源是其应用、API 和委托关系，操作是策略用来与 action-id 比较的名称。关闭时，这些路由应答 501。"
+    "en": "058f0be9c553b3f0",
+    "text": "开启时，三种 AuthZEN 搜索在 /access/v1/search 下应答（主体、资源、操作），元数据会列出它们。一次搜索用领域的根策略对本服务能列出的每个候选作出决定，并应答被允许的那些：主体是领域目录中的人员，资源是其应用、API 和委托关系，操作是策略用来与 action-id 比较的名称。关闭时，这些路由应答 403。"
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8956,8 @@
     "text": "访问请求与审批"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "AuthZEN 访问请求与审批配置文件（草案）及其回调配套规范。开启时，XACML 应答中携带 advice urn:sts:xacml:advice:access-request 的 Deny 会应答 false 并附带 context.access_request；PEP 将其提交到 POST /access/v1/access-requests，由该 advice 指定的审批人在门户或控制台中作出决定，下一次评估时出示的批准会作为可信事实到达根策略。元数据会写明该端点和该能力。不带该 advice 的拒绝永远不可请求。关闭时，这些路由应答 501，任何拒绝都不可请求。"
+    "en": "2851b5ede62f62db",
+    "text": "AuthZEN 访问请求与审批配置文件（草案）及其回调配套规范。开启时，XACML 应答中携带 advice urn:sts:xacml:advice:access-request 的 Deny 会应答 false 并附带 context.access_request；PEP 将其提交到 POST /access/v1/access-requests，由该 advice 指定的审批人在门户或控制台中作出决定，下一次评估时出示的批准会作为可信事实到达根策略。元数据会写明该端点和该能力。不带该 advice 的拒绝永远不可请求。关闭时，这些路由应答 403，任何拒绝都不可请求。"
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9036,8 @@
     "text": "访问申请的目录"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "AuthZEN Access Request Catalog 配置文件（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已记录可申请拒绝携带 request_catalogs_url，其 Catalogs Document 和 Catalog Endpoint 只答复该拒绝所答复的调用方，提交必须在 requested_access.entitlement 中选择其中一项权限，批准会将其作为可信事实带给策略。关闭时忽略 advice 的权限，两个端点返回 501。"
+    "en": "5809e31e9afa317e",
+    "text": "AuthZEN Access Request Catalog 配置文件（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已记录可申请拒绝携带 request_catalogs_url，其 Catalogs Document 和 Catalog Endpoint 只答复该拒绝所答复的调用方，提交必须在 requested_access.entitlement 中选择其中一项权限，批准会将其作为可信事实带给策略。关闭时忽略 advice 的权限，两个端点返回 403。"
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",
@@ -9294,6 +9302,14 @@
   "ssf.personStreamsSelfOnly|description": {
     "en": "581ff0b61393c1af",
     "text": "以人员的凭据创建的流——客户端为其获取的访问令牌，或通过 Basic 使用其本人的名称和密码——只涉及该人员本人：无论其主体列表和 default_subjects 如何，关于其他任何人的事件都不会投递给它，“添加主体”也会拒绝指定其他任何人（403）。SSF 1.0 第 10.1 节要求只有经授权的各方才能访问共享信号，而人员对于其本人的信号就是经授权的一方。关闭时，人员的流被视同客户端的流，在 default_subjects 为 ALL 时会收到领域中的每个事件。客户端自己的流（客户端凭据）、GNAP 应用的流以及本服务自身的接收方不受影响。"
+  },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "应用的流可以获知哪些人的事件"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "由应用拥有的流（使用其客户端凭据、GNAP 密钥或其证书创建，而非某人的令牌）仅在某人在该应用上有活动会话时，才会传递关于此人的 CAEP 或 RISC 事件：即该应用作为依赖方的活动登录会话（OpenID Connect 或 OAuth 客户端、SAML 2.0 或 1.1 服务提供方、WS-Federation 依赖方），或此人批准给该应用的活动 GNAP 授权。结束此类会话的事件仍会送达其会话被结束的应用。没有主体的事件以及不涉及任何人的事件不受影响；Add Subject 若指名在该应用上没有活动会话的人，将被拒绝（403）。default_subjects 仍为 ALL，现在表示在接收方应用上有活动会话的每个主体（SSF 1.0 第 7.1、9.2 和 10.1 节）。all 是 #2234 之前的行为：应用的流会获知领域中每个人的事件，依赖全主体流的部署（MDM 或 EDR 接收方）会有意选择它。个人自己的流（ssf.personStreamsSelfOnly）、本服务自己的接收方以及 GNAP 资源服务器的流不受影响。"
   },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",

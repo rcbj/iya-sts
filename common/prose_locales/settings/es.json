@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "Renovar el certificado del escuchador estos días antes de que caduque, cuando eso es antes del momento en que queda un tercio de su validez. 0, el valor predeterminado, mantiene el tercio."
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Grapar una respuesta OCSP en cada escucha"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Si el puerto principal, LDAPS, el depurador y cada escucha personalizada responden a un cliente que pide el estado del certificado (status_request de RFC 6066, en TLS 1.2 y 1.3) con una respuesta OCSP grapada. La respuesta es la que da el propio respondedor OCSP de este servicio para el certificado de la escucha, generada en el proceso que tiene el socket, sin una petición de red, y renovada por el trabajo tls.ocsp-staple-refresh antes de su nextUpdate. Un certificado de una autoridad externa (tls.certificateFile o los archivos propios de una escucha personalizada) no se grapa. Cuando no se puede generar una respuesta vigente, el protocolo de enlace continúa sin ella; nunca falla. **`auto` está activado en modo producto y desactivado en desarrollo** (mode.staplesOcsp()); `on` y `off` lo imponen en cualquiera de los dos modos."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "El puerto principal comparte la clave de tickets de sesión del clúster"
@@ -8844,8 +8852,8 @@
     "text": "AuthZEN habilitado"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "Si está activado, la AuthZEN Authorization API responde bajo /access/v1. Desactivado, sus rutas siguen REGISTRADAS y responden 501, como las de XACML: la función está desactivada, la URL no es incorrecta. Decide con el motor XACML, así que también responde 501 mientras xacml.enabled está desactivado. Un llamante sigue necesitando el rol AUTHZEN_PEPS (roles.authzenPepGroup) y un alcance de aplicación antes de que se le diga nada."
+    "en": "ab2a36497d9bc637",
+    "text": "Si está activado, la AuthZEN Authorization API responde bajo /access/v1. Desactivado, sus rutas siguen REGISTRADAS y responden 403: la función está desactivada, la URL no es incorrecta. Decide con el motor XACML, así que también responde 403 mientras xacml.enabled está desactivado. Un llamante sigue necesitando el rol AUTHZEN_PEPS (roles.authzenPepGroup) y un alcance de aplicación antes de que se le diga nada."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8876,8 @@
     "text": "Evaluaciones por lotes activadas"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "Activada, POST /access/v1/evaluations responde varias evaluaciones de acceso en una sola solicitud (sección 7) y el documento de metadatos lo nombra. Desactivada, la ruta responde 501 y los metadatos lo omiten; /access/v1/evaluation no se ve afectado."
+    "en": "30f1730e7cc2e19f",
+    "text": "Activada, POST /access/v1/evaluations responde varias evaluaciones de acceso en una sola solicitud (sección 7) y el documento de metadatos lo nombra. Desactivada, la ruta responde 403 y los metadatos lo omiten; /access/v1/evaluation no se ve afectado."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8924,8 @@
     "text": "Search APIs activadas"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "Activado, las tres búsquedas de AuthZEN responden bajo /access/v1/search (sujeto, recurso, acción) y los metadatos las nombran. Una búsqueda decide cada candidato que este servicio puede nombrar con la política raíz del dominio y responde los permitidos: los sujetos son las personas del directorio del dominio, los recursos sus aplicaciones, API y relaciones de delegación, y las acciones los nombres con los que la política compara action-id. Desactivado, las rutas responden 501."
+    "en": "058f0be9c553b3f0",
+    "text": "Activado, las tres búsquedas de AuthZEN responden bajo /access/v1/search (sujeto, recurso, acción) y los metadatos las nombran. Una búsqueda decide cada candidato que este servicio puede nombrar con la política raíz del dominio y responde los permitidos: los sujetos son las personas del directorio del dominio, los recursos sus aplicaciones, API y relaciones de delegación, y las acciones los nombres con los que la política compara action-id. Desactivado, las rutas responden 403."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8956,8 @@
     "text": "Solicitudes de acceso y aprobaciones"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "El perfil AuthZEN Access Request and Approval (un borrador), con su complemento de callback. Cuando está activado, un Deny cuya respuesta XACML lleva el advice urn:sts:xacml:advice:access-request responde false con context.access_request; un PEP lo envía a POST /access/v1/access-requests, un aprobador nombrado por el advice lo decide en el portal o la consola, y una aprobación presentada en la siguiente evaluación llega a la política raíz como hechos de confianza. Los metadatos nombran el endpoint y la capacidad. Una denegación sin el advice nunca se puede solicitar. Desactivado, las rutas responden 501 y ninguna denegación se puede solicitar."
+    "en": "2851b5ede62f62db",
+    "text": "El perfil AuthZEN Access Request and Approval (un borrador), con su complemento de callback. Cuando está activado, un Deny cuya respuesta XACML lleva el advice urn:sts:xacml:advice:access-request responde false con context.access_request; un PEP lo envía a POST /access/v1/access-requests, un aprobador nombrado por el advice lo decide en el portal o la consola, y una aprobación presentada en la siguiente evaluación llega a la política raíz como hechos de confianza. Los metadatos nombran el endpoint y la capacidad. Una denegación sin el advice nunca se puede solicitar. Desactivado, las rutas responden 403 y ninguna denegación se puede solicitar."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9036,8 @@
     "text": "Catálogos para solicitudes de acceso"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 501."
+    "en": "5809e31e9afa317e",
+    "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 403."
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",
@@ -9294,6 +9302,14 @@
   "ssf.personStreamsSelfOnly|description": {
     "en": "581ff0b61393c1af",
     "text": "Un flujo creado con la credencial de una PERSONA — un token de acceso que un cliente obtuvo para ella, o su propio nombre y contraseña mediante Basic — trata solo sobre esa persona: los eventos sobre cualquier otra no se le entregan, digan lo que digan su lista de sujetos y default_subjects, y Add Subject se niega a nombrar a nadie más (403). SSF 1.0 sección 10.1 exige que solo las partes autorizadas accedan a las señales compartidas, y una persona lo es para las suyas. Desactivado, el flujo de una persona se trata como el de un cliente y, con default_subjects ALL, recibe todos los eventos del dominio. No se ven afectados el flujo propio de un cliente (client credentials), el de una aplicación GNAP ni los receptores propios de este servicio."
+  },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "De qué personas oye hablar el flujo de una aplicación"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "Un flujo que posee una APLICACIÓN (creado con sus credenciales de cliente, una clave GNAP o su certificado, no con el token de una persona) transporta un evento CAEP o RISC sobre una persona solo mientras esa persona tenga una sesión activa en esa aplicación: una sesión de inicio de sesión activa de la que la aplicación es una parte de confianza (un cliente OpenID Connect u OAuth, un proveedor de servicios SAML 2.0 o 1.1, una parte de confianza WS-Federation), o una concesión GNAP activa que la persona le aprobó. El evento que TERMINA dicha sesión sigue llegando a la aplicación cuya sesión terminó. Los eventos sin sujeto, y los eventos que no se refieren a ninguna persona, no se ven afectados, y un Add Subject que nombra a una persona sin sesión activa en la aplicación se rechaza (403). default_subjects sigue siendo ALL, que ahora significa cada sujeto con una sesión activa en la aplicación del receptor (SSF 1.0, secciones 7.1, 9.2 y 10.1). all es el comportamiento anterior a #2234: el flujo de una aplicación oye hablar de todos en el dominio, lo que elige deliberadamente una implantación que depende de flujos de todos los sujetos (un receptor MDM o EDR). El flujo propio de una persona (ssf.personStreamsSelfOnly), los receptores propios de este servicio y el flujo de un servidor de recursos GNAP no se ven afectados."
   },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",

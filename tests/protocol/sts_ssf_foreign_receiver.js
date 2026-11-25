@@ -353,7 +353,12 @@ async function test() {
     // which product mode never dials.
     await ok(root + "/admin-api/realms/create", { id: id,
       domain: id + ".example.net", name: "SSF foreign " + id,
-      overrides: { "global.mode": "development" } },
+      // EVERY PERSON'S EVENTS ON AN APPLICATION'S STREAM, AS BEFORE
+      // #2234: realm B's relationship reads realm A's transmitter as an
+      // application of A's, and the people it hears about are linked here
+      // rather than signed in to it (`ssf.applicationStreamScope`).
+      overrides: { "global.mode": "development",
+                   "ssf.applicationStreamScope": "all" } },
       "created realm " + id);
   }
   // Each dials the other's own address, whose certificate is this run's.

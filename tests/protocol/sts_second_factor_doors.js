@@ -535,7 +535,13 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== setup: the realm, the stream, the people ===");
   await ok(base + "/admin-api/realms/create", { id: REALM, domain: DOMAIN,
-    name: "Second-factor doors " + STAMP }, "created the realm");
+    name: "Second-factor doors " + STAMP,
+    // EVERY PERSON'S EVENTS ON AN APPLICATION'S STREAM, AS BEFORE #2234:
+    // this job's receivers hear about people never signed in to them
+    // (`ssf.applicationStreamScope`; the scope itself is
+    // `sts_ssf_application_sessions.js`'s).
+    overrides: { "ssf.applicationStreamScope": "all" } },
+    "created the realm");
   // This job refuses many binds and enrollments on purpose, from one address.
   await ok(realmApi + "/config/set", { key: "est.attemptsPerAddress",
                                        value: 100000 }, "raised EST's limit");

@@ -403,6 +403,34 @@
     "en": "04a39be278dba264",
     "text": "Ausgemusterte Signierschlüssel nach Ablauf ihrer Karenzzeit wurden verworfen"
   },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "Das Zertifikat einer Zertifizierungsstelle wurde über ihren eigenen Schlüssel erneuert"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "Das Listener-Zertifikat wurde erneuert"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "Die Schlüssel des dedizierten Credential-Signierers wurden rotiert"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "Die Verschlüsselungsschlüssel für Request-Objekte, KEM und Credential-Anfragen wurden rotiert"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "Ein gemeinsames Cluster-Geheimnis wurde rotiert"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "Das Client-Geheimnis einer Anwendung wurde automatisch rotiert"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "Das Datenbankpasswort wurde erneut gelesen und geändert"
+  },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
     "text": "Datenverschlüsselungsschlüssel wurden rotiert"

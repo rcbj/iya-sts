@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "I-renew ang certificate ng listener ganitong bilang ng araw bago ito mag-expire, kung mas maaga iyon kaysa sa puntong ikatlo na lamang ng validity nito ang natitira. Pinapanatili ng 0, ang default, ang ikatlo."
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Mag-staple ng OCSP response sa bawat listener"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Kung sasagutin ng main port, LDAPS, debugger at bawat custom listener ang isang client na humihingi ng status ng certificate (RFC 6066 status_request, sa TLS 1.2 at 1.3) ng isang naka-staple na OCSP response. Ang response ay ang ibinibigay ng sariling OCSP responder ng serbisyong ito para sa certificate ng listener, ginawa sa process na may hawak ng socket, nang walang network fetch, at nire-refresh ng job na tls.ocsp-staple-refresh bago ang nextUpdate nito. Hindi ini-staple ang certificate mula sa labas na authority (tls.certificateFile o ang sariling mga file ng isang custom listener). Kapag walang kasalukuyang response na magagawa, nagpapatuloy ang handshake nang wala nito; hindi ito kailanman nabibigo. **Naka-on ang `auto` sa product mode at naka-off sa development** (mode.staplesOcsp()); ipinipilit ito ng `on` at `off` sa alinmang mode."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "Ibinabahagi ng main port ang session-ticket key ng cluster"
@@ -8844,8 +8852,8 @@
     "text": "Naka-enable ang AuthZEN"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "Kapag naka-on, sumasagot ang AuthZEN Authorization API sa ilalim ng /access/v1. Kapag naka-off, nananatiling NAKA-REGISTER ang mga route nito at sumasagot ng 501, gaya ng sa XACML: naka-off ang feature, hindi mali ang URL. Nagpapasya ito gamit ang XACML engine, kaya sumasagot din ito ng 501 habang naka-off ang xacml.enabled. Kailangan pa rin ng caller ang AUTHZEN_PEPS role (roles.authzenPepGroup) at isang application scope bago ito sabihan ng anuman."
+    "en": "ab2a36497d9bc637",
+    "text": "Kapag naka-on, sumasagot ang AuthZEN Authorization API sa ilalim ng /access/v1. Kapag naka-off, nananatiling NAKA-REGISTER ang mga route nito at sumasagot ng 403: naka-off ang feature, hindi mali ang URL. Nagpapasya ito gamit ang XACML engine, kaya sumasagot din ito ng 403 habang naka-off ang xacml.enabled. Kailangan pa rin ng caller ang AUTHZEN_PEPS role (roles.authzenPepGroup) at isang application scope bago ito sabihan ng anuman."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8868,8 +8876,8 @@
     "text": "Naka-on ang mga batch na pagsusuri"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "Kapag naka-on, sumasagot ang POST /access/v1/evaluations ng maraming pagsusuri ng access sa isang request (seksyon 7), at pinapangalanan ito ng dokumento ng metadata. Kapag naka-off, sumasagot ng 501 ang route at hindi ito isinasama ng metadata; hindi apektado ang /access/v1/evaluation."
+    "en": "30f1730e7cc2e19f",
+    "text": "Kapag naka-on, sumasagot ang POST /access/v1/evaluations ng maraming pagsusuri ng access sa isang request (seksyon 7), at pinapangalanan ito ng dokumento ng metadata. Kapag naka-off, sumasagot ng 403 ang route at hindi ito isinasama ng metadata; hindi apektado ang /access/v1/evaluation."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8916,8 +8924,8 @@
     "text": "Naka-on ang Search APIs"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "Kapag naka-on, sumasagot ang tatlong AuthZEN search sa ilalim ng /access/v1/search (subject, resource, action), at pinangangalanan sila ng metadata. Pinagpapasyahan ng isang search ang bawat kandidatong kayang pangalanan ng serbisyong ito gamit ang root policy ng realm at sinasagot ang mga pinahihintulutan: ang mga subject ay ang mga tao sa directory ng realm, ang mga resource ay ang mga application, API at ugnayang delegation nito, at ang mga action ay ang mga pangalang ikinukumpara ng policy sa action-id. Kapag naka-off, sumasagot ng 501 ang mga ruta."
+    "en": "058f0be9c553b3f0",
+    "text": "Kapag naka-on, sumasagot ang tatlong AuthZEN search sa ilalim ng /access/v1/search (subject, resource, action), at pinangangalanan sila ng metadata. Pinagpapasyahan ng isang search ang bawat kandidatong kayang pangalanan ng serbisyong ito gamit ang root policy ng realm at sinasagot ang mga pinahihintulutan: ang mga subject ay ang mga tao sa directory ng realm, ang mga resource ay ang mga application, API at ugnayang delegation nito, at ang mga action ay ang mga pangalang ikinukumpara ng policy sa action-id. Kapag naka-off, sumasagot ng 403 ang mga ruta."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8948,8 +8956,8 @@
     "text": "Mga access request at approval"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "Ang AuthZEN Access Request and Approval Profile (isang draft), kasama ang callback companion nito. Kapag naka-on, ang Deny na ang XACML na sagot ay may advice na urn:sts:xacml:advice:access-request ay sinasagot ng false na may context.access_request; isinusumite ito ng isang PEP sa POST /access/v1/access-requests, ang approver na pinangalanan ng advice ang nagpapasya nito sa portal o sa console, at ang approval na iprinisenta sa susunod na evaluation ay umaabot sa root policy bilang trusted facts. Pinangangalanan ng metadata ang endpoint at ang capability. Ang denial na walang advice ay hindi kailanman maaaring hilingin. Kapag naka-off, 501 ang sagot ng mga route at walang denial na maaaring hilingin."
+    "en": "2851b5ede62f62db",
+    "text": "Ang AuthZEN Access Request and Approval Profile (isang draft), kasama ang callback companion nito. Kapag naka-on, ang Deny na ang XACML na sagot ay may advice na urn:sts:xacml:advice:access-request ay sinasagot ng false na may context.access_request; isinusumite ito ng isang PEP sa POST /access/v1/access-requests, ang approver na pinangalanan ng advice ang nagpapasya nito sa portal o sa console, at ang approval na iprinisenta sa susunod na evaluation ay umaabot sa root policy bilang trusted facts. Pinangangalanan ng metadata ang endpoint at ang capability. Ang denial na walang advice ay hindi kailanman maaaring hilingin. Kapag naka-off, 403 ang sagot ng mga route at walang denial na maaaring hilingin."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -9028,8 +9036,8 @@
     "text": "Mga catalog para sa mga kahilingan sa access"
   },
   "authzen.accessRequestCatalogs|description": {
-    "en": "1f38cbb80e80bafc",
-    "text": "Ang AuthZEN Access Request Catalog Profile (#1204): ang isang naitalang pagtangging maaaring hilingin na ang advice ay naglilista ng mga halagang urn:sts:xacml:advice:access-request:entitlement ay may request_catalogs_url, sumasagot ang Catalogs Document at Catalog Endpoint nito sa tumawag na sinagot ng pagtanggi, kailangang pumili ang isang pagsusumite ng isa sa mga entitlement sa requested_access.entitlement, at dinadala ito ng pag-apruba sa patakaran bilang pinagkakatiwalaang katotohanan. Kapag naka-off, binabalewala ang mga entitlement ng advice at sumasagot ng 501 ang dalawang endpoint."
+    "en": "5809e31e9afa317e",
+    "text": "Ang AuthZEN Access Request Catalog Profile (#1204): ang isang naitalang pagtangging maaaring hilingin na ang advice ay naglilista ng mga halagang urn:sts:xacml:advice:access-request:entitlement ay may request_catalogs_url, sumasagot ang Catalogs Document at Catalog Endpoint nito sa tumawag na sinagot ng pagtanggi, kailangang pumili ang isang pagsusumite ng isa sa mga entitlement sa requested_access.entitlement, at dinadala ito ng pag-apruba sa patakaran bilang pinagkakatiwalaang katotohanan. Kapag naka-off, binabalewala ang mga entitlement ng advice at sumasagot ng 403 ang dalawang endpoint."
   },
   "authzen.accessRequestActor|label": {
     "en": "746cf58e932ffdab",
@@ -9294,6 +9302,14 @@
   "ssf.personStreamsSelfOnly|description": {
     "en": "581ff0b61393c1af",
     "text": "Ang stream na ginawa gamit ang credential ng isang TAO — access token na nakuha ng client para sa kanya, o sarili niyang pangalan at password sa Basic — ay tungkol sa taong iyon lang: hindi inihahatid dito ang mga event tungkol sa iba, anuman ang sinasabi ng subject list at default_subjects nito, at tumatanggi ang Add Subject na pangalanan ang iba (403). Hinihingi ng SSF 1.0 section 10.1 na mga awtorisadong partido lang ang makaka-access sa mga shared signal, at awtorisado ang tao para sa sarili niya. Kapag naka-off, tinatrato ang stream ng tao gaya ng sa client at, sa ilalim ng default_subjects ALL, pinapadalhan ito ng bawat event sa realm. Hindi apektado ang sariling stream ng client (client credentials), ang sa isang GNAP application at ang sariling mga receiver ng serbisyong ito."
+  },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "Kung sinong mga tao ang naririnig ng stream ng isang application"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "Ang isang stream na pag-aari ng isang APPLICATION (ginawa gamit ang client credentials nito, isang GNAP key o ang certificate nito — hindi ang token ng isang tao) ay nagdadala ng CAEP o RISC na event tungkol sa isang tao habang may aktibong session lamang ang taong iyon sa application na iyon: isang aktibong sign-on session kung saan relying party ang application (isang OpenID Connect o OAuth client, isang SAML 2.0 o 1.1 service provider, isang WS-Federation relying party), o isang aktibong GNAP grant na inaprubahan ng tao para dito. Ang event na TUMATAPOS sa ganoong session ay nakararating pa rin sa application na ang session ay natapos nito. Hindi apektado ang mga event na walang subject at ang mga event na hindi tungkol sa isang tao, at tinatanggihan (403) ang Add Subject na nagpapangalan sa isang taong walang aktibong session sa application. Nananatiling ALL ang default_subjects, na ngayon ay nangangahulugang bawat subject na may aktibong session sa application ng receiver (SSF 1.0, mga seksyon 7.1, 9.2 at 10.1). Ang all ay ang asal bago ang #2234: naririnig ng stream ng isang application ang lahat sa realm, na sadyang pinipili ng isang deployment na umaasa sa mga stream para sa lahat ng subject (isang MDM o EDR na receiver). Hindi apektado ang sariling stream ng isang tao (ssf.personStreamsSelfOnly), ang sariling mga receiver ng serbisyong ito at ang stream ng isang GNAP resource server."
   },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",

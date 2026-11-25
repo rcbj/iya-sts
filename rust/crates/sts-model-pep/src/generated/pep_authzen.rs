@@ -163,7 +163,7 @@ pub mod components {
         /// True only on a Permit with nothing undischargeable, or a Permit whose
         /// obligations were handed because the caller declared every type; decided
         /// deny-biased. A failed batch item is false with context.error, including
-        /// a token-exchange tuple (501, STS-XPEP-0140).
+        /// a token-exchange tuple (403, STS-XPEP-0140).
         pub decision: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub context: Option<crate::pep_authzen::components::DecisionContext>,

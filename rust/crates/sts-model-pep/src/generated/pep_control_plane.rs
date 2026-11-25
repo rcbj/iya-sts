@@ -78,9 +78,9 @@ pub mod components {
         /// read as off: the edge hands no obligation.
         #[serde(rename = "obligationsProfile")]
         pub obligations_profile: bool,
-        /// The realm's authzen.tokenExchange: on, the edge answers 501
-        /// (STS-XPEP-0140) to every tuple the service answers by the binding's
-        /// fixed rules. Absent on an older catalogue is read as on.
+        /// The realm's authzen.tokenExchange: on, the edge answers 403
+        /// (STS-XPEP-0140, a PEP failure) to every tuple the service answers by the
+        /// binding's fixed rules. Absent on an older catalogue is read as on.
         #[serde(rename = "tokenExchange")]
         pub token_exchange: bool,
         /// The authorization_details types the realm's applications declare, which

@@ -759,6 +759,14 @@
     "en": "c84b42d3aab3bdde",
     "text": "Nire-refresh ang KRL ng OpenSSH user CA ng bawat realm pagkatapos ng mga pagbawi ng inilabas na certificate at inaalis ang mga expired na pagbawi."
   },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "Pag-refresh ng OCSP staple"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "Muling ginagawa ang OCSP response na ini-staple ng bawat listener ng process na ito (ang main port, LDAPS, debugger at ang mga custom listener), mula sa sariling responder ng serbisyong ito, bawat ikaapat na bahagi ng pki.crlLifetimeMinutes, kaya ang isang staple ay laging malayo pa sa nextUpdate nito at naaabot ito ng revocation na ginawa sa ibang lugar. Tumatakbo sa front process ng bawat node."
+  },
   "sched.jobs.tls.server-certificate-renew.title": {
     "en": "d7afa3328270e140",
     "text": "Pag-renew ng certificate ng listener"
