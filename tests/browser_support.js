@@ -454,6 +454,15 @@ async function checkStorage(t) {
   const client = new SpaClient(i18nEnv(['de']), '', {
     clientId: 'browser-test', scope: 'openid', elsewhere: {} });
   const words = await client.noStorageWords('portal');
+  // `WebI18n.load()` makes the translator it built the DEFAULT a `web_`
+  // context falls back to, as a browser's page wants; in this process it
+  // would then draw keys for every later test that renders with no `t`
+  // (`tests/portal_owned.js` B1). The default `common/i18n.ts` installs
+  // — English — is put back.
+  const i18n = require('../common/i18n');
+  require('../common/web_messages').WebTranslator.setDefault(function () {
+    return i18n.translator(['en']);
+  });
   const de = catalog('browser', 'de');
   t.check(words.title === de['noStorage.title'] &&
           words.text === de['noStorage.text'],

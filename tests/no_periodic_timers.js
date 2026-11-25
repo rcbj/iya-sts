@@ -128,7 +128,17 @@ const ALLOWED = {
   // already the ssf.internal-poll scheduler job.
   'common/web_announcements.ts|tick|timeout': { permanent:
     'not this service\'s work: each open console, portal and reports tab ' +
-    'asking for a broadcast announcement, in the browser (#1086)' }
+    'asking for a broadcast announcement, in the browser (#1086)' },
+  // AND THE SAME POLL IN THE REPORTS APPLICATION'S RENDERERS' BUNDLE, which
+  // the image build writes from `report/web_report_pages.ts` and which
+  // carries the runtime, `web_announcements.ts` with it. It was always
+  // there; until #2220 `blank()` misread a quote earlier in the bundle and
+  // blanked the rest of it as one string, so the timer went unseen. #2220's
+  // additions to the bundle moved that misreading past it. The authn
+  // bundle's poll above is the precedent.
+  'report/report.bundle.js|tick|timeout': { permanent:
+    'the announcement poll of common/web_announcements.ts, in the reports ' +
+    'bundle the image build writes, in the browser (#1086)' }
 };
 
 function walk(dir, out) {
