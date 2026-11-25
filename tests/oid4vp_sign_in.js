@@ -551,15 +551,19 @@ function childMain() {
          '2e. the binding cookie is HttpOnly and SameSite=Lax', bindingLine);
     // THE WAIT PAGE IS A ROUTE OF THE SIGN-IN SURFACE SINCE #574: its
     // shell is the surface's (one script, the surface's bundle), and its
-    // view is what the page draws.
+    // view is what the page draws. Since #2220 every shell loads the
+    // browser check first (`common/shell_document.ts`), so the shell is
+    // that check and the surface's one bundle, in that order, and nothing
+    // else.
     const waitShell = await request(port, 'GET', s.waitPath,
                                     { browser: browser1 });
     const scripts = waitShell.text.match(/<script[^>]*>/g) || [];
-    note(waitShell.status === 200 && scripts.length === 1 &&
-         /<script src="\/authn\/signin\.js"/.test(waitShell.text) &&
+    note(waitShell.status === 200 && scripts.length === 2 &&
+         /<script src="\/web\/browser-check\.js"/.test(scripts[0]) &&
+         /<script src="\/authn\/signin\.js"/.test(scripts[1]) &&
          !/<meta http-equiv="refresh"/.test(waitShell.text),
-         '2f. the wait page is the sign-in surface\'s shell: ONE script, ' +
-         '/authn/signin.js, and no <meta> refresh',
+         '2f. the wait page is the sign-in surface\'s shell: the browser ' +
+         'check, then ONE script, /authn/signin.js, and no <meta> refresh',
          JSON.stringify(scripts));
     note(s.waiting.status === 200 && s.view.wallet === 'wait' &&
          s.view.dcRequest &&

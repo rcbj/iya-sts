@@ -2106,8 +2106,16 @@ function childMain() {
     const pkiAsked = WebPages.composeRequests(pkiPage, {
       certificate: fp, from: 'pki-tree'
     });
-    const cryptoAsked = WebPages.composeRequests(
-      WebPages.pageFor('/admin/crypto-metadata'), { certificate: fp });
+    // `/admin/crypto-metadata` composes the key exchange clients negotiated
+    // too since #2220, asked on every view; the dialog's member is the one
+    // the certificate parameter adds.
+    const cryptoPage = WebPages.pageFor('/admin/crypto-metadata');
+    const cryptoAsked = WebPages.composeRequests(cryptoPage,
+      { certificate: fp }).filter(function (one) {
+        return one.member === 'certificateDetails';
+      });
+    const cryptoAskedBare = WebPages.composeRequests(cryptoPage, {})
+      .map(function (one) { return one.member; });
     note(pkiAsked.length === 1 &&
          pkiAsked[0].member === 'certificateDetails' &&
          pkiAsked[0].operation === '/admin-api/certificates' &&
@@ -2116,6 +2124,8 @@ function childMain() {
          WebPages.composeRequests(pkiPage, {}).length === 0 &&
          cryptoAsked.length === 1 &&
          cryptoAsked[0].operation === '/admin-api/certificates' &&
+         cryptoAsked[0].params.certificate === fp &&
+         cryptoAskedBare.indexOf('certificateDetails') < 0 &&
          WebPages.composeKept(pkiPage, 'certificateDetails',
            { status: 404, json: { ok: false, errors: ['no'] } }) &&
          !WebPages.composeKept(pkiPage, 'certificateDetails',
@@ -2124,7 +2134,8 @@ function childMain() {
            { status: 404, json: { ok: false } }),
          'D-Cert-dialog. View details composes the certificates operation ' +
          'into certificateDetails, and a refusal is still drawn',
-         JSON.stringify(pkiAsked));
+         JSON.stringify({ pki: pkiAsked, crypto: cryptoAsked,
+                          cryptoBare: cryptoAskedBare }));
 
     const report = mode.report();
     const here = WebPages.render('/admin/mode',

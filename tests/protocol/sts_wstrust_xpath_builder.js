@@ -43,6 +43,7 @@
 // ===========================================================================
 
 const assert = require("assert");
+const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
@@ -349,7 +350,7 @@ const FRAME_ANSWERED = `
 async function saveAndWait(driver, selector, pressedAgain) {
   log.debug("Entering saveAndWait(). " + selector);
   const start = await steps.before();
-  const token = STAMP + "-" + Math.random().toString(36).slice(2);
+  const token = STAMP + "-" + crypto.randomBytes(8).toString("hex");
   const pressed = await driver.executeScript(
     "const el = document.querySelector(arguments[2]);" +
     "if (!el) { return 'nothing matches ' + arguments[2]; }" +

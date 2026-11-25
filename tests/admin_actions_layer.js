@@ -184,8 +184,12 @@ function checkOneLayerIsALibrary(t, layer) {
   // views' `gateStateFor()` reads so a realm administrator's token is drawn
   // the realm administrator's view — the static console has no session to
   // read instead.
+  // AND ITS COMPANION SINCE #2200: `req.adminApiHeldRoles()`, the same gate's
+  // answer to "what does this person hold", asked once per request so a
+  // view draws the write controls its reader may use. It is set by the gate
+  // and by nothing a caller sends, so it is the gate's answer as well.
   const illegal = reads.filter(function (r) {
-    return !/req\.(query|adminApiCaller)$/.test(r);
+    return !/req\.(query|adminApiCaller|adminApiHeldRoles)$/.test(r);
   });
   if (/admin_actions/.test(layer)) {
     t.check(reads.length === 0,

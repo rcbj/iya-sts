@@ -49,6 +49,17 @@ const authnSignin = require("./authn_signin");
 const log = require('bunyan').createLogger({ name: 'own_password',
   level: process.env.LOG_LEVEL || 'info' });
 
+// A BROWSER'S User-Agent on every request of the sign-in, as
+// `passkey_wire_kit.js` sends: the person chooses their password at a
+// browser, and a product realm scores the sign-in's risk. Since #2236 the
+// sign-in is the sign-out page's and names no client, so the console's
+// exemption (#226) does not apply, and an agent no browser sends is HIGH
+// risk (`automated-client`): the password was stored and the resumed
+// sign-in refused (STS-RISK-0016), which this helper read as the change
+// step refusing the password.
+const BROWSER = { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) " +
+  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" };
+
 /**
  * The temporary password an administrator sets before the person chooses
  * `password`: longer than it, so any length rule it met is met, and
@@ -87,7 +98,8 @@ async function pendingSignIn(base) {
   // `text/html`: the logout endpoint answers a program asking for JSON
   // 401 rather than sending it to sign in (`Logout.wantsJson()`).
   const r = await fetch(b + "/logout",
-    { redirect: "manual", headers: { accept: "text/html" } });
+    { redirect: "manual",
+      headers: Object.assign({ accept: "text/html" }, BROWSER) });
   const where = r.headers.get("location") || "";
   const said = /[?&#]authn=/.test(where) ? "" : await r.text();
   assert.ok(/[?&#]authn=/.test(where), "own_password: GET /logout with " +
@@ -146,7 +158,8 @@ function answeredOk(answer) {
 async function changeTo(base, username, temporary, password) {
   log.debug("Entering changeTo(). " + username);
   const login = await authnSignin.submit(base, await pendingSignIn(base),
-    { action: "login", username: username, password: temporary }, {});
+    { action: "login", username: username, password: temporary },
+    { headers: BROWSER });
   if (login.next !== "password-change") {
     log.debug("Leaving changeTo(). No change asked (" + login.next + ").");
     return { asked: false, chosen: false, status: login.status,
@@ -154,7 +167,7 @@ async function changeTo(base, username, temporary, password) {
   }
   const changed = await authnSignin.changePassword(base, login.location,
     { new_password: password, confirm_password: password },
-    { cookie: login.cookie });
+    { cookie: login.cookie, headers: BROWSER });
   // 200 is the password stored; what the resumed sign-in does next (a
   // second factor offered, a client the person holds no role for) is not
   // this helper's business. A refused password is 400.
