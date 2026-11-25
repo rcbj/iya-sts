@@ -29,8 +29,16 @@
 // the same windows, and every line names the lockfile it came from. An SDK an
 // image installs only when `STS_CLOUD_SDKS` names it is still shipped by the
 // images that name it, so a finding there is not "optional" and is not
-// discounted. `--updates` reads the SDK workspaces' pins as direct
-// dependencies too. A lockfile whose audit cannot be read fails the run.
+// discounted. A lockfile whose audit cannot be read fails the run.
+//
+// **THE DAILY RUN IS ADVISORIES ONLY, AND `--updates` IS THE ROOT'S (#2219,
+// rcbj 2026-11-25).** #2159 had `--updates` read the 27 SDK workspaces' pins
+// as direct dependencies too, and the daily workflow ran it, so the daily run
+// went red whenever an SDK fell behind with no advisory against it. The
+// daily workflow now runs the advisory windows over both lockfiles and the
+// image, and `--updates` only when a dispatch asks for it; and the review
+// reads the root lockfile alone (`UPDATE_REVIEW_LOCKFILES`). An SDK is held
+// to the advisory windows like everything else shipped.
 // ---------------------------------------------------------------------------
 
 const childProcess = require('child_process');
@@ -60,6 +68,12 @@ const LOCKFILES = [
   { dir: '.', name: 'package-lock.json' },
   { dir: 'sdk', name: 'sdk/package-lock.json' }
 ];
+// The lockfiles the 90-day update review reads (#2219): the root's only.
+// sdk/'s pins are optional SDKs held to the advisory windows, not reviewed
+// for an update whenever one has no advisory.
+const UPDATE_REVIEW_LOCKFILES = LOCKFILES.filter(function (one) {
+  return one.dir === '.';
+});
 
 /**
  * Picks the advisories that are past their window.
@@ -364,7 +378,7 @@ async function main() {
   if (process.argv.indexOf('--updates') >= 0) {
     const reviews = JSON.parse(fs.readFileSync(REVIEWS_FILE, 'utf8'));
     let rows = [];
-    LOCKFILES.forEach(function (lockfile) {
+    UPDATE_REVIEW_LOCKFILES.forEach(function (lockfile) {
       rows = rows.concat(dependencyUpdates(lockfile));
     });
     const waiting = updatesOverdue(rows, reviews, Date.now());
@@ -390,7 +404,9 @@ if (require.main === module) {
 }
 
 module.exports = { overdue: overdue, WINDOW_DAYS: WINDOW_DAYS,
-                   LOCKFILES: LOCKFILES, auditFindings: auditFindings,
+                   LOCKFILES: LOCKFILES,
+                   UPDATE_REVIEW_LOCKFILES: UPDATE_REVIEW_LOCKFILES,
+                   auditFindings: auditFindings,
                    directDependencies: directDependencies,
                    imageFindings: imageFindings,
                    updatesOverdue: updatesOverdue,
