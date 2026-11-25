@@ -122,6 +122,12 @@ sibling URN.
 
 ## Resolution, and the fetches it makes
 
+**The anchors a resolution may end at are `Oidfed.anchors()`'s, and since
+#2150 that function reads the `oidfed-anchor` use case**: by default the
+registered anchors and the realm's own topology; a key set bound to
+`oidfed-anchor:<entity id>` adds an anchor, and pasted keys only.
+`common/CLAUDE.md`, *Named truststores*, has the rest.
+
 `trust_chain.ts`'s header is the argument for dialling URLs a caller named. It
 is also a row in the root `CLAUDE.md`'s non-goal index. The bounds:
 

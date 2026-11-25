@@ -85,6 +85,13 @@ required, and it is still the issuer an ID Token must name. `fedTokenUrl` and
 `fedJwksUri` are still the only attributes dialled. They now carry values the
 verified chain supplied, never values a request supplied.
 
+**A relationship's keys are also a truststore use case (#2149)**:
+`keysFor()` asks `federation-jwt` which sources count, and with nothing
+assigned it is `registeredKeysFor()`, the pre-#2149 read, unchanged. A key
+set bound to `federation:<fedId>` adds keys; a bound `jwks_uri` is fetched
+under that relationship's own outbound policy. `common/CLAUDE.md`, *Named
+truststores*, argues the binding.
+
 ---
 
 ## 3o. `federation.js` IS A LIBRARY (rule 3) AND ITS DIRECTORY HALF IS INVERTED (rule 6)

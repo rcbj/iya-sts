@@ -58,8 +58,8 @@ more than one family needs it, not because it felt general.
 | `connect_refusal.ts` | **CONNECT IS ANSWERED 501 ON EVERY HTTP LISTENER (#1304, 2026-11-04).** This service is an origin server, never a proxy, so it implements no CONNECT (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the application — its target is an authority, not a path. With no `connect` listener node answered on its own, wrongly over both protocols: a bare 405 with no `Allow` over HTTP/2 (RFC 9110 section 15.5.6 says a 405 MUST carry one), and over HTTP/1.1 nothing at all — the connection was destroyed. `install(server, label)` answers 501 over either, `no-store`, with `frame-ancestors 'none'`, marked `STS-HTTP-0025`; `server.js` installs it on the main port (TLS and plain) and every custom listener, `debugger_server.ts` on its own. **Logged sparingly** — the first, then a count at most once a minute, with no timer — because a CONNECT is what a scanner sends. `tests/main_port_http2.js` 13. |
 | `security_operations.ts` | **WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645, 2026-11-02).** One answer for the management API's gate, the LDAP socket and SCIM: a Directory → Policies save, reset or act (read off `admin-core/policy_kinds.ts`, so a new kind is covered), a policy REFERENCE that changes (each kind's `REFERENCES` and `PolicySelection`'s declarations; a grid posting it unchanged is not a change, `''` and `default` are one value), a grant of the role by any door (the roster, `SECURITY_ADMIN`, `cn=security-admin`, `admin.securityGroup`), and an act on a holder's account. XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay Admin Write's (rcbj's decision). It reads nothing itself: the caller hands it `SecurityHooks` (`admin_rbac.ts`'s `holdsSecurity()`, `personValues()`, `groupValues()`, `applications.get()`). A static utility class, `policy_kinds` required lazily. `tests/security_admin.js`. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
-| `truststores.ts` | **NAMED TRUSTSTORES, AND WHICH ONES EACH USE CASE TRUSTS (#2118).** Built-ins (`system`, `service-root`, the shipped vendor roots), views of the two older stores (`signers`, `client-certificates`), `setting:<key>` views of every legacy anchor or CA setting, SPIFFE bundle truststores (`spiffe:<trust domain>`) and named truststores under `ou=truststores`; `resolve()`, `caFor()`, `configuredPems()`, `assign()`. A library with a rule 3e slot. See *Named truststores*, below. |
-| `truststore_use_cases.ts` | **EVERY USE CASE THAT TRUSTS A CERTIFICATE OR A KEY SET (#2118)**: id, scope (service or realm), kind (`x509`, `spiffe`, `pins`, `fixed`, `admission`), direction, the sites, the default list (which reproduces what the use case trusted before) and a fallback. A leaf. |
+| `truststores.ts` | **NAMED TRUSTSTORES, AND WHICH ONES EACH USE CASE TRUSTS (#2118).** Built-ins (`system`, `service-root`, the shipped vendor roots), views of the two older stores (`signers`, `client-certificates`), `setting:<key>` views of every legacy anchor or CA setting, SPIFFE bundle truststores (`spiffe:<trust domain>`), the key-set view `registered-keys` and named truststores under `ou=truststores`, certificates or key sets bound to one party (#2149); `resolve()`, `caFor()`, `configuredPems()`, `assign()`, `keySources()`, `boundKeySets()`, `setKeys()`. A library with a rule 3e slot. See *Named truststores*, below. |
+| `truststore_use_cases.ts` | **EVERY USE CASE THAT TRUSTS A CERTIFICATE OR A KEY SET (#2118)**: id, scope (service or realm), kind (`x509`, `spiffe`, `pins`, `fixed`, `admission`, `jwks`), direction, the sites, the default list (which reproduces what the use case trusted before) and a fallback. A leaf. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `model_ir.ts` | **THE JSON THE MODEL'S IMPORTERS AND EMITTERS SHARE (#1390).** `stable()` sorts keys for the directory and persistence catalogues. An OpenAPI document is never passed through it. A library, no route. |
 | `directory_spellings.ts` | **`STANDARD_NAMES` AND `OWN_NAMES`, READ AS TEXT (#1390).** The directory server registers routes when it is required, so the lists are taken from the source. |
@@ -17551,7 +17551,14 @@ the decisions (D1–D5) are on the issue; what a maintainer needs:
   service's own hierarchy by definition.
 * **SCOPE (D2)**: a `service` use case resolves in the default realm and may
   name only its truststores, the built-ins and the views
-  (`assignmentProblem()`, STS-PKI-0302). The listeners re-apply their
+  (`assignmentProblem()`, STS-PKI-0302). **EXCEPT AN OUTBOUND ONE (#2148,
+  rcbj 2026-11-24)**: `UseCases.overridable()` (service, outbound, x509) lets
+  a realm assign it a list of its own, its own truststores and the
+  service-wide ones, used for that realm's dials only; `resolvingRealm()`
+  takes the realm's override where it has one and the default realm's list
+  where not, and `assigningRealm()` writes a realm's assignment as its
+  override. A handshake (`tls-client`) has no realm, so it stays the default
+  realm's. Every dial resolves per request in the ambient realm, uncached. The listeners re-apply their
   truststores when `ou=truststores` changes in the default realm, locally or
   through replication (`ldap/ldap_server.js`'s `isNamedTruststoreKey()`).
 * **SPIFFE (D5)**: a trust domain's bundle is ONE truststore, both halves, read
@@ -17559,3 +17566,25 @@ the decisions (D1–D5) are on the issue; what a maintainer needs:
   domains `spiffe-svid` and `spiffe-jwt-svid` accept (`trustsSpiffeDomain()`).
 * **NOT CHANGED, DELIBERATELY**: a WS-Security certificate stored on exactly one
   entry is pinned by name (#1061) and asks no path, as before.
+* **KEY SETS ARE BOUND TO ONE PARTY, NEVER POOLED (#2149, rcbj
+  2026-11-25)**: a JWK names no owner, so a pool would let one party's key
+  sign as another. A `jwks` truststore names its party
+  (`client:`, `federation:`, `claims-provider:` or `oidfed-anchor:<id>`,
+  fixed at creation) and holds pasted public keys or a `jwks_uri`.
+  `keySources(useCase, party)` answers whether the party's own registration
+  counts (`registered-keys` in the list, every key-set use case's default)
+  and which key sets bound to THAT party the list names; a set bound to
+  anybody else contributes nothing. The sites: `assertion_grant.js`'s
+  `keysForParty()` and `ensurePartyKeys()` (client authentication, RFC 7523,
+  request objects, HTTP signatures: `client-jws`), `federation_sp.ts`'s
+  `keysFor()` (`federation-jwt`), `ssf_transmitters.ts`'s SET check
+  (`ssf-set`), `claims_providers.ts`'s `keysOf()` (`claims-provider-jwt`).
+  A bound `jwks_uri` is fetched the way that party's own would be. A key set
+  and a certificate truststore never stand in for each other (STS-PKI-0309);
+  a refused key set is STS-PKI-0308.
+* **TRUST ANCHORS ARE KEY SETS TOO (#2150)**: `Oidfed.anchors()` reads the
+  `oidfed-anchor` use case through `boundKeySets()`, which enumerates every
+  key set the list names bound to an anchor; every resolution narrows from
+  that one function. An anchor's key set is pasted keys only (out-of-band
+  trust; `keySetProblem()` refuses a `jwks_uri` for it). Trust Mark issuers
+  are not a truststore: their keys come through their own chain (7.3).
