@@ -271,6 +271,14 @@
     "en": "76f7213ce5e8a506",
     "text": "刪除已不再是成員的節點的鏡像 LDAP 連線，以及已超過有效期限的登出指令。"
   },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "認證資料到期提醒"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "向憑證將在 mail.expiryReminderDays 某一天數內到期的每個人傳送提醒，列出每個到期的憑證：是什麼、哪天到期以及如何續約，每人一封郵件，每個憑證每個步驟一次。只讀取到期索引中今天或過去三十天內到期的列，從不讀取目錄，但在索引建立前已持有的憑證登錄完成之前，每次執行會讀取一部分人員。"
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "郵件寄件匣遞送"

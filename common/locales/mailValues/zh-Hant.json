@@ -20,5 +20,6 @@
   "address.none": "（無）",
   "credentialChange.item": "{kind, select, passkey {通行密鑰或安全金鑰} totp {驗證器應用程式} app-password {應用程式專用密碼} hotp {一次性驗證碼權杖} yubiotp {YubiKey OTP} recovery-codes {復原碼} certificate {憑證} certificate-binding {憑證登入繫結} smime {S/MIME 憑證} openpgp {OpenPGP 金鑰} other {憑據}}：{change, select, added {已新增} generated {已產生} removed {已移除} other {已變更}}",
   "credentialChange.itemNamed": "{kind, select, passkey {通行密鑰或安全金鑰} totp {驗證器應用程式} app-password {應用程式專用密碼} hotp {一次性驗證碼權杖} yubiotp {YubiKey OTP} recovery-codes {復原碼} certificate {憑證} certificate-binding {憑證登入繫結} smime {S/MIME 憑證} openpgp {OpenPGP 金鑰} other {憑據}}「{label}」：{change, select, added {已新增} generated {已產生} removed {已移除} other {已變更}}",
-  "credentialChange.by": "{entity, select, user {由您在入口網站或登入時完成} other {由管理員完成}}"
+  "credentialChange.by": "{entity, select, user {由您在入口網站或登入時完成} other {由管理員完成}}",
+  "expiry.item": "{kind, select, certificate {憑證} piv {PIV 智慧卡憑證} smime {S/MIME 憑證} tls-client {TLS 用戶端憑證} signin-certificate {登入憑證} other {認證資料}}「{label}」將於 {date}（UTC）到期：{renew, select, certificates {請在入口網站的「憑證」頁面續約} tokens {請在入口網站的「安全金鑰」頁面續約} openpgp {請在入口網站的「OpenPGP 與郵件加密」頁面更換} signing-key {請在入口網站的「簽章金鑰」頁面續約} other {請聯絡管理員續約}}"
 }

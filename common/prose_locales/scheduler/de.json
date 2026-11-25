@@ -271,6 +271,14 @@
     "en": "76f7213ce5e8a506",
     "text": "Löscht die gespiegelten LDAP-Verbindungen von Knoten, die keine Mitglieder mehr sind, sowie Abmeldeanweisungen, deren Lebensdauer überschritten ist."
   },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "Erinnerungen an ablaufende Anmeldedaten"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "Sendet jeder Person, deren Zertifikat innerhalb eines der Tage aus mail.expiryReminderDays abläuft, eine Erinnerung, die jedes fällige nennt: was es ist, an welchem Tag es abläuft und wie es erneuert wird – eine Nachricht pro Person, jedes Zertifikat einmal pro Schritt. Liest nur die heute oder in den letzten dreißig Tagen fälligen Zeilen des Ablaufindex, nie das Verzeichnis, außer einem Ausschnitt von Personen pro Lauf, bis die Zertifikate, die vor dem Index vorhanden waren, erfasst sind."
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "Zustellung des Mail-Postausgangs"

@@ -23140,6 +23140,49 @@ const SETTINGS = [
                  'country, an anonymising network, refused passwords — is ' +
                  'told at most once to a person. The outbox is the record, ' +
                  'so a window longer than mail.retentionS is that long.' },
+  // #2247 (ASVS 5.0.0 6.4.5): `common/credential_expiry.ts`'s reminder job,
+  // through `common/mail_uses.ts`'s credentialsExpiring().
+  { key: 'mail.expiryReminders', group: 'Mail',
+    label: 'Credential expiry reminders',
+    env: 'STS_MAIL_EXPIRY_REMINDERS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Remind a person, at the address on their entry, before ' +
+                 'a certificate they hold expires: a certificate this ' +
+                 'realm issued them over ACME, EST or SCEP, a PIV smart ' +
+                 'card certificate, an S/MIME certificate, a TLS client ' +
+                 'certificate, or a ' +
+                 'certificate stored for certificate sign-in. Each is ' +
+                 'told once at each of mail.expiryReminderDays, every ' +
+                 'certificate due in one message, with when it expires ' +
+                 'and how to renew it. Nothing is sent while security ' +
+                 'notices are off or no transport is configured.' },
+  { key: 'mail.expiryReminderDays', group: 'Mail',
+    label: 'Credential expiry reminder days',
+    env: 'STS_MAIL_EXPIRY_REMINDER_DAYS', type: 'csv', dflt: '30,7,1',
+    csvValues: ['90', '60', '45', '30', '21', '14', '10', '7', '5', '3',
+                '2', '1'],
+    runtime: true,
+    description: 'How many days before a certificate expires its holder ' +
+                 'is reminded, one reminder at each. A certificate first ' +
+                 'seen inside one of them is told at the nearest, and ' +
+                 'never at a step it has already passed. A change applies ' +
+                 'to each certificate at its next reminder.' },
+  { key: 'mail.expiryReminderKinds', group: 'Mail',
+    label: 'Credentials an expiry reminder names',
+    env: 'STS_MAIL_EXPIRY_REMINDER_KINDS', type: 'csv',
+    dflt: 'certificate,piv,smime,tls-client,signin-certificate',
+    csvValues: ['certificate', 'piv', 'smime', 'tls-client',
+                'signin-certificate'],
+    runtime: true,
+    description: 'Which kinds of certificate an expiry reminder names: ' +
+                 'certificate (issued over ACME, EST or SCEP), piv (a PIV ' +
+                 'slot certificate), smime (an S/MIME certificate mail is ' +
+                 'encrypted to), tls-client (a TLS client certificate ' +
+                 'issued from the portal\'s Signing keys page or by an ' +
+                 'administrator) and signin-certificate (a certificate ' +
+                 'stored on the entry for certificate sign-in). A kind ' +
+                 'left out is still followed, so putting it back reminds ' +
+                 'at its next step.' },
   // -------------------------------------------------------------------------
   // REPORTING (#956). Realm-overridable because none of these set
   // perProcess. Read where the question is asked; zero is not a legal

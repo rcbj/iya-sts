@@ -396,6 +396,41 @@ are told whether or not anybody signs in. Each kind is told at most once in
 `mail.signInAlertWindowS`. See
 [Risk scoring](risk-scoring.md#the-person-is-told-of-an-unusual-sign-in).
 
+**A credential that expires soon** (#2247) is a security notice too,
+`mail.expiryReminders` (on by default, per realm). A person is reminded
+before any of these of theirs expires:
+
+| What | How the message says to renew it |
+|---|---|
+| a certificate this realm issued over ACME, EST or SCEP | on the portal's **Certificates** page |
+| a PIV smart card or security key certificate | on the portal's **Security keys** page |
+| an S/MIME certificate mail to them is encrypted to | on the portal's **OpenPGP and mail encryption** page |
+| a TLS client certificate this realm issued them, from the portal or an administrator | on the portal's **Signing keys** page |
+| a certificate stored on their entry for certificate sign-in | ask their administrator |
+
+They are reminded at each of `mail.expiryReminderDays` before it expires
+(30, 7 and 1 days by default), once at each. A certificate first seen inside
+one of them, because it was issued for less than 30 days, is told at the
+nearest and never at a day it has already passed. Every certificate due is in
+one message, each with the day it expires, and the message links to the
+portal. `mail.expiryReminderKinds` narrows which kinds are named (`certificate`,
+`piv`, `smime`, `tls-client`, `signin-certificate`). The
+`mail.credential-expiry` scheduler job sends them hourly in every realm; it is
+off while the setting, security notices or a transport is.
+
+The reminders read an index of when each certificate expires, kept in step
+with every write of a person's entry, so a run reads only the certificates
+due and never the directory. A certificate that was on an entry before 1.2.0
+is added to the index by the job, a slice of the realm's people per run, so
+in a large realm its first reminder may come a few days after the upgrade.
+
+What is not reminded: an SSH user certificate, which lasts an hour at most
+and is asked for again at each use; and passkeys, authenticator apps, one-time
+code tokens, recovery codes, app passwords and passwords, which do not expire
+here. The PIV re-issue post-login activity is unchanged: it renews a PIV
+certificate at a sign-in, and is still off by default. See
+[Post-login activities](post-login-activities.md).
+
 ## Encrypted mail
 
 A person can choose to have their mail encrypted with PGP/MIME to their

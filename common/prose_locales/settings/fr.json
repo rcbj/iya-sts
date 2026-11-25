@@ -12899,6 +12899,30 @@
     "en": "29547122992cacaf",
     "text": "Pendant combien de temps un type d’alerte de connexion — un nouvel appareil, un nouveau pays, un réseau d’anonymisation, des mots de passe refusés — n’est signalé qu’une fois à une personne. La boîte d’envoi en est la trace, de sorte qu’une fenêtre plus longue que mail.retentionS ne dure que cette durée."
   },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Rappels d’expiration des identifiants"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Prévenir une personne, à l’adresse de son entrée, avant l’expiration d’un certificat qu’elle détient : un certificat que ce domaine lui a délivré par ACME, EST ou SCEP, un certificat de carte à puce PIV, un certificat S/MIME, un certificat client TLS, ou un certificat enregistré pour la connexion par certificat. Chacun est signalé une fois à chacun des jours de mail.expiryReminderDays, tous les certificats concernés dans un seul message, avec leur date d’expiration et la façon de les renouveler. Rien n’est envoyé tant que les avis de sécurité sont désactivés ou qu’aucun transport n’est configuré."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Jours des rappels d’expiration des identifiants"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Combien de jours avant l’expiration d’un certificat son titulaire est prévenu, un rappel à chacun. Un certificat découvert à l’intérieur de l’un d’eux est signalé au plus proche, et jamais à une étape déjà passée. Une modification s’applique à chaque certificat à son prochain rappel."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Identifiants qu’un rappel d’expiration nomme"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Les types de certificat qu’un rappel d’expiration nomme : certificate (délivré par ACME, EST ou SCEP), piv (un certificat d’emplacement PIV), smime (un certificat S/MIME vers lequel les courriels sont chiffrés), tls-client (un certificat client TLS délivré depuis la page Clés de signature du portail ou par un administrateur) et signin-certificate (un certificat enregistré dans l’entrée pour la connexion par certificat). Un type omis reste suivi, de sorte que le remettre déclenche un rappel à sa prochaine étape."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Plafond de lignes d’un rapport synchrone"

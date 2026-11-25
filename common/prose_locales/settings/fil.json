@@ -12899,6 +12899,30 @@
     "en": "29547122992cacaf",
     "text": "Gaano katagal inaabiso nang hindi hihigit sa isang beses sa isang tao ang isang uri ng alerto sa pag-sign in — bagong device, bagong bansa, network na nagtatago ng pagkakakilanlan, mga tinanggihang password. Ang outbox ang talaan, kaya ang window na mas mahaba sa mail.retentionS ay tumatagal lamang nang ganoon."
   },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Mga paalala sa pag-expire ng credential"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Paalalahanan ang isang tao, sa address sa kanilang entry, bago mag-expire ang isang certificate na hawak nila: isang certificate na inisyu sa kanila ng realm na ito sa ACME, EST o SCEP, isang PIV smart card certificate, isang S/MIME certificate, isang TLS client certificate, o isang certificate na naka-store para sa certificate sign-in. Ang bawat isa ay sinasabi nang isang beses sa bawat isa sa mail.expiryReminderDays, lahat ng certificate na dapat na sa iisang mensahe, kasama kung kailan ito mag-e-expire at kung paano ito i-renew. Walang ipinapadala habang naka-off ang mga security notice o walang naka-configure na transport."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Mga araw ng paalala sa pag-expire ng credential"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Ilang araw bago mag-expire ang isang certificate pinaaalalahanan ang may-hawak nito, isang paalala sa bawat isa. Ang certificate na unang nakita sa loob ng isa sa mga ito ay sinasabi sa pinakamalapit, at hindi kailanman sa hakbang na lumipas na. Ang pagbabago ay nalalapat sa bawat certificate sa susunod nitong paalala."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Mga credential na binabanggit ng paalala sa pag-expire"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Aling mga uri ng certificate ang binabanggit ng paalala sa pag-expire: certificate (inisyu sa ACME, EST o SCEP), piv (isang PIV slot certificate), smime (isang S/MIME certificate na pinag-e-encrypt-an ng mail), tls-client (isang TLS client certificate na inisyu mula sa pahinang Mga Signing Key ng portal o ng isang administrator) at signin-certificate (isang certificate na naka-store sa entry para sa certificate sign-in). Ang uring hindi isinama ay sinusubaybayan pa rin, kaya kapag ibinalik ito ay magpapaalala ito sa susunod nitong hakbang."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Cap ng row ng synchronous na report"

@@ -459,6 +459,11 @@ CA. The key in the slot is the subject's. A YubiKey 5 attests a classical
 key there. How each algorithm is chosen is
 [below](#signature-algorithms).
 
+**The holder is reminded before a PIV slot certificate expires** (#2247): 30,
+7 and 1 days before by default, by mail, naming the portal's Security keys
+page, whether or not the PIV re-issue post-login activity is on. See
+[Mail](mail.md#the-uses).
+
 ## Signature algorithms
 
 A PIV certificate involves three algorithms. The first two have settings.

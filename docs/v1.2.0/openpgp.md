@@ -245,6 +245,9 @@ card is lost with it, and so is every message encrypted to it; a realm that
 must keep old mail readable generates and escrows 9d keys instead
 ([Escrowed encryption keys](hardware-tokens.md#escrowed-encryption-keys)).
 
+**A person is reminded before their S/MIME certificate expires** (#2247): 30,
+7 and 1 days before by default, by mail, naming this page. See [Mail](mail.md#the-uses).
+
 ### An ML-KEM S/MIME certificate issued here
 
 A person can also have this service **issue** them a post-quantum S/MIME

@@ -51,6 +51,11 @@
 //      /portal/access-requests — and, for an emergency access the policy
 //      allowed and granted at once, a security notice nobody may decline,
 //      asking for the review after use (`authzen/authzen_access_request.ts`).
+//   8. **A CREDENTIAL THAT EXPIRES SOON** (#2247, ASVS 5.0.0 6.4.5), a
+//      security notice: the certificates a person holds that reach one of
+//      `mail.expiryReminderDays`, all in one message, each once per step
+//      (`credentialsExpiring()`, asked by `common/credential_expiry.ts`'s
+//      job, which finds them).
 //
 // A LIBRARY (rule 3). Its requires of the credential store and the account
 // signals are LAZY, at the moment of use: `ssf/account_signals.ts` calls
@@ -96,6 +101,21 @@ const SIGN_INS_PATH = '/portal/sign-ins';
 // which a sign-in shows.
 const SIGN_IN_ALERT_KINDS = ['new-device', 'new-country', 'anonymiser',
                              'after-refusals', 'unusual'];
+
+// Where an expiry reminder sends the person (#2247): their portal, whose
+// pages each line of the message names.
+const PORTAL_PATH = '/portal';
+
+// How each kind of expiring credential is renewed (#2247): the portal page
+// a line names, or `administrator` where the person cannot do it themselves
+// (a certificate stored for sign-in, from whichever authority issued it).
+const EXPIRY_RENEWAL: Record<string, string> = {
+  'certificate': 'certificates',
+  'piv': 'tokens',
+  'smime': 'openpgp',
+  'tls-client': 'signing-key',
+  'signin-certificate': 'administrator'
+};
 
 // The one sentence the forgot-password form answers, whatever happened.
 const RESET_ANSWER = 'If that names an account here with an email address ' +
@@ -1556,6 +1576,124 @@ class MailUses {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // 4d. A CREDENTIAL THAT EXPIRES SOON (#2247, ASVS 5.0.0 6.4.5). A security
+  // notice, off with `mail.expiryReminders` (or every security notice).
+  // `common/credential_expiry.ts` finds what is due and keeps, on its own
+  // rows, which step each was told at; the outbox is the cluster's record
+  // as well (`mail.queuedWithin()`), so a second node's run, or this one's
+  // after a crash between the send and the row, sends nothing twice.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether expiry reminders are sent in the ambient realm: the switch,
+   * security notices and a transport.
+   *
+   * @returns true when they are
+   */
+  expiryRemindersOn(): boolean {
+    const { log, config, mail } = this.deps;
+    log.debug("Entering MailUses.expiryRemindersOn().");
+    const on = !!config.value('mail.expiryReminders') &&
+      !!config.value('mail.securityNotices') && mail.available();
+    log.debug("Leaving MailUses.expiryRemindersOn(). " + on);
+    return on;
+  }
+
+  /**
+   * Reminds a person that credentials of theirs expire soon: one message
+   * naming every item, each with its kind, its label, the day it expires
+   * and how it is renewed. An item already queued at its step (the outbox)
+   * is left out, and nothing is sent when every item was.
+   *
+   * @param username - the person
+   * @param items - `{ key, step, kind, label, notAfter }`: the credential's
+   *   index key, the reminder step in days, its kind (of EXPIRY_RENEWAL),
+   *   a label, and when it expires (ms)
+   * @returns what `send()` answered, or `{ ok: false, skipped }`, with
+   *   `told`: the keys now told at their step (sent, or found queued)
+   */
+  credentialsExpiring(username: string, items: Json[]): Json {
+    const { log, mail } = this.deps;
+    log.debug("Entering MailUses.credentialsExpiring(). " + username);
+    let out: Json = { ok: false, skipped: 'off', told: [] };
+    try {
+      const all = (Array.isArray(items) ? items : []).filter(function (i:
+          Json): boolean {
+        return !!(i && i.key && Number(i.step) > 0);
+      });
+      if (!username || !all.length || !this.expiryRemindersOn()) {
+        log.debug("Leaving MailUses.credentialsExpiring(). Off or nothing.");
+        return out;
+      }
+      const keyOf = function (i: Json): string {
+        return 'expiry:' + String(i.key) + ':' + String(Number(i.step));
+      };
+      const windowOf = function (i: Json): number {
+        return Number(i.step) * 86400;
+      };
+      const queued: string[] = [];
+      const fresh = all.filter(function (i: Json): boolean {
+        if (mail.queuedWithin(username, 'credential-expiring', keyOf(i),
+                              windowOf(i))) {
+          queued.push(String(i.key));
+          return false;
+        }
+        return true;
+      });
+      if (!fresh.length) {
+        log.debug("Leaving MailUses.credentialsExpiring(). Told already.");
+        return { ok: false, skipped: 'told at this step', told: queued };
+      }
+      out = mail.send({
+        username: username, template: 'credential-expiring',
+        values: {
+          username: username,
+          what: { list: fresh.map(function (i: Json): Json {
+            const kind = String(i.kind || '');
+            const at = Number(i.notAfter);
+            return MailUses.said('expiry.item', {
+              kind: kind,
+              label: String(i.label || '').slice(0, 200) || '?',
+              date: Number.isFinite(at) && at > 0
+                ? new Date(at).toISOString().slice(0, 10) : '?',
+              renew: EXPIRY_RENEWAL[kind] || 'administrator'
+            });
+          }) }
+        },
+        links: { link: PORTAL_PATH },
+        // EACH ITEM AT ITS STEP IS A KEY: the message is about every fresh
+        // one, so a later run finding any of them at that step finds it.
+        dedupKey: keyOf(fresh[0]),
+        dedupAlso: fresh.slice(1).map(keyOf),
+        dedupWindowS: Math.max.apply(null, fresh.map(windowOf)),
+        via: 'a credential expiry reminder', actor: '' });
+      // TOLD: queued or found queued, and a refusal that would be the same
+      // next run (no address, required encryption the person never chose);
+      // a ceiling, a full outbox or the realm's own mail problem (no
+      // transport, no link base) is tried again at the next run, and the
+      // job stops its run at the realm's own (`again`).
+      const retry = ['STS-MAIL-0001', 'STS-MAIL-0010', 'STS-MAIL-0015',
+                     'STS-MAIL-0031', 'STS-MAIL-0244'];
+      const again = (out.refused || []).some(function (r: Json): boolean {
+        return retry.indexOf(String((r && r.code) || '')) >= 0;
+      });
+      out.again = again;
+      out.told = queued.concat(out.ok || !again
+        ? fresh.map(function (i: Json): string {
+          return String(i.key);
+        }) : []);
+    } catch (e) {
+      log.debug("Caught in MailUses.credentialsExpiring(): " +
+                ((e && e.message) || e));
+      log.warn(this.deps.errorCodes.tag('STS-MAIL-0246') + 'mail: the ' +
+               'credential expiry reminder for ' + username + ' could not ' +
+               'be queued: ' + ((e && e.message) || e));
+      out = { ok: false, skipped: 'threw', told: [] };
+    }
+    log.debug("Leaving MailUses.credentialsExpiring().");
+    return out;
+  }
+
   // An account was disabled (`common/account_state.ts`), by `by`.
   /**
    * Sends the account-disabled notice.
@@ -1669,6 +1807,9 @@ export = {
   sessionsEnded: slot.forward('sessionsEnded'),
   signInAlert: slot.forward('signInAlert'),
   refusedAttempts: slot.forward('refusedAttempts'),
+  expiryRemindersOn: slot.forward('expiryRemindersOn'),
+  credentialsExpiring: slot.forward('credentialsExpiring'),
+  EXPIRY_RENEWAL: EXPIRY_RENEWAL,
   SIGN_IN_ALERT_KINDS: SIGN_IN_ALERT_KINDS,
   addressChanged: slot.forward('addressChanged'),
   accessRequested: slot.forward('accessRequested'),

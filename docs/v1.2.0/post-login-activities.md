@@ -261,6 +261,10 @@ If that revocation fails it is tried again at the next sign-in
 (STS-PIV-0038). A certificate the person never uses goes on being valid
 until it expires.
 
+**Every holder is also reminded by mail** before a PIV slot certificate
+expires (#2247), whether or not this activity is on; the activity is what
+asks for the new one at a sign-in. See [Mail](mail.md#the-uses).
+
 ## Skip, and the allotted time
 
 - **The first invitation starts the clock.** iya-sts records when the person was
