@@ -1435,7 +1435,7 @@ carry `pep-policies-changed`).
 * **ONE READING, `PepRegistry.identityOf()`**, asked by `xacml.ts`'s
   `pepIdentity()` on both doors before anything is written: an unknown kind,
   an embedded mode that is neither, or a `policyEvents` outside the four
-  (`STS-XACML-0342`); `mode` with a container (`0341`); a `protocolVersion`
+  (`STS-XACML-0344`); `mode` with a container (`0341`); a `protocolVersion`
   outside `PROTOCOL_VERSIONS` (`{1}`), or none from an embedded PEP
   (`0340`); all 400. **And the binding** (`xacml_pep_binding.ts`'s `of()`,
   read only for a PEP that says or was embedded): bound to nothing (`0338`)
@@ -1469,13 +1469,13 @@ carry `pep-policies-changed`).
 **Part of #1206 (work item 4; rcbj's D3 (b)).** `GET
 /xacml/pep/policies?scope=bound-application` is a `local` embedded PEP's
 pull; no scope, or `repository`, is the pull as it always was, and any
-other scope is 400 `STS-XACML-0344`.
+other scope is 400 `STS-XACML-0346`.
 
 * **ANSWERED ONLY TO A REGISTERED, BOUND, EMBEDDED PEP IN `local` MODE**
   (`xacml.ts`'s `scopedPull()`): the caller's own row (`pepNameOf()`, the
   token's or the certificate's name) says `embedded` and `local`, and the
   application it registered for is the one its entry is bound to now.
-  Anybody else is 403 `STS-XACML-0343`: a container, a `central` PEP (which
+  Anybody else is 403 `STS-XACML-0345`: a container, a `central` PEP (which
   holds no policy), a PEP never registered, one whose binding moved since it
   registered. The answer carries an application's own policy, which every
   other pull withholds.
@@ -1541,7 +1541,7 @@ the streams its APPLICATION owns, subject the application.
   in the cache, and `ssf.pepPoliciesChanged()` sends one SET to each stream
   whose owner (`ssf_streams.ts`'s `ownerApplication()`) is the application
   and which delivers the type. Nothing throws into the change: a failure is
-  `STS-XACML-0346` or `STS-SSF-0164` in the log.
+  `STS-XACML-0348` or `STS-SSF-0166` in the log.
 * **`ssfAllowedEvents` IS RESPECTED.** This service's own events were always
   allowed past an entry's list because each named nobody; the rule is now
   the catalogue row's `subject` (`allowedEventsFor()`): one that names a

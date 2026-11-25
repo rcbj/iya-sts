@@ -2831,7 +2831,7 @@ An embedded PEP registers and sends heartbeats like the container, and says what
 | `protocolVersion` | The PEP protocol version its package speaks. This service supports `1`. |
 | `policyEvents` | On a heartbeat: `none`, `requested`, `excluded` or `down`, whether its application's Shared Signals stream can carry `pep-policies-changed`. |
 
-Refused, and nothing recorded: an embedded PEP whose entry is bound to no application (403, `STS-XACML-0338`) or to another application (403, `STS-XACML-0339`); an unsupported or missing protocol version (400, `STS-XACML-0340`); `mode` with a container (400, `STS-XACML-0341`); an unknown kind, mode or `policyEvents` (400, `STS-XACML-0342`). A heartbeat is checked the same way, so moving or removing a binding refuses the PEP's next heartbeat.
+Refused, and nothing recorded: an embedded PEP whose entry is bound to no application (403, `STS-XACML-0340`) or to another application (403, `STS-XACML-0341`); an unsupported or missing protocol version (400, `STS-XACML-0342`); `mode` with a container (400, `STS-XACML-0343`); an unknown kind, mode or `policyEvents` (400, `STS-XACML-0344`). A heartbeat is checked the same way, so moving or removing a binding refuses the PEP's next heartbeat.
 
 The *Remote PEPs* list and the PEP's page show the kind, application, mode, protocol version and policy-change events. An embedded PEP's page has only its Overview and Decisions: it has no reverse proxy, listeners, managed settings or AuthZEN edge.
 
@@ -2843,7 +2843,7 @@ The *Remote PEPs* list and the PEP's page show the kind, application, mode, prot
 - every policy that one references, transitively;
 - nothing else: never another application's policy, and never the access or issuance policy.
 
-The answer has a token of its own, so `If-None-Match` answers `304` until something the PEP holds changes; a change elsewhere in the realm does not move it. Only a registered embedded PEP in `local` mode, bound to the application it registered for, is answered; anybody else is refused (403, `STS-XACML-0343`), and a scope other than `repository` or `bound-application` is 400 (`STS-XACML-0344`). The PEP's page says which scope it pulls, and a change of scope is audited as `xacml.pep.scope`.
+The answer has a token of its own, so `If-None-Match` answers `304` until something the PEP holds changes; a change elsewhere in the realm does not move it. Only a registered embedded PEP in `local` mode, bound to the application it registered for, is answered; anybody else is refused (403, `STS-XACML-0345`), and a scope other than `repository` or `bound-application` is 400 (`STS-XACML-0346`). The PEP's page says which scope it pulls, and a change of scope is audited as `xacml.pep.scope`.
 
 ## See also
 

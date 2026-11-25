@@ -25,8 +25,8 @@
 //   T. the token: 304 on If-None-Match, unchanged when the unreferenced
 //      policy changes (the repository's moves), moved when the referenced
 //      one does; and a heartbeat holding the scope's token is current;
-//   R. the refusals: a central PEP, a container (403 STS-XACML-0343), an
-//      unknown scope (400 STS-XACML-0344), each code on the audit log;
+//   R. the refusals: a central PEP, a container (403 STS-XACML-0345), an
+//      unknown scope (400 STS-XACML-0346), each code on the audit log;
 //   V. what the console reads: the row's pullScope, and one xacml.pep.scope
 //      audit row for a PEP that polls.
 //
@@ -293,20 +293,20 @@ async function refusals() {
   log.info("=== R. the refusals ===");
   for (const [label, pep] of [["R1. a central PEP", peps.central],
                               ["R2. a container", peps.box]]) {
-    const refused = await K.coded(realm, "STS-XACML-0343", function () {
+    const refused = await K.coded(realm, "STS-XACML-0345", function () {
       return pull(pep, "bound-application");
     });
     check(label + " is refused the scoped pull, 403 " +
-          "STS-XACML-0343", function () {
+          "STS-XACML-0345", function () {
       assert.strictEqual(refused.answer.status, 403,
                          K.shown(refused.answer));
       assert.ok(refused.rose >= 1, String(refused.rose));
     });
   }
-  const unknown = await K.coded(realm, "STS-XACML-0344", function () {
+  const unknown = await K.coded(realm, "STS-XACML-0346", function () {
     return pull(peps.root, "everything");
   });
-  check("R3. an unknown scope is refused 400 STS-XACML-0344", function () {
+  check("R3. an unknown scope is refused 400 STS-XACML-0346", function () {
     assert.strictEqual(unknown.answer.status, 400, K.shown(unknown.answer));
     assert.ok(unknown.rose >= 1, String(unknown.rose));
   });

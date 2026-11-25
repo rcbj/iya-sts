@@ -4201,7 +4201,7 @@ class SharedSignals {
     } catch (e) {
       log.debug('Caught in SharedSignals.pepPoliciesChanged(): ' +
                 ((e && e.message) || e));
-      log.warn(errorCodes.tag('STS-SSF-0164') + 'ssf: pep-policies-changed ' +
+      log.warn(errorCodes.tag('STS-SSF-0166') + 'ssf: pep-policies-changed ' +
                'for "' + String(n.pep) + '" could not be built: ' +
                ((e && e.message) || e));
       return Promise.resolve({ sent: 0, streams: 0,
@@ -4229,7 +4229,7 @@ class SharedSignals {
     }).catch((e) => {
       log.debug('Caught in SharedSignals.pepPoliciesChanged(): ' +
                 ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-SSF-0164') + 'ssf: pep-policies-changed ' +
+      log.error(errorCodes.tag('STS-SSF-0166') + 'ssf: pep-policies-changed ' +
                 'for "' + String(n.pep) + '" could not be sent: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });

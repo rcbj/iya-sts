@@ -147,7 +147,7 @@ const POLICY_EVENTS: readonly string[] =
 // THE PEP PROTOCOL VERSIONS THIS SERVICE SPEAKS. A version is added here
 // when the control plane changes in a way an older package cannot follow,
 // and one is removed when this service stops answering it: a PEP that
-// sends one not here is refused (STS-XACML-0340), so a library that fell
+// sends one not here is refused (STS-XACML-0342), so a library that fell
 // behind is visible on its own registration rather than silently wrong.
 const PROTOCOL_VERSIONS: readonly number[] = Object.freeze([1]);
 
@@ -921,7 +921,7 @@ class PepRegistry {
       // either; the log says so.
       log.debug('Caught in PepRegistry.boundPull(): ' +
                 ((e && e.message) || e));
-      log.warn(errorCodes.tag('STS-XACML-0345') + 'xacml: whether "' +
+      log.warn(errorCodes.tag('STS-XACML-0347') + 'xacml: whether "' +
                application + '" enforces fine-grained authorization could ' +
                'not be read, so its PEP is sent the realm root: ' +
                ((e && e.message) || e));
@@ -1295,7 +1295,7 @@ class PepRegistry {
       ? (kept ? kept.kind : 'container') : body.kind;
     if (typeof kind !== 'string' || KINDS.indexOf(kind) < 0) {
       log.debug('Leaving PepRegistry.identityOf(). An unknown kind.');
-      return refuse(400, 'STS-XACML-0342', '`kind` is container (or ' +
+      return refuse(400, 'STS-XACML-0344', '`kind` is container (or ' +
         'absent) for the xacml-pep image, or embedded for a PEP inside an ' +
         'authentication library; nothing else is a remote PEP here.');
     }
@@ -1303,7 +1303,7 @@ class PepRegistry {
       body.mode !== '';
     if (kind === 'container' && sentMode) {
       log.debug('Leaving PepRegistry.identityOf(). Mode with a container.');
-      return refuse(400, 'STS-XACML-0341', '`mode` (central or local) is ' +
+      return refuse(400, 'STS-XACML-0343', '`mode` (central or local) is ' +
         'an embedded PEP\'s, and this one registers as a container (kind ' +
         'container, or no kind). Send kind embedded with the application ' +
         'it is embedded in, or leave mode out.');
@@ -1314,7 +1314,7 @@ class PepRegistry {
     if (kind === 'embedded' &&
         (typeof mode !== 'string' || MODES.indexOf(mode) < 0)) {
       log.debug('Leaving PepRegistry.identityOf(). No usable mode.');
-      return refuse(400, 'STS-XACML-0342', 'An embedded PEP says its mode: ' +
+      return refuse(400, 'STS-XACML-0344', 'An embedded PEP says its mode: ' +
         'central (every decision asked of this service) or local (its ' +
         'application\'s policies pulled and decided in process).');
     }
@@ -1326,7 +1326,7 @@ class PepRegistry {
          PROTOCOL_VERSIONS.indexOf(version) < 0)) ||
         (kind === 'embedded' && version === null)) {
       log.debug('Leaving PepRegistry.identityOf(). An unsupported version.');
-      return refuse(400, 'STS-XACML-0340', 'This service speaks PEP ' +
+      return refuse(400, 'STS-XACML-0342', 'This service speaks PEP ' +
         'protocol version ' + PROTOCOL_VERSIONS.join(', ') + ', and this ' +
         'PEP ' + (version === null ? 'sent none'
           : 'speaks ' + String(version).slice(0, 20)) + '. Upgrade the ' +
@@ -1337,7 +1337,7 @@ class PepRegistry {
     if (events !== null && events !== '' &&
         (typeof events !== 'string' || POLICY_EVENTS.indexOf(events) < 0)) {
       log.debug('Leaving PepRegistry.identityOf(). Unknown policyEvents.');
-      return refuse(400, 'STS-XACML-0342', '`policyEvents` is none, ' +
+      return refuse(400, 'STS-XACML-0344', '`policyEvents` is none, ' +
         'requested, excluded or down: whether the stream of the ' +
         'application the PEP is embedded in can carry pep-policies-changed.');
     }
@@ -1347,7 +1347,7 @@ class PepRegistry {
         : String(body.application);
     if (kind === 'embedded' && !boundTo) {
       log.debug('Leaving PepRegistry.identityOf(). Not bound.');
-      return refuse(403, 'STS-XACML-0338', 'This PEP registers as embedded ' +
+      return refuse(403, 'STS-XACML-0340', 'This PEP registers as embedded ' +
         'in "' + application.slice(0, 120) + '", and its entry is bound to ' +
         'no application. An administrator binds it first ' +
         '(set-pep-application, or issue-pep-credential with an ' +
@@ -1355,7 +1355,7 @@ class PepRegistry {
     }
     if (kind === 'embedded' && application !== boundTo) {
       log.debug('Leaving PepRegistry.identityOf(). Bound elsewhere.');
-      return refuse(403, 'STS-XACML-0339', application
+      return refuse(403, 'STS-XACML-0341', application
         ? 'This PEP registers as embedded in "' + application.slice(0, 120) +
           '", and its entry is bound to "' + boundTo + '". An embedded PEP ' +
           'is admitted only for the application it is bound to.'

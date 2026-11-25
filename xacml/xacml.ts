@@ -1893,7 +1893,7 @@ class XacmlSurface {
   // the caller's own row (`pepNameOf()`: the token's or certificate's name,
   // never `?pep=` with one) says kind embedded and mode local, and the
   // application it registered for is the one its entry is bound to NOW
-  // (`xacml_pep_binding.ts`). Anybody else is 403 STS-XACML-0343: this
+  // (`xacml_pep_binding.ts`). Anybody else is 403 STS-XACML-0345: this
   // answer carries an application's own policy, which every other pull
   // withholds, so it goes to that application's PEP and nobody else — not a
   // container, not a central PEP (which holds no policy), not a PEP whose
@@ -1938,7 +1938,7 @@ class XacmlSurface {
                                                   : 'no application') +
           '; it registers again for the application it is bound to.';
       log.info('xacml: a scoped policy pull was refused: ' + why);
-      errorCodes.mark(res, 'STS-XACML-0343');
+      errorCodes.mark(res, 'STS-XACML-0345');
       self.fail(res, 403, 'access_denied', why);
       log.debug('Leaving XacmlSurface.scopedPull(). Refused.');
       return;
@@ -2734,7 +2734,7 @@ class XacmlSurface {
   //
   // PER PROCESS AND A HINT: in a cluster the node that made the change
   // decides, and a PEP that misses the event converges on its fallback
-  // poll. NOTHING HERE THROWS: a failure is logged under STS-XACML-0346.
+  // poll. NOTHING HERE THROWS: a failure is logged under STS-XACML-0348.
   // -------------------------------------------------------------------------
   /**
    * Checks, after the change commits, whether what each embedded PEP pulls
@@ -2757,7 +2757,7 @@ class XacmlSurface {
       } catch (e) {
         log.debug('Caught in notePepPoliciesNow(): ' +
                   ((e && e.message) || e));
-        log.warn(errorCodes.tag('STS-XACML-0346') + 'xacml: after ' + what +
+        log.warn(errorCodes.tag('STS-XACML-0348') + 'xacml: after ' + what +
                  ', whether an embedded PEP\'s policies moved could not be ' +
                  'decided: ' + ((e && e.message) || e));
       }
@@ -3454,7 +3454,7 @@ class XacmlSurface {
       }
       if (scope && scope !== 'repository') {
         log.debug('Leaving GET /xacml/pep/policies. An unknown scope.');
-        errorCodes.mark(res, 'STS-XACML-0344');
+        errorCodes.mark(res, 'STS-XACML-0346');
         self.fail(res, 400, 'invalid_request', 'scope is repository (or ' +
                   'absent), every enabled policy but those withheld, or ' +
                   'bound-application, a local embedded PEP\'s own ' +

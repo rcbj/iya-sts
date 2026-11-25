@@ -13,7 +13,7 @@
 // `sts-remote-pep`, DPoP-bound, one token per audience — against the
 // running service, in a realm of its own:
 //
-//   R. REGISTER: bound to nothing (403, STS-XACML-0338 on the audit log),
+//   R. REGISTER: bound to nothing (403, STS-XACML-0340 on the audit log),
 //      bound to another application (403, 0339), an unsupported protocol
 //      version (400, 0340), mode with a container (400, 0341); then the
 //      package's body accepted, and `/admin-api/xacml/peps` carrying kind,
@@ -125,41 +125,41 @@ async function setUp() {
 async function registration() {
   log.debug("Entering registration().");
   log.info("=== R. register ===");
-  const unbound = await K.coded(realm, "STS-XACML-0338", function () {
+  const unbound = await K.coded(realm, "STS-XACML-0340", function () {
     return asPep("xacml:pep", "POST", "/xacml/pep/register", embedded());
   });
   check("R1. embedded with the entry bound to nothing is refused 403 " +
-        "STS-XACML-0338", function () {
+        "STS-XACML-0340", function () {
     assert.strictEqual(unbound.answer.status, 403, K.shown(unbound.answer));
     assert.strictEqual(unbound.answer.json.error, "access_denied");
     assert.ok(unbound.rose >= 1, String(unbound.rose));
   });
   await bindTo(APP_B);
-  const elsewhere = await K.coded(realm, "STS-XACML-0339", function () {
+  const elsewhere = await K.coded(realm, "STS-XACML-0341", function () {
     return asPep("xacml:pep", "POST", "/xacml/pep/register", embedded());
   });
   check("R2. embedded naming an application other than its binding is " +
-        "refused 403 STS-XACML-0339", function () {
+        "refused 403 STS-XACML-0341", function () {
     assert.strictEqual(elsewhere.answer.status, 403,
                        K.shown(elsewhere.answer));
     assert.ok(elsewhere.rose >= 1, String(elsewhere.rose));
   });
   await bindTo(APP_A);
-  const version = await K.coded(realm, "STS-XACML-0340", function () {
+  const version = await K.coded(realm, "STS-XACML-0342", function () {
     return asPep("xacml:pep", "POST", "/xacml/pep/register",
                  embedded({ protocolVersion: 99 }));
   });
-  check("R3. an unsupported protocolVersion is refused 400 STS-XACML-0340",
+  check("R3. an unsupported protocolVersion is refused 400 STS-XACML-0342",
         function () {
     assert.strictEqual(version.answer.status, 400, K.shown(version.answer));
     assert.strictEqual(version.answer.json.error, "invalid_request");
     assert.ok(version.rose >= 1, String(version.rose));
   });
-  const mode = await K.coded(realm, "STS-XACML-0341", function () {
+  const mode = await K.coded(realm, "STS-XACML-0343", function () {
     return asPep("xacml:pep", "POST", "/xacml/pep/register",
                  { name: PEP, kind: "container", mode: "local" });
   });
-  check("R4. mode with a container is refused 400 STS-XACML-0341",
+  check("R4. mode with a container is refused 400 STS-XACML-0343",
         function () {
     assert.strictEqual(mode.answer.status, 400, K.shown(mode.answer));
     assert.ok(mode.rose >= 1, String(mode.rose));
@@ -197,11 +197,11 @@ async function heartbeat() {
     assert.strictEqual(held.policyEvents, "excluded");
   });
   await bindTo(APP_B);
-  const moved = await K.coded(realm, "STS-XACML-0339", function () {
+  const moved = await K.coded(realm, "STS-XACML-0341", function () {
     return asPep("xacml:pep", "POST", "/xacml/pep/heartbeat", embedded());
   });
   check("H2. once the binding moves, the next heartbeat is refused 403 " +
-        "STS-XACML-0339", function () {
+        "STS-XACML-0341", function () {
     assert.strictEqual(moved.answer.status, 403, K.shown(moved.answer));
     assert.ok(moved.rose >= 1, String(moved.rose));
   });

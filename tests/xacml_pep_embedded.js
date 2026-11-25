@@ -120,29 +120,29 @@ function childMain() {
                    mode: 'central', protocolVersion: 1, policyEvents: '' };
     const cases = [
       ['I1. no kind is a container', {}, null, '', true, 'container'],
-      ['I2. an unknown kind', { kind: 'sidecar' }, null, '', 'STS-XACML-0342'],
+      ['I2. an unknown kind', { kind: 'sidecar' }, null, '', 'STS-XACML-0344'],
       ['I3. mode with no kind (a container)', { mode: 'local' }, null, '',
-       'STS-XACML-0341'],
+       'STS-XACML-0343'],
       ['I4. mode with kind container', { kind: 'container', mode: 'central' },
-       null, '', 'STS-XACML-0341'],
+       null, '', 'STS-XACML-0343'],
       ['I5. embedded with no mode', { kind: 'embedded', application: APP,
-       protocolVersion: 1 }, null, APP, 'STS-XACML-0342'],
+       protocolVersion: 1 }, null, APP, 'STS-XACML-0344'],
       ['I6. embedded with no protocolVersion', { kind: 'embedded',
-       application: APP, mode: 'local' }, null, APP, 'STS-XACML-0340'],
+       application: APP, mode: 'local' }, null, APP, 'STS-XACML-0342'],
       ['I7. protocolVersion 2', { kind: 'embedded', application: APP,
-       mode: 'local', protocolVersion: 2 }, null, APP, 'STS-XACML-0340'],
+       mode: 'local', protocolVersion: 2 }, null, APP, 'STS-XACML-0342'],
       ['I8. a container\'s unsupported protocolVersion', {
-       protocolVersion: '1' }, null, '', 'STS-XACML-0340'],
+       protocolVersion: '1' }, null, '', 'STS-XACML-0342'],
       ['I9. embedded and bound to nothing', { kind: 'embedded',
        application: APP, mode: 'local', protocolVersion: 1 }, null, '',
-       'STS-XACML-0338'],
+       'STS-XACML-0340'],
       ['I10. embedded and bound elsewhere', { kind: 'embedded',
        application: APP, mode: 'local', protocolVersion: 1 }, null, APP2,
-       'STS-XACML-0339'],
+       'STS-XACML-0341'],
       ['I11. embedded naming no application', { kind: 'embedded',
-       mode: 'local', protocolVersion: 1 }, null, APP, 'STS-XACML-0339'],
+       mode: 'local', protocolVersion: 1 }, null, APP, 'STS-XACML-0341'],
       ['I12. an unknown policyEvents', { policyEvents: 'sometimes' }, kept,
-       APP, 'STS-XACML-0342'],
+       APP, 'STS-XACML-0344'],
       ['I13. a heartbeat with nothing keeps the row', {}, kept, APP, true,
        'embedded'],
       ['I14. the package\'s body', { kind: 'embedded', application: APP,
@@ -269,24 +269,24 @@ function childMain() {
          /bound to no application/.test(unbound.text) &&
          (peps.read(PEP) || {}).kind === 'container',
          'R2. embedded with the entry bound to nothing is refused 403 ' +
-         '(STS-XACML-0338) and the row is untouched', brief(unbound));
+         '(STS-XACML-0340) and the row is untouched', brief(unbound));
     const bound = binding.set({ name: PEP, application: APP2 });
     note(bound.ok, 'the PEP is bound to ' + APP2, JSON.stringify(bound));
     const elsewhere = await register(PEP, embedded());
     note(elsewhere.status === 403 && /is bound to/.test(elsewhere.text),
          'R3. embedded naming an application other than its binding is ' +
-         'refused 403 (STS-XACML-0339)', brief(elsewhere));
+         'refused 403 (STS-XACML-0341)', brief(elsewhere));
     binding.set({ name: PEP, application: APP });
     const version2 = await register(PEP, embedded({ protocolVersion: 2 }));
     note(version2.status === 400 && version2.json &&
          version2.json.error === 'invalid_request' &&
          /protocol version 1/.test(version2.text),
-         'R4. an unsupported protocolVersion is refused 400 (STS-XACML-0340)',
+         'R4. an unsupported protocolVersion is refused 400 (STS-XACML-0342)',
          brief(version2));
     const containerMode = await register(PEP, { name: PEP, mode: 'local' });
     note(containerMode.status === 400 && /an embedded PEP/.test(
            containerMode.text),
-         'R5. mode with a container is refused 400 (STS-XACML-0341)',
+         'R5. mode with a container is refused 400 (STS-XACML-0343)',
          brief(containerMode));
     const good = await register(PEP, embedded());
     const row = peps.read(PEP) || {};
@@ -317,7 +317,7 @@ function childMain() {
     note(bad.status === 400 && (peps.read(PEP) || {}).policyEvents ===
          'excluded',
          'H2. a policyEvents outside the four is refused 400 ' +
-         '(STS-XACML-0342) and nothing changes', brief(bad));
+         '(STS-XACML-0344) and nothing changes', brief(bad));
     const bare = await heartbeat({ name: PEP, decisions: 5 });
     const bareRow = peps.read(PEP) || {};
     note(bare.status === 200 && bareRow.kind === 'embedded' &&
@@ -334,7 +334,7 @@ function childMain() {
     note(moved.status === 403 && (peps.read(PEP) || {})
          .registeredApplication === APP,
          'H5. once the binding moves, the next heartbeat is refused 403 ' +
-         '(STS-XACML-0339) and the row is untouched', brief(moved));
+         '(STS-XACML-0341) and the row is untouched', brief(moved));
     binding.set({ name: PEP, application: APP });
     const lone = await atDoor(LONE, 'POST', '/xacml/pep/heartbeat',
                               pepToken[LONE], { name: LONE });
