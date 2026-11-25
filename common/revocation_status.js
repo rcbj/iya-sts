@@ -2041,7 +2041,9 @@ function pemFileOf(settingKey) {
       return held;
     }
     pemFilesCount.miss();
-    text = fs.readFileSync(file, 'utf8');
+    // Checked again and read through one descriptor (#2247): a link swapped
+    // in after the check above is refused, not followed out of the roots.
+    text = require('./outbound_tls').readNamedFile(file);
   } catch (e) {
     if (settingKey === 'pki.revocationLdapCaFile') {
       log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + settingKey +

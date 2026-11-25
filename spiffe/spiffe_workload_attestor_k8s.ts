@@ -141,8 +141,9 @@ class K8sWorkloadAttestor {
     const { log, fs } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.readOptional(). " + path);
     try {
-      require('../common/outbound_tls').assertNamedFile(path);
-      const text = fs.readFileSync(path, 'utf8');
+      // Checked and read through one descriptor (#2247).
+      const text = require('../common/outbound_tls')
+        .readNamedFile(path, { fs: fs });
       log.debug("Leaving K8sWorkloadAttestor.readOptional().");
       return text;
     } catch (e) {

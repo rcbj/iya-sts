@@ -1917,11 +1917,20 @@ class ScimClients {
     add(c.caCertificates);
     const file = String(config.value('scimClient.caFile') || '').trim();
     if (file) {
-      if (!OutboundTls.namedFileAllowed(file)) {
-        throw new Error('scimClient.caFile is not a file in a directory ' +
-                        'security.fileRoots lists');
+      // Checked and read through one descriptor (#2247).
+      let text = '';
+      try {
+        text = OutboundTls.readNamedFile(file, { fs: fs });
+      } catch (e) {
+        log.debug("Caught in ScimClients.tlsOptions(): " +
+                  ((e && e.message) || e));
+        if (e && e.namedFileRefused) {
+          throw new Error('scimClient.caFile is not a file in a directory ' +
+                          'security.fileRoots lists');
+        }
+        throw e;
       }
-      add(fs.readFileSync(file, 'utf8'));
+      add(text);
     }
     // `outbound-scim`'s truststores where it is assigned (#2118), the client's
     // own CAs beside them; unassigned, as before.
