@@ -3839,6 +3839,18 @@ tool forces a change; setting it (not already TRUE) now sends RISC
 `account-credential-change-required`, as the console's reset does
 (`notePasswordChangeRequired()`). `ssf/CLAUDE.md` has the whole #237 table.
 
+**SINCE #2160 (ASVS 5.0.0 6.4.6, rcbj 2026-11-24) A PASSWORD SOMEBODY ELSE
+WRITES IS TEMPORARY.** An LDAP modify of another person's `userPassword`, or
+an add of a person carrying one, also sets `pwdReset` in the SAME write
+(`adminWrittenPasswordIsTemporary()`), so the modify's RISC notice above goes
+out with it. It does not apply in four cases. In development, no door checks
+a password. A person writing their OWN entry is making their own change. A
+service account's password is a program's. A pre-hashed value is a hash the
+writer sent, not a password it knows, and product refuses one anyway. This
+is the socket's half of `admin-core/admin_actions.ts`'s
+`typedPasswordIsTemporary()`, which `set-password` and `create` ask.
+`tests/admin_typed_password_temporary.js` holds both halves.
+
 ## A REFUSAL'S TEXT REACHES THE CLIENT (#261, 2026-09-26)
 
 **Every refusal here is written for the client** — `credentialWriteRefusal()`

@@ -1,0 +1,14 @@
+{
+  "intro": "Browser melden hier jedes Mal, wenn eine Seite dieses Realms gegen ihre Content Security Policy verstoßen hat: Die Richtlinie hat ein Skript, einen Frame, einen Stil oder eine andere Ressource am Laden oder Ausführen gehindert. Ein Bericht sagt, was ein Browser behauptet, und jeder kann einen senden; lesen Sie sie daher als Signale: Eine Reihe von Berichten zu einer Direktive nach einer Änderung ist eine Seite, die die Änderung beschädigt hat, und ein blockierter Ursprung, den hier niemand verwendet, kann eine Injektion sein, die ein Browser gestoppt hat.",
+  "tileTotal": "Berichte",
+  "tileDirectives": "Direktiven",
+  "since": "Vom Front-Prozess dieses Knotens seit {since} gezählt; die Zahlen bleiben über einen Neustart nicht erhalten.",
+  "none": "Seitdem hat kein Browser einen Verstoß gemeldet.",
+  "colDirective": "Direktive",
+  "colCount": "Berichte",
+  "colLast": "Zuletzt gemeldet",
+  "limits": "Seiten melden an <code>{path}</code>. Der Endpunkt liest einen Body von höchstens {bytes} Bytes und {perMinute} Berichte pro Minute von einer Adresse, hält die Direktive, den Pfad der Seite ohne Abfrage und den blockierten Ursprung fest und schreibt jeden Bericht in das Dienstprotokoll.",
+  "forwardOn": "Jeder angenommene Bericht wird außerdem an den unten eingestellten Collector weitergeleitet.",
+  "forwardOff": "Berichte werden nicht weitergeleitet. Stellen Sie unten den Collector ein, um sie weiterzuleiten.",
+  "notForwarded": "{count} Berichte wurden nicht weitergeleitet, weil zu viele Weiterleitungen ausstanden."
+}

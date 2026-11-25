@@ -709,6 +709,34 @@ const CODES = [
       'well-formed HTTP (400). The first is logged, and the rest are ' +
       'counted into one line a minute at most (#1500).',
     spec: 'HTTP 431, 408 or 400, then the connection closes' },
+  { code: 'STS-HTTP-0027',
+    summary: 'A browser reported a Content Security Policy violation at ' +
+      'POST /web/csp-report (#2164). The line names the realm, the ' +
+      'directive, the document\'s path (no query) and the blocked ' +
+      'origin or keyword; Monitoring > CSP reports counts them. A ' +
+      'report is unauthenticated, so it says what a browser claims.',
+    spec: 'none — recorded; answered 204 (CSP Level 3 section 5.5, the ' +
+      'Reporting API)' },
+  { code: 'STS-HTTP-0028',
+    summary: 'A CSP violation report was refused because its body is ' +
+      'larger than 16 KiB.',
+    spec: 'HTTP 413, with no body' },
+  { code: 'STS-HTTP-0029',
+    summary: 'A CSP violation report was refused because its address sent ' +
+      'more than 60 in a minute to this process.',
+    spec: 'HTTP 429 with Retry-After, and no body' },
+  { code: 'STS-HTTP-0030',
+    summary: 'A request to POST /web/csp-report carried no report: a type ' +
+      'other than application/csp-report, application/reports+json or ' +
+      'application/json, a Content-Encoding, a body that is not JSON, or ' +
+      'JSON holding no csp-report object and no csp-violation entry.',
+    spec: 'HTTP 415 or 400, with no body' },
+  { code: 'STS-HTTP-0031',
+    summary: 'A CSP violation report could not be forwarded to ' +
+      'cspReports.forwardUrl: the collector refused it, did not answer, ' +
+      'or the outbound rules refused the URL. Logged when forwarding ' +
+      'starts failing, not per report; the report is still recorded here.',
+    spec: 'none — the report was answered 204 and counted' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -29270,6 +29298,13 @@ const CODES = [
       'registry gave no code of its own for why: the directory carried out ' +
       'nothing (#2118).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0969',
+    summary: 'A password reset for a Kerberos keytab was refused because the ' +
+      'person must change their password at their next sign-in (pwdReset), ' +
+      'where passwords are verified: the KDC refuses that password, so the ' +
+      'keytab would not work, and the reset no longer clears the forced ' +
+      'change (#2160). Nothing was changed.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-ADMIN-0970',
     summary: 'A decision on a held administrator act (two-person approval, ' +
       '#2166) named no act this realm holds, or an action POST ' +

@@ -117,6 +117,7 @@
   "title.ssf-dead-letters": "Mga dead letter",
   "title.ssf-transmitters": "Mga signal mula sa mga partner",
   "title.tls-connection": "TLS connection",
+  "title.csp-reports": "Mga ulat ng CSP",
   "title.pki-trust": "PKI trust",
   "title.tls-trust": "Truststore ng client certificate",
   "title.token-lifetimes": "Tagal ng mga token",

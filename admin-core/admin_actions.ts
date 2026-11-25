@@ -4529,6 +4529,54 @@ class AdminActions {
     return last ? (rbac.roleFor(last) || { label: last }).label : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // A PASSWORD AN ADMINISTRATOR TYPED IS TEMPORARY (#2160, ASVS 5.0.0 6.4.6;
+  // rcbj, 2026-11-24). The administrator knows it, so it must be changed at
+  // the person's next sign-in, as a generated one already must (#1446). Two
+  // exceptions:
+  //
+  //   * DEVELOPMENT MODE (`mode.verifiesCredentials()`): no door checks a
+  //     password there, so a password the administrator knows opens nothing
+  //     that any other password would not. `create`'s generated password
+  //     has the same exception, for the same reason.
+  //   * A SERVICE ACCOUNT (common/CLAUDE.md 3cd): its password is a
+  //     program's, machine-managed and rotated, and a program has no sign-in
+  //     screen to change it at. `pwdReset` would only make every door it
+  //     uses refuse it (STS-AUTHN-0142).
+  //
+  // `set-password` and `create` ask it here, and the LDAP doors ask the same
+  // question in `ldap/ldap_server.js` (`adminWrittenPasswordIsTemporary()`).
+  // `reset-keytab` does not ask it, and says why.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a password an administrator typed for this person must be
+   * changed at their next sign-in.
+   *
+   * @param who - the person's username
+   * @returns true in product mode for anybody but a service account
+   */
+  typedPasswordIsTemporary(who: string): boolean {
+    const { log, serviceAccounts } = this.deps;
+    log.debug("Entering AdminActions.typedPasswordIsTemporary().");
+    if (!mode.verifiesCredentials()) {
+      log.debug("Leaving AdminActions.typedPasswordIsTemporary(). " +
+                "Development checks no password.");
+      return false;
+    }
+    let service = false;
+    try {
+      service = serviceAccounts.isServiceAccountName(who) === true;
+    } catch (e) {
+      log.debug("Caught in AdminActions.typedPasswordIsTemporary(): " +
+                ((e && e.message) || e));
+      // Unreadable: treated as a person, the stricter reading.
+      service = false;
+    }
+    log.debug("Leaving AdminActions.typedPasswordIsTemporary(). " +
+              (service ? "A service account." : "Temporary."));
+    return !service;
+  }
+
   /**
    * Performs a `/admin/users` action on a person: create, set a password or
    * mail address, issue an activation link, clear a second factor, disable or
@@ -5794,8 +5842,13 @@ class AdminActions {
     // written as an attribute — which is also why `userPassword` is refused
     // by the attribute door on `create`. A GENERATED password sets `pwdReset`
     // (#1446, ASVS 5.0.0 6.4.1): it may be used once, to choose another, and
-    // cannot become the long-term password. One the administrator typed does
-    // not. Neither signs the person out, which is what `reset-password` does
+    // cannot become the long-term password. **ONE THE ADMINISTRATOR TYPED
+    // DOES TOO SINCE #2160** (ASVS 5.0.0 6.4.6, rcbj 2026-11-24), where
+    // passwords are verified: the administrator knows it, so it is a
+    // temporary password like a generated one (`typedPasswordIsTemporary()`
+    // says where, and why not for a service account). Typed passwords are
+    // still accepted. Neither signs the person out, which is what
+    // `reset-password` does
     // besides the password. What it shares with that door, since #960, is
     // the recovery note: a passkey holder's next password sign-in is held
     // by `recoveryAssurance` until a passkey signs them in.
@@ -5838,7 +5891,8 @@ class AdminActions {
                   "refused.");
         return this.refusedBy('STS-ADMIN-0525', set);
       }
-      if (generate) {
+      const temporary = generate || this.typedPasswordIsTemporary(who);
+      if (temporary) {
         credentials.setPasswordResetRequired(who, true);
       }
       // A passkey holder's recovery, noted the way `reset-password` notes
@@ -5858,7 +5912,7 @@ class AdminActions {
         // NO PASSWORD AND NO HASH IN THE AUDIT ROW, generated or typed. The row
         // records that it happened and by which door; the value existed in one
         // response and in one log line's absence.
-        detail: { generated: generate }
+        detail: { generated: generate, mustChange: temporary }
       });
       log.debug("Leaving AdminActions.usersAction().");
       return { ok: true, username: who, generated: generate,
@@ -5872,7 +5926,10 @@ class AdminActions {
                    'cannot produce it again, only replace it. It must be ' +
                    'changed at the next sign-in.'
                  : 'The password for ' + who + ' is set. It is stored as a ' +
-                   'hash and cannot be shown again.' };
+                   'hash and cannot be shown again.' + (temporary
+                     ? ' It is a temporary password: they must choose ' +
+                       'their own at their next sign-in.'
+                     : '') };
     }
 
     // THE PERSON AS AN LDIF FILE (2026-11-14), the application page's #546
@@ -6122,7 +6179,10 @@ class AdminActions {
               outcome: 'success',
               summary: 'a password was set for ' + result.username +
                        ' as they were created',
-              detail: { generated: generated }
+              detail: { generated: generated,
+                        mustChange: generated
+                          ? mode.verifiesCredentials()
+                          : this.typedPasswordIsTemporary(result.username) }
             });
             // CAEP credential-change (#145): the person's first password.
             accountSignals.credentialChanged({ username: result.username,
@@ -6148,6 +6208,13 @@ class AdminActions {
               credentialSaid = ' The password you typed is set, stored as a ' +
                 'scrypt hash, and cannot be shown again by anybody including ' +
                 'this console.';
+              // A TYPED ONE IS TEMPORARY TOO (#2160, ASVS 5.0.0 6.4.6),
+              // where passwords are verified: the administrator knows it.
+              if (this.typedPasswordIsTemporary(result.username)) {
+                credentials.setPasswordResetRequired(result.username, true);
+                credentialSaid += ' It is a temporary password: they must ' +
+                  'choose their own at their next sign-in.';
+              }
             }
           }
         }
@@ -13436,8 +13503,24 @@ class AdminActions {
   //      does it: an outstanding reset link is spent (the administrator has
   //      just decided what the password is), they are signed out of
   //      everything, the act is audited and said over Shared Signals. **NOT
-  //      a forced change** — `pwdReset` is CLEARED, not set — because the
-  //      person changing the password would kill the keytab this was for.
+  //      a forced change**, because the person changing the password would
+  //      kill the keytab this was for. **AND SINCE #2160 IT NO LONGER CLEARS
+  //      ONE EITHER** (rcbj, 2026-11-24). It used to clear `pwdReset`
+  //      because the KDC refuses a password flagged that way where passwords
+  //      are verified (STS-KRB-0257, #1446), and a keytab is that password's
+  //      keys, so the keytab would not have worked. But clearing it also
+  //      turned a temporary password, typed or generated by an
+  //      administrator, into a long-term one the administrator knows. So
+  //      `pwdReset` is left as it stands. In product, a reset for somebody
+  //      who still owes the change is REFUSED in step 1, before anything
+  //      changes (STS-ADMIN-0969), because the keytab would not work: they
+  //      change their password at the sign-in screen first. Development
+  //      neither checks the flag at the KDC nor refuses here.
+  //
+  //      A typed password here is NOT made temporary, unlike `set-password`
+  //      (#2160). The administrator holds the keytab anyway, and the keytab
+  //      is the same password's keys. Forcing a change would only end the
+  //      keytab.
   //   4. THE KEYTAB, from the password just set (`personKeytab()`), which
   //      waits for the derivation and checks it against what the KDC holds.
   //
@@ -13463,6 +13546,18 @@ class AdminActions {
                 "refused before anything changed.");
       return refused;
     }
+    // A FORCED CHANGE STILL OWED (#2160): see step 3 above.
+    if (mode.verifiesCredentials() &&
+        credentials.passwordResetRequired(who)) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). A password change " +
+                "is owed first.");
+      return this.refused('STS-ADMIN-0969', { ok: false, errors: [
+        who + ' must change their password at their next sign-in, and the ' +
+        'KDC refuses a password that must be changed, so a keytab made now ' +
+        'would not work. A keytab reset no longer clears that. Ask them to ' +
+        'sign in and choose their own password first, then make the keytab. ' +
+        'Nothing was changed.'] });
+    }
     const password = random ? credentials.generatePassword(who) : typed;
     // A typed password is screened against Pwned Passwords first (#62 P6).
     if (!random) {
@@ -13480,7 +13575,6 @@ class AdminActions {
     // — no passkey, assurance `any`, or a write already logged — leaves
     // the reset as it was.
     credentials.noteRecovery(who, 'admin-password');
-    credentials.setPasswordResetRequired(who, false);
     credentials.consumePasswordReset(who);
     const signedOut = this.signOutEverywhere(who, ctx,
                                              'a password reset for a keytab');

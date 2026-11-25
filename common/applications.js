@@ -17665,6 +17665,9 @@ const API_PERMISSIONS = Object.freeze({
   'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
     permissions: Object.freeze([
       ['account:manage', 'The person\'s own account, through /account-api'],
+      // #2168: what the portal signs in with, a read and nothing else.
+      ['account:read', 'Read the person\'s own account, through ' +
+                       '/account-api, and change nothing'],
       // The #1955 review: an SSH command line's narrower grant, taken only
       // by the SSH certificate operations.
       ['ssh:certificate', 'The person\'s SSH user certificates, through ' +
@@ -17673,7 +17676,10 @@ const API_PERMISSIONS = Object.freeze({
   'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
     permissions: Object.freeze([
       ['report:use', 'Reports as a user (REPORT_USE)'],
-      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) }),
+      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)'],
+      // #2168: what the reports application signs in with.
+      ['report:read', 'Read reports, with the report role held ' +
+                      '(REPORT_USE or REPORT_ADMIN), and change nothing']]) }),
   // THE AUTHZEN AUTHORIZATION API (#563). AuthZEN defines no scope (section
   // 11.2 leaves the PEP's authentication to the deployment), so the word is
   // this service's. A client asks for it on client_credentials with
@@ -17983,13 +17989,12 @@ function internalApplications() {
                     oauthMaxAuthAgeS: '28800',
                     oauthRefreshTokenTtlS: '28800',
                     oauthRefreshIdleSeconds: '3600',
-                    oauthDelegatedPermission: delegatedPermissionGrants({
-                      'sts-account-api': ['account:manage'],
-                      'sts-management-api': ['owner:read', 'owner:write'] }),
+                    oauthDelegatedPermission: delegatedPermissionGrants(
+                      PORTAL_GRANTS),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access',
-                                         'account:manage', 'owner:read',
-                                         'owner:write'] },
+                                         'account:manage', 'account:read',
+                                         'owner:read', 'owner:write'] },
       registration: {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
@@ -18047,11 +18052,11 @@ function internalApplications() {
                     oauthMaxAuthAgeS: '3600',
                     oauthRefreshTokenTtlS: '3600',
                     oauthRefreshIdleSeconds: '900',
-                    oauthDelegatedPermission: delegatedPermissionGrants({
-                      'sts-report-api': ['report:use', 'report:admin'] }),
+                    oauthDelegatedPermission: delegatedPermissionGrants(
+                      REPORT_GRANTS),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'report:use',
-                                         'report:admin'] },
+                                         'report:admin', 'report:read'] },
       registration: {
         client_id: 'sts-report',
         client_name: 'Reports',
@@ -18296,7 +18301,25 @@ function seedInternalApplication(spec) {
 // list names each addition rather than filling every row of the table, so a
 // permission somebody took off before this release does not come back.
 const PERMISSIONS_ADDED_SINCE_SEED = Object.freeze({
-  'sts-management-api': Object.freeze(['xacml:pep-audit'])
+  'sts-management-api': Object.freeze(['xacml:pep-audit']),
+  // #2168: the two read scopes the portal and the reports application now
+  // sign in with.
+  'sts-account-api': Object.freeze(['account:read']),
+  'sts-report-api': Object.freeze(['report:read'])
+});
+
+// THE DELEGATED PERMISSION GRANTS THE PORTAL AND THE REPORTS APPLICATION ARE
+// SEEDED WITH, one table each for the seed and the fill below (#2168): each
+// signs in with a READ scope (`account:read`, `report:read`) and asks a
+// second authorization for the scope that writes the first time it writes,
+// so an entry seeded before 1.2.0 is given the read one on the next start.
+const PORTAL_GRANTS = Object.freeze({
+  'sts-account-api': Object.freeze(['account:manage', 'account:read']),
+  'sts-management-api': Object.freeze(['owner:read', 'owner:write'])
+});
+const REPORT_GRANTS = Object.freeze({
+  'sts-report-api': Object.freeze(['report:use', 'report:admin',
+                                   'report:read'])
 });
 
 // THE DELEGATED PERMISSION GRANTS `sts-remote-pep` IS SEEDED WITH (#1827 and
@@ -18316,6 +18339,18 @@ const REMOTE_PEP_GRANTS = Object.freeze({
 // added — one an administrator took off before this release is added again,
 // which is the cost of a list that cannot tell "never had" from "removed".
 const CLIENT_GRANTS_ADDED_SINCE_SEED = Object.freeze({
+  'sts-user-portal': Object.freeze({
+    grants: Object.freeze({
+      'sts-account-api': Object.freeze(['account:read'])
+    }),
+    consents: Object.freeze(['account:read'])
+  }),
+  'sts-report': Object.freeze({
+    grants: Object.freeze({
+      'sts-report-api': Object.freeze(['report:read'])
+    }),
+    consents: Object.freeze(['report:read'])
+  }),
   'sts-remote-pep': Object.freeze({
     grants: Object.freeze({
       'sts-xacml-pep-api': Object.freeze(['xacml:pep']),

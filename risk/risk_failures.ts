@@ -99,6 +99,12 @@ interface RiskFailuresDeps {
   realms(): Json;
   subjectOf(name: string): string;
   asnOf(address: string, realm: string): Promise<number>;
+  // The mail uses, whether the mail channel has a transport, and a
+  // person's name from their `sub` (#2162), lazily for the reason above.
+  // Optional, so a test's deps built before them tell nobody.
+  mailUses?(): Json;
+  mailAvailable?(): boolean;
+  nameOf?(subject: string): string;
 }
 
 /**
@@ -160,6 +166,16 @@ class RiskFailures {
           log.debug("Leaving subjectOf(). Unreadable.");
           return '';
         }
+      },
+      mailUses: function (): Json {
+        return require('../common/mail_uses');
+      },
+      mailAvailable: function (): boolean {
+        return !!require('../common/mail').available();
+      },
+      nameOf: function (subject: string): string {
+        return String(require('../common/helpers').nameForSubject(subject) ||
+                      '');
       },
       asnOf: function (address: string, realm: string): Promise<number> {
         log.debug("Entering asnOf().");
@@ -261,12 +277,77 @@ class RiskFailures {
         addressPrefix: prefix, asn: asn,
         errorCode: String(code || 'STS-AUTHN-0054')
       }, sealing);
+    }).then(function (id: string): Promise<string> {
+      return self.noteRun(realm, subject, String(door || ''), sealing)
+        .then(function (): string {
+          return id;
+        });
     }).catch(function (e: Json): string {
       self.deps.log.warn(errorCodes.tag('STS-RISK-0010') + 'risk: a refused ' +
                          'password at ' + door + ' could not be recorded: ' +
                          ((e && e.message) || e) + '. The refusal stands.');
       return '';
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // A RUN OF REFUSED PASSWORDS IS TOLD TO THE PERSON (#2162, ASVS 5.0.0
+  // 6.3.5), whether or not anybody then signs in. The numbers are the
+  // sign-in limit's own: `security.rateLimitPerIdentity` refusals in
+  // `security.rateLimitWindowS`, the point at which the limiter stops
+  // listening to that name — counted here, from the rows this register
+  // already keeps, so every node counts the same. The mail channel tells it
+  // at most once in `mail.signInAlertWindowS` (`refusedAttempts()`). Only a
+  // name that is somebody's: a guessed name has nobody to tell. Asked only
+  // while the alerts could be sent, so a service without a transport counts
+  // nothing extra. Never rejects.
+  // -------------------------------------------------------------------------
+  private noteRun(realm: string, subject: string, door: string,
+                  sealing: boolean): Promise<void> {
+    const { log, config, store, now } = this.deps;
+    log.debug("Entering RiskFailures.noteRun().");
+    if (!subject || door === TOTP_REPLAY_DOOR ||
+        door === FEDERATED_SIGNUP_DOOR) {
+      log.debug("Leaving RiskFailures.noteRun(). Nobody, or not a " +
+                "password.");
+      return Promise.resolve();
+    }
+    let uses: Json = null;
+    try {
+      uses = this.deps.mailUses ? this.deps.mailUses() : null;
+      if (!config.value('mail.signInAlerts') || !uses ||
+          !this.deps.mailAvailable || !this.deps.mailAvailable()) {
+        log.debug("Leaving RiskFailures.noteRun(). Off.");
+        return Promise.resolve();
+      }
+    } catch (e) {
+      log.debug("Caught in RiskFailures.noteRun(): " + ((e && e.message) ||
+                                                         e));
+      log.debug("Leaving RiskFailures.noteRun(). No mail here.");
+      return Promise.resolve();
+    }
+    const limit = Number(config.value('security.rateLimitPerIdentity'));
+    const windowS = Number(config.value('security.rateLimitWindowS'));
+    const nameOf = this.deps.nameOf;
+    log.debug("Leaving RiskFailures.noteRun(). Counting.");
+    return store.listFailures(realm, { since: now() - windowS * 1000,
+      subject: subject, limit: 1,
+      excludeDoor: [TOTP_REPLAY_DOOR, FEDERATED_SIGNUP_DOOR] }, sealing)
+      .then(function (found: Json): void {
+        const total = Number((found && found.total) || 0);
+        if (total < limit) {
+          return;
+        }
+        const name = nameOf ? String(nameOf(subject) || '') : '';
+        if (name) {
+          uses.refusedAttempts(name, { count: total,
+                                       minutes: Math.ceil(windowS / 60) });
+        }
+      }).catch(function (e: Json): void {
+        log.debug("Caught in RiskFailures.noteRun(): " +
+                  ((e && e.message) || e));
+        // The refusal is recorded; only the person's notice is not sent.
+      });
   }
 
   // A page of this realm's failures, newest first, for Monitoring → Risk

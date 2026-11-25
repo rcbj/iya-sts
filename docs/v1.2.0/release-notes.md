@@ -37,6 +37,50 @@ nothing changes. The held acts are kept in the existing store, so there is
 no schema change. See
 [Two-person approval](admin-console.md#two-person-approval).
 
+### Behaviour change: a password an administrator types is temporary
+
+In product mode, a password an administrator types for somebody must now
+be changed at that person's next sign-in, as a generated one already had
+to be (ASVS 5.0.0 6.4.6). The administrator knows it, so it should not stay
+the person's password. This covers `POST /admin-api/users/set-password` with
+`password` (the console's **Set password**), a person created with
+`credential: "password"`, and an administrator's LDAP modify or add of
+somebody else's `userPassword`. Each sets `pwdReset`. The sign-in screen
+asks for a new password, and the doors that cannot ask (an LDAP bind, the
+password grant, WS-Trust, Kerberos, SCIM Basic) refuse it until the person
+has chosen one (`STS-AUTHN-0142`). Typed passwords are still accepted, and
+the answer says the password is temporary. Three cases are not affected: a
+service account, whose password is a program's; a person changing their own
+password; and development mode.
+
+**Reset password and download keytab** no longer cancels a change the
+person already owes. In product mode it is refused for such a person
+(`STS-ADMIN-0969`) and changes nothing, because the KDC would refuse the
+keytab. It still does not make the person change the password it sets,
+because that would end the keytab.
+
+**Upgrading.** Nothing to run. Passwords set before the upgrade are not
+changed. A script that creates people with a typed password and then signs
+in as them (an LDAP bind, the password grant, WS-Trust or Kerberos) must
+first sign in once at the sign-in screen and choose a new password. Or it
+can use a service account, if the account is a program.
+
+### Content Security Policy violations are reported
+
+Every page's Content Security Policy now names a report endpoint
+(`report-uri` and `report-to`, with a `Reporting-Endpoints` header), and
+browsers report what the policy blocked to `POST /web/csp-report` (ASVS
+5.0.0 3.4.7). The endpoint needs no credential, reads at most 16 KiB, takes
+60 reports a minute from one address, records the directive, the page's
+path without its query and the blocked origin, and logs each report as
+`STS-HTTP-0027`. Monitoring → CSP reports counts them per realm, and
+`cspReports.forwardUrl` (off by default) forwards each to a collector. See
+[OAuth security](oauth-security.md#content-security-policy-violation-reports).
+
+**Upgrading.** Nothing to run. A proxy or a firewall in front of the service
+that allows only listed paths needs `POST /web/csp-report` (and
+`/realm/<id>/web/csp-report`) added, or the reports stop there.
+
 ### New: a realm may override an outbound use case's truststores
 
 A trust realm may now give an outbound service-wide use case (a federation
@@ -342,6 +386,22 @@ WS-Trust, Kerberos and LDAP) never carry a chosen role, and are refused
 where a role is required (`STS-XACML-0332`). See
 [Dynamic selectable roles](dynamic-roles.md).
 
+### New: a person is mailed about an unusual sign-in
+
+A sign-in that succeeds looking unusual is now mailed to the person (ASVS 5.0.0
+6.3.5). Unusual means a new device or browser, a new country, an anonymising
+network such as Tor, refused passwords just before, or a risk level at or
+above `mail.signInAlertLevel` (MEDIUM). The message gives the time, roughly
+where, the browser or device, the method, and a link to **Recent sign-ins**,
+where saying it was not them signs every session out. A run of refused
+passwords on the account is mailed too, at the sign-in limit's own count,
+whether or not anybody signed in. Each kind is mailed at most once in
+`mail.signInAlertWindowS` (a day).
+
+**Upgrading.** Nothing to run. The alerts are on wherever a mail transport is
+configured. Set `mail.signInAlerts` to `false` to keep the old behaviour. See
+[Risk scoring](risk-scoring.md#the-person-is-told-of-an-unusual-sign-in).
+
 ### New: a person is mailed when a credential of theirs is added or removed
 
 Until now only a password change was mailed. A person is now also told when
@@ -372,6 +432,40 @@ password somebody else may know, and a session opened with it should not
 outlive the new one (ASVS 5.0.0 7.4.3). The page that confirms the new
 password says so. If the sessions cannot be ended, the password is still set
 and `STS-PORTAL-0638` is logged.
+
+### Behaviour change: the console, portal and reports sign in with read scopes
+
+The admin console, the user portal and the reports application used to ask
+for every scope they might ever use on every sign-in, so somebody who only
+looked at a page held `admin:write` and `admin:security` (ASVS 5.0.0
+10.2.3). Each now signs in with read scopes only: the console with `openid
+admin:read admin:console`, the portal with `openid account:read owner:read`,
+and the reports application with `report:read`. The first time a page
+saves something, the API refuses the read token with `insufficient_scope`
+naming the scope it needs, and the page asks for it by a second
+authorization in a small window: silently (`prompt=none`) while the sign-on
+session lasts, and for `admin:security` only on a sign-in less than five
+minutes old (`max_age=300`), asking you to sign in again otherwise. The change
+waits in memory and is sent once the scope is in hand. The write token is
+used for changes only, is never refreshed, and is dropped after ten minutes
+or at its expiry; reads keep the read token. A browser that blocks the
+window gets a bar with a **Continue** button.
+
+Two new read scopes: `account:read` (`/account-api`, GETs only) and
+`report:read` (`/report-api`, GETs only, authorized by `REPORT_USE` or
+`REPORT_ADMIN`). `/admin-api` now names the missing scope on its
+refusals (`WWW-Authenticate: … error="insufficient_scope"` on
+`STS-API-0005` and `STS-API-0138`; the status, code and body are
+unchanged), and `GET /admin-api/me` gains `holds`, the roles the caller may
+be issued a token for.
+
+**Upgrading.** Nothing to run. On the first start, `sts-user-portal` and
+`sts-report` are given the delegated permission grants and global consent
+of the new read scopes, and `sts-account-api` and `sts-report-api` define
+them. Tokens carrying `account:manage`, `report:use`, `report:admin` or
+`admin:write` work exactly as before, so programs and the protocol suite's
+clients need no change. See [Admin console](admin-console.md),
+[Account API](account-api.md#getting-a-token) and [Reporting](reporting.md).
 
 ### Fixed: a password check takes as long for an account that does not exist
 

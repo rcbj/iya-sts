@@ -70,7 +70,12 @@ const NO_INLINE_STYLE =
   '.level-LOW{background:#e6f4ea;color:#137333}' +
   '.level-MEDIUM{background:#fef7e0;color:#b06000}' +
   '.level-HIGH{background:#fce8e6;color:#a50e0e}' +
-  '.level-UNSCORED{background:#f1f3f4;color:#3c4043}';
+  '.level-UNSCORED{background:#f1f3f4;color:#3c4043}' +
+  // THE BAR A SECOND AUTHORIZATION DRAWS (#2168, `SpaClient.drawStepBar()`),
+  // the console's session-ended bar: over the page, which stays under it.
+  '.reauth{position:fixed;left:0;right:0;top:0;z-index:60;' +
+  'background:#fff4e5;border-bottom:2px solid #f0a020;padding:10px ' +
+  '16px;display:flex;flex-wrap:wrap;gap:.5em 1em;align-items:center}';
 
 const STYLE_AS_WRITTEN =
   'body{font-family:system-ui,-apple-system,"Segoe ' +

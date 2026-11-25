@@ -396,6 +396,11 @@ var config = {
     authenticationHistoryDays: 30  // Authentication history (days)
   },
 
+  // --- CSP reports -----------------------------------------------------
+  cspReports: {
+    forwardUrl: ""  // Forward CSP violation reports to
+  },
+
   // --- Malware scanning ------------------------------------------------
   malwareScan: {
     enabled: false,        // Scan files for malware
@@ -1804,7 +1809,10 @@ var config = {
     verificationTtlMinutes: 1440,         // Address verification link lifetime (minutes)
     securityNotices: true,                // Security notices
     credentialChangeNotices: true,        // Credential change notices
-    notifyAdministrators: true            // Tell administrators of system acts
+    notifyAdministrators: true,           // Tell administrators of system acts
+    signInAlerts: true,                   // Sign-in alerts
+    signInAlertLevel: "MEDIUM",           // Sign-in alert level
+    signInAlertWindowS: 86400             // Sign-in alert window (seconds)
   },
 
   // --- Reporting -------------------------------------------------------

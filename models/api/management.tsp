@@ -13294,7 +13294,7 @@ op `deleteRiskDatasetVersion`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"20
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
+op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "sign-in-alert" | "sign-in-refusals" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
   @js(#{`examples`:#["fr"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
@@ -13440,7 +13440,7 @@ op `saveMailTemplate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "sign-in-alert" | "sign-in-refusals" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string;
     @js(#{`description`:"One line."}) `subject`: string;
     @js(#{`description`:"The text part."}) `text`: string;
@@ -13476,7 +13476,7 @@ op `saveMailTemplate`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetMailTemplate`(@js(#{`examples`:#[#{`template`:"test-message",`lang`:"de"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "credential-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "sign-in-alert" | "sign-in-refusals" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
@@ -15807,6 +15807,9 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
     `read`?: boolean;
     `write`?: boolean;
     `security`?: boolean;
+    @js(#{
+      `description`:"The roles the caller holds now whose permission its client may still be issued, whatever this token carries: what a second authorization could add. A console that signed in with read scopes draws its forms from this, and asks for `admin:write` or `admin:security` when a write needs it (#2168)."
+    }) `holds`?: (string)[];
     `expiresAt`?: NullableNumber;
     @js(#{
       `description`:"This person's photo on this realm, empty where they have none."
@@ -50765,6 +50768,42 @@ op `getPartnerSignals`(@js(#{`examples`:#["no-such-relationship"]}) `parameters/
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
+
+@endpoint("/admin-api/csp-reports",
+  "get",
+  #{
+    `operationId`:"getCspReports",
+    `summary`:"The Content Security Policy violations browsers reported for this realm",
+    `description`:"What browsers reported to this realm's `/web/csp-report` since this node's front process started (#2164): `total`, and `directives` — each with its `directive`, its `count` and when it was `lastAt` (at most 64 directives a realm, the rest counted as `other`). `path` is where this realm's pages report, `since` when counting began, `maxBodyBytes` and `perAddressPerMinute` the endpoint's limits, `forwarding` whether `cspReports.forwardUrl` is set and `notForwarded` how many reports were not forwarded because too many forwards were outstanding; and the settings the page draws. The counts are this node's and are not kept across a restart.",
+    `tags`:#["Service"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The CSP reports view.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getCspReports`(`responses/200/content/application~1json/schema`: {
+    `path`: string;
+    `since`: string;
+    `total`: integer;
+    `directives`: ({
+      `directive`: string;
+      `count`: integer;
+      `lastAt`: string
+    })[];
+    `maxBodyBytes`: integer;
+    `perAddressPerMinute`: integer;
+    `forwarding`: boolean;
+    `notForwarded`: integer;
+    `settings`?: `SettingsPageDrawsDescribedSame`
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/malware-scanning",
   "get",

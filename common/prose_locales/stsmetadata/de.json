@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. Das Icon, das ein Browser auf jeder Seite von sich aus anfordert: das quadratische Zeichen des Logos (common/favicon.ico). Auf jedem Listener beantwortet; einen Tag vorgehalten."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). Der Empfänger dessen, was CSP Level 3 und die Reporting API einen Browser senden lassen: Die Richtlinie jeder Seite nennt ihn in report-uri und report-to, neben einem Reporting-Endpoints-Header. Nur POST, ohne Berechtigungsnachweis, höchstens 16 KiB und 60 Berichte pro Minute von einer Adresse; er hält die Direktive, den Pfad der Seite ohne Abfrage und den blockierten Ursprung fest, protokolliert STS-HTTP-0027 und antwortet 204 ohne Body. Vom Front-Prozess beantwortet (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Die Karte des Anmeldebildschirms und die Regeln der Sprachauswahl, als ein Stylesheet, das die Shell einer statischen öffentlichen Oberfläche einbindet (common/web_card_css.ts). Auf jedem Listener beantwortet; eine Adresse, die das ?v= dieses Builds trägt, wird dauerhaft zwischengespeichert."
@@ -2446,6 +2450,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Eine Seite der Bewohner einer anderen Zelle, beantwortet von jener Zelle nur dort, wo ihre Freigaberichtlinie es zulässt."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports als JSON: die Verstöße gegen die Content Security Policy, die Browser für diesen Realm gemeldet haben, nach Direktive gezählt vom Front-Prozess dieses Knotens, und die Einstellung für die Weiterleitung. Es ändert nichts."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

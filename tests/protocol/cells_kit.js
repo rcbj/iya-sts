@@ -43,6 +43,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const path = require("path");
@@ -472,9 +473,11 @@ async function publicClient(realmBase, clientId, redirectUri) {
  */
 async function createPerson(base, username, password, homeCell) {
   log.debug("Entering createPerson(). " + username);
+  // A TEMPORARY password first, then the person's own (#2160): a typed
+  // one is temporary in product, so `own_password.js` has them choose it.
   const body = {
     username: username, invent: false, credential: "password",
-    password: password,
+    password: ownPassword.temporaryFor(password),
     attributes: { cn: "Cells " + username, givenName: "Cells",
                   sn: username, displayName: "Cells " + username,
                   mail: username + "@cells.example.test" }
@@ -483,6 +486,13 @@ async function createPerson(base, username, password, homeCell) {
     body.homeCell = homeCell;
   }
   const out = await api(base, "POST", "/users/create", body);
+  if (out.status === 200 && out.body && out.body.ok !== false) {
+    await ownPassword.ownPassword(base, username, password,
+      function (who, value) {
+        return api(base, "POST", "/users/set-password",
+                   { user: who, password: value });
+      });
+  }
   log.debug("Leaving createPerson(). " + out.status);
   return out;
 }

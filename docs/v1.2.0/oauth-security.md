@@ -1307,6 +1307,46 @@ nothing, so it carries the same framing clauses as every other page.
   are stylesheet rules, and their charts are SVG, so a `style=""` attribute
   injected into their markup is not applied.
 
+### Content Security Policy violation reports
+
+Every page's policy ends with `report-uri /web/csp-report; report-to
+csp-endpoint`, and the page carries
+`Reporting-Endpoints: csp-endpoint="/web/csp-report"`, so a browser that
+blocks something on a page of this service tells the service. In a realm the
+path is the realm's (`/realm/acme/web/csp-report`). The directives are added
+when the response is sent, the same way `frame-ancestors` is checked, so a
+page that relaxes the policy carries them too. A response that is not a page
+(JSON, XML, plain text) does not.
+
+`POST /web/csp-report` takes a CSP Level 2 report
+(`application/csp-report`) or a Reporting API batch
+(`application/reports+json`). It needs no credential, because a browser
+sends none, so it trusts nothing in the body:
+
+- a body is at most 16 KiB (413), a compressed one is refused, and one
+  address may send 60 reports a minute to a node (429);
+- it records the directive, the page's path **without its query**, the
+  blocked resource's origin or keyword (`inline`, `eval`), and whether the
+  policy was enforced, and never the rest: no query string, sample, source
+  file or referrer, which can carry a code or a token;
+- it answers `204` with no body, and writes each report to the log under
+  `STS-HTTP-0027`.
+
+Monitoring → CSP reports (`/admin/csp-reports`, `GET /admin-api/csp-reports`)
+counts them by directive for the realm, since the node's front process
+started. A report says what some browser claims, and anybody can post one,
+so read the counts as signals: a run of reports for one directive after an
+upgrade or a branding change is a page that change broke, and a blocked
+origin nobody uses can be script a browser refused to run.
+
+**Forwarding is off by default.** Set `cspReports.forwardUrl` (a
+service-wide setting only a service administrator may change) to a collector
+that accepts JSON, and each accepted report is POSTed to it as the record
+above. It goes through the same outbound rules as federation's back
+channels: `federation.outbound`, the outbound TLS settings, no redirect, a
+timeout. A collector that fails is logged once (`STS-HTTP-0031`) until a
+forward succeeds again; the report is still counted here.
+
 ### In-browser communication (section 4.17)
 
 No authorization response is delivered by in-browser messaging. The response

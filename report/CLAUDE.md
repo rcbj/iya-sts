@@ -33,8 +33,17 @@ which loads `/report/report.js` and `/report/report.css`. The script is
 built as `report/report-spa.js` (`ReportRuntime extends SpaClient`,
 `common/web_spa_client.ts`) and served at `/report/report.js`. It signs in
 in the browser as the public client `sts-report` (PKCE S256, `resource`
-the realm's `/report-api`, scopes `report:use` and `report:admin`), holds
-a DPoP-bound token in memory, and draws every page from `/report-api`.
+the realm's `/report-api`), holds a DPoP-bound token in memory, and draws
+every page from `/report-api`. **It signs in with `report:read` only since
+#2168** (ASVS 5.0.0 10.2.3): the API takes `report:read` on a GET and does
+not count it on any other method (so `report:read report:use` never writes
+as a report administrator), `role_permissions.ts`'s `READ_PERMISSIONS` has
+REPORT_USE and REPORT_ADMIN authorize it at issuance and on every call
+(no role entry changes), and the first write's `insufficient_scope` naming
+`report:use report:admin` makes the page ask both by a second authorization
+(`common/CLAUDE.md` 3cl, `SpaClient.stepUp()`), issued narrowed to the roles
+held — either one is enough (`stepUpAny()`). A `report:use`/`report:admin`
+token is answered as it always was.
 In product that `resource` is a registered target because `/report-api`
 is one of this service's own resource servers
 (`common/registered_targets.ts`), compared whole, as `/account-api` is.

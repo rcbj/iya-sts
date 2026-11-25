@@ -379,6 +379,14 @@
     "en": "ee9334d5a57de03e",
     "text": "Añade preload a Strict-Transport-Security, que solo envía el modo producto, para que el nombre de host pueda enviarse a la lista de precarga de los navegadores en hstspreload.org. La precarga compromete todo el dominio registrable y cada subdominio a usar HTTPS en todos los navegadores, y salir de la lista lleva meses. Solo se envía mientras Aplicar HSTS a los subdominios está activado."
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Reenviar los informes de infracciones de CSP a"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Desactivado si está vacío, el valor predeterminado. Una URL https que recibe cada informe de infracción de la Content Security Policy que este servicio acepta, como JSON: el reino, la directiva, la ruta de la página sin su consulta, el origen bloqueado y la disposición, nunca el informe tal como lo envió el navegador. Se envía con las mismas reglas de salida que los canales traseros de la federación."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Aceptar una aserción sin audiencia"
@@ -12458,6 +12466,30 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Cuando el SERVICIO, y no una persona, marca una credencial como comprometida o desactiva una cuenta (puntuación de riesgo), envía también un correo a cada miembro de la lista Admin Write del dominio que tenga una dirección."
+  },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Alertas de inicio de sesión"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Avisar a una persona cuando un inicio de sesión en su cuenta se completa pareciendo inusual —un dispositivo o navegador, o un país, desde el que nunca ha iniciado sesión, una red de anonimización como Tor, contraseñas rechazadas justo antes o un nivel de riesgo igual o superior a mail.signInAlertLevel— con cuándo, aproximadamente dónde, con qué y cómo, y un enlace a sus inicios de sesión recientes; y cuando se rechazan contraseñas para su cuenta tantas veces como permite el límite de inicio de sesión (security.rateLimitPerIdentity en security.rateLimitWindowS), inicie sesión alguien después o no. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Nivel de las alertas de inicio de sesión"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "El nivel de riesgo más bajo que debe alcanzar un inicio de sesión correcto para avisar a la persona. En LOW se avisa de un dispositivo o país nuevo sea cual sea su puntuación; en MEDIUM, el valor predeterminado, de un inicio de sesión que el motor de riesgo considera inusual; en HIGH, solo de uno que considera muy probablemente ajeno a la persona. Un inicio de sesión que nadie tiene historial suficiente para puntuar solo se avisa por lo que muestra: una red de anonimización o contraseñas rechazadas."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Ventana de las alertas de inicio de sesión (segundos)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Durante cuánto tiempo un tipo de alerta de inicio de sesión —un dispositivo nuevo, un país nuevo, una red de anonimización, contraseñas rechazadas— se avisa como máximo una vez a una persona. La bandeja de salida es el registro, así que una ventana más larga que mail.retentionS dura solo eso."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

@@ -82,7 +82,12 @@
 // risk events or an attacker pressing "forgot password" cannot turn this
 // service into a mail cannon. A message that names what it is about (a
 // `dedupKey`) is queued once per `mail.dedupWindowS`, however many doors
-// reported the same act. A person may decline the `notification` category;
+// reported the same act. A use that must say something at most once in a
+// window of its own (#2162's sign-in alerts) names that window
+// (`dedupWindowS`), and a message about several things at once names each
+// beside its key (`dedupAlso`), so a later message about any one of them
+// finds it (`queuedWithin()`). A person may decline the `notification`
+// category;
 // `security` and `account` cannot be declined (`common/mail_templates.ts`).
 //
 // **8. THE AUDIT ROW AND THE LOG LINE NAME THE RECIPIENT, NEVER THE BODY.** A
@@ -201,6 +206,8 @@ interface Message {
   template: string;
   lang: string;
   dedup: string;
+  // #2162: the other things this message is about, digested as `dedup` is.
+  dedupAlso?: string[];
   subject: string;
   text: string;
   html: string;
@@ -244,6 +251,10 @@ interface SendRequest {
   links?: Json;
   // What the message is about, for suppression (header point 7).
   dedupKey?: string;
+  // #2162: the window the key is held for, in seconds, in place of
+  // `mail.dedupWindowS`; and further keys the message is about too.
+  dedupWindowS?: number;
+  dedupAlso?: string[];
   via?: string;
   actor?: string;
 }
@@ -1117,10 +1128,13 @@ class Mail {
     return out;
   }
 
-  private duplicateOf(realmId: string, dedup: string): Json {
+  private duplicateOf(realmId: string, dedup: string,
+                      windowS?: number): Json {
     const { log, now } = this.deps;
     log.debug("Entering Mail.duplicateOf().");
-    const windowMs = Number(this.setting('mail.dedupWindowS')) * 1000;
+    const windowMs = (windowS !== undefined && windowS !== null &&
+                      Number(windowS) >= 0
+      ? Number(windowS) : Number(this.setting('mail.dedupWindowS'))) * 1000;
     if (!dedup || windowMs <= 0) {
       log.debug("Leaving Mail.duplicateOf(). Off.");
       return null;
@@ -1128,7 +1142,9 @@ class Mail {
     const since = now() - windowMs;
     let found: Json = null;
     outbox.realmMap(realmId).forEach(function (row: Json) {
-      if (!found && row && row.dedup === dedup &&
+      if (!found && row && (row.dedup === dedup ||
+                            (Array.isArray(row.dedupAlso) &&
+                             row.dedupAlso.indexOf(dedup) >= 0)) &&
           Number(row.queuedAt) >= since) {
         found = row;
       }
@@ -1454,6 +1470,45 @@ class Mail {
   // empty rather than as `[object Object]`.
   // -------------------------------------------------------------------------
   /**
+   * The digest a message's key is held under: the recipient, the template
+   * and the key the caller named.
+   *
+   * @param username - the recipient key
+   * @param template - the template's id
+   * @param key - the caller's key
+   * @returns the digest
+   */
+  static dedupDigest(username: string, template: string,
+                     key: string): string {
+    helpers.log.debug("Entering Mail.dedupDigest().");
+    helpers.log.debug("Leaving Mail.dedupDigest().");
+    return stsCrypto.digest('sha256', username + '\n' + template + '\n' +
+                            key, 'base64url').slice(0, 22);
+  }
+
+  /**
+   * Whether a message to this person from this template, about this key —
+   * its own key or one it named beside it — was queued in the ambient
+   * realm in the last `windowS` seconds (#2162). The outbox is the record,
+   * so the answer is the cluster's.
+   *
+   * @param username - the person
+   * @param template - the template's id
+   * @param key - the key
+   * @param windowS - the window, in seconds
+   * @returns true when one was
+   */
+  queuedWithin(username: string, template: string, key: string,
+               windowS: number): boolean {
+    const { log, realms } = this.deps;
+    log.debug("Entering Mail.queuedWithin(). " + template);
+    const found = this.duplicateOf(realms.currentId(),
+      Mail.dedupDigest(String(username || ''), template, key), windowS);
+    log.debug("Leaving Mail.queuedWithin(). " + !!found);
+    return !!found;
+  }
+
+  /**
    * Joins the lines of a list in a language (`Intl.ListFormat`, a
    * conjunction), or with semicolons where that language has no list form.
    *
@@ -1701,10 +1756,12 @@ class Mail {
                                     encryption.why) };
     }
     const dedup = req.dedupKey
-      ? stsCrypto.digest('sha256', username + '\n' + spec.id +
-          '\n' + String(req.dedupKey), 'base64url').slice(0, 22)
-      : '';
-    const duplicate = this.duplicateOf(realmId, dedup);
+      ? Mail.dedupDigest(username, spec.id, String(req.dedupKey)) : '';
+    const dedupAlso = (Array.isArray(req.dedupAlso) ? req.dedupAlso : [])
+      .map(function (key: unknown): string {
+        return Mail.dedupDigest(username, spec.id, String(key));
+      });
+    const duplicate = this.duplicateOf(realmId, dedup, req.dedupWindowS);
     if (duplicate) {
       log.debug("Leaving Mail.queueOne(). A duplicate.");
       return { duplicate: this.view(duplicate) };
@@ -1779,7 +1836,9 @@ class Mail {
     const row: Message = {
       id: id, realm: realmId, username: username, to: who.address,
       category: spec.category, template: spec.id, lang: chosen.lang,
-      dedup: dedup, subject: rendered.subject, text: rendered.text,
+      dedup: dedup,
+      ...(dedupAlso.length ? { dedupAlso: dedupAlso } : {}),
+      subject: rendered.subject, text: rendered.text,
       html: MailTemplates.htmlDocument(rendered.html, chosen.lang),
       from: this.fromAddress(),
       fromName: String(this.setting('mail.fromName') || ''),
@@ -2604,6 +2663,7 @@ export = {
   saveTemplate: slot.forward('saveTemplate'),
   resetTemplate: slot.forward('resetTemplate'),
   send: slot.forward('send'),
+  queuedWithin: slot.forward('queuedWithin'),
   sendToFormerAddress: slot.forward('sendToFormerAddress'),
   sendToPendingAddress: slot.forward('sendToPendingAddress'),
   sendToPseudonymAddress: slot.forward('sendToPseudonymAddress'),

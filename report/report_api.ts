@@ -54,6 +54,9 @@ const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 const BASE = '/report-api';
 
 const SCOPE_CHALLENGE = 'report:use report:admin';
+// The scope a read takes instead (#2168): what the reports application signs
+// in with. Never on a write; `SCOPE_CHALLENGE` is still what a write names.
+const READ_SCOPE = 'report:read';
 
 let reportDeps: any = null;
 
@@ -862,17 +865,42 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
     log.debug("Leaving reportAuthenticateToken(). No subject.");
     return null;
   }
-  const carried = String(claims.scope || '').split(/\s+/).filter(
+  // `report:read` READS AND NOTHING ELSE (#2168, ASVS 5.0.0 10.2.3): the
+  // reports application signs in with it and asks a second authorization
+  // for `report:use report:admin` the first time it writes. On any other
+  // method it is not counted at all, so a token carrying it beside
+  // `report:use` never writes as a report administrator through it; a
+  // `report:use` or `report:admin` token is answered as it always was.
+  const reading = reportMethod(req) === 'GET';
+  // An undeclared `report:read` is set aside as `declaredAdminScopes()`
+  // sets one aside at the management API: the call goes on with what
+  // else the token carries, and is refused only if that is nothing.
+  const presented = String(claims.scope || '').split(/\s+/).filter(
     function (part: string): boolean {
-      return part.length > 0;
+      return part.length > 0 && (reading || part !== READ_SCOPE);
     });
+  const readUndeclared = presented.indexOf(READ_SCOPE) >= 0 &&
+    !deps.scopes.declares(issuedTo, READ_SCOPE);
+  const carried = presented.filter(function (part: string): boolean {
+    return !readUndeclared || part !== READ_SCOPE;
+  });
   const wantsUse = carried.indexOf('report:use') >= 0;
   const wantsAdmin = carried.indexOf('report:admin') >= 0;
-  if (!wantsUse && !wantsAdmin) {
+  const wantsRead = carried.indexOf(READ_SCOPE) >= 0;
+  if (readUndeclared && !wantsUse && !wantsAdmin) {
+    reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
+      'The client this token was issued to no longer holds a delegated ' +
+      'permission grant of report:read (urn:sts:report-api:report:read on ' +
+      'sts-report-api, #2168).');
+    log.debug("Leaving reportAuthenticateToken(). report:read undeclared.");
+    return null;
+  }
+  if (!wantsUse && !wantsAdmin && !wantsRead) {
     res.set('WWW-Authenticate',
       'DPoP error="insufficient_scope", scope="' + SCOPE_CHALLENGE + '"');
     reportForbidden(res, 'STS-REPORT-0017', 'insufficient_scope',
-      'That access token does not carry report:use or report:admin.');
+      'That access token does not carry report:use or report:admin' +
+      (reading ? ', or report:read for a read' : '') + '.');
     log.debug("Leaving reportAuthenticateToken(). No report scope.");
     return null;
   }

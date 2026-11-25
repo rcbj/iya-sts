@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. वह आइकन जो ब्राउज़र प्रत्येक पृष्ठ पर स्वयं माँगता है: लोगो का वर्गाकार चिह्न (common/favicon.ico)। प्रत्येक लिसनर पर उत्तरित; एक दिन के लिए रखा जाता है।"
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). CSP Level 3 और Reporting API के अनुसार ब्राउज़र जो भेजता है उसका प्राप्तकर्ता: हर पृष्ठ की नीति इसे report-uri और report-to में, Reporting-Endpoints हेडर के साथ, नामित करती है। केवल POST, कोई क्रेडेंशियल नहीं, अधिकतम 16 KiB और एक पते से प्रति मिनट 60 रिपोर्टें; यह निर्देश, क्वेरी के बिना पृष्ठ का पथ और अवरुद्ध मूल दर्ज करता है, STS-HTTP-0027 लॉग करता है और बिना बॉडी के 204 उत्तर देता है। फ़्रंट प्रोसेस उत्तर देती है (common/csp_reports.ts)।"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). साइन-इन स्क्रीन के कार्ड और भाषा चयनक के नियम, एक स्टाइलशीट के रूप में जिसे एक स्थैतिक सार्वजनिक सतह का शेल लिंक करता है (common/web_card_css.ts)। प्रत्येक लिसनर पर उत्तरित; इस बिल्ड का ?v= रखने वाला पता स्थायी रूप से कैश होता है।"
@@ -2446,6 +2450,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). दूसरी सेल के निवासियों का एक पृष्ठ, उस सेल द्वारा केवल वहीं उत्तर दिया गया जहाँ उसकी रिलीज़ नीति अनुमति देती है।"
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). JSON के रूप में GET /admin/csp-reports: इस रीअल्म के लिए ब्राउज़रों द्वारा रिपोर्ट किए गए Content Security Policy उल्लंघन, इस नोड की फ़्रंट प्रोसेस द्वारा निर्देश के अनुसार गिने गए, और अग्रेषण सेटिंग। यह कुछ नहीं बदलता।"
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

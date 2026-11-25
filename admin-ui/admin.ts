@@ -2449,6 +2449,17 @@ const SECTIONS = [
                'URL every issuer is built from. It replaces the development ' +
                'pages <code>/tls</code> and <code>/tls/forwarded</code>, and ' +
                'answers in product mode. No control.' },
+      // CSP REPORTS (#2164), beside TLS connection and for its reason: it
+      // REPORTS what arrived — the Content Security Policy violations
+      // browsers sent to this realm's `/web/csp-report` — and a realm
+      // administrator may read their own realm's. Drawn by
+      // `admin-ui/web_csp_reports.ts` from `GET /admin-api/csp-reports`.
+      { path: '/admin/csp-reports', label: 'CSP reports',
+        blurb: 'The Content Security Policy violations browsers reported ' +
+               'for this realm\'s pages, counted by directive since this ' +
+               'node\'s front process started, and where they are ' +
+               'forwarded. <strong>The figures are this node\'s' +
+               '</strong>.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by
@@ -8844,6 +8855,7 @@ const SETTING_HOMES = [
   // certificate, and so did the realm listener's rows (#99).
   { group: 'Listeners', pages: ['/admin/listeners'] },
   { group: 'Malware scanning', pages: ['/admin/malware-scanning'] },
+  { group: 'CSP reports', pages: ['/admin/csp-reports'] },
   // ONE GROUP PER TLS LISTENER (#429): its own rows, generated in
   // common/config.js, and its client-certificate pair.
   { group: 'Listener: Main port', pages: ['/admin/listeners'] },

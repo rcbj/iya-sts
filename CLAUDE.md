@@ -515,6 +515,7 @@ preference; this table says what the constraint is and the named file says why.
 | 6 | `common/group_claims` | Same reason, for `setGroupResolver()`. | `common/CLAUDE.md` |
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 6a-web | `common/public_assets` | No constraint (#570): libraries only, and `/web/*` collides with nothing. | `common/CLAUDE.md` (3cl) |
+| 6a-csp | `common/csp_reports` | Just after 6a-web (#2164): `POST /web/csp-report`, a library whose one path collides with nothing; its body is read by `app.js`'s intake above the parsers. | `common/CLAUDE.md` (*CSP violation reports*) |
 | 6a-brand | `common/branding` | Beside 6a-web (#717): a library whose routes are all under `/web`. Its require adds the write rules that hold a realm's colours to WCAG 2.2 AA, so it is above every setting restored. | `common/CLAUDE.md` (*A realm's sign-in appearance*) |
 | 6a-photo | `common/profile_photo` | Beside 6a-brand (#719), a library whose one route is under `/web`. It reaches the directory, the account state and federation's dialer lazily. | `common/CLAUDE.md` (3db) |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
@@ -786,6 +787,11 @@ Two rules come out of it:
   this service set was correct and something else overwrote it. The check is "does it
   still carry the clause", not "is it the value I set", so the relaxations are
   untouched.
+* **The same flush makes every page report a violation** (#2164): a policy
+  with no `report-uri` on a response that is a page gains `report-uri` and
+  `report-to` naming `/web/csp-report` in the request's realm, with
+  `Reporting-Endpoints`. A door adds nothing; `common/CLAUDE.md`, *CSP
+  violation reports*.
 * **The same flush narrows a response that is not a page** (2026-11-10, Qualys
   QID 150207): JSON, XML other than SVG, and plain text still holding the base
   policy get it without `style-src` and `img-src`. A route's own policy is

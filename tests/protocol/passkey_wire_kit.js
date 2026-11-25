@@ -57,6 +57,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const fixtures = require("./oauth_fixtures.js");
 const pqc = require("./pqc.js");
 
@@ -315,13 +316,21 @@ function kit(jobName, options) {
         attributes: Object.assign({ cn: "Passkey " + name,
           givenName: "Passkey", sn: name,
           mail: name + "@passkey-wire.test" }, attributes || {}) };
+      // Temporary, then the person's own (#2160, `own_password.js`).
       if (password) {
-        body.password = password;
+        body.password = ownPassword.temporaryFor(password);
       }
       const r = await ctx.call(realm, "POST", "/users/create", body);
       assert.ok(r.status === 200 && r.body && r.body.ok !== false,
         "creating " + name + " in " + realm.id + " answered " + r.status +
         " " + r.raw.slice(0, 300));
+      if (password) {
+        await ownPassword.ownPassword(realm.base, name, password,
+          function (who, value) {
+            return ctx.call(realm, "POST", "/users/set-password",
+                            { user: who, password: value });
+          });
+      }
       log.debug("Leaving person().");
       return r.body;
     },

@@ -117,6 +117,7 @@
   "title.ssf-dead-letters": "الرسائل غير المسلّمة",
   "title.ssf-transmitters": "إشارات من الشركاء",
   "title.tls-connection": "اتصال TLS",
+  "title.csp-reports": "تقارير CSP",
   "title.pki-trust": "ثقة PKI",
   "title.tls-trust": "مخزن ثقة شهادة العميل",
   "title.token-lifetimes": "أعمار الرموز المميزة",

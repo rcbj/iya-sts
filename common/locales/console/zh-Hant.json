@@ -122,6 +122,7 @@
   "nav.spiffe-trust-domain": "信任網域",
   "nav.tls": "TLS / 雙向 TLS",
   "nav.tls-connection": "TLS 連線",
+  "nav.csp-reports": "CSP 報告",
   "nav.pki-trust": "PKI 信任",
   "nav.tls-trust": "用戶端憑證信任存放區",
   "nav.users": "使用者",

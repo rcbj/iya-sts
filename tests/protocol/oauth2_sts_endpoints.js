@@ -45,6 +45,7 @@ const crypto = require("crypto");
 const { Command, Option } = require('commander');
 const { usernameFor } = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 // The mock's consent screen, which stands between a signed-in person and an
 // authorization response since 2026-09-01. A SHARED MODULE for the reason
 // sts_applications.js is one: every job in this suite that signs somebody in
@@ -181,19 +182,24 @@ async function person(username) {
     return;
   }
   const base = registry.baseOf(stsBase);
+  // Temporary, then the person's own (#2160, `own_password.js`).
   const created = await registry.adminPost(base, "/users/create", {
     username: username, invent: false, credential: "password",
-    password: PERSON_PASSWORD,
+    password: ownPassword.temporaryFor(PERSON_PASSWORD),
     attributes: { cn: username, givenName: username, sn: username,
                   displayName: username,
                   mail: username + "@suite.example.test" }
   });
-  if (!(created && created.ok)) {
-    const set = await registry.adminPost(base, "/users/set-password",
-        { user: username, password: PERSON_PASSWORD });
-    assert.ok(set && set.ok, "could not create " + username + " or set its " +
-      "password: " + JSON.stringify(created).slice(0, 200));
-  }
+  await ownPassword.ownPassword(base, username, PERSON_PASSWORD,
+    function (who, value) {
+      return registry.adminPost(base, "/users/set-password",
+                                { user: who, password: value });
+    }).catch(function (e) {
+      log.debug("Caught in person(): " + ((e && e.message) || e));
+      assert.fail("could not create " + username + " or give it its " +
+        "password: " + JSON.stringify(created).slice(0, 200) + " / " +
+        ((e && e.message) || e));
+    });
   peopleMade[username] = true;
   log.debug("Leaving person().");
 }

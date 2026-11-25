@@ -19692,6 +19692,51 @@ function notePasswordChangeRequired(req, dn, username) {
   log.debug('Leaving notePasswordChangeRequired().');
 }
 
+// A PASSWORD SOMEBODY ELSE WROTE OVER THE SOCKET IS TEMPORARY (#2160, ASVS
+// 5.0.0 6.4.6; rcbj, 2026-11-24): `admin-core/admin_actions.ts`'s
+// `typedPasswordIsTemporary()` asked at this door. An administrator's
+// `ldapmodify` or `ldapadd` of a person's `userPassword` knows the password
+// it wrote, so `pwdReset` goes on in the SAME write and the person chooses
+// their own at the next sign-in. Not:
+//
+//   * where passwords are not verified (`mode.verifiesCredentials()`): in
+//     development no door checks one;
+//   * a person writing their OWN entry: the bound DN is the entry, and a
+//     person's own change is never temporary;
+//   * a service account (common/CLAUDE.md 3cd): a program's password, which
+//     a program has no sign-in screen to change;
+//   * a pre-hashed value: the writer sent a hash, not a password it knows,
+//     and product refuses one anyway (STS-LDAP-0011). Only a value this
+//     door hashed (`written.password`) is asked about.
+/**
+ * Says whether a password written over LDAP must be changed at the person's
+ * next sign-in: product mode, somebody else's entry, not a service account.
+ *
+ * @param req - the LDAP request
+ * @param dn - the entry written
+ * @param attributes - the entry's attributes as they will be stored
+ * @returns true when `pwdReset` must be set with the password
+ */
+function adminWrittenPasswordIsTemporary(req, dn, attributes) {
+  log.debug('Entering adminWrittenPasswordIsTemporary(). ' + dn);
+  if (!mode.verifiesCredentials()) {
+    log.debug('Leaving adminWrittenPasswordIsTemporary(). Development.');
+    return false;
+  }
+  const bound = boundDnOf(req);
+  if (bound && normalizeDn(bound) === normalizeDn(dn)) {
+    log.debug('Leaving adminWrittenPasswordIsTemporary(). Their own.');
+    return false;
+  }
+  if (serviceAccounts.isServiceAccount(attributes)) {
+    log.debug('Leaving adminWrittenPasswordIsTemporary(). A service ' +
+              'account.');
+    return false;
+  }
+  log.debug('Leaving adminWrittenPasswordIsTemporary(). Temporary.');
+  return true;
+}
+
 function boundDnOf(req) {
   log.debug("Entering boundDnOf().");
   const bound = req.connection && req.connection.ldap &&
@@ -21996,6 +22041,15 @@ function ldapAddNow(req, res, next) {
                                       via: 'an LDAP add' });
   }
   if (addedPassword.password) {
+    // A person added with a password by somebody else must choose their own
+    // at the first sign-in (#2160): see adminWrittenPasswordIsTemporary().
+    if (addedEntry.ok !== false && isPersonEntry(addedEntry) &&
+        adminWrittenPasswordIsTemporary(req, addedEntry.dn,
+                                        addedEntry.attributes)) {
+      addedEntry.attributes.pwdreset = ['TRUE'];
+      touchDirectory(addedEntry.dn);
+      notePasswordChangeRequired(req, addedEntry.dn, addedPassword.name);
+    }
     credentials.passwordWritten(addedPassword.name, addedPassword.password);
     notePasswordWritten(req, addedEntry.dn, addedPassword.name, 'create');
   } else if (isPersonEntry(addedEntry) &&
@@ -22769,6 +22823,18 @@ function ldapModifyNow(req, res, next) {
         new ldap.ConstraintViolationError('a group lists only entries that ' +
           'exist; nothing is stored at ' + nothing.join(', ')), dn));
     }
+  }
+  // Somebody else's password is a temporary one (#2160): see
+  // adminWrittenPasswordIsTemporary(). In the same write, so the RISC
+  // notice below sees `pwdReset` go on.
+  if (modifiedPassword.password &&
+      adminWrittenPasswordIsTemporary(req, stored.dn, working)) {
+    Object.keys(working).forEach(function (key) {
+      if (key !== 'pwdreset' && key.toLowerCase() === 'pwdreset') {
+        delete working[key];
+      }
+    });
+    working.pwdreset = ['TRUE'];
   }
   working.modifytimestamp = [generalizedTime()];
   stored.attributes = working;

@@ -40,6 +40,7 @@ const nodeCrypto = require("crypto");
 const os = require("os");
 const path = require("path");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -155,10 +156,18 @@ async function makeRealm(realm, name) {
 async function makePerson(realm, who, mail) {
   log.debug("Entering makePerson(). who=" + who);
   const password = "Kit-" + nodeCrypto.randomBytes(18).toString("base64url");
+  // A typed password is temporary in product since #2160, so a temporary
+  // one is set and the person chooses this one (`own_password.js`).
   await ok(realmApi(realm) + "/users/create",
-    { username: who, invent: false, credential: "password", password: password,
+    { username: who, invent: false, credential: "password",
+      password: ownPassword.temporaryFor(password),
       attributes: { cn: who, givenName: who, sn: who, mail: mail } },
     "created " + who);
+  await ownPassword.ownPassword(realmApi(realm).replace(/\/admin-api$/, ""),
+    who, password, function (one, value) {
+      return post(realmApi(realm) + "/users/set-password",
+                  { user: one, password: value });
+    });
   log.debug("Leaving makePerson().");
   return password;
 }

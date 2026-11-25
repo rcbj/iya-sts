@@ -104,6 +104,10 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   every browser and takes months to undo, so read
   [Preloading](tls.md#preloading) first. See
   [TLS](tls.md#strict-transport-security).
+* **Content Security Policy reports.** Every page tells browsers to report a
+  policy violation to `/web/csp-report`, and Monitoring → CSP reports counts
+  them. Set `cspReports.forwardUrl` to send each one to your own collector as
+  well. See [OAuth security](oauth-security.md#content-security-policy-violation-reports).
 * **Forwarded addresses.** With `global.trustProxy` on, `X-Forwarded-For`,
   `X-Forwarded-Proto` and `X-Forwarded-Host` are believed only from the proxies
   listed in `global.trustedProxies`. With no list, they are believed from nobody,
@@ -160,10 +164,15 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
 * **Words that identify you are refused**: the service's names, the realm's name
   and domain, and `security.passwordContextWords`. See
   [Words a password may not contain](password-words.md).
-* **A generated password is temporary.** One made by `reset-password`, by
-  `set-password` with `generate: true`, or when a person is created, must be
-  changed at the next sign-in, and Kerberos gives no ticket for it until it is. One
-  an administrator types does not.
+* **A password somebody else chose is temporary.** One made by
+  `reset-password`, by `set-password` with `generate: true`, or when a person
+  is created, must be changed at the next sign-in, and Kerberos gives no
+  ticket for it until it is. **So must one an administrator types** (since
+  1.2.0, #2160): through `set-password`, a create with
+  `credential: "password"`, or an LDAP write of somebody else's
+  `userPassword`. The administrator knows it, so it is not left as the
+  person's password. A service account's password is not, since a program
+  holds it. A person's own change, on the portal or over LDAP, never is.
 * **A password is changed where the current one is proved.** A person cannot
   replace their own `userPassword` over LDAP unless an operator adds it to
   `ldap.selfWritableAttributes`, which would weaken this.

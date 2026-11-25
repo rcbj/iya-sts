@@ -41,7 +41,12 @@ The portal signs in as the seeded public client **`sts-user-portal`**, in
 every realm, using:
 
 - the authorization code flow with PKCE (`S256`);
-- `scope=openid account:manage`;
+- `scope=openid account:read owner:read` — read scopes only. The first
+  change the portal sends is refused `insufficient_scope` naming
+  `account:manage`, and the portal asks for it by a second authorization
+  in a small window, silently (`prompt=none`) while the sign-on session
+  lasts, then sends the change again with that token. That token is used
+  for changes only, is never refreshed and is dropped after ten minutes;
 - `resource` set to the realm's `/account-api` URL ([RFC 8707](https://www.rfc-editor.org/rfc/rfc8707));
 - a **DPoP** proof ([RFC 9449](https://www.rfc-editor.org/rfc/rfc9449)) on
   the token request.
@@ -61,7 +66,11 @@ A call is refused (`401`, or `403` where noted) when the token:
 - was issued on a sign-on session that has since ended (a sign-out, or the
   session running out);
 - is presented without its proof, or as a Bearer token;
-- does not carry `account:manage` (`403`);
+- does not carry `account:manage` (`403`, `WWW-Authenticate: DPoP
+  error="insufficient_scope", scope="account:manage"`). A GET also
+  accepts `account:read`, which changes nothing; `account:manage` still
+  reaches every operation, so a token or client that asks for it works as
+  before;
 - was issued to a client that no longer declares that scope (`403`).
 
 The person is found by the token's `sub`, which is never reassigned, and only
@@ -73,9 +82,9 @@ The access policy is then asked, as it was for the portal's pages:
 resource `user-portal`, action `read` for a GET and `manage-own` for
 anything else, with the owner being the subject.
 
-`account:manage` is a protected scope. A client gets it only if its
-application entry declares it in `oauthAllowedScope`, and only
-`sts-user-portal` declares it out of the box. To let a native application
+`account:manage` and `account:read` are protected scopes. A client gets one
+only if its application entry holds a delegated permission grant of it, and
+only `sts-user-portal` holds them out of the box. To let a native application
 manage a person's own account, declare the scope on that application. It
 then signs the person in through an authorization-code flow or RFC 8628's
 device authorization flow. A browserless CLI requests

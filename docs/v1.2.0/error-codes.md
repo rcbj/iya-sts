@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6121** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6127** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -49,7 +49,7 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 21
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 26
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 113
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 319
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 320
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
@@ -137,6 +137,11 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0024` | An HTTP/2 request carried both :authority and a Host header naming different hosts, which makes it malformed (RFC 9113 section 8.3.1); it was refused before any endpoint saw it. | HTTP 400 text/plain |
 | `STS-HTTP-0025` | A CONNECT request reached one of this service's HTTP listeners. This service is an origin server, not a proxy, and implements no CONNECT, so it was answered 501 before any endpoint saw it. The first is logged, and the rest are counted into one line a minute at most. | HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection closed) |
 | `STS-HTTP-0026` | HTTP parsing refused a request before any route saw it: its request line or headers were past the limit (431), or it was not well-formed HTTP (400). The first is logged, and the rest are counted into one line a minute at most (#1500). | HTTP 431, 408 or 400, then the connection closes |
+| `STS-HTTP-0027` | A browser reported a Content Security Policy violation at POST /web/csp-report (#2164). The line names the realm, the directive, the document's path (no query) and the blocked origin or keyword; Monitoring > CSP reports counts them. A report is unauthenticated, so it says what a browser claims. | none — recorded; answered 204 (CSP Level 3 section 5.5, the Reporting API) |
+| `STS-HTTP-0028` | A CSP violation report was refused because its body is larger than 16 KiB. | HTTP 413, with no body |
+| `STS-HTTP-0029` | A CSP violation report was refused because its address sent more than 60 in a minute to this process. | HTTP 429 with Retry-After, and no body |
+| `STS-HTTP-0030` | A request to POST /web/csp-report carried no report: a type other than application/csp-report, application/reports+json or application/json, a Content-Encoding, a body that is not JSON, or JSON holding no csp-report object and no csp-violation entry. | HTTP 415 or 400, with no body |
+| `STS-HTTP-0031` | A CSP violation report could not be forwarded to cspReports.forwardUrl: the collector refused it, did not answer, or the outbound rules refused the URL. Logged when forwarding starts failing, not per report; the report is still recorded here. | none — the report was answered 204 and counted |
 
 ## STS-PROXY
 
@@ -6302,6 +6307,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0955` | The console's certificate inspection helper was asked for an action it does not have; the refusal names the one it has (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0956` | /admin-api/truststores was asked for an action it does not have; the refusal names the seven it has (#2118). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0957` | A named truststore write was not made and the truststore registry gave no code of its own for why: the directory carried out nothing (#2118). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0969` | A password reset for a Kerberos keytab was refused because the person must change their password at their next sign-in (pwdReset), where passwords are verified: the KDC refuses that password, so the keytab would not work, and the reset no longer clears the forced change (#2160). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0970` | A decision on a held administrator act (two-person approval, #2166) named no act this realm holds, or an action POST /admin-api/approvals does not have. | HTTP 404 (or 400 for an unknown action) { ok: false, errors } |
 | `STS-ADMIN-0971` | The administrator who asked for a held act tried to approve or refuse it themselves; a second, different administrator must (#2166). | HTTP 403 { ok: false, errors } |
 | `STS-ADMIN-0972` | A held administrator act was approved or refused by a caller that is not a person: an application's token, or nobody where the management API is open (#2166). | HTTP 403 { ok: false, errors } |

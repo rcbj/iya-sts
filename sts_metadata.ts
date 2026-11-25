@@ -5289,6 +5289,16 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The icon a browser asks for by itself on every page: ' +
           'the square mark of the logo (common/favicon.ico). Answered on ' +
           'every listener; kept for a day.' },
+  { path: '/web/csp-report', group: 'Service',
+    name: 'Content Security Policy violation reports', specs: [],
+    what: 'NON-SPEC (#2164). The receiver of what CSP Level 3 and the ' +
+          'Reporting API define a browser to send: every page\'s policy ' +
+          'names it in report-uri and report-to, beside a ' +
+          'Reporting-Endpoints header. POST only, no credential, at most ' +
+          '16 KiB and 60 reports a minute from one address; it records the ' +
+          'directive, the page\'s path without its query and the blocked ' +
+          'origin, logs STS-HTTP-0027 and answers 204 with no body. ' +
+          'Answered by the front process (common/csp_reports.ts).' },
   { path: '/web/card.css', group: 'Service',
     name: 'The public surfaces\' card stylesheet', specs: [],
     what: 'NON-SPEC (#570). The sign-in screen\'s card and the language ' +
@@ -7741,6 +7751,13 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
           'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/csp-reports', group: 'Management API',
+    name: 'CSP violation reports',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#2164). GET /admin/csp-reports over JSON: the Content ' +
+          'Security Policy violations browsers reported for this realm, ' +
+          'counted by directive by this node\'s front process, and the ' +
+          'forward setting. It changes nothing.' },
   { path: '/admin-api/malware-scanning', group: 'Management API',
     name: 'Malware scanning',
     specs: ['openapi'],
