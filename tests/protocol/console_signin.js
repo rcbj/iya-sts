@@ -491,7 +491,12 @@ async function signInToTheConsole(base, user, log2, options) {
   // deployment does it: the device is registered to the person, and the
   // device management (here this process's management credential, a
   // program, which the rule never asks) marks it compliant.
-  await ensureCompliantDevice(base, user, key, say);
+  // `options.noDevice` signs in with NO registered device whatever the
+  // realm requires — what sts_admin_device_requirement.js asks to see the
+  // unarmed admission and the armed refusal.
+  if (!opts.noDevice) {
+    await ensureCompliantDevice(base, user, key, say);
+  }
 
   // THE SHELL FIRST, as a browser opens the console: serving it registers
   // this realm's `/admin/callback` on the seeded console client
@@ -958,6 +963,15 @@ async function signInToTheConsole(base, user, log2, options) {
   };
 }
 
+// The id of the compliant device this process registered for an account
+// (#2179), or '' where it registered none.
+function deviceOf(user) {
+  log.debug("Entering deviceOf().");
+  log.debug("Leaving deviceOf().");
+  return String(registeredDevices[String(user)] || "");
+}
+
 module.exports = { signInToTheConsole: signInToTheConsole, jar: jar,
                    ensureConsoleAccount: ensureConsoleAccount,
-                   consolePasswordFor: consolePasswordFor };
+                   consolePasswordFor: consolePasswordFor,
+                   deviceOf: deviceOf };

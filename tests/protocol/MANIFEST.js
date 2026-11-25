@@ -1384,6 +1384,13 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false },
+  // THE ADMINISTRATIVE SURFACE NEEDS A COMPLIANT REGISTERED DEVICE (#2179):
+  // the one job that turns devices.requireCompliantDeviceForAdmin on (every
+  // suite stack runs with it off), in a throwaway realm it removes when it
+  // passes — unarmed admission, arming, the armed refusals, refresh,
+  // programs and a program's recovery, over the HTTP console helper.
+  // `local: true`: the policy, the console and the API are ours.
+  { file: 'sts_admin_device_requirement.js', browser: false, local: true },
   // MONITORING → TLS CONNECTION (#597, 2026-10-12): `/tls`,
   // `/tls/forwarded` and the two open truststore acts unrouted; the console
   // page and its operation, `GET /admin-api/tls-connection`, describing a

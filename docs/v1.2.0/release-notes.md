@@ -28,6 +28,12 @@ back in if every administrator loses their device. A realm that keeps its
 own `role-issuance` document must rebuild it from the template to get the
 rule. To keep the 1.1 behaviour, set the setting to `off`.
 
+This repository's own test stacks run with the setting `off`
+(`docker-compose-run-tests.yml`), because their browser-driven console jobs
+sign in from browsers that hold no registered device. One job,
+`tests/protocol/sts_admin_device_requirement.js`, turns it on in a realm of
+its own and checks the rule end to end.
+
 ### Behaviour change: more administrator acts need a recent sign-in
 
 Until now, only changing a person's credentials through the console or

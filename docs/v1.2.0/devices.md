@@ -562,6 +562,13 @@ credential, which is a program and so is never asked. With it, call
 A realm whose own `role-issuance` document was built before 1.2.0 does not
 carry the rule. Rebuild the document from the template to add it.
 
+This repository's own test stacks run with
+`devices.requireCompliantDeviceForAdmin` set to `off`. Their browser-driven
+console jobs sign in from browsers that hold no registered device, and the
+first compliant sign-in would arm the realm and refuse them. One job turns
+the setting on in a realm of its own and checks the rule end to end. The
+default for a deployment is unchanged.
+
 Somebody else's device is only a fact: `device-owner-matches` is false. The
 built-in policy refuses nothing for that alone. A person may sign in on a
 shared machine, or on a kiosk an application owns. A realm that wants to
