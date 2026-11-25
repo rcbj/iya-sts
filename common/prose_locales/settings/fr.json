@@ -11879,6 +11879,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "le pool de connexions est ouvert avant que l’écouteur ne se lie"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "Fichier du certificat client de la base de données"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "Un certificat PEM que ce service présente à la base de données à l’ouverture d’une connexion (le certificat final d’abord, puis les certificats intermédiaires que la base de données ne détient pas). À définir avec `persistence.databaseTlsClientKeyFile`. La base de données peut alors authentifier la connexion par le seul certificat (la méthode `cert` de PostgreSQL, `REQUIRE X509` de MariaDB), sans mot de passe, ou par le certificat et le mot de passe ensemble (`clientcert=verify-full`). Vide, la valeur par défaut, n’en présente aucun. Les deux fichiers sont relus toutes les `persistence.databasePasswordRefreshS`, si bien qu’un certificat renouvelé sert aux nouvelles connexions sans redémarrage. En mode produit, le fichier doit se trouver dans un répertoire listé par `security.fileRoots`. Un fichier illisible, ou une clé qui n’est pas celle de ce certificat, empêche le service de démarrer."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "le pool de connexions est ouvert avant que l’écouteur ne se lie"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "Fichier de la clé client de la base de données"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "La clé privée PEM non chiffrée de `persistence.databaseTlsClientCertFile`, lisible par ce service seul. Elle est lue depuis le chemin et n’est jamais journalisée ni affichée. Définissez les deux ou aucun."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "le pool de connexions est ouvert avant que l’écouteur ne se lie"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "Base de données du niveau global (écriture)"

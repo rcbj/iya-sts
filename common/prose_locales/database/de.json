@@ -63,6 +63,14 @@
     "en": "ce51e3182e53d854",
     "text": "NICHT ANGEWÄHLT — persistence.databaseTlsCaFile nennt {{file}}, und das kann nicht gelesen werden oder enthält kein Zertifikat, daher startet dieser Dienst damit nicht."
   },
+  "persistence.status.clientCertificate": {
+    "en": "803d02a07753ab1b",
+    "text": "Dieser Dienst authentifiziert sich gegenüber der Datenbank mit dem Client-Zertifikat in {{file}} (persistence.databaseTlsClientCertFile), das alle persistence.databasePasswordRefreshS neu gelesen wird."
+  },
+  "persistence.status.clientCertificateUnusable": {
+    "en": "79cae22fc2547022",
+    "text": "NICHT VERBUNDEN — das Client-Zertifikat in {{file}} (persistence.databaseTlsClientCertFile) kann nicht gelesen werden, oder sein Schlüssel gehört nicht zu ihm, daher startet dieser Dienst damit nicht."
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "NICHT ANGEWÄHLT — sslmode={{sslmode}} verlangt eine Verbindung im Klartext, die dieser Dienst niemals öffnet, daher startet er mit dieser Verbindungszeichenfolge nicht."

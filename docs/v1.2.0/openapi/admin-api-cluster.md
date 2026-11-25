@@ -182,6 +182,8 @@ Scope: `admin:read`.
 | `status (shape 1).dataDir` | string, or null |  |  |
 | `status (shape 1).database` | object |  | Parsed out of the connection string, which is never returned. |
 | `status (shape 1).database.caFile` | string, or null |  |  |
+| `status (shape 1).database.clientCertificate` | boolean |  |  |
+| `status (shape 1).database.clientCertificateFile` | string, or null |  |  |
 | `status (shape 1).database.database` | string, or null |  |  |
 | `status (shape 1).database.encrypted` | boolean |  |  |
 | `status (shape 1).database.host` | string, or null |  |  |

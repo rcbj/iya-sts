@@ -462,8 +462,11 @@ class RiskInstall {
         (label || 'a secret store') + '): ' + ((e && e.message) || e));
     }
     log.debug("Leaving RiskInstall.driverOptions().");
+    // The client certificate (#2254) rides beside the anchors, null where
+    // none is configured.
     return { url: connection.url, verifyTls: connection.verifyTls,
-             tlsCa: connection.tlsCa, log: log };
+             tlsCa: connection.tlsCa, tlsClient: connection.tlsClient || null,
+             log: log };
   }
 
   // -------------------------------------------------------------------------

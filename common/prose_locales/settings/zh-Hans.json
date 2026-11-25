@@ -11879,6 +11879,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "连接池在监听器绑定之前打开"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "数据库客户端证书文件"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "本服务在打开连接时向数据库出示的 PEM 证书（先是叶证书，然后是数据库没有的任何中间证书）。与 `persistence.databaseTlsClientKeyFile` 一起设置。数据库随后可以仅凭证书认证该连接（PostgreSQL 的 `cert` 方法、MariaDB 的 `REQUIRE X509`），无需密码；也可以凭证书和密码共同认证（`clientcert=verify-full`）。为空（默认）时不出示证书。两个文件每隔 `persistence.databasePasswordRefreshS` 重新读取一次，因此续期后的证书无需重启即可用于新连接。在产品模式下，该文件必须位于 `security.fileRoots` 列出的目录中。无法读取的文件，或不属于此证书的密钥，会使服务无法启动。"
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "连接池在监听器绑定之前打开"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "数据库客户端密钥文件"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "`persistence.databaseTlsClientCertFile` 的未加密 PEM 私钥，仅本服务可读。它从该路径读取，从不记录日志或显示。两者都设置或都不设置。"
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "连接池在监听器绑定之前打开"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "全局层数据库（写入端）"

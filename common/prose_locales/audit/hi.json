@@ -1499,6 +1499,10 @@
     "en": "065f403ac7419f76",
     "text": "एक निर्मित पंक्ति जिसे कभी कमिट नहीं किया जा सकता था हटा दी गई"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "डेटाबेस क्लाइंट प्रमाणपत्र फिर से पढ़ा गया और बदल गया"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "एक व्यवस्थापक ने एक व्यक्ति की aud_sub सेटिंग बदली"

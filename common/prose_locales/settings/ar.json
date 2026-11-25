@@ -11879,6 +11879,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "تُفتح تجميعة الاتصالات قبل أن يربط المستمع"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "ملف شهادة عميل قاعدة البيانات"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "شهادة PEM تقدّمها هذه الخدمة لقاعدة البيانات عند فتح اتصال (الشهادة الطرفية أولًا، ثم أي شهادات وسيطة لا تملكها قاعدة البيانات). اضبطها مع `persistence.databaseTlsClientKeyFile`. يمكن لقاعدة البيانات عندئذٍ مصادقة الاتصال بالشهادة وحدها (طريقة `cert` في PostgreSQL، و`REQUIRE X509` في MariaDB)، ولا حاجة إلى كلمة مرور، أو بالشهادة وكلمة المرور معًا (`clientcert=verify-full`). القيمة الفارغة، وهي الافتراضية، لا تقدّم شيئًا. يُعاد قراءة الملفين كل `persistence.databasePasswordRefreshS`، فتُستخدم الشهادة المجدَّدة للاتصالات الجديدة من دون إعادة تشغيل. في وضع المنتج يجب أن يكون الملف في دليل يدرجه `security.fileRoots`. الملف الذي لا يمكن قراءته، أو المفتاح الذي ليس مفتاح هذه الشهادة، يمنع الخدمة من البدء."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "تُفتح تجميعة الاتصالات قبل أن يربط المستمع"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "ملف مفتاح عميل قاعدة البيانات"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "المفتاح الخاص PEM غير المشفّر لـ `persistence.databaseTlsClientCertFile`، لا تقرؤه إلا هذه الخدمة. يُقرأ من المسار ولا يُسجَّل أو يُعرض أبدًا. اضبط الاثنين أو لا شيء."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "تُفتح تجميعة الاتصالات قبل أن يربط المستمع"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "قاعدة بيانات الطبقة العامة (الكاتب)"

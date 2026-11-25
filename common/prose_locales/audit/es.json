@@ -1499,6 +1499,10 @@
     "en": "065f403ac7419f76",
     "text": "Se descartó una fila acuñada que nunca podía confirmarse"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "Se volvió a leer el certificado de cliente de la base de datos y cambió"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "Un administrador modificó la configuración aud_sub de una persona"

@@ -358,6 +358,8 @@ var config = {
     databasePasswordRefreshS: 3600,                        // Read the database password again every (seconds)
     databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
     databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
+    databaseTlsClientCertFile: "",                         // Database client certificate file; restart to apply
+    databaseTlsClientKeyFile: "",                          // Database client key file; restart to apply
     globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
     globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
     globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply

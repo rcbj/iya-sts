@@ -3574,6 +3574,58 @@ rather than read there: that module takes its url and its logger as options and 
 nothing, which is what lets a test construct one against any database without
 this file's settings existing.
 
+### A CLIENT CERTIFICATE, PRESENTED BY EVERY DIALLER (#2254, ASVS 5.0.0 12.3.5)
+
+The server was authenticated (above) and this service was authenticated by a
+password only. `persistence.databaseTlsClientCertFile` and `…KeyFile` name a
+PEM certificate (leaf first) and its unencrypted key, and
+`databaseTlsClient()` reads them through `OutboundTls.readNamedFile()`
+(`security.fileRoots` in product, #2247) and checks them as a pair through
+`crypto.tlsClientKeyPairProblem()` (rule 3r). The pair is TEXT and goes where
+`tlsCa` goes: `dialOptions(url, verifyTls, ca, engine, client)` puts it on
+`ssl` as node's `cert` and `key`, which `pg` and `mysql2` both hand to TLS
+as they are; `create()`'s `tlsClient` reaches both tiers' pools (and so every
+dedicated connection, which is the pools' own), the read pool, the bridge's
+thread (`postableSsl()`/`restoredSsl()` carry it), and
+`databaseConnection()`/`globalDatabaseConnection()` hand it to the tools
+(risk loader, bulk import, cell conversion).
+
+* **Files, not a provider reference, and argued in `persistence.js`'s
+  header of `databaseTlsClient()`**: the CA beside it and the secret-store
+  client identity (`keys.vaultClient*`) are files, and a client certificate
+  is issued and renewed into files by an agent, cert-manager or a CSI
+  driver; the provider mechanism reads one string, and a pair renewed
+  together and checked against each other is not that shape.
+* **Nothing requires a password once a certificate is given**: the string
+  is dialled as written, and whether the certificate alone (`cert`,
+  `REQUIRE X509`) or the certificate and the password
+  (`clientcert=verify-full`) are asked for is the database's decision.
+  `refuseDefaultDatabasePassword()` never asks about an empty password.
+* **Unusable is FATAL at start**, `STS-STORE-0180`, inside `openStore()`'s
+  `try` like `STS-STORE-0079`: one setting without the other, unreadable,
+  no certificate, an encrypted or unparseable key, or not the certificate's
+  key. An EXPIRED certificate is a warning only: the database decides, and
+  a renewal may be on its way to the file.
+* **Read again by #2220's job** (`persistence.database-password-refresh`,
+  every `persistence.databasePasswordRefreshS`, and on a refused login),
+  not a job of its own: one credential, one interval, and the job's
+  translated title stays. `refreshDatabaseCertificate()` compares the PEM
+  text with what it last handed out and gives a changed pair to every
+  driver in `certificateDrivers` (this process's database and, in a cell,
+  the global tier's — whose password is still read only at start). The
+  driver's `useClientCertificate()` decides the options again and
+  `StorePool.setSsl()` replaces Knex's `connectionSettings` the way
+  `setConnectionString()` does: a NEW ssl object each time, which matters
+  for MariaDB — `mysql2` caches its secure context by the ssl object. A
+  failed re-read is `STS-STORE-0181` and keeps the pair held. The bridge's
+  thread keeps the pair it was started with.
+* **Said**: `describeDatabase()` answers `clientCertificate` and
+  `clientCertificateFile` and adds a sentence to `tls`;
+  `databaseCredential()` answers `/admin/mode`'s *Database credential*.
+* **Tested against a real PostgreSQL** by
+  `tests/database_client_certificate.js` F when `STS_TEST_PG_CLIENT_CERT_URL`
+  names one (`postgres/CLAUDE.md` says how to start one).
+
 ### The upgrade to 18, and the mount that changed with it
 
 `postgres:16-alpine` became `postgres:18` — Debian rather than alpine, because

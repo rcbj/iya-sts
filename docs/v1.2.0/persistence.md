@@ -289,6 +289,60 @@ The name that is checked is the one written in the connection string. An IP
 address is checked as that address: a certificate that names only `localhost`
 does not authenticate a database dialled by a different address.
 
+### A client certificate for the database
+
+The connection authenticates with a password by default. Name a client
+certificate and its key, and the service presents them on every connection it
+makes to the database — the pools, the LISTEN and liveness connections, the
+online index builds, the read replica, the global tier of a cell, and the
+command-line tools (the risk loader, the bulk import, the cell conversion):
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| `persistence.databaseTlsClientCertFile` | `STS_DATABASE_TLS_CLIENT_CERT_FILE` | *(empty)* |
+| `persistence.databaseTlsClientKeyFile` | `STS_DATABASE_TLS_CLIENT_KEY_FILE` | *(empty)* |
+
+The certificate file holds the leaf first, then any intermediate certificates
+the database does not already hold; the key file holds its unencrypted PEM
+private key, readable by the service only. In product both files must be in a
+directory `security.fileRoots` lists.
+
+The database decides what the certificate is for:
+
+* **The certificate alone.** PostgreSQL's `cert` method
+  (`hostssl sts sts_app 10.0.0.0/8 cert`) authenticates the role whose name is
+  the certificate's common name; MariaDB's `ALTER USER … REQUIRE X509` (or
+  `REQUIRE SUBJECT …`) does the same. The connection string needs no password
+  and `persistence.databasePasswordProvider` can stay `none`.
+* **The certificate and the password.** `clientcert=verify-full` on a
+  `scram-sha-256` rule asks for both; keep the password where it is.
+
+Both are files, as the database's CA is, because a client certificate is
+issued and renewed into files — by Vault's or OpenBao's PKI engine through an
+agent, by cert-manager, by a CSI secret-store driver. **The files are read
+again every `persistence.databasePasswordRefreshS`** (the
+`persistence.database-password-refresh` job, which reads the password too) and
+at once when the database refuses a login, so a renewed certificate written
+over the old files is presented on every new connection without a restart;
+connections already open keep theirs. A pair that cannot be read again is
+logged (`STS-STORE-0181`) and the one held goes on being used.
+
+**A pair that is not usable stops the service at start** (`STS-STORE-0180`):
+one of the two settings without the other, a file that cannot be read, no
+certificate in the file, an encrypted key, or a key that is not the
+certificate's. Leaving both empty is the password-only connection every
+earlier release made. Monitoring → Database and `/admin/persistence` say in
+the **Transport** row that the connection authenticates with the certificate,
+and `/admin/mode` says how the service proves itself to its database.
+
+The compose database can require one too: start the postgres container with
+`POSTGRES_CLIENT_CERT=cert` (or `verify-full`) and `POSTGRES_TLS_CLIENT_DIR` on
+a volume only the `sts` container mounts. On the start that creates the
+cluster it makes a client CA, issues a certificate for the service role, and
+puts a rule for that role first in `pg_hba.conf`; name the shared
+`client.crt` and `client.key` in the two settings. An existing data volume
+keeps the rules it was created with.
+
 **Upgrading from an older stack needs `docker compose down -v`.** The image is
 `postgres:18` now, and a major version will not read a data directory written by
 the previous one — nor will it accept the old `/var/lib/postgresql/data` mount,

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6176** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6180** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 116
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 118
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 120
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 36
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 90
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
@@ -484,6 +484,8 @@ Raised from: persistence/.
 | `STS-STORE-0177` | A request worker's own flush has been out four times workers.readBarrierTimeoutMs (2 minutes by default), so the worker asks the front process to replace it (STS-WORKER-0055). Its drain waits for that flush to settle until ten times the bound after it began, so a flush that is only slow keeps its writes. | Log line |
 | `STS-STORE-0178` | A database statement was cancelled by the server at its statement timeout (persistence.statementTimeoutMs, unless it set its own). The caller's own failure path decides what follows: a refused request, or a retried flush (#2220). | — |
 | `STS-STORE-0179` | The database password could not be read again from its secret store (persistence.database-password-refresh, or after the database refused a login, #2220); new connections go on using the password already held. | Log line and audit row |
+| `STS-STORE-0180` | persistence.databaseTlsClientCertFile or persistence.databaseTlsClientKeyFile is set and the client certificate cannot be presented: only one of the two is set, a file cannot be read (or is outside security.fileRoots in product), it holds no certificate, the key is encrypted or does not parse, or it is not the certificate's key (#2254). Fatal at persistence.start(); the out-of-process tools that dial the database refuse the same way. | none — fatal at start |
+| `STS-STORE-0181` | The database client certificate could not be read again (persistence.database-password-refresh, or after the database refused a login, #2254): a file is unreadable or the pair no longer holds together. New connections go on presenting the pair already held. | Log line and audit row |
 
 ## STS-CLUSTER
 

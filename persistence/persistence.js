@@ -2665,6 +2665,29 @@ let passwordDriver = null;
 let lastDatabaseUrl = '';
 let passwordRefreshing = null;
 let lastFailureReread = 0;
+// THE CLIENT CERTIFICATE, READ AGAIN ON THE SAME SCHEDULE (#2254). A
+// renewed certificate is written over the old files by whatever issues it
+// (an agent, cert-manager, a CSI driver), and the job above reads them again
+// beside the password: every driver that presents it (this process's own
+// database and, in a cell, the global tier's) dials every new connection
+// with the new pair, and open connections keep theirs. `lastClientPem` is
+// what was handed to the drivers last, so an unchanged pair costs a read of
+// two files and nothing else. One interval for one credential:
+// `persistence.databasePasswordRefreshS` decides both, and a refused login
+// reads both again.
+let certificateDrivers = [];
+let lastClientPem = '';
+let certificateRefreshing = null;
+
+// Whether a client certificate is configured for the database connection.
+function databaseCertificateConfigured() {
+  log.debug("Entering databaseCertificateConfigured().");
+  log.debug("Leaving databaseCertificateConfigured().");
+  return !!(String(config.value('persistence.databaseTlsClientCertFile') ||
+                   '').trim() ||
+            String(config.value('persistence.databaseTlsClientKeyFile') ||
+                   '').trim());
+}
 
 // Whether a connection error is the database refusing the login.
 function isLoginRefusal(err) {
@@ -2679,17 +2702,30 @@ function isLoginRefusal(err) {
 // again, at most every PASSWORD_REREAD_MIN_MS.
 function onDatabaseConnectFailure(err) {
   log.debug("Entering onDatabaseConnectFailure().");
-  if (!isLoginRefusal(err) ||
-      !secrets.configuredFor(secrets.DATABASE_PASSWORD) ||
+  const password = secrets.configuredFor(secrets.DATABASE_PASSWORD);
+  const certificate = databaseCertificateConfigured();
+  if (!isLoginRefusal(err) || (!password && !certificate) ||
       Date.now() - lastFailureReread < PASSWORD_REREAD_MIN_MS) {
     log.debug("Leaving onDatabaseConnectFailure(). Not read again.");
     return;
   }
   lastFailureReread = Date.now();
-  refreshDatabasePassword('the database refused a login').catch(function (e) {
-    log.debug("Caught in onDatabaseConnectFailure(): " +
-              ((e && e.message) || e));
-  });
+  if (password) {
+    refreshDatabasePassword('the database refused a login')
+      .catch(function (e) {
+        log.debug("Caught in onDatabaseConnectFailure(): " +
+                  ((e && e.message) || e));
+      });
+  }
+  // A certificate the database no longer accepts is refused as a login
+  // too (28000, MariaDB's 1045), and may just have been renewed (#2254).
+  if (certificate) {
+    refreshDatabaseCertificate('the database refused a login')
+      .catch(function (e) {
+        log.debug("Caught in onDatabaseConnectFailure(): " +
+                  ((e && e.message) || e));
+      });
+  }
   log.debug("Leaving onDatabaseConnectFailure().");
 }
 
@@ -2763,6 +2799,109 @@ function refreshDatabasePassword(reason) {
 }
 
 /**
+ * Reads the database client certificate and key again and, when they
+ * changed, dials every new connection of every driver that presents them
+ * with the new pair (#2254). A pair that cannot be read or does not hold
+ * together changes nothing: the one held goes on being presented.
+ *
+ * @param reason - why it is read again, for the log and the audit row
+ * @returns a promise of `{ read, changed }`; it rejects when the read fails
+ */
+function refreshDatabaseCertificate(reason) {
+  log.debug("Entering refreshDatabaseCertificate().");
+  const drivers = certificateDrivers.filter(function (one) {
+    return one && typeof one.useClientCertificate === 'function';
+  });
+  if (!drivers.length || !databaseCertificateConfigured()) {
+    log.debug("Leaving refreshDatabaseCertificate(). Nothing to read.");
+    return Promise.resolve({ read: false, changed: false });
+  }
+  if (certificateRefreshing) {
+    log.debug("Leaving refreshDatabaseCertificate(). Already reading.");
+    return certificateRefreshing;
+  }
+  certificateRefreshing = Promise.resolve().then(function () {
+    const read = databaseTlsClient();
+    const pem = read ? read.cert + read.key : '';
+    if (!read || pem === lastClientPem) {
+      return { read: true, changed: false };
+    }
+    drivers.forEach(function (one) {
+      const used = one.useClientCertificate({ cert: read.cert,
+                                              key: read.key });
+      if (!used || !used.ok) {
+        throw new Error('the new pair would not be dialled: ' +
+                        String((used && used.refused) || 'refused'));
+      }
+    });
+    lastClientPem = pem;
+    log.info('persistence: the database client certificate in ' +
+             read.certFile + ' has changed (' + String(reason) + '); new ' +
+             'connections present it' +
+             (read.notAfter ? ', valid until ' +
+               new Date(read.notAfter).toISOString() : '') + '.');
+    auditPasswordRefresh({
+      action: 'persistence.database-certificate-changed',
+      target: 'persistence.databaseTlsClientCertFile',
+      summary: 'The database client certificate changed on disk and new ' +
+               'connections now present it (' + String(reason) + ')',
+      detail: { reason: String(reason), subject: read.subject,
+                notAfter: read.notAfter } });
+    return { read: true, changed: true };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-STORE-0181') + 'persistence: the ' +
+              'database client certificate could not be read again (' +
+              String(reason) + '), so new connections go on presenting the ' +
+              'one held: ' + ((e && e.message) || e));
+    auditPasswordRefresh({
+      action: 'persistence.database-certificate-changed',
+      outcome: 'failure', errorCode: 'STS-STORE-0181',
+      target: 'persistence.databaseTlsClientCertFile',
+      summary: 'The database client certificate could not be read again',
+      detail: { reason: String(reason) } });
+    throw e;
+  }).finally(function () {
+    certificateRefreshing = null;
+  });
+  log.debug("Leaving refreshDatabaseCertificate().");
+  return certificateRefreshing;
+}
+
+/**
+ * Reads the database's credentials again — the password from its provider
+ * and the client certificate from its files, each where it is configured —
+ * for the scheduled job (#2220, #2254). Rejects when either read fails,
+ * after both were tried.
+ *
+ * @param reason - why they are read again
+ * @returns a promise of `{ password, certificate }`, each `{ read, changed }`
+ */
+function refreshDatabaseCredentials(reason) {
+  log.debug("Entering refreshDatabaseCredentials().");
+  const settle = function (promise) {
+    log.debug("Entering settle().");
+    log.debug("Leaving settle().");
+    return promise.then(function (value) {
+      return { ok: true, value: value };
+    }, function (err) {
+      return { ok: false, err: err };
+    });
+  };
+  log.debug("Leaving refreshDatabaseCredentials().");
+  return Promise.all([settle(refreshDatabasePassword(reason)),
+                      settle(refreshDatabaseCertificate(reason))])
+    .then(function (both) {
+      const failed = both.filter(function (one) {
+        return !one.ok;
+      });
+      if (failed.length) {
+        throw failed[0].err;
+      }
+      return { password: both[0].value, certificate: both[1].value };
+    });
+}
+
+/**
  * Registers the per-process job that reads the database password again
  * (#2220). Idempotent.
  *
@@ -2785,18 +2924,23 @@ function ensurePasswordJob(schedulerInstance) {
               'connection of this process with it when it has changed. ' +
               'Rotating the password at the database is the secret ' +
               'store\'s or the operator\'s job.',
+    // The client certificate is read again by the same job (#2254), so the
+    // job is on where either is configured. `describe` and `title` stay as
+    // they were: they are translated, and the certificate's settings say
+    // the schedule they follow.
     owner: 'persistence/persistence.js',
     kind: 'per-process', quiet: true,
     everySetting: 'persistence.databasePasswordRefreshS',
     everySettingUnit: 's',
     off: function () {
-      if (!secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
+      if (!secrets.configuredFor(secrets.DATABASE_PASSWORD) &&
+          !databaseCertificateConfigured()) {
         return 'persistence.databasePasswordProvider is none';
       }
       return passwordDriver ? '' : 'this process has no database';
     },
     run: function () {
-      return refreshDatabasePassword('the scheduled refresh');
+      return refreshDatabaseCredentials('the scheduled refresh');
     }
   });
   log.debug("Leaving ensurePasswordJob().");
@@ -3003,6 +3147,137 @@ function databaseTlsCa() {
 }
 
 // ---------------------------------------------------------------------------
+// THE CLIENT CERTIFICATE THE DATABASE CONNECTION PRESENTS (#2254, ASVS 5.0.0
+// 12.3.5). Until this the connection authenticated with a password only,
+// while cells, the remote PEPs, SPIRE and OpenBao already used mutual TLS.
+// `persistence.databaseTlsClientCertFile` and `…KeyFile` name a PEM
+// certificate (the leaf first, then any intermediates) and its unencrypted
+// private key, and every dialler presents them: both tiers' pools, their
+// LISTEN, liveness and online-index connections (the pools' own), the read
+// pool, the directory bridge's thread, and the out-of-process tools through
+// `databaseConnection()`. The certificate may be used ALONE — pg_hba's
+// `cert` method, MariaDB's `REQUIRE X509`, with no password in the string
+// and no provider — or BESIDE the password (`clientcert=verify-full`); the
+// database decides which, and nothing here requires a password once a
+// certificate is given.
+//
+// **FILES, AND NOT A SECRET-STORE REFERENCE, AND THAT IS ARGUED.** The
+// database's other TLS material is a file (`persistence.databaseTlsCaFile`)
+// and so is the client identity this service presents to its secret store
+// (`keys.vaultClientCert`, `keys.vaultClientKey`). A client certificate is
+// ISSUED rather than stored — by Vault's or OpenBao's PKI engine through an
+// agent, by cert-manager, by a CSI secret-store driver — and every one of
+// those delivers it as files it renews in place, which is what the re-read
+// below picks up. The password provider's mechanism reads one string out of
+// one secret; a pair that must be renewed together and checked against each
+// other is not that shape. Each file is read through
+// `OutboundTls.readNamedFile()`, so in product it must lie in a directory
+// `security.fileRoots` lists (#2247).
+//
+// **OFF BY DEFAULT.** Both empty is today's connection, password only. One
+// without the other, a file that cannot be read, no certificate, an
+// encrypted or unparseable key, or a key that is not the certificate's is
+// FATAL at start (STS-STORE-0180), like the CA file beside it: a process
+// told to present a certificate and dialling without one would be refused
+// by the database with a sentence about the database.
+//
+// Read on every call: at start, by the status report, by a tool and by the
+// re-read job, never on a request path.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the client certificate and key the database connection presents,
+ * read from `persistence.databaseTlsClientCertFile` and `…KeyFile`, or null
+ * when both are empty.
+ *
+ * @returns `{ cert, key, certFile, keyFile, notAfter, subject }` or null
+ * @throws {Error} tagged STS-STORE-0180 when only one is set, a file cannot
+ * be read, or the two are not a pair
+ */
+function databaseTlsClient() {
+  log.debug("Entering databaseTlsClient().");
+  const certFile = String(config.value('persistence.databaseTlsClientCertFile')
+                          || '').trim();
+  const keyFile = String(config.value('persistence.databaseTlsClientKeyFile')
+                         || '').trim();
+  if (!certFile && !keyFile) {
+    log.debug("Leaving databaseTlsClient(). None named.");
+    return null;
+  }
+  const refuse = function (why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    log.debug("Leaving databaseTlsClient(). Refused.");
+    return new Error(errorCodes.tag('STS-STORE-0180') +
+                     'persistence: the database client certificate cannot ' +
+                     'be presented: ' + why + '. Fix the files, or empty ' +
+                     'both persistence.databaseTlsClientCertFile and ' +
+                     'persistence.databaseTlsClientKeyFile to dial with the ' +
+                     'password alone.');
+  };
+  if (!certFile || !keyFile) {
+    throw refuse((certFile ? 'persistence.databaseTlsClientCertFile'
+                           : 'persistence.databaseTlsClientKeyFile') +
+                 ' is set and ' +
+                 (certFile ? 'persistence.databaseTlsClientKeyFile'
+                           : 'persistence.databaseTlsClientCertFile') +
+                 ' is not; a certificate is presented with its key');
+  }
+  const read = function (setting, file) {
+    log.debug("Entering read().");
+    try {
+      const text = require('../common/outbound_tls').readNamedFile(file);
+      log.debug("Leaving read().");
+      return text;
+    } catch (e) {
+      log.debug("Caught in read(): " + ((e && e.message) || e));
+      log.debug("Leaving read(). Unreadable.");
+      throw refuse(setting + ' names ' + file + ', which cannot be read (' +
+                   ((e && e.namedFileRefused && e.message) ||
+                    (e && e.code) || (e && e.message) || e) + ')');
+    }
+  };
+  const cert = read('persistence.databaseTlsClientCertFile', certFile);
+  const key = read('persistence.databaseTlsClientKeyFile', keyFile);
+  // Checked through common/crypto.js, the one place this service reads a
+  // certificate or a key (rule 3r); lazily, for databaseTlsCa()'s reason.
+  const checked = require('../common/crypto')
+    .tlsClientKeyPairProblem(cert, key);
+  if (!checked.ok) {
+    throw refuse(checked.problem === 'mismatch'
+      ? 'the key in ' + keyFile + ' is not the private half of the ' +
+        'certificate in ' + certFile
+      : (checked.problem === 'key' ? keyFile : certFile) + ': ' +
+        checked.why);
+  }
+  if (checked.notAfter && checked.notAfter <= Date.now()) {
+    // Not refused: the database decides whether it accepts it, and a
+    // renewal may already be on its way to the file. Said, because the
+    // database's refusal will not say why.
+    log.warn('persistence: the database client certificate in ' + certFile +
+             ' expired at ' + new Date(checked.notAfter).toISOString() +
+             '; the database will refuse it until it is renewed.');
+  }
+  log.debug("Leaving databaseTlsClient().");
+  return { cert: checked.certificatePem, key: key, certFile: certFile,
+           keyFile: keyFile, notAfter: checked.notAfter,
+           subject: checked.subject };
+}
+
+/**
+ * The client certificate and key as a dialler is given them (`{ cert, key }`),
+ * or null — `databaseTlsClient()` without the facts about it.
+ *
+ * @returns `{ cert, key }` or null
+ * @throws as `databaseTlsClient()` does
+ */
+function databaseTlsClientPair() {
+  log.debug("Entering databaseTlsClientPair().");
+  const read = databaseTlsClient();
+  log.debug("Leaving databaseTlsClientPair().");
+  return read ? { cert: read.cert, key: read.key } : null;
+}
+
+// ---------------------------------------------------------------------------
 // EVERYTHING `persistence_postgres.create()` IS GIVEN TO DIAL THE DATABASE
 // THE WAY THIS SERVICE DOES (#213, 2026-09-26): the connection string with
 // the configured provider's password put back into it (`resolveDatabaseUrl()`
@@ -3029,16 +3304,17 @@ function databaseTlsCa() {
  *
  * For an out-of-process tool such as the risk dataset loader, so the two
  * cannot disagree about how a connection is made.
- * @returns a promise of `{ url, verifyTls, tlsCa }`; rejects as
- * `resolveDatabaseUrl()` does, and with STS-STORE-0079 for an unusable
- * `persistence.databaseTlsCaFile`
+ * @returns a promise of `{ url, verifyTls, tlsCa, tlsClient }`; rejects as
+ * `resolveDatabaseUrl()` does, with STS-STORE-0079 for an unusable
+ * `persistence.databaseTlsCaFile`, and with STS-STORE-0180 for an unusable
+ * client certificate (#2254)
  */
 function databaseConnection() {
   log.debug("Entering databaseConnection().");
   log.debug("Leaving databaseConnection().");
   return resolveDatabaseUrl().then(function (url) {
     return { url: url, verifyTls: verifiesDatabaseTls(),
-             tlsCa: databaseTlsCa() };
+             tlsCa: databaseTlsCa(), tlsClient: databaseTlsClientPair() };
   });
 }
 
@@ -3355,14 +3631,15 @@ function resolveGlobalUrls() {
  * Returns what a process needs to dial the global tier's database the way a
  * cell does.
  *
- * @returns a promise of `{ url, readUrl, verifyTls, tlsCa }`
+ * @returns a promise of `{ url, readUrl, verifyTls, tlsCa, tlsClient }`
  */
 function globalDatabaseConnection() {
   log.debug("Entering globalDatabaseConnection().");
   log.debug("Leaving globalDatabaseConnection().");
   return resolveGlobalUrls().then(function (urls) {
     return { url: urls.url, readUrl: urls.readUrl,
-             verifyTls: verifiesDatabaseTls(), tlsCa: databaseTlsCa() };
+             verifyTls: verifiesDatabaseTls(), tlsCa: databaseTlsCa(),
+             tlsClient: databaseTlsClientPair() };
   });
 }
 
@@ -3771,6 +4048,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // this `try`, so an unusable file is the fatal refusal its message is
     // written for (STS-STORE-0079) rather than an exception from nowhere.
     const tlsCa = storeModes.isDatabase(chosen) ? databaseTlsCa() : '';
+    // The client certificate (#2254), read once for both tiers and inside
+    // this `try` for the CA's reason: an unusable pair is STS-STORE-0180's
+    // fatal refusal.
+    const tlsClient = storeModes.isDatabase(chosen)
+      ? databaseTlsClientPair() : null;
+    lastClientPem = tlsClient ? tlsClient.cert + tlsClient.key : '';
+    certificateDrivers = [];
     driver = storeModes.isDatabase(chosen)
       // `verifyTls` is READ HERE AND PASSED IN, rather than read in the
       // driver: that module takes its url and its logger as options and
@@ -3780,7 +4064,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           // The engine is the MODE (#677): one driver, two engines.
           engine: chosen,
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
-          tlsCa: tlsCa,
+          tlsCa: tlsCa, tlsClient: tlsClient,
           poolMax: require('./persistence_postgres').poolMax(workerCount(),
             config.value('persistence.poolSize')),
           // The pool's waits (#2220), read here for `verifyTls`'s reason.
@@ -3801,6 +4085,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // a cell's own when the store is tiered below — dialled with the
     // password `persistence.databasePasswordProvider` names.
     passwordDriver = storeModes.isDatabase(chosen) ? driver : null;
+    if (passwordDriver) {
+      certificateDrivers.push(passwordDriver);
+    }
     lastDatabaseUrl = String(resolvedUrl || '');
     if (passwordDriver && typeof passwordDriver.onConnectFailure ===
         'function') {
@@ -3819,7 +4106,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         // phase 6).
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
-        tlsCa: tlsCa,
+        tlsCa: tlsCa, tlsClient: tlsClient,
         poolMax: require('./persistence_postgres').poolMax(workerCount(),
           config.value('persistence.poolSize')),
         ...poolWaits(),
@@ -3829,6 +4116,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         claimFences: claimFences,
         claimFenceOwner: true
       });
+      // The global tier presents the same certificate, and takes a renewed
+      // one with the cell's (#2254).
+      certificateDrivers.push(globalDriver);
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),
         digest: routingDigest
@@ -6015,6 +6305,15 @@ const STATUS_PROSE = Object.freeze({
   caFileUnusable: 'NOT DIALLED — persistence.databaseTlsCaFile names ' +
     '{{file}}, which cannot be read or holds no certificate, so this ' +
     'service does not start on it.',
+  // THE CLIENT CERTIFICATE (#2254): appended to the sentence above whenever
+  // one is configured, so the Transport row says how this service proves
+  // itself to the database as well as how the database proves itself here.
+  clientCertificate: 'This service authenticates to the database with the ' +
+    'client certificate in {{file}} (persistence.databaseTlsClientCertFile), ' +
+    'read again every persistence.databasePasswordRefreshS.',
+  clientCertificateUnusable: 'NOT DIALLED — the client certificate in ' +
+    '{{file}} (persistence.databaseTlsClientCertFile) cannot be read, or ' +
+    'its key is not its own, so this service does not start on it.',
   refusedClear: 'NOT DIALLED — sslmode={{sslmode}} asks for a connection ' +
     'in the clear, which this service never opens, so it does not start ' +
     'on this connection string.',
@@ -6168,11 +6467,30 @@ function describeDatabase() {
     }
     const dial = require('./persistence_postgres').dialOptions(raw, verify,
       '', activeMode === 'mariadb' ? 'mariadb' : 'postgres');
-    const encrypted = !dial.refused && caUsable;
+    // The client certificate (#2254), the same way: configured or not, and
+    // usable or not, asked of the one reading of it and never thrown.
+    const clientFile = String(
+      config.value('persistence.databaseTlsClientCertFile') || '').trim();
+    let clientUsable = true;
+    if (databaseCertificateConfigured()) {
+      try {
+        databaseTlsClient();
+      } catch (e) {
+        log.debug("Caught in describeDatabase(): " +
+                  ((e && e.message) || e));
+        clientUsable = false;
+      }
+    }
+    const clientCertificate = databaseCertificateConfigured() &&
+      clientUsable;
+    const encrypted = !dial.refused && caUsable && clientUsable;
     const fill = require('../common/server_prose').fill;
     let tls;
     if (!caUsable) {
       tls = fill(STATUS_PROSE.caFileUnusable, { file: caFile });
+    } else if (!clientUsable) {
+      tls = fill(STATUS_PROSE.clientCertificateUnusable,
+                 { file: clientFile || '(none)' });
     } else if (!encrypted) {
       tls = sslmode === 'disable' || sslmode === 'allow'
         ? fill(STATUS_PROSE.refusedClear, { sslmode: sslmode })
@@ -6194,6 +6512,9 @@ function describeDatabase() {
     }
     if (encrypted && dial.verifyChain && caFile) {
       tls += ' ' + fill(STATUS_PROSE.trustCaFile, { file: caFile });
+    }
+    if (encrypted && clientCertificate) {
+      tls += ' ' + fill(STATUS_PROSE.clientCertificate, { file: clientFile });
     }
     // WHERE THE PASSWORD COMES FROM (2026-09-12) — never what it is. A
     // deployment that moved the password into a secret store has no other way
@@ -6219,6 +6540,10 @@ function describeDatabase() {
       // The file the trust anchors come from, or null for the default
       // store (2026-10-12).
       caFile: caFile || null,
+      // Whether the connection presents a client certificate (#2254), and
+      // the file it is read from.
+      clientCertificate: clientCertificate,
+      clientCertificateFile: clientFile || null,
       tls: tls
     };
   } catch (err) {
@@ -6232,6 +6557,37 @@ function describeDatabase() {
              tls: STATUS_PROSE.tlsUnknown,
              note: STATUS_PROSE.notAUrl };
   }
+}
+
+// ---------------------------------------------------------------------------
+// HOW THIS SERVICE PROVES ITSELF TO ITS DATABASE (#2254), for `/admin/mode`:
+// whether a database store is in use, whether its connection presents a
+// client certificate, and whether it carries a password (from a provider or
+// in the string). Facts only, no file and no secret; the database page says
+// the rest.
+// ---------------------------------------------------------------------------
+/**
+ * Says how the database connection authenticates this service.
+ *
+ * @returns `{ database, certificate, password }`
+ */
+function databaseCredential() {
+  log.debug("Entering databaseCredential().");
+  const database = storeModes.isDatabase(activeMode);
+  let inline = false;
+  try {
+    inline = !!new URL(databaseUrl()).password;
+  } catch (e) {
+    log.debug("Caught in databaseCredential(): " + ((e && e.message) || e));
+    inline = false;
+  }
+  log.debug("Leaving databaseCredential().");
+  return {
+    database: database,
+    certificate: database && databaseCertificateConfigured(),
+    password: database &&
+      (inline || secrets.configuredFor(secrets.DATABASE_PASSWORD))
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -6633,6 +6989,16 @@ module.exports = {
   resolveDatabaseUrl: resolveDatabaseUrl,
   refreshDatabasePassword: refreshDatabasePassword,
   ensurePasswordJob: ensurePasswordJob,
+  // FOR `tests/database_client_certificate.js` ONLY (#2254): the drivers a
+  // renewed client certificate is handed to are set by `openStore()`, which
+  // an in-process test cannot reach without a database; the test hands
+  // doubles in and asserts what each is given.
+  setCertificateDriversForTest: function (drivers, lastPem) {
+    log.debug("Entering setCertificateDriversForTest().");
+    certificateDrivers = Array.isArray(drivers) ? drivers.slice() : [];
+    lastClientPem = String(lastPem || '');
+    log.debug("Leaving setCertificateDriversForTest().");
+  },
   PASSWORD_JOB: PASSWORD_JOB,
   // The connection an out-of-process tool dials the database with, made the
   // way this service makes its own (#213) — see databaseConnection().
@@ -6644,6 +7010,14 @@ module.exports = {
   verifiesDatabaseTls: verifiesDatabaseTls,
   // The database's own trust anchors, PEM, or '' (STS-STORE-0079).
   databaseTlsCa: databaseTlsCa,
+  // The client certificate the database connection presents (#2254), its
+  // re-read, and how the connection authenticates, for `/admin/mode`.
+  databaseTlsClient: databaseTlsClient,
+  refreshDatabaseCertificate: refreshDatabaseCertificate,
+  databaseCredential: databaseCredential,
+  // What `status()` says of the database, asked without an open store, for
+  // `tests/database_client_certificate.js`.
+  describeDatabase: describeDatabase,
   MODES: MODES,
   mode: mode,
   /**

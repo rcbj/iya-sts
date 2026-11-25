@@ -218,7 +218,21 @@ class ModePage {
       }).join('') + '</tbody></table><p><a href="/admin/approvals">' +
       t.html('consoleMode.dualLink', { n: String(dc.pending || 0) }) +
       '</a></p>') : '';
-    return tiles + about + warning + requirements + settings + notYet + dual;
+    // THE DATABASE CREDENTIAL (#2254): how this service proves itself to
+    // its database — a client certificate, a password, or both. Nothing
+    // where the store is not a database.
+    const db = json.databaseCredential;
+    const credential = db && db.database ? '<h2 data-tab="database">' +
+      t.html('consoleMode.dbHeading') + '</h2>' +
+      WebKit.frame('<p>' + t.html('consoleMode.dbLead') + '</p>' +
+      '<p><strong>' + t.html(db.certificate
+        ? (db.password ? 'consoleMode.dbCertificateAndPassword'
+                       : 'consoleMode.dbCertificate')
+        : (db.password ? 'consoleMode.dbPassword'
+                       : 'consoleMode.dbNeither')) +
+      '</strong></p>') : '';
+    return tiles + about + warning + requirements + settings + notYet + dual +
+      credential;
   }
 }
 

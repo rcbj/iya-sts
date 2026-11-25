@@ -1025,6 +1025,8 @@ Scope: `admin:read`.
 | `statementTimeoutSet` | boolean |  |  |
 | `target` | object |  | Parsed out of the connection string, which is never returned. |
 | `target.caFile` | string, or null |  |  |
+| `target.clientCertificate` | boolean |  |  |
+| `target.clientCertificateFile` | string, or null |  |  |
 | `target.database` | string, or null |  |  |
 | `target.encrypted` | boolean |  |  |
 | `target.host` | string, or null |  |  |
@@ -3525,6 +3527,10 @@ Scope: `admin:read`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `databaseCredential` | object |  | How this service authenticates to its database (#2254): whether the store is a database at all, whether the connection presents a client certificate (persistence.databaseTlsClientCertFile), and whether it carries a password. |
+| `databaseCredential.certificate` | boolean |  |  |
+| `databaseCredential.database` | boolean |  |  |
+| `databaseCredential.password` | boolean |  |  |
 | `developmentOnlySettings` | list |  |  |
 | `developmentOnlySettings[].default` | list, or string, or number, or boolean, or null |  |  |
 | `developmentOnlySettings[].default[]` | string, or number, or boolean |  |  |

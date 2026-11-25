@@ -41,5 +41,11 @@
   "dualThInForce": "生效",
   "dualYes": "是",
   "dualNo": "否",
-  "dualLink": "待审批（{n, plural, =1 {一项操作等待中} other {# 项操作等待中}}）"
+  "dualLink": "待审批（{n, plural, =1 {一项操作等待中} other {# 项操作等待中}}）",
+  "dbHeading": "数据库凭据",
+  "dbLead": "本服务如何向其数据库证明自己的身份（<code>persistence.databaseTlsClientCertFile</code>、<code>persistence.databasePasswordProvider</code>）。这是两种模式共有的设置，而不是模式之间的差异；列在这里，是因为连接如何认证是本页回答的问题。",
+  "dbCertificateAndPassword": "客户端证书和密码。",
+  "dbCertificate": "客户端证书，无密码。",
+  "dbPassword": "密码；不出示客户端证书。",
+  "dbNeither": "既无客户端证书也无密码：数据库在两者都没有的情况下接受连接。"
 }

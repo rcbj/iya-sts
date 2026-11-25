@@ -41,5 +41,11 @@
   "dualThInForce": "I kraft",
   "dualYes": "ja",
   "dualNo": "nej",
-  "dualLink": "Väntande godkännanden ({n, plural, =1 {en åtgärd väntar} other {# åtgärder väntar}})"
+  "dualLink": "Väntande godkännanden ({n, plural, =1 {en åtgärd väntar} other {# åtgärder väntar}})",
+  "dbHeading": "Databasens inloggningsuppgift",
+  "dbLead": "Hur den här tjänsten styrker sin identitet mot sin databas (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). Det är en inställning i båda lägena, ingen skillnad mellan dem; den finns här eftersom den här sidan svarar på hur anslutningen autentiseras.",
+  "dbCertificateAndPassword": "Ett klientcertifikat och ett lösenord.",
+  "dbCertificate": "Ett klientcertifikat, utan lösenord.",
+  "dbPassword": "Ett lösenord; inget klientcertifikat visas upp.",
+  "dbNeither": "Varken klientcertifikat eller lösenord: databasen tar emot anslutningen utan något av dem."
 }

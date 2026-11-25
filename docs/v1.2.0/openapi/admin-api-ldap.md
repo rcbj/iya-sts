@@ -1033,6 +1033,8 @@ Scope: `admin:read`.
 | `persistence.dataDir` | string, or null |  |  |
 | `persistence.database` | object |  |  |
 | `persistence.database.caFile` | string, or null |  |  |
+| `persistence.database.clientCertificate` | boolean |  |  |
+| `persistence.database.clientCertificateFile` | string, or null |  |  |
 | `persistence.database.database` | string, or null |  |  |
 | `persistence.database.encrypted` | boolean |  |  |
 | `persistence.database.host` | string, or null |  |  |

@@ -1463,7 +1463,8 @@ async function main(argv) {
                     ((e && e.message) || e));
     }
     const dial = postgres.dialOptions(connection.url, connection.verifyTls,
-                                      connection.tlsCa);
+                                      connection.tlsCa, undefined,
+                                      connection.tlsClient);
     if (dial.refused) {
       throw refusal('STS-LDAP-0152', 'the connection string is not ' +
                     'dialled: ' + dial.refused + ' (#273).');
@@ -1483,6 +1484,7 @@ async function main(argv) {
     driver = postgres.create({ url: connection.url, log: log,
                                verifyTls: connection.verifyTls,
                                tlsCa: connection.tlsCa,
+                               tlsClient: connection.tlsClient,
                                poolMax: postgres.poolMax(0) });
     try {
       await driver.open();

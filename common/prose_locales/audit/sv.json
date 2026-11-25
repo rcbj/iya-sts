@@ -1499,6 +1499,10 @@
     "en": "065f403ac7419f76",
     "text": "En präglad rad som aldrig kunde bekräftas kastades"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "Databasens klientcertifikat lästes om och ändrades"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "En persons aud_sub-inställning ändrades av en administratör"

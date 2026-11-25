@@ -63,6 +63,14 @@
     "en": "ce51e3182e53d854",
     "text": "لم يُتصل — يسمّي persistence.databaseTlsCaFile الملف {{file}}، وهو ما لا يمكن قراءته أو لا يحمل أي شهادة، لذا لا تبدأ هذه الخدمة عليه."
   },
+  "persistence.status.clientCertificate": {
+    "en": "803d02a07753ab1b",
+    "text": "تصادق هذه الخدمة لدى قاعدة البيانات بشهادة العميل الموجودة في {{file}} (persistence.databaseTlsClientCertFile)، والتي يُعاد قراءتها كل persistence.databasePasswordRefreshS."
+  },
+  "persistence.status.clientCertificateUnusable": {
+    "en": "79cae22fc2547022",
+    "text": "غير متصل — لا يمكن قراءة شهادة العميل في {{file}} (persistence.databaseTlsClientCertFile)، أو أن مفتاحها ليس مفتاحها، لذا لا تبدأ هذه الخدمة بها."
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "لم يُتصل — يطلب sslmode={{sslmode}} اتصالًا غير مشفّر، وهذه الخدمة لا تفتحه أبدًا، لذا لا تبدأ على سلسلة الاتصال هذه."

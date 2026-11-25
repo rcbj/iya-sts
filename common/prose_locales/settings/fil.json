@@ -11879,6 +11879,30 @@
     "en": "61c24dbb3c0a7674",
     "text": "binubuksan ang connection pool bago mag-bind ang listener"
   },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "File ng client certificate ng database"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "Isang PEM certificate na iniharap ng serbisyong ito sa database kapag nagbubukas ito ng koneksyon (ang leaf muna, pagkatapos ang anumang intermediate certificate na wala sa database). Itakda ito kasama ng `persistence.databaseTlsClientKeyFile`. Maaari nang i-authenticate ng database ang koneksyon sa certificate lamang (ang `cert` na paraan ng PostgreSQL, ang `REQUIRE X509` ng MariaDB), at hindi na kailangan ng password, o sa certificate at password nang magkasama (`clientcert=verify-full`). Ang walang laman, ang default, ay walang iniharap. Binabasa muli ang dalawang file bawat `persistence.databasePasswordRefreshS`, kaya ang na-renew na certificate ay ginagamit sa mga bagong koneksyon nang walang restart. Sa product, ang file ay dapat nasa direktoryong nakalista sa `security.fileRoots`. Ang file na hindi mabasa, o susing hindi sa certificate na ito, ay pumipigil sa pagsisimula ng serbisyo."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "binubuksan ang connection pool bago mag-bind ang listener"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "File ng client key ng database"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "Ang hindi naka-encrypt na PEM private key ng `persistence.databaseTlsClientCertFile`, na mababasa lamang ng serbisyong ito. Binabasa ito mula sa path at hindi kailanman nila-log o ipinapakita. Itakda ang dalawa o wala."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "binubuksan ang connection pool bago mag-bind ang listener"
+  },
   "persistence.globalDatabaseUrl|label": {
     "en": "b8407b1c80c02c36",
     "text": "Database ng global tier (writer)"

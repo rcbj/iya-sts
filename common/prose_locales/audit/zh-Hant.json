@@ -1499,6 +1499,10 @@
     "en": "065f403ac7419f76",
     "text": "已捨棄一筆永遠無法提交的已簽發記錄"
   },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "已重新讀取資料庫用戶端憑證，且憑證已變更"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "管理員變更了某人的 aud_sub 設定"

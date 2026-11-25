@@ -63,6 +63,14 @@
     "en": "ce51e3182e53d854",
     "text": "“不连接”——persistence.databaseTlsCaFile 指定了 {{file}}，但该文件无法读取或不含任何证书，因此本服务不会以它启动。"
   },
+  "persistence.status.clientCertificate": {
+    "en": "803d02a07753ab1b",
+    "text": "本服务使用 {{file}}（persistence.databaseTlsClientCertFile）中的客户端证书向数据库认证，每隔 persistence.databasePasswordRefreshS 重新读取一次。"
+  },
+  "persistence.status.clientCertificateUnusable": {
+    "en": "79cae22fc2547022",
+    "text": "未连接 — {{file}}（persistence.databaseTlsClientCertFile）中的客户端证书无法读取，或其密钥不是它自己的，因此本服务不会以此启动。"
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "“不连接”——sslmode={{sslmode}} 要求明文连接，而本服务从不打开这种连接，因此不会使用此连接字符串启动。"
