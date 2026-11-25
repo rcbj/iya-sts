@@ -18649,6 +18649,11 @@ if (serverCertificate && serverCertificate.certPem &&
   // tls/key_exchange.ts), as on the main port.
   require('../tls/key_exchange').install(secureServer.server, 'ldaps',
                                          'LDAPS (' + LDAPS_PORT + ')');
+  // Its certificate's OCSP status stapled, as on the main port (#2254,
+  // tls/ocsp_stapling.ts): 636 presents the main port's certificates, so
+  // the two share one staple.
+  require('../tls/ocsp_stapling').install(secureServer.server, 'ldaps',
+                                          'LDAPS (' + LDAPS_PORT + ')');
 } else {
   tlsListenError = 'there was no server certificate at startup';
   log.warn(errorCodes.tag('STS-LDAP-0029') +

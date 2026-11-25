@@ -13786,6 +13786,29 @@ const SETTINGS = [
                  'of its validity is left. 0, the default, keeps the ' +
                  'third.' },
 
+  // OCSP STAPLING ON THIS SERVICE'S OWN LISTENERS (#2254, ASVS 5.0.0
+  // 12.1.4), tls/ocsp_stapling.ts. `auto` is mode.staplesOcsp(): on in
+  // product, off in development. Read at every handshake, so a change
+  // applies to the next one.
+  { key: 'tls.ocspStapling', group: 'TLS',
+    label: 'Staple an OCSP response on every listener',
+    env: 'STS_TLS_OCSP_STAPLING', type: 'enum', dflt: 'auto',
+    enumValues: ['auto', 'on', 'off'], runtime: true, perProcess: true,
+    description: 'Whether the main port, LDAPS, the debugger and every ' +
+                 'custom listener answer a client that asks for the ' +
+                 'certificate status (RFC 6066 status_request, in TLS 1.2 ' +
+                 'and 1.3) with a stapled OCSP response. The response is ' +
+                 'the one this service\'s own OCSP responder gives for the ' +
+                 'listener\'s certificate, made in the process holding the ' +
+                 'socket, without a network fetch, and refreshed by the ' +
+                 'tls.ocsp-staple-refresh job before its nextUpdate. A ' +
+                 'certificate from an outside authority (tls.certificateFile ' +
+                 'or a custom listener\'s own files) is not stapled. When no ' +
+                 'current response can be made the handshake goes on ' +
+                 'without one; it never fails. **`auto` is on in product ' +
+                 'mode and off in development** (mode.staplesOcsp()); `on` ' +
+                 'and `off` force it in either mode.' },
+
   // THE MAIN PORT'S CONNECTIONS, POOLED (#406, 2026-10-02). The main port
   // asks every full handshake for a client certificate, and a browser holding
   // one that matches asks its user each time: with node's 5-second keep-alive

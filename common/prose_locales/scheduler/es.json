@@ -759,6 +759,14 @@
     "en": "c84b42d3aab3bdde",
     "text": "Actualiza la KRL de la CA de usuarios OpenSSH de cada dominio tras las revocaciones de certificados emitidos y elimina las revocaciones caducadas."
   },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "Renovación de la respuesta OCSP grapada"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "Vuelve a generar la respuesta OCSP que grapa cada escucha de este proceso (el puerto principal, LDAPS, el depurador y las escuchas personalizadas), a partir del propio respondedor de este servicio, cada cuarto de pki.crlLifetimeMinutes, para que una respuesta grapada esté siempre muy antes de su nextUpdate y una revocación hecha en otro lugar la alcance. Se ejecuta en el proceso frontal de cada nodo."
+  },
   "sched.jobs.tls.server-certificate-renew.title": {
     "en": "d7afa3328270e140",
     "text": "Renovación del certificado del escuchador"

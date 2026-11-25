@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "Renovar el certificado del escuchador estos días antes de que caduque, cuando eso es antes del momento en que queda un tercio de su validez. 0, el valor predeterminado, mantiene el tercio."
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Grapar una respuesta OCSP en cada escucha"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Si el puerto principal, LDAPS, el depurador y cada escucha personalizada responden a un cliente que pide el estado del certificado (status_request de RFC 6066, en TLS 1.2 y 1.3) con una respuesta OCSP grapada. La respuesta es la que da el propio respondedor OCSP de este servicio para el certificado de la escucha, generada en el proceso que tiene el socket, sin una petición de red, y renovada por el trabajo tls.ocsp-staple-refresh antes de su nextUpdate. Un certificado de una autoridad externa (tls.certificateFile o los archivos propios de una escucha personalizada) no se grapa. Cuando no se puede generar una respuesta vigente, el protocolo de enlace continúa sin ella; nunca falla. **`auto` está activado en modo producto y desactivado en desarrollo** (mode.staplesOcsp()); `on` y `off` lo imponen en cualquiera de los dos modos."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "El puerto principal comparte la clave de tickets de sesión del clúster"

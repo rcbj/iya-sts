@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "Renouveler le certificat de l’écouteur ce nombre de jours avant son expiration, lorsque c’est plus tôt que le moment où il ne reste qu’un tiers de sa validité. 0, la valeur par défaut, garde le tiers."
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Agrafer une réponse OCSP sur chaque écouteur"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Indique si le port principal, LDAPS, le débogueur et chaque écouteur personnalisé répondent à un client qui demande l'état du certificat (status_request de la RFC 6066, en TLS 1.2 et 1.3) par une réponse OCSP agrafée. La réponse est celle que le propre répondeur OCSP de ce service donne pour le certificat de l'écouteur, produite dans le processus qui détient le socket, sans requête réseau, et renouvelée par la tâche tls.ocsp-staple-refresh avant son nextUpdate. Un certificat d'une autorité extérieure (tls.certificateFile ou les fichiers propres d'un écouteur personnalisé) n'est pas agrafé. Quand aucune réponse à jour ne peut être produite, la négociation continue sans elle ; elle n'échoue jamais. **`auto` est actif en mode produit et inactif en développement** (mode.staplesOcsp()) ; `on` et `off` l'imposent dans l'un ou l'autre mode."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "Le port principal partage la clé de tickets de session du cluster"

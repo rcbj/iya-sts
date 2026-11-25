@@ -57,12 +57,13 @@ Level 2. Turn one on only for the clients that need it.
 | `security.pbes2MinIterations` | Set below 600000, a password-encrypted JWE (PBES2) with fewer PBKDF2 iterations | A sender whose library uses a smaller count |
 | `malwareScan.allowCleartext` | A plain `icap://` malware scanner | A scanner on a network you trust |
 
-Two settings are on by default in product mode, and turning one off weakens it
+Three settings are on by default in product mode, and turning one off weakens it
 in the same way:
 
 | Setting | Off means |
 |---|---|
 | `security.hstsIncludeSubDomains` | HSTS stops covering subdomains of the service's host name |
+| `tls.ocspStapling` | Set to `off`, no listener staples an OCSP response, so a client checking the certificate asks the responder itself or not at all |
 | `security.requestsPerAddressPerMinute` | Set to `0`, no ceiling on requests from one address (6000 a minute by default) |
 
 Two switches exist to recover from a bad policy, and `/admin/mode` shows either
@@ -87,6 +88,13 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
 * **HTTPS.** The main port is HTTPS, and a process with `global.https` off does
   not start. The plain-HTTP revocation and SCEP listener stays, because
   RFC 5280, RFC 5019 and RFC 8894 expect those services over HTTP.
+* **OCSP stapling.** Every listener (the main port, LDAPS, the debugger, the
+  custom listeners) staples this service's own OCSP response for its
+  certificate (`tls.ocspStapling=auto`), refreshed before its `nextUpdate`. A
+  certificate you supply from an outside authority is not stapled: staple it
+  at the TLS terminator in front. The certificates carry no must-staple
+  extension, and a staple that cannot be made never fails a handshake. See
+  [OCSP stapling](tls.md#ocsp-stapling).
 * **The build.** No page, API answer or outbound request that someone other
   than an administrator can see names the exact version, build number, build
   time or commit: the page footer has no version line, the sign-in and portal

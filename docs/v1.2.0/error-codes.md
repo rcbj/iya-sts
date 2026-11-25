@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 78
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 80
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 144
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
@@ -4158,6 +4158,8 @@ Raised from: tls/.
 | `STS-TLS-0076` | Only one of tls.trustedProxyCertificates and tls.trustedProxyAddresses is set, so no forwarded client certificate is read: a TLS-terminating proxy is trusted by both its certificate and its address (#2012). | none (logged) |
 | `STS-TLS-0077` | A write of tls.trustedProxyCertificates was refused: an entry is neither the SHA-256 of a certificate (64 hex digits, colons and a sha256: prefix allowed) nor spki: followed by the SHA-256 of a SubjectPublicKeyInfo in the same form (#2012). | — |
 | `STS-TLS-0078` | The listener certificate was due for renewal (less than a third of its validity left, or inside tls.serverCertificateRenewLeadDays) and the tls.server-certificate-renew job could not re-issue it (#2220). The socket goes on presenting the certificate it has. | a warning or error log line and a failure audit row |
+| `STS-TLS-0079` | No current OCSP response could be made for the certificate a listener presents (#2254, tls.ocspStapling): this service's own responder refused or failed, or the signature could not be made. Handshakes go on without a staple (or with the previous one while it is still current); none is failed. Logged when it starts, not per handshake. | a warning log line |
+| `STS-TLS-0080` | The OCSP response a listener staples says its certificate is REVOKED (#2254): the certificate was revoked at this service's own certificate authority and is still being presented. The staple says so to every client that asks; replace the certificate (Renew on /admin/pki, or the listener's own files). | a warning log line |
 
 ## STS-VC
 

@@ -1319,6 +1319,18 @@
     "en": "b0228891759cb8fd",
     "text": "开启（devices.requireCompliantDeviceForAdmin=auto）：签发策略的 device-required-admin 规则在令牌端点拒绝每一个并非来自本人合规已注册设备的控制台令牌和个人 admin:* 令牌（STS-DEVICE-0054）。当某位控制台管理员首次从合规设备获得此类令牌时，它按领域启用；在此之前每位管理员都会被放行，因此没有合规设备的安装永远不会被锁死；一旦启用便保持启用，而程序（部署的管理凭据）是重新进入的途径。目录 > 设备 会显示此领域是否已启用。"
   },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "每个 TLS 监听器都为其出示的证书装订 OCSP 响应"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "关闭（tls.ocspStapling=auto）：询问证书状态的客户端与以前一样得不到任何响应，如果它确实检查，则自行询问证书中指明的响应器。设置 tls.ocspStapling=on 即可在此装订。"
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "开启（tls.ocspStapling=auto）：主端口、LDAPS、调试器和每个自定义监听器装订本服务自己的 OCSP 响应器为其证书给出的回答，在持有套接字的进程中生成并在其 nextUpdate 之前刷新。来自外部机构的证书不装订，无法生成的装订会让握手在没有它的情况下继续（STS-TLS-0079），绝不使其失败。"
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "通过双向 TLS 证明的 GNAP 密钥是受信任颁发机构签发给该客户端的证书"

@@ -1319,6 +1319,18 @@
     "en": "b0228891759cb8fd",
     "text": "開啟（devices.requireCompliantDeviceForAdmin=auto）：簽發原則的 device-required-admin 規則在權杖端點拒絕每一個並非來自本人符合規範已註冊裝置的主控台權杖與個人 admin:* 權杖（STS-DEVICE-0054）。當某位主控台管理員首次從符合規範的裝置取得此類權杖時，它依領域啟用；在此之前每位管理員都會獲准進入，因此沒有符合規範裝置的安裝永遠不會被鎖死；一旦啟用便保持啟用，而程式（部署的管理憑證）是重新進入的途徑。目錄 > 裝置 會顯示此領域是否已啟用。"
   },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "每個 TLS 監聽器都為其出示的憑證裝訂 OCSP 回應"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "關閉（tls.ocspStapling=auto）：詢問憑證狀態的用戶端與以前一樣得不到任何回應，若它確實檢查，則自行詢問憑證中指名的回應器。設定 tls.ocspStapling=on 即可在此裝訂。"
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "開啟（tls.ocspStapling=auto）：主連接埠、LDAPS、偵錯器和每個自訂監聽器裝訂本服務自己的 OCSP 回應器為其憑證所給的答覆，在持有通訊端的程序中產生並在其 nextUpdate 之前重新整理。來自外部機構的憑證不裝訂，無法產生的裝訂會讓交握在沒有它的情況下繼續（STS-TLS-0079），絕不使其失敗。"
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "以相互 TLS 證明的 GNAP 金鑰，是受信任授權單位簽發給用戶端的憑證"

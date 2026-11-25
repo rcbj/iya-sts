@@ -1201,6 +1201,11 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // The key exchange each handshake negotiated, counted (#2220).
   require('./tls/key_exchange').install(server, 'custom:' + listenerId,
                                         label);
+  // Its certificate's OCSP status stapled (#2254), when tls.ocspStapling
+  // says so: from this service's own responder, or none for an operator's
+  // certificate from an outside authority — tls/ocsp_stapling.ts.
+  require('./tls/ocsp_stapling').install(server, 'custom:' + listenerId,
+                                         label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1321,6 +1326,12 @@ if (useHttps) {
   // so /admin/crypto-metadata can say how many clients came post-quantum —
   // tls/key_exchange.ts.
   require('./tls/key_exchange').install(mainServer, 'main',
+    'the main port (' + PORT + ')');
+  // OCSP STAPLING (#2254, ASVS 5.0.0 12.1.4): a client sending RFC 6066's
+  // status_request gets this service's own responder's answer for the
+  // certificate, made in this process and refreshed by a per-process job;
+  // a handshake is never failed for want of one — tls/ocsp_stapling.ts.
+  require('./tls/ocsp_stapling').install(mainServer, 'main',
     'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it

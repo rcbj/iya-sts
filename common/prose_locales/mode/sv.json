@@ -1319,6 +1319,18 @@
     "en": "b0228891759cb8fd",
     "text": "PÅ (devices.requireCompliantDeviceForAdmin=auto): utfärdandepolicyns regel device-required-admin avvisar vid tokenslutpunkten varje konsoltoken och varje persons admin:*-token som inte kom från en egen kompatibel registrerad enhet (STS-DEVICE-0054). Den AKTIVERAS per sfär första gången en konsoladministratör får en från en kompatibel enhet, och fram till dess släpps varje administratör in, så en installation utan kompatibel enhet låses aldrig ute; när den väl är aktiverad förblir den aktiverad, och ett program (driftsättningens hanteringsbehörighet) är vägen tillbaka. Katalog > Enheter visar om den här sfären är aktiverad."
   },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "Varje TLS-lyssnare häftar ett OCSP-svar för certifikatet den presenterar"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "AV (tls.ocspStapling=auto): en klient som frågar efter certifikatets status får inget, som tidigare, och frågar själv den svarare som certifikatet anger, om den alls kontrollerar. Sätt tls.ocspStapling=on för att häfta här."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "PÅ (tls.ocspStapling=auto): huvudporten, LDAPS, felsökaren och varje anpassad lyssnare häftar det svar som den här tjänstens egen OCSP-svarare ger för deras certifikat, skapat i den process som håller socketen och förnyat före dess nextUpdate. Ett certifikat från en utomstående utfärdare häftas inte, och ett svar som inte kan skapas lämnar handskakningen utan det (STS-TLS-0079), aldrig misslyckad."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "En GNAP-nyckel bevisad med ömsesidig TLS är ett certifikat som en betrodd utfärdare utfärdat till klienten"

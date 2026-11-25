@@ -1319,6 +1319,18 @@
     "en": "b0228891759cb8fd",
     "text": "ON (devices.requireCompliantDeviceForAdmin=auto): tinatanggihan ng rule na device-required-admin ng issuance policy, sa token endpoint, ang bawat console token at bawat admin:* token ng isang tao na hindi nagmula sa sarili niyang compliant na nakarehistrong device (STS-DEVICE-0054). Na-ARM ito bawat realm sa unang beses na mabigyan ng isa ang isang console administrator mula sa compliant na device, at hanggang doon ay pinapapasok ang bawat administrator, kaya hindi kailanman nala-lockout ang isang install na walang compliant na device; kapag na-arm na ay mananatili itong naka-arm, at ang isang program (ang management credential ng deployment) ang daan pabalik. Sinasabi ng Directory > Devices kung naka-arm ang realm na ito."
   },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "Bawat TLS listener ay nag-i-staple ng OCSP response para sa certificate na ipinapakita nito"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "OFF (tls.ocspStapling=auto): ang client na humihingi ng status ng certificate ay walang natatanggap, gaya ng dati, at siya mismo ang nagtatanong sa responder na nakapangalan sa certificate kung nagsusuri man ito. Itakda ang tls.ocspStapling=on para mag-staple dito."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "ON (tls.ocspStapling=auto): ang main port, LDAPS, debugger at bawat custom listener ay nag-i-staple ng sagot na ibinibigay ng sariling OCSP responder ng serbisyong ito para sa kanilang certificate, ginawa sa process na may hawak ng socket at nire-refresh bago ang nextUpdate nito. Hindi ini-staple ang certificate mula sa labas na authority, at ang staple na hindi magawa ay nag-iiwan sa handshake nang wala nito (STS-TLS-0079), hindi kailanman bigo."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Ang GNAP key na pinatunayan ng mutual TLS ay isang certificate na in-issue sa client ng pinagkakatiwalaang authority"

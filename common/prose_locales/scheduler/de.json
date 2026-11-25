@@ -759,6 +759,14 @@
     "en": "c84b42d3aab3bdde",
     "text": "Aktualisiert die KRL der OpenSSH-Benutzer-CA jedes Vertrauensbereichs nach Widerrufen ausgestellter Zertifikate und entfernt abgelaufene Widerrufe."
   },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "Erneuerung der angehefteten OCSP-Antwort"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "Erzeugt die OCSP-Antwort, die jeder Listener dieses Prozesses anheftet (der Hauptport, LDAPS, der Debugger und die benutzerdefinierten Listener), neu aus dem eigenen Responder dieses Dienstes, jedes Viertel von pki.crlLifetimeMinutes, sodass eine angeheftete Antwort immer weit vor ihrem nextUpdate liegt und eine anderswo vorgenommene Sperrung sie erreicht. Läuft im Front-Prozess jedes Knotens."
+  },
   "sched.jobs.tls.server-certificate-renew.title": {
     "en": "d7afa3328270e140",
     "text": "Erneuerung des Listener-Zertifikats"

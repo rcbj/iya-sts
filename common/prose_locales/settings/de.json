@@ -6815,6 +6815,14 @@
     "en": "c30ac0820cd16ec6",
     "text": "Das Listener-Zertifikat so viele Tage vor seinem Ablauf erneuern, wenn das früher ist als der Punkt, an dem ein Drittel seiner Gültigkeit übrig ist. 0, der Standard, behält das Drittel."
   },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Auf jedem Listener eine OCSP-Antwort anheften (Stapling)"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Ob der Hauptport, LDAPS, der Debugger und jeder benutzerdefinierte Listener einem Client, der nach dem Zertifikatsstatus fragt (RFC 6066 status_request, in TLS 1.2 und 1.3), mit einer angehefteten OCSP-Antwort antworten. Die Antwort ist die, die der eigene OCSP-Responder dieses Dienstes für das Zertifikat des Listeners gibt, erzeugt in dem Prozess, der den Socket hält, ohne Netzwerkabruf, und vom Job tls.ocsp-staple-refresh vor ihrem nextUpdate erneuert. Ein Zertifikat einer fremden Zertifizierungsstelle (tls.certificateFile oder die eigenen Dateien eines benutzerdefinierten Listeners) wird nicht angeheftet. Kann keine aktuelle Antwort erzeugt werden, läuft der Handshake ohne sie weiter; er schlägt nie fehl. **`auto` ist im Produktmodus an und in der Entwicklung aus** (mode.staplesOcsp()); `on` und `off` erzwingen es in jedem Modus."
+  },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
     "text": "Der Hauptport teilt den Sitzungsticket-Schlüssel des Clusters"
