@@ -13635,6 +13635,19 @@ class AdminApi {
         // THE CLAIMS THE DECISION WAS MADE ON, for `GET /admin-api/me`'s
         // `holds` (#2168): asked there only, never on every request.
         res.locals.apiTokenClaims = claims;
+        // AND WHAT THE PERSON HOLDS, for the views that draw a write
+        // control (#2200): `holds`, asked only by a view that asks, once
+        // per request. What may be DONE is still the token's scope.
+        let heldRoles = null;
+        req.adminApiHeldRoles = function () {
+          log.debug("Entering adminApiHeldRoles().");
+          if (heldRoles === null) {
+            heldRoles = self.heldAdminRoles(res,
+              (res.locals.apiCaller && res.locals.apiCaller.roles) || []);
+          }
+          log.debug("Leaving adminApiHeldRoles().");
+          return heldRoles;
+        };
         // WHAT AN OWNER IS ANSWERED (#607): a read whose answer carries more
         // than the one object — the role register around one role — is
         // narrowed to it in `sendJson()`.
