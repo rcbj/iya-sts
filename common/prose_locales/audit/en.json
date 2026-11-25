@@ -589,6 +589,7 @@
   "audit.actions.enrollment.hostname.add.label": "A host name was registered on an entry for certificate enrollment",
   "audit.actions.enrollment.hostname.remove.label": "A host name was removed from an entry for certificate enrollment",
   "audit.actions.device.risk.label": "A registered device's risk level was set",
+  "audit.actions.device.admin-requirement-armed.label": "The realm's administrators now need a compliant registered device",
   "audit.actions.federation.create.label": "A federation relationship was created",
   "audit.actions.federation.update.label": "A federation relationship was changed",
   "audit.actions.federation.delete.label": "A federation relationship was deleted",

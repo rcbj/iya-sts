@@ -2359,6 +2359,10 @@
     "en": "229ae42804651e11",
     "text": "एक पंजीकृत डिवाइस का जोखिम स्तर सेट किया गया"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "विश्वास क्षेत्र के व्यवस्थापकों को अब एक अनुपालक पंजीकृत डिवाइस चाहिए"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "एक फ़ेडरेशन संबंध बनाया गया"

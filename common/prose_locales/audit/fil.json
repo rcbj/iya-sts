@@ -2359,6 +2359,10 @@
     "en": "229ae42804651e11",
     "text": "Itinakda ang risk level ng isang nakarehistrong device"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Kailangan na ngayon ng mga administrator ng realm ang compliant na nakarehistrong device"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "May federation relationship na ginawa"

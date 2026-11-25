@@ -416,6 +416,7 @@
   "password.reused": "Dieses Passwort wurde für dieses Konto kürzlich verwendet. Die Passwortrichtlinie dieses Bereichs lehnt das aktuelle Passwort und die {history} davor ab (Profil „{profile}“). Wählen Sie eines, das Sie hier nicht verwendet haben.",
   "password.rotates": "{account} ist ein Dienstkonto, dessen Passwort über sein Push-Ziel rotiert, daher kann es nicht von Hand gesetzt werden: Am Ziel lesen es seine Verbraucher. Verwenden Sie „Jetzt rotieren“ auf seiner Seite oder POST /admin-api/users/rotate-password.",
   "policy.compliantDeviceRequired": "Ein konformes registriertes Gerät ist erforderlich.",
+  "policy.adminCompliantDeviceRequired": "Die Administrationskonsole verlangt ein konformes registriertes Gerät. Melden Sie sich von einem Gerät an, das für Sie registriert und als konform markiert ist: Registrieren Sie eines auf der Seite Geräte des Benutzerportals und bitten Sie einen anderen Administrator oder Ihre Geräteverwaltung, es als konform zu markieren.",
   "policy.deviceBoundPending": "Die Anwendung verlangt eine gerätegebundene Sitzung, und die Registrierung für diese ist noch nicht abgeschlossen.",
   "policy.deviceBoundRefused": "Die Anwendung verlangt eine gerätegebundene Sitzung, und diese {fact, select, skipped {wurde übersprungen.} other {wurde nicht rechtzeitig gebunden.}}",
   "policy.indeterminate": "die Ausstellungsrichtlinie konnte nicht ausgewertet werden{anyStatus, select, yes {: {status}} other {}}. Bei einem Indeterminate wird nichts ausgestellt, denn die Alternative wäre, bei einem Fehler auszustellen.",

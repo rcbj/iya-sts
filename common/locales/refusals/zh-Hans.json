@@ -416,6 +416,7 @@
   "password.reused": "该密码最近已用于此账户。此领域的密码策略会拒绝当前密码及其之前的 {history} 个密码（配置文件“{profile}”）。请选择一个您未在此处使用过的密码。",
   "password.rotates": "{account} 是一个服务账户，其密码通过其推送目标轮换，因此不能手动设置：其使用方从该目标读取密码。请在其页面上使用“立即轮换”，或使用 POST /admin-api/users/rotate-password。",
   "policy.compliantDeviceRequired": "需要一台合规的已注册设备。",
+  "policy.adminCompliantDeviceRequired": "管理控制台需要一台合规的已注册设备。请从已为您注册并标记为合规的设备登录：在用户门户的“设备”页面注册一台设备，并请另一位管理员或您的设备管理系统将其标记为合规。",
   "policy.deviceBoundPending": "该应用需要绑定设备的会话，而此会话的注册尚未完成。",
   "policy.deviceBoundRefused": "该应用需要绑定设备的会话，而此会话{fact, select, skipped {被跳过了。} other {没有及时完成绑定。}}",
   "policy.indeterminate": "无法评估签发策略{anyStatus, select, yes {：{status}} other {}}。结果为 Indeterminate 时不会签发任何内容，因为另一种做法就是在出错时签发。",

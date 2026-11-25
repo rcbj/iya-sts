@@ -416,6 +416,7 @@
   "password.reused": "Esa contraseña se ha usado recientemente en esta cuenta. La política de contraseñas de este dominio rechaza la contraseña actual y las {history} anteriores (perfil «{profile}»). Elija una que no haya usado aquí.",
   "password.rotates": "{account} es una cuenta de servicio cuya contraseña rota a través de su destino de envío, así que no se puede establecer a mano: el destino es donde la leen sus consumidores. Use Rotate now en su página, o POST /admin-api/users/rotate-password.",
   "policy.compliantDeviceRequired": "Se exige un dispositivo registrado que cumpla los requisitos.",
+  "policy.adminCompliantDeviceRequired": "La consola de administración exige un dispositivo registrado que cumpla los requisitos. Inicie sesión desde un dispositivo registrado a su nombre y marcado como conforme: registre uno en la página Dispositivos del portal de usuario y pida a otro administrador o a su gestión de dispositivos que lo marque como conforme.",
   "policy.deviceBoundPending": "La aplicación exige una sesión vinculada al dispositivo, y el registro de esta no ha terminado.",
   "policy.deviceBoundRefused": "La aplicación exige una sesión vinculada al dispositivo, y esta {fact, select, skipped {se omitió.} other {no se vinculó a tiempo.}}",
   "policy.indeterminate": "no se pudo evaluar la política de emisión{anyStatus, select, yes {: {status}} other {}}. No se emite nada ante un Indeterminate, porque la alternativa es emitir ante un error.",

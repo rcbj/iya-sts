@@ -2359,6 +2359,10 @@
     "en": "229ae42804651e11",
     "text": "Se estableció el nivel de riesgo de un dispositivo registrado"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Los administradores del dominio necesitan ahora un dispositivo registrado conforme"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "Se creó una relación de federación"

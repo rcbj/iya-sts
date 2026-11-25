@@ -2359,6 +2359,10 @@
     "en": "229ae42804651e11",
     "text": "Le niveau de risque d’un appareil enregistré a été défini"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Les administrateurs du domaine ont désormais besoin d'un appareil enregistré conforme"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "Une relation de fédération a été créée"

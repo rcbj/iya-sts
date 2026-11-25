@@ -416,6 +416,7 @@
   "password.reused": "該密碼最近已用於此帳戶。此領域的密碼原則會拒絕目前的密碼及其之前的 {history} 個密碼（設定檔「{profile}」）。請選擇一個您未在此處使用過的密碼。",
   "password.rotates": "{account} 是一個服務帳戶，其密碼透過其推送目的地輪替，因此不能手動設定：其使用者從該目的地讀取密碼。請在其頁面上使用「立即輪替」，或使用 POST /admin-api/users/rotate-password。",
   "policy.compliantDeviceRequired": "需要一台符合規範的已註冊裝置。",
+  "policy.adminCompliantDeviceRequired": "管理主控台需要一台符合規範的已註冊裝置。請從已為您註冊並標示為符合規範的裝置登入：在使用者入口網站的「裝置」頁面註冊一台裝置，並請另一位管理員或您的裝置管理系統將其標示為符合規範。",
   "policy.deviceBoundPending": "該應用程式需要綁定裝置的工作階段，而此工作階段的註冊尚未完成。",
   "policy.deviceBoundRefused": "該應用程式需要綁定裝置的工作階段，而此工作階段{fact, select, skipped {被略過了。} other {沒有及時完成綁定。}}",
   "policy.indeterminate": "無法評估簽發原則{anyStatus, select, yes {：{status}} other {}}。結果為 Indeterminate 時不會簽發任何內容，因為另一種做法就是在出錯時簽發。",

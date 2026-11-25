@@ -712,9 +712,32 @@ class DevicesPage {
           ? (json.decisions.compliantDeviceAttested ? 'attested' : 'yes')
           : 'no',
         acr: json.decisions.acr, claim: json.decisions.claim })) +
+      DevicesPage.adminDeviceHtml(json.decisions.adminDevice, t) +
       '<h2 data-tab="settings">' +
       t.html('consoleDevices.registrationHtml.settings') + '</h2>' +
       SettingsForms.forms(json.settings, REGISTRATION, undefined, t);
+  }
+
+  // THE ADMINISTRATIVE SURFACE'S REQUIREMENT (#2179): required and armed,
+  // in force and NOT YET armed — a warning, because until an administrator
+  // signs in from a compliant device every administrator is admitted — or
+  // off. An answer from a server older than #2179 carries none.
+  /**
+   * Draws the administrative surface's device requirement for this realm.
+   *
+   * @param state - `decisions.adminDevice`, or undefined
+   * @param t - the escaping translator
+   * @returns the note as HTML, or '' when the answer carries none
+   */
+  static adminDeviceHtml(state: Json, t: Json): string {
+    if (!state) {
+      return '';
+    }
+    const which = !state.inForce ? 'off' : (state.armed ? 'armed'
+                                                         : 'pending');
+    const html = t.html('consoleDevices.registrationHtml.adminDeviceNote', {
+      state: which, armedAt: String(state.armedAt || '') });
+    return which === 'pending' ? kit.warn(html) : kit.note(html);
   }
 
   // Called by `web_pages.ts` like registrationHtml(), and for the same

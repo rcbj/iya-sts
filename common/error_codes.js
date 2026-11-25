@@ -23448,6 +23448,17 @@ const CODES = [
       'register, so a person made again under the name owns it. Remove it ' +
       'on the Devices page.',
     spec: '' },
+  { code: 'STS-DEVICE-0054',
+    summary: 'A person\'s credential for the administrative surface — a ' +
+      'token to the admin console, or one carrying an admin:* scope — was ' +
+      'refused by the issuance policy\'s device-required-admin rule: the ' +
+      'realm requires its administrators to use a compliant registered ' +
+      'device (devices.requireCompliantDeviceForAdmin, on in product, ' +
+      'armed once an administrator signed in from one) and this did not ' +
+      'come from their own (or an application\'s) compliant, ' +
+      'uncompromised device (#2179).',
+    spec: 'the token endpoint\'s access_denied, whose description says ' +
+      'the admin console requires a compliant registered device' },
   // ===== HWTOKEN ===========================================================
   { code: 'STS-HWTOKEN-0001',
     summary: 'A hardware token\'s serial was offered with an evidence ' +

@@ -3635,6 +3635,14 @@
     "en": "0199e95e9d4fd037",
     "text": "NAKA-OFF BILANG DEFAULT SA PAREHONG MODE (#164 decision 3). Kapag naka-on, tinatanggihan ng issuance policy ang bawat token, assertion, ticket at session na hindi nagmula sa sariling (o sa isang application na) naka-register na device ng subject, na nakilala sa pamamagitan ng isa sa mga key nito, COMPLIANT at hindi compromised (STS-DEVICE-0037). Exempt sa built-in policy ang console at ang portal — kung saan nagre-register ng device ang isang tao. Tinatanggihan ang daanang walang device evidence (isang Kerberos ticket, isang password grant na walang DPoP). Bawat realm, gaya ng bawat setting."
   },
+  "devices.requireCompliantDeviceForAdmin|label": {
+    "en": "accd5e669497d943",
+    "text": "Kailangan ng mga administrator ang compliant na nakarehistrong device"
+  },
+  "devices.requireCompliantDeviceForAdmin|description": {
+    "en": "de625836b2a5c41f",
+    "text": "Kung ang isang TAO ay bibigyan ng credential para sa administrative surface — token para sa admin console, o isang may admin:* scope para sa /admin-api — mula lamang sa sarili niyang (o sa isang application na) compliant na nakarehistrong device, attested din kung saan iyon ang sinasabi ng devices.compliantDeviceAttested (STS-DEVICE-0054). **Naka-on ang `auto` sa product mode at naka-off sa development**; pinipilit ito ng `on` at `off`. Tinatanong sa token endpoint, sa bawat grant at bawat refresh. Hindi kailanman tinatanong ang mga program (client credentials, service account). WALANG LOCKOUT: na-ARM ang kinakailangan sa isang realm sa unang beses na ang isang console administrator ay mabigyan ng ganitong credential mula sa compliant na device; hanggang doon, pinapapasok ang bawat administrator gaya ng dati, at kapag na-arm na ay mananatili itong naka-arm. Magrehistro ng device sa pahinang Devices ng user portal, ipamarka itong compliant sa Directory > Devices o sa iyong device management, at mag-sign in gamit ang passkey o certificate nito. Bawat realm, gaya ng bawat setting."
+  },
   "devices.compliantDeviceAttested|label": {
     "en": "90baceaf602a2650",
     "text": "Dapat ding attested ang compliant na device"

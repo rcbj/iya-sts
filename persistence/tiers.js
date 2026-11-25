@@ -292,6 +292,11 @@ const GLOBAL_MINTED = {
   // `audit.export.cursors`, which is cell-tier with the ring it walks.
   'audit.export.destinations': 'where a realm\'s audit events are ' +
     'delivered',
+  // Whether a realm's administrative device requirement is ARMED (#2179):
+  // one row, when it was armed, and nobody's data (who and through which
+  // device are on the audit row). A latch every cell must honour alike.
+  'devices.adminRequirement': 'whether a realm\'s administrators need a ' +
+    'compliant registered device yet',
   // A realm's sign-in logo (#717): configuration every cell's sign-in
   // pages draw, as the mail templates are.
   'branding.assets': 'a realm\'s sign-in logo',

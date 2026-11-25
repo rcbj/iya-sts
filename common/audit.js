@@ -2051,6 +2051,11 @@ const ACTIONS = [
   // common/devices.ts
   { action: 'device.risk', category: 'directory',
     label: 'A registered device\'s risk level was set' },
+  // common/admin_device_requirement.ts (#2179): the realm's administrators
+  // now need a compliant registered device — armed on first proof.
+  { action: 'device.admin-requirement-armed', category: 'admin',
+    label: 'The realm\'s administrators now need a compliant registered ' +
+           'device' },
   // federation/federation.js' recordChange()
   { action: 'federation.create', category: 'admin',
     label: 'A federation relationship was created' },

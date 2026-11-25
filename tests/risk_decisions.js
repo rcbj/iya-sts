@@ -182,7 +182,9 @@ function childMain() {
     const ruleIds = (built.policy && built.policy.rules || [])
       .map(function (r) { return r.id.split(':rule:')[1]; });
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
-         'device-required,protocol-not-declared,authn-mechanism,' +
+         // #2179: the administrative surface's own device rule.
+         'device-required,device-required-admin,' +
+         'protocol-not-declared,authn-mechanism,' +
          'mfa-mechanism,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-signal-step-up,' +
          'risk-protected-key,' +
@@ -252,8 +254,9 @@ function childMain() {
          'may-act-subject-choice,' +
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
-         'A1. the built-in issuance policy carries the two device rules ' +
-         '(#164), the protocol-declaration rule, the sign-in mechanism ' +
+         'A1. the built-in issuance policy carries the three device ' +
+         'rules (#164, #2179), the protocol-declaration rule, the ' +
+         'sign-in mechanism ' +
          'rule (#457), the second-factor rule (#475), the three risk ' +
          'rules and #503\'s signal step-up, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
@@ -875,8 +878,9 @@ function childMain() {
          // Kerberos-trust exchange rules of #430 Phase 3, #724's three
          // recovery rules, #941's two attestation-algorithm rules,
          // #940's profile-algorithm rule, #1955 P7's credProtect rule,
-         // #740's device-bound rule and #503's signal step-up rule.
-         unprotectedPolicy.policy.rules.length === 96,
+         // #740's device-bound rule, #503's signal step-up rule and
+         // #2179's administrative device rule.
+         unprotectedPolicy.policy.rules.length === 97,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
