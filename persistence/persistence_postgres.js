@@ -191,6 +191,14 @@ const capabilities = require('../cluster/cluster_capabilities');
 // connection within the pool's wait now answers its request 503 rather than
 // being acknowledged and lost (`cluster/cluster_barrier.js`, rule 2).
 const POOL_FLOOR = 4;
+// THE POOL'S WAITS, WHERE THE CALLER NAMES NONE (#2220): the connect
+// timeout and the wait for a free connection were both 5 s and an idle
+// connection was closed after 30 s, fixed. `persistence.connectTimeoutMs`,
+// `persistence.poolWaitMs` and `persistence.idleTimeoutMs` set them now,
+// passed in by `persistence.js` (this driver reads no setting), and these
+// are their defaults — the numbers it always had.
+const CONNECT_TIMEOUT_MS = 5000;
+const IDLE_TIMEOUT_MS = 30000;
 
 // A PURE FUNCTION of the node's request-worker count, so the scheduler's cap
 // (cluster/scheduler.ts, maxConcurrentRuns()) and the pool agree. No log
@@ -199,12 +207,19 @@ const POOL_FLOOR = 4;
  * Returns how many connections each process's pool holds.
  *
  * Twice the node's request-worker count, and never fewer than four, so the
- * scheduler's cap and the pool agree.
+ * scheduler's cap and the pool agree — unless `size` names one
+ * (`persistence.poolSize`, #2220), which is then the size, never below two:
+ * the flush and the change-log pull each need one.
  * @param workers - the node's request workers (`workers.requestCount` plus
  * `workers.surfaceCount`)
+ * @param [size] - the configured size; 0 or absent for the automatic one
  * @returns the pool size
  */
-function poolMax(workers) {
+function poolMax(workers, size) {
+  const configured = Math.floor(Number(size) || 0);
+  if (configured > 0) {
+    return Math.max(2, configured);
+  }
   const n = Math.max(0, Number(workers) || 0);
   return Math.max(POOL_FLOOR, 2 * n);
 }
@@ -3497,7 +3512,17 @@ function create(options) {
   // it into a socket option, which is what stops the two disagreeing again.
   // That place is `dialOptions()` since #98, so a process that is not the
   // service dials the same way.
-  const dialled = dial.connectionString;
+  // `let` since #2220: a password read again replaces it
+  // (`useConnectionString()`).
+  let dialled = dial.connectionString;
+  // The connect timeout, the wait for a free connection and the idle close
+  // (#2220): the caller's, or the numbers this driver always had.
+  const connectMs = Number(options.connectTimeoutMs) > 0
+    ? Number(options.connectTimeoutMs) : CONNECT_TIMEOUT_MS;
+  const waitMs = Number(options.poolWaitMs) > 0
+    ? Number(options.poolWaitMs) : connectMs;
+  const idleMs = Number(options.idleTimeoutMs) > 0
+    ? Number(options.idleTimeoutMs) : IDLE_TIMEOUT_MS;
 
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
@@ -3513,15 +3538,17 @@ function create(options) {
       engine: engine,
       connectionString: dialled,
       ssl: dial.ssl,
-      connectionTimeoutMillis: 5000
+      connectionTimeoutMillis: connectMs
     };
   }
 
   // Knex's pool over the writer (#326; `knex_store.js` argues the shape).
   // A mock must not hang waiting for a database that is not there: the
   // failure has to arrive as a logged error and a service that keeps
-  // answering, which needs the connection attempt to give up — the 5 s in
-  // `clientOptions()` bounds both the dial and the wait for a free slot.
+  // answering, which needs the connection attempt to give up — the connect
+  // timeout in `clientOptions()` bounds the dial and `waitMs` the wait for a
+  // free slot (5 s each by default; `persistence.connectTimeoutMs` and
+  // `persistence.poolWaitMs` since #2220).
   const pool = knexStore.openPool(clientOptions(), {
     // Small on purpose. The directory flush is one transaction at a time
     // (persistence.js). At most two minted flushes of non-overlapping keys
@@ -3530,7 +3557,8 @@ function create(options) {
     // A mock does not need a connection per core.
     max: Number(options.poolMax) > 0 ? Number(options.poolMax)
       : POOL_FLOOR,
-    idleTimeoutMillis: 30000
+    idleTimeoutMillis: idleMs,
+    acquireTimeoutMillis: waitMs
   });
 
   // -------------------------------------------------------------------------
@@ -3618,7 +3646,7 @@ function create(options) {
   const tallyPool = knexStore.openPool(
     Object.assign({}, clientOptions(),
                   { options: '-c synchronous_commit=off' }),
-    { max: 2, idleTimeoutMillis: 30000 });
+    { max: 2, idleTimeoutMillis: idleMs, acquireTimeoutMillis: waitMs });
   tallyPool.on('error', function (err) {
     log.error(errorCodes.tag('STS-STORE-0030') +
               'persistence: an idle postgres client of the tally pool ' +
@@ -3644,12 +3672,13 @@ function create(options) {
       engine: engine,
       connectionString: readDial.connectionString,
       ssl: readDial.ssl,
-      connectionTimeoutMillis: 5000
+      connectionTimeoutMillis: connectMs
     };
     const made = knexStore.openPool(readOptions, {
       max: Number(options.poolMax) > 0 ? Number(options.poolMax)
         : POOL_FLOOR,
-      idleTimeoutMillis: 30000
+      idleTimeoutMillis: idleMs,
+      acquireTimeoutMillis: waitMs
     });
     made.on('error', function (err) {
       log.error(errorCodes.tag('STS-STORE-0030') +
@@ -5904,6 +5933,20 @@ function create(options) {
     // The online indexes' settlement (#876, #882), for a caller that wants
     // to know it is over: `{ built, told }` (MariaDB's adds `failed`).
     // Never rejects.
+    // THE STATEMENT BOUND (#2220), set by `persistence.start()` once the
+    // store is open and restored: every pool of this driver (the writer,
+    // the tally pool, the read replica's) lends its connections under it.
+    // `knex_store.js`, `boundStatements()`, argues what is outside it.
+    boundStatements: function (ms) {
+      log.debug('Entering the postgres driver boundStatements(). ' + ms);
+      [pool, tallyPool, readPool].forEach(function (one) {
+        if (one && typeof one.boundStatements === 'function') {
+          one.boundStatements(ms);
+        }
+      });
+      log.debug('Leaving the postgres driver boundStatements().');
+    },
+
     onlineIndexes: function () {
       log.debug('Entering the postgres driver onlineIndexes().');
       log.debug('Leaving the postgres driver onlineIndexes().');
@@ -6047,7 +6090,11 @@ function create(options) {
             // changes either.
             return client.query(mariadb
               ? 'SET SESSION max_statement_time = 0' : 'RESET ALL'
-            ).catch(function (err) {
+            ).then(function () {
+              // The pool's statement bound (#2220) went with the reset:
+              // set again before this connection is next lent.
+              client.sessionReset();
+            }).catch(function (err) {
               log.warn(errorCodes.tag('STS-STORE-0033') +
                        'persistence: a metrics connection could not be reset ' +
                        '(' + err.message + '); it is being discarded rather ' +
@@ -11278,6 +11325,70 @@ function create(options) {
                          createdAt: Number(row.created_at),
                          offered: (inserted.rowCount || 0) > 0 } : null;
         });
+      });
+    },
+
+    // ---------------------------------------------------------------------
+    // A DATABASE PASSWORD READ AGAIN (#2220): the same database dialled with
+    // another connection string — `persistence.js` re-reads the password
+    // from its secret store and hands the finished string here. It is
+    // decided by `dialOptions()` exactly as the first was, and every pool of
+    // the WRITER takes it for the connections it makes from now on (the
+    // read pool too when it is the writer's). Open connections are left: a
+    // session outlives its role's password change. A string `dialOptions()`
+    // refuses changes nothing, and the refusal is the answer.
+    // ---------------------------------------------------------------------
+    useConnectionString: function (nextUrl) {
+      log.debug("Entering useConnectionString().");
+      const nextDial = dialOptions(nextUrl, verify, tlsCa, engine);
+      if (nextDial.refused) {
+        log.debug("Leaving useConnectionString(). Refused.");
+        return { ok: false, refused: nextDial.refused };
+      }
+      dialled = nextDial.connectionString;
+      pool.setConnectionString(dialled);
+      tallyPool.setConnectionString(dialled);
+      log.debug("Leaving useConnectionString().");
+      return { ok: true };
+    },
+
+    // A pooled connection to the writer that could not be made (#2220):
+    // `persistence.js` reads the password again when the database refused
+    // it.
+    onConnectFailure: function (fn) {
+      log.debug("Entering onConnectFailure().");
+      pool.onCreateFailure(fn);
+      tallyPool.onCreateFailure(fn);
+      log.debug("Leaving onConnectFailure().");
+    },
+
+    // THE ROW AS IT IS, for the shared secrets' refresh (#2220): null where
+    // nothing is stored under the name.
+    readSharedSecret: function (name) {
+      log.debug("Entering readSharedSecret(). name=" + name);
+      log.debug("Leaving readSharedSecret().");
+      return dialect.run(pool, 'readSharedSecret',
+        kx('sts_cluster_secrets').select('material')
+          .where({ name: String(name) })
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || null;
+        return row ? { material: row.material } : null;
+      });
+    },
+
+    // A ROTATION'S WRITE (#2220): the row is replaced only while it still
+    // holds what the rotation read, so two runs that raced cannot both
+    // rotate one secret — the second changes nothing and says so.
+    replaceSharedSecret: function (name, expected, material) {
+      log.debug("Entering replaceSharedSecret(). name=" + name);
+      log.debug("Leaving replaceSharedSecret().");
+      return dialect.run(pool, 'replaceSharedSecret',
+        kx('sts_cluster_secrets')
+          .update({ material: String(material) })
+          .where({ name: String(name), material: String(expected) })
+      ).then(function (r) {
+        return { replaced: (Number(r.rowCount) ||
+                            Number(r.affectedRows) || 0) > 0 };
       });
     },
 

@@ -811,7 +811,9 @@ class AccountActivation {
     if (password) {
       // Screened against Pwned Passwords first (#62 P6).
       await this.deps.breachedPasswords().screen(password);
-      const set: Json = credentials.setPassword(username, password);
+      // The person's own choice (#2236): what is derived from it says so.
+      const set: Json = credentials.setPassword(username, password,
+                                                { initiatingEntity: 'user' });
       if (!set.ok) {
         log.debug("Leaving AccountActivation.spend(). Password refused.");
         return setupRefused(ctx.errorCodes.codeOf(set) || 'STS-PORTAL-0008',

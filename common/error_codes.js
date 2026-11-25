@@ -737,6 +737,35 @@ const CODES = [
       'or the outbound rules refused the URL. Logged when forwarding ' +
       'starts failing, not per report; the report is still recorded here.',
     spec: 'none — the report was answered 204 and counted' },
+  { code: 'STS-HTTP-0032',
+    summary: 'Outbound HTTP requests are waiting for a connection: the ' +
+      'shared agent\'s cap per destination (federation.outboundMaxSockets) ' +
+      'or in all (federation.outboundMaxTotalSockets) is reached. They wait ' +
+      'within their overall deadline. Logged when requests first queue, ' +
+      'and again only after the queue has drained (#2220).',
+    spec: 'none — the requests wait; nothing is refused for the cap' },
+  { code: 'STS-HTTP-0033',
+    summary: 'An outbound request did not finish within its overall deadline ' +
+      '(federation.outboundDeadlineMs, or its own timeout where longer): ' +
+      'it was ended, and the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
+  { code: 'STS-HTTP-0034',
+    summary: 'An outbound connection was not made within the connect timeout ' +
+      '(federation.outboundConnectTimeoutMs): the request was ended, and ' +
+      'the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
+  { code: 'STS-HTTP-0035',
+    summary: 'An outbound request was not sent: its request-target (path ' +
+      'and query) is over 8 KiB, the bound RFC 9110 section 4.1 asks a ' +
+      'server to accept. It was destroyed before it was sent, and the ' +
+      'caller\'s own failure path ran (#2247, ASVS 5.0.0 4.2.5).',
+    spec: 'the caller\'s own refusal for a failed request' },
+  { code: 'STS-HTTP-0036',
+    summary: 'An outbound request was not sent: its header fields come to ' +
+      'more than 16 KiB, Node.js\'s own default bound on a request\'s ' +
+      'headers. It was destroyed before it was sent, and the caller\'s own ' +
+      'failure path ran (#2247, ASVS 5.0.0 4.2.5).',
+    spec: 'the caller\'s own refusal for a failed request' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -1394,6 +1423,28 @@ const CODES = [
       'Turn on security.hstsIncludeSubDomains, or turn off ' +
       'security.hstsPreload.',
     spec: 'none — a warning; the header is still sent, without preload' },
+  { code: 'STS-CORE-0182',
+    summary: 'A file was not scanned because malwareScan.concurrency scans ' +
+      'were running and malwareScan.queueLimit more were waiting: it is ' +
+      'refused as a file the scanner could not answer for is. The warning ' +
+      'is logged when the queue first fills (#2220).',
+    spec: 'HTTP 503' },
+  { code: 'STS-CORE-0183',
+    summary: 'A setting that holds a list of regular expressions ' +
+      '(spiffe.httpChallengeAllowedDnsPatterns, ' +
+      'spiffe.dockerSigstoreAllowedIdentities) was refused at a save: an ' +
+      'entry is longer than 256 characters, uses a backreference, applies ' +
+      'a quantifier to a group that is itself quantified or an alternation ' +
+      '(the shape that makes a match take exponential time), or does not ' +
+      'compile (#2220).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0184',
+    summary: 'A list of regular expressions in the environment or an ' +
+      'appconfig file holds an entry the console would refuse ' +
+      '(STS-CORE-0183). The service starts and uses it as configured; ' +
+      '/admin/config and the management API refuse it on the next save ' +
+      '(#2220).',
+    spec: 'none — a warning logged at startup; nothing is refused' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -2312,6 +2363,18 @@ const CODES = [
       'waits for that flush to settle until ten times the bound after it ' +
       'began, so a flush that is only slow keeps its writes.',
     spec: 'Log line' },
+  { code: 'STS-STORE-0178',
+    summary: 'A database statement was cancelled by the server at its ' +
+      'statement timeout (persistence.statementTimeoutMs, unless it set ' +
+      'its own). The caller\'s own failure path decides what follows: a ' +
+      'refused request, or a retried flush (#2220).',
+    spec: '' },
+  { code: 'STS-STORE-0179',
+    summary: 'The database password could not be read again from its ' +
+      'secret store (persistence.database-password-refresh, or after the ' +
+      'database refused a login, #2220); new connections go on using the ' +
+      'password already held.',
+    spec: 'Log line and audit row' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2473,6 +2536,17 @@ const CODES = [
       'whose row the flush dropped because the block claim\'s fence was ' +
       'gone: the token in the discarded body is not delivered.',
     spec: 'RFC 9110 section 15.6.4' },
+  { code: 'STS-CLUSTER-0167',
+    summary: 'A shared secret could not be read again from the store by ' +
+      'the per-process refresh (cluster.secret-refresh, #2220); the ' +
+      'process keeps the value it holds and tries again at the next run.',
+    spec: 'Log line' },
+  { code: 'STS-CLUSTER-0168',
+    summary: 'A step of a shared secret\'s rotation (cluster.secret-rotate, ' +
+      '#2220) failed: the stored value would not open or the new one would ' +
+      'not seal. The secret keeps its value and the step is tried again at ' +
+      'the next run.',
+    spec: 'Log line' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -2911,6 +2985,16 @@ const CODES = [
       'every cell (#727): it is answered 503 and its once-ever claim is ' +
       'released, so the provider\'s retry is accepted and fanned out again.',
     spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-CELL-0212',
+    summary: 'A synchronous call to another cell answered more than ' +
+      'cells.maxAnswerBytes: the connection was closed and the call ' +
+      'failed without reading the answer (#2220).',
+    spec: '' },
+  { code: 'STS-CELL-0213',
+    summary: 'keys.previousCellKekProvider is set and its location is ' +
+      'empty, or no cell key is configured for it to be the previous one ' +
+      'of (#2220); the service does not start.',
+    spec: 'Log line (fatal at start)' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
@@ -4073,6 +4157,30 @@ const CODES = [
       'thread waiting for it takes it over and initialises the module ' +
       'again itself (#1955).',
     spec: '' },
+  { code: 'STS-KEYS-0214',
+    summary: 'A call to the OpenBao or Vault secret store still failed after ' +
+      'keys.storeAttempts attempts (no answer, a timeout, a 5xx or a 429 ' +
+      'each time); the failure is the caller\'s (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0215',
+    summary: 'An HSM operation was refused because keys.pkcs11QueueLimit ' +
+      'operations were already waiting for a session of the token in this ' +
+      'thread (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0216',
+    summary: 'An HSM operation, or the wait for a session to run it on, took ' +
+      'longer than keys.pkcs11TimeoutMs: it is refused, and a session ' +
+      'whose operation outlived its caller is discarded when the module ' +
+      'answers (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0217',
+    summary: 'The keys.encryption-key-rotate job could not replace a ' +
+      'realm\'s request-decryption keys (#2220): the key set could not ' +
+      'be replaced (a newer generation was already held, or the store ' +
+      'refused the write). The keys go on as they are and the next run ' +
+      'tries again.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -5666,6 +5774,24 @@ const CODES = [
       'certificates were confused the same way (#2151).',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0310',
+    summary: 'A CA certificate inside its renewal lead could not be ' +
+      'renewed over the same key by the pki.ca-renew job (#2220): the ' +
+      'encoder refused, or its parent could not sign. The CA goes on as ' +
+      'it is and expires on its old date.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
+  { code: 'STS-PKI-0311',
+    summary: 'A CA certificate renewal was refused because the renewed ' +
+      'certificate\'s subject was not the subject it renews (#2220): a ' +
+      'renewal must keep the name every child names as its issuer.',
+    spec: 'an error log line and a failure audit row; nothing is stored' },
+  { code: 'STS-PKI-0312',
+    summary: 'A dedicated credential signer\'s key family could not be ' +
+      'moved on to its next generation by the scheduled rotation ' +
+      '(#2220). The current key goes on signing.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -12439,6 +12565,40 @@ const CODES = [
       '10.4.15).',
     spec: 'RFC 9126 section 4: HTTP 400 invalid_request, answered on this ' +
       'server' },
+  { code: 'STS-OAUTH-1016',
+    summary: 'The authorization endpoint refused a request whose ' +
+      'response_mode (the one asked for, or the response type\'s default ' +
+      'when none was) is not in the client\'s oauthResponseMode list ' +
+      '(#2247, ASVS 5.0.0 10.4.12). A client with no list is held to the ' +
+      'server\'s response_modes_supported alone, as before.',
+    spec: 'RFC 6749 section 4.1.2.1: the redirect carries ' +
+      'unauthorized_client' },
+  { code: 'STS-OAUTH-1017',
+    summary: 'The groups endpoint (/oauth2/groups, the distributed source ' +
+      'of a groups claim past groups.claimMaxBytes) was presented an ' +
+      'access token this service cannot verify (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1018',
+    summary: 'The groups endpoint was presented a token that is not a live ' +
+      'access token: another kind of token, or one revoked (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1019',
+    summary: 'The groups endpoint was presented an access token with no ' +
+      'person behind it (a client_credentials token), which has no groups ' +
+      '(#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1020',
+    summary: 'The groups endpoint could not sign the JWT it answers with, ' +
+      'under the algorithm the client registered for its ID Tokens or the ' +
+      'realm\'s default (#2247).',
+    spec: 'HTTP 500 server_error' },
+  { code: 'STS-OAUTH-1021',
+    summary: 'The groups endpoint was presented an access token that carries ' +
+      'no overage reference to it (_claim_names mapping a claim to ' +
+      'sts-groups, whose _claim_sources endpoint is this realm\'s ' +
+      '/oauth2/groups): only a token issued with a groups claim over ' +
+      'groups.claimMaxBytes may redeem one (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -16425,6 +16585,11 @@ const CODES = [
       'which krb5.pkinitRequirePaChecksum2 requires (#2125).',
     spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
       'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
+  { code: 'STS-KRB-0263',
+    summary: 'The krb5.service-key-rotate job could not rotate a service ' +
+      'principal key that was due (#2220): it could not be sealed or ' +
+      'written. The key goes on as it is.',
+    spec: 'an error log line; the scheduler run fails with this code' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -17375,6 +17540,14 @@ const CODES = [
       'its substring assertions held more components (initial, any, ' +
       'final) than the limit of 32 (#2137).',
     spec: 'LDAP adminLimitExceeded (11)' },
+  { code: 'STS-LDAP-0227',
+    summary: 'An LDAP connection was closed before its next message was ' +
+      'read: the length the message\'s BER header declared was over ' +
+      'ldap.maxMessageBytes (or, before a bind, ' +
+      'ldap.maxMessageBytesBeforeBind), or it used the indefinite length ' +
+      'LDAP does not allow. None of the message was buffered (#2220). ' +
+      'Logged at most once a minute, with a count of the rest.',
+    spec: 'RFC 4511 section 5.1 — the connection is closed with no result' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -19144,6 +19317,13 @@ const CODES = [
       'a sha256: prefix allowed) nor spki: followed by the SHA-256 of a ' +
       'SubjectPublicKeyInfo in the same form (#2012).',
     spec: '' },
+  { code: 'STS-TLS-0078',
+    summary: 'The listener certificate was due for renewal (less than a ' +
+      'third of its validity left, or inside ' +
+      'tls.serverCertificateRenewLeadDays) and the ' +
+      'tls.server-certificate-renew job could not re-issue it (#2220). ' +
+      'The socket goes on presenting the certificate it has.',
+    spec: 'a warning or error log line and a failure audit row' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -21265,6 +21445,29 @@ const CODES = [
       '(the stored key or certificate no longer reads); it is a ' +
       'dead letter, never sent in the clear (#1955).',
     spec: 'log only' },
+  { code: 'STS-MAIL-0244',
+    summary: 'A message was not queued because the realm\'s outbox already ' +
+      'holds mail.maxRows unsent messages; nothing already queued is ' +
+      'dropped to make room (#2220).',
+    spec: 'none — the sender is told the message was refused' },
+  { code: 'STS-MAIL-0245',
+    summary: 'A DKIM selector switch is held back (#2220): ' +
+      'mail.dkimNextSelector\'s key cannot sign, or mail.dkimSwitchAt has ' +
+      'passed and DNS does not answer the next selector with its key. ' +
+      'Messages are signed with the current selector until it does.',
+    spec: 'RFC 6376 section 3.6.1 (log only)' },
+  { code: 'STS-MAIL-0246',
+    summary: 'A credential expiry reminder could not be queued, or the ' +
+      'mail.credential-expiry job could not read the realm\'s expiry ' +
+      'index or record what it told; the next run tries again (#2247).',
+    spec: 'none — logged' },
+  { code: 'STS-MAIL-0247',
+    summary: 'The credential expiry index was not kept in step with a ' +
+      'write of a person\'s entry: its watcher was refused or threw, a ' +
+      'certificate on the entry could not be read, or the index row ' +
+      'could not be written. That person is not reminded of what changed ' +
+      'until their entry is next written (#2247).',
+    spec: 'none — logged' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -24290,6 +24493,38 @@ const CODES = [
       'again and audited with the writer: an S/MIME certificate on the ' +
       'entry is the master mail is encrypted to (#2050).',
     spec: 'none — audited' },
+  { code: 'STS-OPENPGP-0035',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) with a ' +
+      'public key that is not an RFC 9935 ML-KEM key: not a PEM ' +
+      'SubjectPublicKeyInfo, another algorithm, parameters present, or a ' +
+      'public key of the wrong length. Nothing was encapsulated.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0036',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) where ' +
+      'this runtime cannot encapsulate to ML-KEM ' +
+      '(`crypto.smimeKemAvailable()`), so no proof of possession could ' +
+      'be asked for and nothing was issued.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0037',
+    summary: 'An ML-KEM S/MIME certificate was asked to be issued (#2220) ' +
+      'with no outstanding proof-of-possession challenge for the person, ' +
+      'or one that lapsed (`openpgp.challengeLifetimeS`), or one already ' +
+      'answered. Ask for a new challenge.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0038',
+    summary: 'The secret sent back for an ML-KEM S/MIME proof of ' +
+      'possession (#2220) is not the one this service encapsulated to the ' +
+      'key — it was not recovered with the private key (`openssl pkeyutl ' +
+      '-decap`), or is not 32 octets of hex or base64. The challenge is ' +
+      'spent; nothing was issued. Audited.',
+    spec: 'none (HTTP 400 from /account-api) — audited' },
+  { code: 'STS-OPENPGP-0039',
+    summary: 'The realm\'s EST Issuing CA did not issue the ML-KEM S/MIME ' +
+      'certificate a person proved possession of (#2220): the email ' +
+      'profile is not in est.allowedProfiles, the entry holds ' +
+      'pki.enrollmentMaxCertificatesPerEntry certificates, or the ' +
+      'authority refused. The refusal\'s own sentence says which.',
+    spec: 'none (HTTP 400 from /account-api)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -25797,6 +26032,22 @@ const CODES = [
       'changed.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0338',
+    summary: 'A policy document was refused at write: a regexp-match ' +
+      'function\'s literal pattern is longer than 1024 characters, uses a ' +
+      'backreference, or applies a quantifier to a group that is itself ' +
+      'quantified or an alternation, the shape that makes a match take ' +
+      'exponential time (#2220). A policy stored before the rule still ' +
+      'loads; the console lists the pattern among its problems.',
+    spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
+      '400 { ok: false, errors }' },
+  { code: 'STS-XACML-0339',
+    summary: 'A regexp-match was Indeterminate at evaluation: its pattern ' +
+      'uses a backreference or a nested quantifier (one stored before ' +
+      'STS-XACML-0338, written by ldapmodify, or fetched from an ' +
+      'attribute), or the value was longer than 4096 characters (#2220). ' +
+      'Logged once per pattern; the remote PEP decides alike.',
+    spec: 'XACML 3.0 section B.8 processing-error (Indeterminate)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -29914,6 +30165,14 @@ const CODES = [
       'at another operation (#1827). Refused at the gate itself, so that ' +
       'the separation does not depend on xacml.enforceAccess.',
     spec: 'HTTP 403, an error message' },
+  { code: 'STS-API-0148',
+    summary: 'A management API caller made more changes than its write ' +
+      'budget allows in an adminApi.writeWindowS window, counted by the ' +
+      'token\'s subject: adminApi.writesPerSubject for a person\'s token, ' +
+      'adminApi.programWritesPerSubject for a client_credentials or ' +
+      'service account\'s. Further changes are refused until the window ' +
+      'passes; reads go on (#2247, ASVS 5.0.0 2.4.2).',
+    spec: 'HTTP 429 {ok:false, errors} with Retry-After' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -31645,6 +31904,24 @@ const CODES = [
       'Logged at the request; remove the certificate from all but one ' +
       '(#1668).',
     spec: 'none (logged; the request is then refused STS-WSTRUST-0075)' },
+  { code: 'STS-REG-0374',
+    summary: 'An oauthAuthorizationDetailsType definition was refused at ' +
+      'write: its schema uses a JSON Schema keyword outside the subset a ' +
+      'limits schema may use, or a pattern in its schema or its limits is ' +
+      'longer than 1024 characters, uses a backreference, applies a ' +
+      'quantifier to a group that is itself quantified or an alternation, ' +
+      'or does not compile (#2220). A definition the application already ' +
+      'holds is not refused, and is still used; /admin/mode reports it ' +
+      'on the access-type-schemas row.',
+    spec: 'console: the refusal banner; /admin-api: HTTP 400 { ok: false, ' +
+      'errors }' },
+  { code: 'STS-REG-0375',
+    summary: 'An application listed in oauth2.clientSecretAutoRotate was ' +
+      'not rotated by the daily job (#2220): its new secret could not be ' +
+      'pushed to its secret destination, or the rotation was refused. ' +
+      'Nothing changed; the old secret still authenticates and the job ' +
+      'tries again the next day.',
+    spec: 'Log line and audit row' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger was refused to a subject that is not a person, ' +
       'is not named, or did not authenticate.',

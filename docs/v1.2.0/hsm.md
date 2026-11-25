@@ -112,14 +112,21 @@ sensitive and cannot be extracted:
 A curve key the module cannot make (Ed448 on SoftHSM2 and on the YubiHSM 2)
 is made in software. The log records `STS-KEYS-0207` for it.
 
-**An ML-DSA key is made in the HSM only when the module offers it.** PKCS#11
-3.2's `CKM_ML_DSA` and `CKM_ML_DSA_KEY_PAIR_GEN` are used when the module
-lists them. A module that does not (SoftHSM 2, the YubiHSM 2) leaves that
-signature in software. SLH-DSA has no mechanism here, and the realm's
-published post-quantum set is made in software either way. The console's
-**Encryption** page (`/admin/encryption`) and `GET /admin-api/encryption`'s
-`signingKeys` member list, for each realm, which keys are in the HSM and
-which are in software.
+**The realm's published post-quantum keys are made in the HSM when the
+module offers them (#2220).** For each of ML-DSA-44, -65 and -87, PKCS#11
+3.2's `CKM_ML_DSA_KEY_PAIR_GEN` and `CKM_ML_DSA`; for SLH-DSA-SHA2-128s and
+SLH-DSA-SHAKE-128s, `CKM_SLH_DSA_KEY_PAIR_GEN` and `CKM_SLH_DSA`. A key is
+made in the module only when it lists both the generation mechanism and the
+signing one (with `CKF_SIGN`, from `C_GetMechanismList` and
+`C_GetMechanismInfo`); otherwise that key is made in software, and a
+generation the module refuses for want of the mechanism is logged with
+`STS-KEYS-0207`. A module without them (SoftHSM 2.6, the YubiHSM 2) leaves
+all five in software, as before. The six composites (ML-DSA with ECDSA or
+EdDSA) are always made in software: no PKCS#11 mechanism signs one. A
+rotation makes the next key the same way. The console's **Encryption** page
+(`/admin/encryption`) and `GET /admin-api/encryption`'s `signingKeys` member
+list, for each realm, which keys are in the HSM and which are in software,
+key by key.
 
 What does not change: the JWKS, the metadata and the certificates publish the
 HSM keys' public halves, and a rotation's next key is also made in the HSM. The

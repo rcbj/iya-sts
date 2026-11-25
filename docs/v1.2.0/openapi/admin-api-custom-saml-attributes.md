@@ -81,6 +81,7 @@ Scope: `admin:read`.
 | `groups.enabled` | boolean |  |  |
 | `groups.grants` | string |  |  |
 | `groups.loaded` | boolean |  |  |
+| `groups.maxBytes` | integer |  |  |
 | `groups.memberOfCounts` | boolean |  |  |
 | `groups.precedence` | string |  |  |
 | `groups.preview` | object |  |  |

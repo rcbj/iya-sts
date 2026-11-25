@@ -366,6 +366,12 @@ class OutboundDelivery {
 
   // A retry of this process's own at a row's due time: a delay inside one
   // operation, which root CLAUDE.md's scheduler rule leaves where it is.
+  // ASKED AGAIN IN #2220 (the ASVS 5.0.0 L3 dependency review), and it stays
+  // a timer: it is armed by the attempt that failed, for that one row, and
+  // fires once. The kind's sweep is ALREADY a scheduler job and is the net
+  // for a process that stops before its timer fires; moving the retry onto
+  // the scheduler would only make it land up to a sweep interval late. It is
+  // recorded as a retry delay in tests/no_periodic_timers.js.
   /**
    * Schedules this process's own retry of a row at its due time.
    *

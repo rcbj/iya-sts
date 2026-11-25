@@ -643,6 +643,14 @@
     "en": "663072a33ce1e178",
     "text": "Se estableció o eliminó el certificado S/MIME de una persona"
   },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "Se emitió un desafío de prueba de posesión S/MIME ML-KEM"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "No se emitió un certificado S/MIME ML-KEM"
+  },
   "audit.actions.openpgp.classical-kept.label": {
     "en": "88853e0422aaf987",
     "text": "Se conservó una clave OpenPGP clásica junto a la clave poscuántica que la sustituyó"

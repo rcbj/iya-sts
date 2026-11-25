@@ -59,3 +59,12 @@ plugins:
 # (docs/CLAUDE.md, *The versioned site*).
 # There is no `header_pages`: at twenty-six pages a row across the top was not
 # navigation, so the header carries only the title.
+
+# RELEASE NOTES ARE ONE FILE PER CHANGE (#2218, rcbj 2026-11-25). The
+# release being written keeps its entries in _release_notes/<folder>/, one
+# `<issue>-<slug>.md` each, and its release-notes.md gathers them with a
+# Liquid loop. `output: false`: a note is a part of that page, never a page
+# of its own (docs/CLAUDE.md, *Release notes*).
+collections:
+  release_notes:
+    output: false

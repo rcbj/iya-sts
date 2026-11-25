@@ -44,6 +44,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -414,11 +415,18 @@ async function test() {
   await ok(realmApi + "/config/set", { key: "oauth2.openRegistration",
                                        value: true },
            "opened dynamic registration in the realm");
+  // Temporary, then the person's own (#2160, `own_password.js`): the
+  // sign-ins below use PASSWORD.
   await ok(realmApi + "/users/create", {
     username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "FAPI MS " + ALICE, givenName: "FAPI", sn: ALICE,
                   mail: ALICE + "@fapims.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(base + R, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
 
   log.info("=== a. the report ===");
   let r = await send(base + R + "/oauth2/fapi");

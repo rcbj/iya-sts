@@ -160,6 +160,8 @@
   "audit.actions.openpgp.publication.label": "An OpenPGP key was published in, or withdrawn from, the Web Key Directory",
   "audit.actions.openpgp.mail-encryption.label": "How mail to a person is encrypted was changed",
   "audit.actions.openpgp.smime-certificate.label": "A person's S/MIME certificate was set or removed",
+  "audit.actions.openpgp.smime-kem-challenge.label": "An ML-KEM S/MIME proof-of-possession challenge was issued",
+  "audit.actions.openpgp.smime-kem-refused.label": "An ML-KEM S/MIME certificate was not issued",
   "audit.actions.openpgp.classical-kept.label": "A classical OpenPGP key was kept beside the post-quantum key that replaced it",
   "audit.actions.openpgp.classical-retired.label": "A kept classical OpenPGP key was removed",
   "audit.actions.piv.reissued.label": "A PIV certificate was re-issued after signing in",

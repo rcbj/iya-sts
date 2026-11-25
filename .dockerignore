@@ -56,6 +56,9 @@ node-ldapjs/.github
 !.github/image-mirror.txt
 !.github/scripts/stack-images.sh
 !.github/workflows/build-container.yml
+# AND THE DAILY ADVISORY RUN (#2219): tests/sdk_lockfile.js holds that it runs
+# the advisory windows alone, the 90-day update review only on a dispatch.
+!.github/workflows/dependency-windows.yml
 # ./run-jsdoc.sh's output, never read by an image.
 apidocs
 CLAUDE.md
@@ -201,6 +204,8 @@ portal/portal-spa.js*
 # And the front door's (#579), for the same reason.
 home/home.bundle.js
 home/home-spa.js*
+# And the browser check every shell runs first (#2220), for the same reason.
+common/browser-check.js
 # And the sign-in screen's (#571), for the same reason.
 authn/authn.bundle.js
 authn/authn-spa.js*

@@ -1520,6 +1520,15 @@ class ProtocolStack {
     // moment of use; `post_login.ts` and `authn.ts` reach it lazily.
     this.build('common/post_login_piv', require('./post_login_piv'),
                'PostLoginPiv');
+    // 18j-vi-d. CREDENTIAL EXPIRY REMINDERS (#2247): a library that
+    // registers its scheduler job and its entry-observer watcher when
+    // built, and no route — here with the scheduler in hand, for the
+    // reason above, and before `ldap/ldap_server` (21), whose writes the
+    // watcher is told of. It reaches the directory and the mail uses
+    // LAZILY, at run time; its `credential_expiry.due` store is declared at
+    // load, before the minted rows are restored.
+    this.build('common/credential_expiry', require('./credential_expiry'),
+               'CredentialExpiry');
     // 18j-vii. AUDIT EXPORT (#641): a library that registers its per-process
     // job when built, and no route. Here, with the scheduler in hand, and
     // before the management API spreads its operations. Requiring
@@ -2076,6 +2085,14 @@ class ProtocolStack {
     // keystore, the scheduler, the audit log — it reaches lazily.
     this.build('common/data_key_rotation', require('./data_key_rotation'),
                'DataKeyRotation');
+    // 23b-ii-c. THE RENEWALS NOTHING DID ON ITS OWN (#2220): a library that
+    // registers three scheduler jobs when built and no route — the CA
+    // certificates over the same key, the credential signers' next
+    // generation, the request-decryption keys. Beside the two rotations
+    // above, whose shape it follows; the PKI, the key set, the credential
+    // signers and the audit log are reached lazily, so the order is for a
+    // reader.
+    this.build('common/key_renewal', require('./key_renewal'), 'KeyRenewal');
     // 23b-ii-b. SERVICE-ACCOUNT PASSWORD ROTATION (#221 P4): a library that
     // registers its three scheduler jobs when built and no route, beside the
     // two rotations above. After `ssf/ssf`, whose credential-change it sends,

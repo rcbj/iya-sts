@@ -245,7 +245,7 @@ shim) are in git history.
 
 | File | What it is |
 |---|---|
-| `Dockerfile` | Build context is the REPOSITORY ROOT: `cargo build --release -p xacml-pep` over `rust/`, then a `debian:bookworm-slim` image holding the binary, `VERSION` and the `version.json` the binary stamps. OpenSSL is built into the binary (D5). |
+| `Dockerfile` | Build context is the REPOSITORY ROOT: `cargo build --release -p xacml-pep` over `rust/`, then a `debian:bookworm-slim` image holding the binary, `VERSION` and the `version.json` the binary stamps. OpenSSL is built into the binary (D5). Since #2220 the build stage also writes a pinned `cargo cyclonedx` SBOM of the package, which the image carries at `/usr/src/pep/sbom.cdx.json`: its `openssl-src` component is how the built-in OpenSSL's version is visible to a scan, and `tests/xacml_pep.js` holds `docs/v1.2.0/risky-components.md` to it. `Cargo.lock`'s advisories are the daily workflow's `cargo audit` (`.github/workflows/dependency-windows.yml`, not the merge-gating `rust` job, so a new advisory blocks no merge), with reviewed exceptions in `rust/.cargo/audit.toml`; the same workflow builds and scans this image. |
 | `enforcement_cases.json` | **Section 7.2 as a table**, the seven cases BOTH enforcement points are held to — see *The enforcement rule*. |
 | `authzen_cases.json` | **The AuthZEN mapping contract as a table** (#1179): the catalogue values and requests the service's `authzen/` and this container's port are BOTH held to — see *The AuthZEN edge PDP*. |
 | `certs/` | The compose files' default certificate mount; empty and gitignored. |

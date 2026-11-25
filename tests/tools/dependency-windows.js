@@ -18,9 +18,11 @@
 // `--updates` (#1485) also holds SECURITY.md's 90-day review: a direct dependency
 // with a release newer than the pinned one, the first of them more than 90 days old,
 // fails unless `.github/dependency-reviews.json` records a review of that
-// version in the last 90 days and why it stays. `--image-report=<file>` also reads a Trivy JSON report of
-// the published image, which covers what `npm audit` cannot see: the operating
-// system's packages, the Node runtime and every tree shipped. A finding with
+// version in the last 90 days and why it stays. `--image-report=<file>`, given
+// once per image scanned (the service's, the remote PEP's, the ICAP adapter's
+// and ClamAV's since #2220), also reads a Trivy JSON report, which covers
+// what `npm audit` cannot see: the operating system's packages, the Node
+// runtime and every tree shipped. A finding with
 // no fixed version is listed and cannot fail: nothing can be upgraded to.
 //
 // **TWO LOCKFILES, ONE SET OF RULES (#2159).** The root `package-lock.json`
@@ -29,8 +31,16 @@
 // the same windows, and every line names the lockfile it came from. An SDK an
 // image installs only when `STS_CLOUD_SDKS` names it is still shipped by the
 // images that name it, so a finding there is not "optional" and is not
-// discounted. `--updates` reads the SDK workspaces' pins as direct
-// dependencies too. A lockfile whose audit cannot be read fails the run.
+// discounted. A lockfile whose audit cannot be read fails the run.
+//
+// **THE DAILY RUN IS ADVISORIES ONLY, AND `--updates` IS THE ROOT'S (#2219,
+// rcbj 2026-11-25).** #2159 had `--updates` read the 27 SDK workspaces' pins
+// as direct dependencies too, and the daily workflow ran it, so the daily run
+// went red whenever an SDK fell behind with no advisory against it. The
+// daily workflow now runs the advisory windows over both lockfiles and the
+// image, and `--updates` only when a dispatch asks for it; and the review
+// reads the root lockfile alone (`UPDATE_REVIEW_LOCKFILES`). An SDK is held
+// to the advisory windows like everything else shipped.
 // ---------------------------------------------------------------------------
 
 const childProcess = require('child_process');
@@ -60,6 +70,12 @@ const LOCKFILES = [
   { dir: '.', name: 'package-lock.json' },
   { dir: 'sdk', name: 'sdk/package-lock.json' }
 ];
+// The lockfiles the 90-day update review reads (#2219): the root's only.
+// sdk/'s pins are optional SDKs held to the advisory windows, not reviewed
+// for an update whenever one has no advisory.
+const UPDATE_REVIEW_LOCKFILES = LOCKFILES.filter(function (one) {
+  return one.dir === '.';
+});
 
 /**
  * Picks the advisories that are past their window.
@@ -342,29 +358,31 @@ async function main() {
                 ' past the window SECURITY.md gives.');
     failed += late.length;
   }
+  // One report per image the daily run scans (#2220: the service, the
+  // remote PEP, the ICAP adapter and ClamAV), each named on its lines.
   const named = process.argv.filter(function (one) {
     return one.indexOf('--image-report=') === 0;
-  })[0];
-  if (named) {
-    const findings = imageFindings(JSON.parse(fs.readFileSync(
-      named.slice('--image-report='.length), 'utf8')));
+  });
+  named.forEach(function (flag) {
+    const file = flag.slice('--image-report='.length);
+    const findings = imageFindings(JSON.parse(fs.readFileSync(file, 'utf8')));
     const fixable = findings.filter(function (one) {
       return one.fixed;
     });
     const lateInImage = overdue(fixable, Date.now());
     lateInImage.forEach(function (one) {
-      console.log(['OVERDUE', one.severity, one.package, one.id, one.published,
-                   'fixed in ' + one.fixed].join('  '));
+      console.log(['OVERDUE', file, one.severity, one.package, one.id,
+                   one.published, 'fixed in ' + one.fixed].join('  '));
     });
-    console.log('image: ' + findings.length + ' finding(s), ' +
+    console.log(file + ': ' + findings.length + ' finding(s), ' +
                 (findings.length - fixable.length) + ' with no fix yet, ' +
                 lateInImage.length + ' past the window.');
     failed += lateInImage.length;
-  }
+  });
   if (process.argv.indexOf('--updates') >= 0) {
     const reviews = JSON.parse(fs.readFileSync(REVIEWS_FILE, 'utf8'));
     let rows = [];
-    LOCKFILES.forEach(function (lockfile) {
+    UPDATE_REVIEW_LOCKFILES.forEach(function (lockfile) {
       rows = rows.concat(dependencyUpdates(lockfile));
     });
     const waiting = updatesOverdue(rows, reviews, Date.now());
@@ -390,7 +408,9 @@ if (require.main === module) {
 }
 
 module.exports = { overdue: overdue, WINDOW_DAYS: WINDOW_DAYS,
-                   LOCKFILES: LOCKFILES, auditFindings: auditFindings,
+                   LOCKFILES: LOCKFILES,
+                   UPDATE_REVIEW_LOCKFILES: UPDATE_REVIEW_LOCKFILES,
+                   auditFindings: auditFindings,
                    directDependencies: directDependencies,
                    imageFindings: imageFindings,
                    updatesOverdue: updatesOverdue,

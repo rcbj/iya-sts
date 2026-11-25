@@ -212,6 +212,8 @@ const consumerProviders = require('./consumer_providers');
 // The attributes no outside source may write (#94): a map naming one as its
 // target is refused. A leaf, so this require closes no cycle.
 const SourcedAttributes = require('./../common/sourced_attributes');
+// The bound on an administrator's regular expression (#2220).
+const PatternSafety = require('./../common/pattern_safety');
 
 // ---------------------------------------------------------------------------
 // THE TWO ROLES. Which end of the relationship THIS SERVICE is.
@@ -597,65 +599,10 @@ function subjectPolicyOf(record) {
 const PATTERN_MAX = 256;
 const PATTERN_INPUT_MAX = 1024;
 
-// Whether a group that holds a quantifier or an alternation (at any depth) is
-// itself followed by a quantifier. A scan rather than a regex over the
-// pattern, because the groups nest and a regex cannot count them. Escapes and
-// character classes are stepped over: `[+]` is a plus sign, not a quantifier.
-function nestedQuantifier(pattern) {
-  log.debug("Entering nestedQuantifier().");
-  const stack = [];
-  let i = 0;
-  let found = false;
-  // No Entering/Leaving pair in quantifierAt(): it runs for every character
-  // of the pattern, and a pair per character would drown the log.
-  const quantifierAt = function (at, withOptional) {
-    const c = pattern.charAt(at);
-    return c === '+' || c === '*' || c === '{' || (withOptional && c === '?');
-  };
-  while (i < pattern.length && !found) {
-    const c = pattern.charAt(i);
-    if (c === '\\') {
-      i += 2;
-      continue;
-    }
-    if (c === '[') {
-      let j = i + 1;
-      while (j < pattern.length && pattern.charAt(j) !== ']') {
-        j += pattern.charAt(j) === '\\' ? 2 : 1;
-      }
-      i = j + 1;
-      if (quantifierAt(i, false) && stack.length) {
-        stack[stack.length - 1].risky = true;
-      }
-      continue;
-    }
-    if (c === '(') {
-      stack.push({ risky: false });
-      i += 1;
-      continue;
-    }
-    if (c === ')') {
-      const group = stack.pop() || { risky: false };
-      i += 1;
-      const quantified = quantifierAt(i, true);
-      if (group.risky && quantified) {
-        found = true;
-      }
-      if (stack.length && (group.risky || quantifierAt(i, false))) {
-        stack[stack.length - 1].risky = true;
-      }
-      continue;
-    }
-    if (stack.length && (c === '|' || quantifierAt(i, false) ||
-                         (c === '?' && i > 0 &&
-                          pattern.charAt(i - 1) !== '('))) {
-      stack[stack.length - 1].risky = true;
-    }
-    i += 1;
-  }
-  log.debug("Leaving nestedQuantifier(). " + found);
-  return found;
-}
+// The scan for the exponential shape lives in `common/pattern_safety.js`
+// since #2220, which XACML, SPIFFE and RFC 9396 access types use too; this
+// module was its first caller and keeps its own bounds (PATTERN_MAX,
+// PATTERN_INPUT_MAX) and its own anchoring.
 
 /**
  * Says why a `fedSubjectPattern` may not be used: too long, a backreference, a
@@ -672,24 +619,15 @@ function subjectPatternProblem(text) {
     log.debug("Leaving subjectPatternProblem(). Empty is no pattern.");
     return '';
   }
-  if (pattern.length > PATTERN_MAX) {
-    log.debug("Leaving subjectPatternProblem(). Too long.");
-    return 'it is ' + pattern.length + ' characters long, and at most ' +
-           PATTERN_MAX + ' are accepted';
-  }
-  if (/\\[1-9]|\\k</.test(pattern)) {
-    log.debug("Leaving subjectPatternProblem(). A backreference.");
-    return 'it uses a backreference, which a pattern here may not';
-  }
-  // A group whose body carries a quantifier or an alternation, followed by a
-  // quantifier — at any depth. Read on the source text by nestedQuantifier(),
-  // so it errs towards refusing: `([a-z]+)?` is refused too, and `[a-z]+`
-  // does the same job without the group.
-  if (nestedQuantifier(pattern)) {
-    log.debug("Leaving subjectPatternProblem(). A nested quantifier.");
-    return 'it applies a quantifier to a group that is itself quantified ' +
-           'or an alternation, the shape that makes a match take ' +
-           'exponential time; write the repetition once';
+  // Too long, a backreference, or a group whose body carries a quantifier
+  // or an alternation followed by a quantifier, at any depth — read on the
+  // source text by `PatternSafety`, so it errs towards refusing:
+  // `([a-z]+)?` is refused too, and `[a-z]+` does the same job without the
+  // group.
+  const unsafe = PatternSafety.problem(pattern, PATTERN_MAX);
+  if (unsafe) {
+    log.debug("Leaving subjectPatternProblem(). " + unsafe);
+    return unsafe;
   }
   try {
     new RegExp('^(?:' + pattern + ')$');

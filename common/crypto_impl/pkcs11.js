@@ -92,10 +92,24 @@
 // 3.2 (OASIS, 3 June 2026) defines CKM_ML_DSA — pure ML-DSA, FIPS 204, no
 // pre-hash — and CKM_ML_DSA_KEY_PAIR_GEN. A token that does not list
 // CKM_ML_DSA with CKF_SIGN is refused (STS-KEYS-0206) and the signature
-// stays in software. SLH-DSA has no mechanism here. The realm's published
-// post-quantum set is still made in software (`helpers.js`'s `pqKeysFor`):
-// an ML-DSA key in the token is one this module generated, not that set.
-// The pre-hash numbers some drafts used (0x23–0x26) are not these.
+// stays in software. The pre-hash numbers some drafts used (0x23–0x26) are
+// not these.
+//
+// AND SLH-DSA, AND THE REALM'S PUBLISHED SET (#2220). PKCS#11 3.2 also
+// defines CKM_SLH_DSA — pure SLH-DSA, FIPS 205, no pre-hash — with
+// CKM_SLH_DSA_KEY_PAIR_GEN and CKK_SLH_DSA, the parameter set again being
+// CKA_PARAMETER_SET on the key (CKP_SLH_DSA_SHA2_128S, _SHAKE_128S, ...).
+// Both SLH-DSA sets this service publishes (SLH-DSA-SHA2-128s and
+// SLH-DSA-SHAKE-128s) are made here when the token lists the generation
+// mechanism and CKM_SLH_DSA with CKF_SIGN, and refused (STS-KEYS-0206 at
+// a signature, STS-KEYS-0207 at a generation) otherwise. The realm's
+// published post-quantum set (`helpers.js`'s `pqKeysFor`) asks this file
+// for each of its three ML-DSA and two SLH-DSA keys and makes in software
+// only the ones the token does not offer, and the composites, which no
+// PKCS#11 mechanism covers; `hsmKeyReport()` says which went where.
+//
+// THE NUMBERS ARE pkcs11t.h's OF PKCS#11 3.2, written out: pkcs11js 2.1.7
+// carries the 3.0 headers and exposes none of them (checked 2026-11-25).
 // ---------------------------------------------------------------------------
 
 'use strict';
@@ -134,7 +148,7 @@ const CK = Object.freeze({
   CKU_USER: 1,
   CKO_PUBLIC_KEY: 2, CKO_PRIVATE_KEY: 3, CKO_SECRET_KEY: 4,
   CKK_RSA: 0x0, CKK_EC: 0x3, CKK_GENERIC_SECRET: 0x10, CKK_AES: 0x1f,
-  CKK_EC_EDWARDS: 0x40, CKK_ML_DSA: 0x4a,
+  CKK_EC_EDWARDS: 0x40, CKK_ML_DSA: 0x4a, CKK_SLH_DSA: 0x4b,
   CKA_CLASS: 0x0, CKA_TOKEN: 0x1, CKA_PRIVATE: 0x2, CKA_LABEL: 0x3,
   CKA_VALUE: 0x11, CKA_KEY_TYPE: 0x100, CKA_ID: 0x102, CKA_SENSITIVE: 0x103,
   CKA_ENCRYPT: 0x104, CKA_DECRYPT: 0x105, CKA_WRAP: 0x106, CKA_UNWRAP: 0x107,
@@ -143,7 +157,8 @@ const CK = Object.freeze({
   CKA_EXTRACTABLE: 0x162, CKA_EC_PARAMS: 0x180, CKA_EC_POINT: 0x181,
   CKA_PARAMETER_SET: 0x61d, CKA_SEED: 0x637,
   CKM_RSA_PKCS_KEY_PAIR_GEN: 0x0, CKM_ML_DSA_KEY_PAIR_GEN: 0x1c,
-  CKM_ML_DSA: 0x1d, CKM_SHA256_RSA_PKCS: 0x40,
+  CKM_ML_DSA: 0x1d, CKM_SLH_DSA_KEY_PAIR_GEN: 0x2d, CKM_SLH_DSA: 0x2e,
+  CKM_SHA256_RSA_PKCS: 0x40,
   CKM_SHA384_RSA_PKCS: 0x41, CKM_SHA512_RSA_PKCS: 0x42,
   CKM_SHA256_RSA_PKCS_PSS: 0x43, CKM_SHA384_RSA_PKCS_PSS: 0x44,
   CKM_SHA512_RSA_PKCS_PSS: 0x45, CKM_SHA256: 0x250, CKM_SHA384: 0x260,
@@ -155,6 +170,7 @@ const CK = Object.freeze({
   CKM_SHA224: 0x255, CKG_MGF1_SHA1: 0x1, CKG_MGF1_SHA224: 0x5,
   CKD_NULL: 0x1, CKZ_DATA_SPECIFIED: 0x1,
   CKP_ML_DSA_44: 0x1, CKP_ML_DSA_65: 0x2, CKP_ML_DSA_87: 0x3,
+  CKP_SLH_DSA_SHA2_128S: 0x1, CKP_SLH_DSA_SHAKE_128S: 0x2,
   // CKM_VENDOR_DEFINED | YUBICO_BASE_VENDOR (0x59554200) | YH_WRAP_KEY (4),
   // yubihsm-shell's pkcs11y.h.
   CKM_YUBICO_AES_CCM_WRAP: 0xd9554204,
@@ -218,8 +234,38 @@ const ML_DSA = Object.freeze({
   'ML-DSA-65': { set: CK.CKP_ML_DSA_65, publicBytes: 1952 },
   'ML-DSA-87': { set: CK.CKP_ML_DSA_87, publicBytes: 2592 }
 });
-// ML-DSA-87's signature is 4627 octets. 1024 was the classical room.
-const SIGN_ROOM = 8192;
+// SLH-DSA is CKM_SLH_DSA over the whole message, the parameter set on the
+// key in the same way (#2220). Its public key is the raw FIPS 205 encoding
+// (PK.seed || PK.root), 32 octets for both 128s sets.
+const SLH_DSA = Object.freeze({
+  'SLH-DSA-SHA2-128s': { set: CK.CKP_SLH_DSA_SHA2_128S, publicBytes: 32 },
+  'SLH-DSA-SHAKE-128s': { set: CK.CKP_SLH_DSA_SHAKE_128S, publicBytes: 32 }
+});
+
+/**
+ * The row of a post-quantum JWS algorithm this file can make and sign in a
+ * token, with its two mechanisms, or null.
+ *
+ * @param alg - the JWS algorithm
+ * @returns `{ set, publicBytes, gen, sign, family }`, or null
+ */
+function pqRowOf(alg) {
+  log.debug('Entering pqRowOf(). ' + alg);
+  const ml = ML_DSA[alg];
+  const slh = SLH_DSA[alg];
+  const out = ml ? Object.assign({ gen: CK.CKM_ML_DSA_KEY_PAIR_GEN,
+                                   sign: CK.CKM_ML_DSA,
+                                   family: 'ML-DSA' }, ml)
+    : slh ? Object.assign({ gen: CK.CKM_SLH_DSA_KEY_PAIR_GEN,
+                            sign: CK.CKM_SLH_DSA, family: 'SLH-DSA' }, slh)
+      : null;
+  log.debug('Leaving pqRowOf().');
+  return out;
+}
+
+// ML-DSA-87's signature is 4627 octets, SLH-DSA-128s's 7856. 1024 was the
+// classical room.
+const SIGN_ROOM = 16384;
 const SIGNING = Object.freeze({
   RS256: { kty: 'RSA', mech: CK.CKM_SHA256_RSA_PKCS },
   RS384: { kty: 'RSA', mech: CK.CKM_SHA384_RSA_PKCS },
@@ -241,7 +287,11 @@ const SIGNING = Object.freeze({
   'ML-DSA-65': { kty: 'AKP', mech: CK.CKM_ML_DSA,
                  parameterSet: CK.CKP_ML_DSA_65 },
   'ML-DSA-87': { kty: 'AKP', mech: CK.CKM_ML_DSA,
-                 parameterSet: CK.CKP_ML_DSA_87 }
+                 parameterSet: CK.CKP_ML_DSA_87 },
+  'SLH-DSA-SHA2-128s': { kty: 'AKP', mech: CK.CKM_SLH_DSA,
+                         parameterSet: CK.CKP_SLH_DSA_SHA2_128S },
+  'SLH-DSA-SHAKE-128s': { kty: 'AKP', mech: CK.CKM_SLH_DSA,
+                          parameterSet: CK.CKP_SLH_DSA_SHAKE_128S }
 });
 
 // OAEP's digest and MGF1 by the digest's name.
@@ -1420,7 +1470,7 @@ class Pkcs11Token {
   /**
    * @param binding - the loaded binding (`require('pkcs11js')`) or a fake
    * @param options - `{ modulePath, tokenLabel, serial, slotId, pin,
-   *   maxSessions }`
+   *   maxSessions, timeoutMs, queueLimit }`
    */
   constructor(binding, options) {
     log.debug('Entering Pkcs11Token.constructor().');
@@ -1433,6 +1483,16 @@ class Pkcs11Token {
                   o.slotId === '' ? null : String(o.slotId);
     this.pin = o.pin === undefined || o.pin === null ? null : String(o.pin);
     this.maxSessions = Math.max(1, Math.min(64, Number(o.maxSessions) || 4));
+    // THE WAIT AND THE QUEUE (#2220, ASVS 5.0.0 13.1.2 and 13.1.3). An
+    // asynchronous operation (and the wait for a session to run it on) is
+    // given up after `timeoutMs` (`keys.pkcs11TimeoutMs`, 60 s; 0 for
+    // none), and at most `queueLimit` operations (`keys.pkcs11QueueLimit`,
+    // 1000) wait for a session of this token in this thread; past it an
+    // operation is refused at once (STS-KEYS-0215). See `acquire()` and
+    // `run()`.
+    this.timeoutMs = Math.max(0, Number(o.timeoutMs) || 0);
+    this.queueLimit = Number(o.queueLimit) > 0 ? Number(o.queueLimit)
+      : Infinity;
     /** @type {any} */
     this.entry = null;
     this.slot = null;
@@ -1756,8 +1816,41 @@ class Pkcs11Token {
         return opened;
       }
       const waiters = this.waiters;
-      const handed = await new Promise(function (resolve) {
-        waiters.push(resolve);
+      if (waiters.length >= this.queueLimit) {
+        log.warn(errorCodes.tag('STS-KEYS-0215') + 'pkcs11: ' +
+                 waiters.length + ' operations are already waiting for a ' +
+                 'session of ' + this.describe() +
+                 ' (keys.pkcs11QueueLimit); this one is refused.');
+        log.debug('Leaving Pkcs11Token.acquire(). The queue is full.');
+        throw refusal('STS-KEYS-0215', 'too many operations are waiting ' +
+                      'for a session of ' + this.describe());
+      }
+      const timeoutMs = this.timeoutMs;
+      const what = this.describe();
+      const handed = await new Promise(function (resolve, reject) {
+        let timer = null;
+        const waiter = function (session) {
+          if (timer) {
+            clearTimeout(timer);
+          }
+          resolve(session);
+        };
+        waiters.push(waiter);
+        if (timeoutMs > 0) {
+          // A wait inside one operation, cleared when a session comes.
+          timer = setTimeout(function () {
+            const at = waiters.indexOf(waiter);
+            if (at >= 0) {
+              waiters.splice(at, 1);
+            }
+            reject(refusal('STS-KEYS-0216', 'no session of ' + what +
+                           ' came free within ' + timeoutMs + ' ms ' +
+                           '(keys.pkcs11TimeoutMs)'));
+          }, timeoutMs);
+          if (timer && typeof timer.unref === 'function') {
+            timer.unref();
+          }
+        }
       });
       if (handed) {
         log.debug('Leaving Pkcs11Token.acquire(). Handed on.');
@@ -1956,11 +2049,18 @@ class Pkcs11Token {
         throw e;
       }
       try {
-        const out = await fn(this.entry.lib, session.h);
+        const out = await this.bounded(what, session, fn(this.entry.lib,
+                                                        session.h));
         this.release(session);
         log.debug('Leaving Pkcs11Token.run().');
         return out;
       } catch (e) {
+        if (e && e.stsTimedOut) {
+          // The session is still the module's: `bounded()` discards it
+          // when the late answer comes.
+          log.debug('Leaving Pkcs11Token.run(). Timed out.');
+          throw e;
+        }
         if (attempt === 0 && RECONNECT_ON.has(ckrOf(e))) {
           log.debug('Caught in Pkcs11Token.run(): ' + ((e && e.message) || e) +
                     '; reconnecting once.');
@@ -1983,6 +2083,57 @@ class Pkcs11Token {
     }
     log.debug('Leaving Pkcs11Token.run(). Unreachable.');
     throw refusal('STS-KEYS-0201', what + ' failed on ' + this.describe());
+  }
+
+  // -------------------------------------------------------------------------
+  // AN OPERATION THAT DOES NOT ANSWER (#2220). The call itself runs in the
+  // module, on libuv's pool, and nothing can stop it there; what can stop is
+  // the WAITING. After `timeoutMs` the operation is refused (STS-KEYS-0216)
+  // and its caller goes on, and the session it holds is not lent again: when
+  // the module does answer, the session is discarded (closed, and a waiter
+  // woken to open another), because a session whose operation outlived its
+  // caller is in no known state. A synchronous call cannot be timed.
+  // -------------------------------------------------------------------------
+  bounded(what, session, pending) {
+    log.debug('Entering Pkcs11Token.bounded().');
+    const timeoutMs = this.timeoutMs;
+    if (!timeoutMs || !pending || typeof pending.then !== 'function') {
+      log.debug('Leaving Pkcs11Token.bounded(). Not timed.');
+      return Promise.resolve(pending);
+    }
+    const self = this;
+    log.debug('Leaving Pkcs11Token.bounded().');
+    return new Promise(function (resolve, reject) {
+      let late = false;
+      const timer = setTimeout(function () {
+        late = true;
+        log.warn(errorCodes.tag('STS-KEYS-0216') + 'pkcs11: ' + what +
+                 ' on ' + self.describe() + ' did not answer within ' +
+                 timeoutMs + ' ms (keys.pkcs11TimeoutMs); it is refused, ' +
+                 'and its session is discarded when the module answers.');
+        const out = refusal('STS-KEYS-0216', what + ' on ' + self.describe() +
+                            ' did not answer within ' + timeoutMs + ' ms');
+        /** @type {any} */ (out).stsTimedOut = true;
+        reject(out);
+      }, timeoutMs);
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref();
+      }
+      const settle = function () {
+        if (late) {
+          self.discard(session);
+        }
+      };
+      pending.then(function (value) {
+        clearTimeout(timer);
+        settle();
+        resolve(value);
+      }, function (err) {
+        clearTimeout(timer);
+        settle();
+        reject(err);
+      });
+    });
   }
 
   // The blocking session, opened once where it is not.
@@ -2587,13 +2738,13 @@ class Pkcs11Token {
                { type: CK.CKA_PUBLIC_EXPONENT,
                  value: Buffer.from([1, 0, 1]) });
     } else if (spec.kty === 'AKP') {
-      const row = ML_DSA[spec.alg];
+      const row = pqRowOf(spec.alg);
       named = String(spec.alg || '');
       if (!row) {
-        throw refusal('STS-KEYS-0207', 'no ML-DSA key can be made in the ' +
-                      'HSM for "' + named + '"');
+        throw refusal('STS-KEYS-0207', 'no ML-DSA or SLH-DSA key can be ' +
+                      'made in the HSM for "' + named + '"');
       }
-      mech = CK.CKM_ML_DSA_KEY_PAIR_GEN;
+      mech = row.gen;
       pub.push({ type: CK.CKA_PARAMETER_SET, value: row.set });
       priv.push({ type: CK.CKA_PARAMETER_SET, value: row.set });
     } else {
@@ -2626,11 +2777,19 @@ class Pkcs11Token {
     log.debug('Entering Pkcs11Token.canGenerate().');
     let mech = Number(CK.CKM_RSA_PKCS_KEY_PAIR_GEN);
     if (spec.kty === 'AKP') {
-      if (!ML_DSA[spec.alg]) {
-        log.debug('Leaving Pkcs11Token.canGenerate(). No such ML-DSA set.');
+      const row = pqRowOf(spec.alg);
+      if (!row) {
+        log.debug('Leaving Pkcs11Token.canGenerate(). No such ML-DSA or ' +
+                  'SLH-DSA set.');
         return false;
       }
-      mech = CK.CKM_ML_DSA_KEY_PAIR_GEN;
+      // A post-quantum key is made here only where the token can also SIGN
+      // with it (#2220): a key it could make and not use would leave the
+      // realm's published key unable to sign anything.
+      const both = this.mechanismFlags().has(row.gen) &&
+        this.offers(row.sign, CK.CKF_SIGN);
+      log.debug('Leaving Pkcs11Token.canGenerate(). ' + both);
+      return both;
     } else if (spec.kty !== 'RSA') {
       const curve = CURVES[spec.crv];
       if (!curve) {
@@ -3008,18 +3167,42 @@ class Pkcs11Token {
    */
   mlDsaOfferProblem(plan) {
     log.debug('Entering Pkcs11Token.mlDsaOfferProblem().');
-    if (!plan || !plan.mechanism ||
-        plan.mechanism.mechanism !== CK.CKM_ML_DSA) {
+    const mech = plan && plan.mechanism ? plan.mechanism.mechanism : null;
+    if (mech !== CK.CKM_ML_DSA && mech !== CK.CKM_SLH_DSA) {
       log.debug('Leaving Pkcs11Token.mlDsaOfferProblem().');
       return null;
     }
-    if (this.offers(CK.CKM_ML_DSA, CK.CKF_SIGN)) {
+    if (this.offers(mech, CK.CKF_SIGN)) {
       log.debug('Leaving Pkcs11Token.mlDsaOfferProblem(). Offered.');
       return null;
     }
+    const name = mech === CK.CKM_ML_DSA ? 'CKM_ML_DSA' : 'CKM_SLH_DSA';
+    const family = mech === CK.CKM_ML_DSA ? 'An ML-DSA' : 'An SLH-DSA';
     log.debug('Leaving Pkcs11Token.mlDsaOfferProblem(). Refused.');
-    return refusal('STS-KEYS-0206', 'the HSM does not offer CKM_ML_DSA, ' +
-      'so an ML-DSA signature stays in software');
+    return refusal('STS-KEYS-0206', 'the HSM does not offer ' + name +
+      ', so ' + family.toLowerCase() + ' signature stays in software');
+  }
+
+  /**
+   * Which of the published post-quantum algorithms this token can make and
+   * sign with (#2220): for each, whether it lists the generation mechanism
+   * and the signing one with CKF_SIGN.
+   *
+   * @returns `{ [alg]: { offered, family, mechanism } }`
+   */
+  postQuantumOffer() {
+    log.debug('Entering Pkcs11Token.postQuantumOffer().');
+    const self = this;
+    const out = {};
+    Object.keys(ML_DSA).concat(Object.keys(SLH_DSA)).forEach(function (alg) {
+      const row = pqRowOf(alg);
+      out[alg] = { offered: self.canGenerate({ kty: 'AKP', alg: alg }),
+                   family: row.family,
+                   mechanism: row.family === 'ML-DSA' ? 'CKM_ML_DSA'
+                     : 'CKM_SLH_DSA' };
+    });
+    log.debug('Leaving Pkcs11Token.postQuantumOffer().');
+    return out;
   }
 
   // CKA_VALUE is the raw public key (FIPS 204). It becomes a
@@ -3048,7 +3231,8 @@ class Pkcs11Token {
    */
   mlDsaPublicKeyFrom(raw, spec) {
     log.debug('Entering Pkcs11Token.mlDsaPublicKeyFrom(). ' + spec.alg);
-    const row = ML_DSA[spec.alg];
+    // An SLH-DSA key's raw public key is read the same way (#2220).
+    const row = pqRowOf(spec.alg);
     if (!row || !raw || raw.length !== row.publicBytes) {
       log.debug('Leaving Pkcs11Token.mlDsaPublicKeyFrom(). Refused.');
       throw refusal('STS-KEYS-0207', 'the HSM did not answer an ' +
@@ -3070,7 +3254,11 @@ class Pkcs11Token {
     const details = Object.assign({},
       (imported && imported.asymmetricKeyDetails) || {},
       { parameterSet: spec.alg });
+    // The raw public key travels on the object too (#2220): the realm's
+    // published set builds its AKP JWK from it.
+    const rawPublic = Buffer.from(raw);
     const out = imported && imported.asymmetricKeyType ? {
+      raw: rawPublic,
       type: 'public',
       asymmetricKeyType: imported.asymmetricKeyType,
       asymmetricKeyDetails: details,
@@ -3081,8 +3269,9 @@ class Pkcs11Token {
         return exported;
       }
     } : {
+      raw: rawPublic,
       type: 'public',
-      asymmetricKeyType: 'ml-dsa',
+      asymmetricKeyType: row.family === 'ML-DSA' ? 'ml-dsa' : 'slh-dsa',
       asymmetricKeyDetails: details,
       export: function () {
         log.debug('Entering mldsaPublic.export().');

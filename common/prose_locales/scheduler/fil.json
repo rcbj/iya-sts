@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "Binubura ang mga lumipas nang rate-limit window mula sa table na pinagsasaluhan ng bawat node."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Pag-refresh ng shared secret"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Binabasa ulit ang mga shared secret mula sa store sa process na ito, para magamit dito ang rotation na ginawa sa alinmang node."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotation ng shared secret"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Nire-rotate ang bawat shared secret na isang key (ang CSRF, ACME nonce, Shared Signals receiver, OpenID Federation page, sign-out result at DBSC key) tuwing cluster.secretRotationDays: may inilalathalang susunod na value, ginagawang kasalukuyan makalipas ang sampung minuto, at tinatanggap pa rin ang luma sa loob ng cluster.secretOverlapS. Ang pairwise subject at bootstrap name secret ay mga identifier at hindi kailanman nire-rotate."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "Muling pagsusuri ng Android attestation"
@@ -167,6 +183,14 @@
     "en": "bbcb6fbdb123f2c7",
     "text": "Muling isinusulat ang rehistro ng hardware token at ang mga imbentaryo ng OATH at YubiKey OTP mula sa mga token sa mga entry ng mga tao, na siyang master: pinapatakbo nang mano-mano pagkatapos ng restore o kapag hindi tugma ang isang index sa isang entry."
   },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "Pag-rotate ng credential signer"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "Inililipat ang key family ng bawat dedicated credential signer sa bagong key kapag ang key nito ay keys.credentialSignerRotationIntervalDays na ang tanda. Ang key na pinapalitan nito ay wala nang pinipirmahan at nananatiling naka-publish, kaya patuloy na nabe-verify ang bawat credential na pinirmahan nito."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Mga bilang ng value ng data encryption key"
@@ -199,6 +223,14 @@
     "en": "a4d23163545ebff6",
     "text": "Nire-rotate ngayon ang bawat nakatagong data encryption key — o ang sa isang realm, o ang sa isang class; patuloy na binubuksan ng mga key na pinalitan nila ang na-seal nila hanggang ito ay muling ma-seal."
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "Pag-rotate ng mga key sa pag-decrypt ng request"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "Pinapalitan ang mga encryption key ng request object, ang OpenID4VCI request-encryption key at ang mga KEM decryption key kapag keys.encryptionKeyRotationIntervalDays na ang tanda nila. Agad na naka-publish ang bagong key; nagde-decrypt pa rin ang pinalitan sa loob ng keys.encryptionKeyOverlapDays."
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "Rotation ng key-encryption key, mano-mano"
@@ -223,6 +255,14 @@
     "en": "6fffa44535aa160d",
     "text": "Nire-rotate ngayon ang krbtgt key ng realm. Kapag may invalidate, walang itinatagong naunang bersyon: tinatanggihan ang bawat TGT na na-issue bago nito at may Shared Signals event na nagsasabi nito."
   },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "Pag-rotate ng mga Kerberos service key"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "Pinapalitan ang key na ginawa ng serbisyong ito para sa sarili nitong acceptor ng bagong random key sa susunod na kvno kapag krb5.serviceKeyRotationIntervalDays na ang tanda nito, itinatabi ang pinalitan hangga't maaaring mabuhay ang ticket sa ilalim nito, at hindi kailanman habang bukas ang window na iyon. Ang key na naibigay na ang keytab ay iniuulat na due sa halip na i-rotate: kailangang ma-install ng serbisyo nito ang bagong keytab."
+  },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
     "text": "Pagpapanatili ng salamin ng mga koneksiyong LDAP"
@@ -230,6 +270,14 @@
   "sched.jobs.ldap.connection-mirror-maintenance.describe": {
     "en": "76f7213ce5e8a506",
     "text": "Binubura ang mga nakasalaming koneksiyong LDAP ng mga node na hindi na kasapi, at ang mga tagubilin sa pag-sign out na lampas na sa kanilang bisa."
+  },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "Mga paalala sa pag-expire ng credential"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "Nagpapadala sa bawat tao na ang certificate ay mag-e-expire sa loob ng isa sa mail.expiryReminderDays ng paalala na binabanggit ang bawat isang dapat na: kung ano ito, ang araw na mag-e-expire ito at kung paano ito i-renew, isang mensahe bawat tao, bawat certificate nang isang beses bawat hakbang. Binabasa lamang ang mga row ng expiry index na dapat na ngayon o sa nakaraang tatlumpung araw, hindi kailanman ang directory, maliban sa isang bahagi ng mga tao bawat pagtakbo hanggang maitala ang mga certificate na hawak bago umiral ang index."
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -268,8 +316,8 @@
     "text": "Pag-expire ng client secret"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Sinusuri ang bawat client secret ng bawat application: isang audit row para sa application na may hawak na secret na mag-e-expire sa loob ng oauth2.clientSecretExpiryWarningDays, at para sa application na expired na ang lahat ng secret; at inaalis ang mga expired na secret na hawak ng application kasabay ng isang hindi pa expired — hindi kailanman ang huli nito, na nananatili at tinatanggihan sa product."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Sinusuri ang bawat client secret ng bawat application: isang audit row para sa application na may hawak na secret na mag-e-expire sa loob ng oauth2.clientSecretExpiryWarningDays, at para sa application na expired na ang lahat ng secret; at inaalis ang mga expired na secret na hawak ng application kasabay ng isang hindi pa expired — hindi kailanman ang huli nito, na nananatili at tinatanggihan sa product. Una, ni-rorotate nito ang secret ng bawat application na nakalista sa oauth2.clientSecretAutoRotate na mag-e-expire sa loob ng oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",
@@ -406,6 +454,14 @@
   "sched.jobs.persistence.tombstone-purge-global.describe": {
     "en": "98370fb755b4ba95",
     "text": "Sa isang serbisyong naka-deploy bilang mga cell, binubura mula sa database ng global tier ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention, sa parehong mga batch; kine-claim ang run nito sa global tier, kaya iisang cell lang ang nagpapatakbo ng bawat slot. Naka-off sa serbisyong may iisang database, kung saan sakop ito ng isa pang pagwalis."
+  },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "Pag-renew ng mga CA certificate"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "Nire-renew ang Root, pagkatapos ang bawat Intermediate, pagkatapos ang bawat Issuing CA na nasa loob ng lead nito (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) gamit ang parehong key at subject, kaya nabe-verify pa rin ang lahat ng pinirmahan nito. Ang na-renew na Root ay naka-publish sa tabi ng pinalitan nito hanggang mag-expire iyon. Ang operator ang nagre-renew ng na-import na CA."
   },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
@@ -702,6 +758,14 @@
   "sched.jobs.ssh-user-ca.krl.describe": {
     "en": "c84b42d3aab3bdde",
     "text": "Nire-refresh ang KRL ng OpenSSH user CA ng bawat realm pagkatapos ng mga pagbawi ng inilabas na certificate at inaalis ang mga expired na pagbawi."
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "Pag-renew ng certificate ng listener"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "Nire-renew ang certificate na ipinapakita ng main port, LDAPS at debugger ng prosesong ito, gamit ang parehong key, kapag kulang na sa ikatlo ng validity nito ang natitira o nasa loob ito ng tls.serverCertificateRenewLeadDays, at inilalagay ito sa bawat socket nang walang restart. Tumatakbo sa front process ng bawat node, na nagbibigay ng na-renew na certificate sa mga request worker nito."
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

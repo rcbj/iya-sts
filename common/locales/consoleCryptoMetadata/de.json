@@ -251,5 +251,13 @@
   "thAlgName": "Algorithmus",
   "thAlgSigns": "Signiert",
   "thAlgAccepts": "Akzeptiert",
-  "thAlgWhyNot": "Warum nicht"
+  "thAlgWhyNot": "Warum nicht",
+  "tlsKxHeading": "TLS-Schlüsselaustausch, wie ausgehandelt",
+  "tlsKxNote": "Was jeder abgeschlossene TLS-Handshake auf den Listenern dieses Knotens seit dem Start seines Front-Prozesses ausgehandelt hat, gelesen aus der Sitzung, die der Server hält. Post-Quanten bedeutet eine ML-KEM-Gruppe, allein oder in einem Hybrid. Die Zähler gehören zu diesem Knoten und überdauern keinen Neustart.",
+  "tlsKxSummary": "{pq} von {total} Verbindungen seit {since} waren Post-Quanten.",
+  "tlsKxListener": "Listener",
+  "tlsKxGroup": "Gruppe",
+  "tlsKxConnections": "Verbindungen",
+  "tlsKxLast": "Zuletzt gesehen",
+  "tlsKxNone": "Auf diesem Knoten wurde noch keine TLS-Verbindung gezählt."
 }

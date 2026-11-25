@@ -251,5 +251,13 @@
   "thAlgName": "演算法",
   "thAlgSigns": "簽章",
   "thAlgAccepts": "接受",
-  "thAlgWhyNot": "原因"
+  "thAlgWhyNot": "原因",
+  "tlsKxHeading": "TLS 金鑰交換（協商結果）",
+  "tlsKxNote": "自本節點前端程序啟動以來，其監聽器上每次完成的 TLS 交握協商出的結果，讀取自伺服器持有的工作階段。後量子指 ML-KEM 群組，單獨使用或用於混合方案。計數屬於本節點，重新啟動後不保留。",
+  "tlsKxSummary": "自 {since} 以來，{total} 個連線中有 {pq} 個是後量子的。",
+  "tlsKxListener": "監聽器",
+  "tlsKxGroup": "群組",
+  "tlsKxConnections": "連線數",
+  "tlsKxLast": "最後出現",
+  "tlsKxNone": "本節點尚未統計到任何 TLS 連線。"
 }

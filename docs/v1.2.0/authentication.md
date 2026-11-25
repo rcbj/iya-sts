@@ -133,6 +133,8 @@ the doors that cannot ask (an LDAP bind, the password grant, WS-Trust,
 Kerberos, SCIM Basic) refuse it until they have chosen one. Typed passwords
 are still accepted. A service account's password is not temporary, because
 it belongs to a program, and in development mode no typed password is.
+Making a person a service account with `set-service-account` clears a change
+they still owed (#2236).
 
 ### Other ways to establish a session
 

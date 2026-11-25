@@ -527,6 +527,10 @@
     "en": "b1ae9012425d7c77",
     "text": "पृष्ठ फ़ुटर की स्टाइलशीट"
   },
+  "endpoints.route./web/browser-check.js.name": {
+    "en": "c00f945d4a14cdbe",
+    "text": "ब्राउज़र जाँच जिसे हर शेल सबसे पहले चलाता है"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "एक विश्वास क्षेत्र की साइन-इन दिखावट स्टाइलशीट"
@@ -1531,6 +1535,10 @@
     "en": "96b20b887882a558",
     "text": "TLS / पारस्परिक TLS सेटिंग्स"
   },
+  "endpoints.route./admin-api/tls/key-exchange.name": {
+    "en": "74b3b800a6486eba",
+    "text": "तय हुआ TLS कुंजी विनिमय"
+  },
   "endpoints.route./admin-api/tls/trust.name": {
     "en": "7afb6aac81a9a73c",
     "text": "क्लाइंट-प्रमाणपत्र विश्वास-भंडार"
@@ -2278,6 +2286,10 @@
   "endpoints.route./oauth2/userinfo.name": {
     "en": "aebc2aa96e6b1b70",
     "text": "UserInfo एंडपॉइंट"
+  },
+  "endpoints.route./oauth2/groups.name": {
+    "en": "fc727eb9da0b20fe",
+    "text": "groups claim का स्रोत"
   },
   "endpoints.route./oauth2/introspect.name": {
     "en": "328dfd36fb81f446",

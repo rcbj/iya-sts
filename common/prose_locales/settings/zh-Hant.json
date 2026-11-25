@@ -272,8 +272,8 @@
     "text": "進行敏感變更所需的登入近期程度（分鐘）"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "要變更某人的登入方式，必須在多少分鐘內登入過。在入口網站上：本人的第二因素、復原代碼、通行金鑰、應用程式密碼、憑證、簽署金鑰、自行簽發的 ID、電子郵件地址或錢包憑證提供，以及結束本人的其他工作階段；須先重新登入。對管理員而言：透過主控台或 /admin-api 變更某人的密碼、第二因素、通行金鑰、復原代碼、電子郵件地址或應用程式密碼，/admin-api 會以 RFC 9470 的 insufficient_user_authentication 回應。管理員授予或移除角色，建立、變更或刪除信任領域，操作 PKI、簽章金鑰、金鑰加密金鑰或機密推送目的地，或變更任何設定時，同樣如此（#2161）。0 表示不要求，為開發模式預設值。產品模式預設 15。"
+    "en": "b20d406d9605d06f",
+    "text": "要變更某人的登入方式，必須在多少分鐘內登入過。在入口網站上：本人的第二因素、復原代碼、通行金鑰、應用程式密碼、憑證、簽署金鑰、自行簽發的 ID、電子郵件地址或錢包憑證提供，以及結束本人的其他工作階段；須先重新登入。對管理員而言：透過主控台或 /admin-api 變更某人的密碼、第二因素、通行金鑰、復原代碼、電子郵件地址或應用程式密碼，/admin-api 會以 RFC 9470 的 insufficient_user_authentication 回應。管理員授予或移除角色，建立、變更或刪除信任領域，操作 PKI、簽章金鑰、金鑰加密金鑰或機密推送目的地，或變更任何設定時，同樣如此（#2161）。變更應用程式、聯合關係、SAML 服務提供者、存取原則、群組、具名原則、權杖所帶的宣告，或其他任何決定誰能登入、簽發給其什麼或送往何處的內容時，同樣如此（#2247）。0 表示不要求，為開發模式預設值。產品模式預設 15。"
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -418,6 +418,22 @@
   "malwareScan.timeoutMs|description": {
     "en": "59a643baa5f14b91",
     "text": "等待服務的時間。大型檔案每 MiB 額外增加一秒。"
+  },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "同時掃描數"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "一個程序同時向掃描器傳送多少個檔案，每個檔案使用各自的連線。其餘檔案排隊等候。"
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "等待掃描數"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "除正在掃描的檔案外，最多可有多少個檔案等待掃描。超出的檔案以 503 拒絕（STS-CORE-0182），與掃描器無回應時相同。"
   },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
@@ -1815,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "簽署本領域 dc+sd-jwt 與 jwt_vc_json 憑證及其 Token Status List Token 的金鑰。`dedicated`（預設值）是憑證專用的金鑰，每個演算法族一把，不作其他任何用途，其憑證的 subjectAltName 以 URI 形式列出本領域回應的每個簽發者識別碼（不含 DNS 名稱），延伸金鑰用途為 id-kp-documentSigning（RFC 9336），不含任何 TLS 協定堆疊會接受的用途，讓錢包能將憑證的 iss 與其 x5c 比對（HAIP 1.0 第 6.1.1 節）。簽發者識別碼變更時（global.publicBaseUrl、tls.hostnames、監聽器），憑證會重新簽發。`realm-key` 以本領域的一般 JOSE 金鑰簽署，與 1.0.0 相同，其憑證不列出任何簽發者。無論哪一種方式，已簽發的憑證都仍可驗證。ldp_vc 與 mso_mdoc 不受影響。"
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "憑證簽署金鑰輪替間隔（天）"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "專用憑證簽署者（keys.credentialSigner dedicated）的金鑰簽署多長時間後，由 keys.credential-signer-rotate 工作產生其金鑰族的下一個金鑰，並由新金鑰開始簽署。被取代的金鑰不再簽署任何內容，並保留在憑證簽發方的 JWKS 和 DID 文件中，因此它簽署的每個憑證仍可驗證。從工作首次看到該金鑰時開始計算。0 關閉此排程。僅限產品模式。"
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "後量子／混合解密金鑰"
@@ -1822,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "此領域持有解密金鑰的 ML-KEM 與 HPKE JWE 演算法——每種演算法一組金鑰對，發佈於領域的 JWKS（`use: enc`，附 `alg`），並在 `request_object_encryption_alg_values_supported` 與 `assertion_encryption_alg_values_supported` 中公告，讓用戶端能以後量子或 PQ/T 混合金鑰建立方式，將請求物件或 RFC 7523／7522 斷言加密給此領域。HPKE-10-KE 即 X-Wing（ML-KEM-768 + X25519）。加密「給」已註冊這些演算法之一的用戶端，在此不需任何設定。**預設為空白，由管理員選擇：**這些演算法全部出自 Internet-Draft（draft-ietf-jose-pqc-kem-05、draft-ietf-jose-hpke-encrypt-22、draft-reddy-cose-jose-pqc-hybrid-hpke-11），而 JWKS 中的 AKP 金鑰是許多用戶端 JOSE 程式庫尚無法剖析的金鑰類型——有些會拒絕整個金鑰集。只有在確知讀取此領域 JWKS 的用戶端能夠處理時，才在此指名演算法。移除一個即停止發佈與接受它；再次指名會帶回同一把金鑰。"
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "請求解密金鑰取代間隔（天）"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "請求物件加密金鑰、OpenID4VCI 請求加密金鑰和 KEM 解密金鑰保留多長時間後由 keys.encryption-key-rotate 工作取代。新金鑰立即發布（/oauth2/jwks、憑證簽發方中繼資料），被取代的金鑰在 keys.encryptionKeyOverlapDays 內仍可解密。從工作首次看到該金鑰時開始計算。0 關閉此排程。僅限產品模式。"
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "被取代的請求解密金鑰仍可解密的時長（天）"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "被 keys.encryption-key-rotate 取代的請求解密金鑰，在用戶端讀取新金鑰之前，繼續開啟其加密給它的內容的時長。在此期間它不在任何地方發布，期滿後由 signing.retire 刪除。"
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -2123,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "/admin/secrets 背後的任一探測等待秘密存放區回應的時間上限。每個探測都只是「讀取」中繼資料——金鑰檔案的 stat、一個 sys 端點、KV 版本歷程、一次 DescribeSecret——且沒有任何探測會擷取秘密值。設定上限是為了讓開啟主控台頁面時絕不會卡在別人的存放區上；逾時的探測會繪製為一列說明此情況，與被拒絕的探測完全相同。"
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "機密儲存區呼叫逾時（毫秒）"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "對 OpenBao 或 Vault、AWS KMS 或 Secrets Manager、Google Cloud KMS 或 Secret Manager、或 Azure Key Vault 的一次呼叫嘗試最多可等待多久；作為各 SDK 自身的逾時選項傳入。"
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "每次機密儲存區呼叫的嘗試次數"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "對機密儲存區或金鑰服務的一次呼叫總共嘗試多少次：即各雲端 SDK 自身的重試上限；對於 OpenBao 或 Vault，未獲回應、或收到 5xx 或 429 的呼叫會在短暫停頓後重送（所有嘗試均失敗時記為 STS-KEYS-0214）。4xx 絕不重試。"
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS 區域"
@@ -2180,6 +2236,30 @@
     "text": "每個程序與請求工作程序在一個權杖上最多保持開啟的工作階段數，每個工作階段一次執行一項 HSM 作業。YubiHSM 2 總共有 16 個工作階段，由每個節點的每個程序共用：請讓此值、程序數與節點數的乘積低於該數。"
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "權杖只在啟動時開啟一次"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "HSM 作業逾時（毫秒）"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "一項 HSM 作業及等待執行它的工作階段最多可用多久，逾時即被拒絕（STS-KEYS-0216）。作業逾時的工作階段會在模組回應時被捨棄。0 表示不限制。"
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "權杖只在啟動時開啟一次"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "每個權杖等待中的 HSM 作業數"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "在一個程序或工作程序中，最多可有多少項 HSM 作業等待同一權杖的工作階段。超出的作業立即被拒絕（STS-KEYS-0215）。"
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "權杖只在啟動時開啟一次"
   },
@@ -2396,6 +2476,66 @@
     "text": "讀取前一把金鑰的 Azure Key Vault URL 或 HashiCorp Vault 端點。沒有備援。"
   },
   "keys.previousKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "先前 Cell 金鑰加密金鑰的讀取來源"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "輪替此 Cell 的金鑰加密金鑰：將 keys.cellKek* 指向新金鑰，將本項指向舊金鑰，然後啟動。此 Cell 中仍以舊金鑰包裝的每個資料加密金鑰，都會以新金鑰重新包裝並寫回；當該 Cell 的每個節點都已如此啟動後，將本項設回 none。沒有 Cell 金鑰時會被拒絕。"
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "金鑰在還原儲存區之前讀取一次"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "先前 Cell 金鑰加密金鑰的位置"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "先前的 Cell 金鑰在 keys.previousCellKekProvider 所指名之提供者中的位置：路徑、ARN、資源或 Vault 讀取路徑。它沒有任何備援。"
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "先前 Cell 金鑰所在欄位"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "JSON 秘密中存放先前 Cell 金鑰的成員。空白時取整個值。"
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "先前 Cell 金鑰的 AWS 區域"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "讀取先前 Cell 金鑰的 AWS 區域。空白時使用 SDK 自己的解析方式。"
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "在啟動時讀取一次"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "先前 Cell 金鑰的 Key Vault URL"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "讀取先前 Cell 金鑰的 Azure Key Vault URL 或 HashiCorp Vault 端點。它沒有任何備援。"
+  },
+  "keys.previousCellKekVault|restartReason": {
     "en": "d51b3caaa6125e92",
     "text": "在啟動時讀取一次"
   },
@@ -3131,6 +3271,22 @@
     "en": "c20e5f5d3aa6062e",
     "text": "一個應用程式同時可持有多少個用戶端秘密（每個都是 oauthClientSecret 上一筆有自己到期時間的紀錄）。超過此數的新增或輪替會被拒絕（STS-REG-0208）；請先移除一個。過期的秘密在每日工作 oauth2.client-secret-expiry 移除它們之前仍會計入。"
   },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "自動輪替這些用戶端的密碼"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "每日的 oauth2.client-secret-expiry 工作會在其到期之前予以輪替的應用程式，以逗號分隔。每一項是一個 `client_id`，或 `client_id=destination/secret-name`，表示在提交之前將新密碼推送至該機密目的地（目錄 → 機密目的地）；推送失敗則不輪替任何項目，並於隔天重試。沒有目的地時，用戶端從其 RFC 7592 用戶端組態端點讀取新密碼。舊密碼在 oauth2.clientSecretOverlapS 內仍可用於驗證。sts-api-client 在此處從不輪替。空白：不輪替任何用戶端，並在每個用戶端到期前預先發出警告。"
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "提前幾天輪替所列用戶端的密碼"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "在 oauth2.clientSecretAutoRotate 中列出的應用程式，其主要用戶端密碼到期前多久進行輪替。永不到期的密碼永遠不會被輪替。"
+  },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
     "text": "提前多少天警告用戶端秘密即將到期"
@@ -3464,16 +3620,16 @@
     "text": "接受的演算法"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "金鑰可以使用的 OpenPGP 演算法，依優先順序。先是 RFC 9980 複合演算法：ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 用於簽章，ML-KEM-768+X25519 與 ML-KEM-1024+X448 用於加密。然後是經典名稱：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 與 nistP521 上的 ecdsa，rsaSign 與 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲線上的 ecdh，以及 rsaEncrypt。不在此清單中的名稱在登記和驗證時被拒絕（STS-OPENPGP-0004）。未實作 SLH-DSA。預設值列出上述每一個。"
+    "en": "f51a30de72243d25",
+    "text": "金鑰可以使用的 OpenPGP 演算法，依優先順序排列。首先是 RFC 9980 的後量子演算法：ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 用於簽章，v6 金鑰上的 SLH-DSA-SHAKE-128s、SLH-DSA-SHAKE-128f 與 SLH-DSA-SHAKE-256s 也用於簽章；ML-KEM-768+X25519 與 ML-KEM-1024+X448 用於加密。接著是傳統名稱：ed25519、ed448、eddsaLegacy/ed25519Legacy、nistP256、nistP384 與 nistP521 上的 ecdsa、rsaSign 與 rsaEncryptSign、x25519、x448、curve25519Legacy 及相同 NIST 曲線上的 ecdh，以及 rsaEncrypt。不在此清單中的名稱在註冊與驗證時會被拒絕（STS-OPENPGP-0004）。預設值列出了所有這些。"
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "僅登記後量子金鑰"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "開啟後，新登記的金鑰必須使用 openpgp.algorithms 點名的後量子演算法：簽章金鑰為 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密金鑰則為 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登記：已經登記的經典金鑰仍可驗證，仍可接收郵件。不能與 openpgp.pqcAlongsideClassical 同時開啟（STS-OPENPGP-0027）。預設關閉。"
+    "en": "b0c222dfa3cda337",
+    "text": "開啟後，新註冊的金鑰必須使用 openpgp.algorithms 列出的後量子演算法：簽章金鑰使用 ML-DSA-65+Ed25519、ML-DSA-87+Ed448 或三種 SLH-DSA 演算法之一，有加密金鑰時使用 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只限制註冊：已註冊的傳統金鑰仍可驗證，仍會收到郵件。openpgp.pqcAlongsideClassical 開啟時不能開啟（STS-OPENPGP-0027）。預設關閉。"
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",
@@ -4178,6 +4334,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "建置未指定有效期時，每個 Issuing CA 有效多久。零表示 `issuing-ca` 設定檔的五年。會截短至其 Intermediate 的到期時間。"
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "在 CA 憑證到期前續期"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "每日 pki.ca-renew 工作是否在提前期內（pki.rootRenewalLeadDays、pki.caRenewalLeadDays）以相同的金鑰和主體續期根 CA、每個中繼 CA 和每個簽發 CA，使其簽署的每個憑證仍可驗證，且對其金鑰的釘選仍然有效。續期後的根憑證與被取代的根憑證並列發布在 /pki/ca/service/root-previous.cer，直到後者到期。匯入的 CA 永不續期。關閉時沒有任何東西續期 CA，它會像 1.2.0 之前一樣到期。"
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "在根 CA 到期前多久續期（天）"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "pki.ca-renew 在根 CA 到期前多久續期它，最多為其有效期的一半。預設較長（三年），因為續期後的根憑證是新的信任錨憑證，應在舊憑證到期前交給每個信賴方。"
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "在中繼 CA 或簽發 CA 到期前多久續期（天）"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "pki.ca-renew 在中繼 CA 或簽發 CA 到期前多久續期它，最多為其有效期的一半。CA 不能比其上層 CA 存活更久，因此上層先到期的 CA 會等待上層續期。"
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -5427,6 +5607,30 @@
     "en": "60a2c7771a002257",
     "text": "權杖在此被接受時，`aud` 聲明必須指出的值。預設為管理 API 的基底 URL——若已設定 global.publicBaseUrl，則為其後接 /admin-api，否則為此程序自己的協定、主機與連接埠。維持該預設值時，以要求所抵達之主機下的 /admin-api 為對象的權杖也會被接受，這正是用戶端在權杖端點以其存取此服務時使用的任何名稱要求 `resource=<base>/admin-api` 時所得到的（RFC 8707）。在部署可透過多個名稱存取時，設定它以固定單一值。"
   },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "管理 API 每人每時段的變更次數"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "一位已登入的管理員在 adminApi.writeWindowS 時段內可透過 /admin-api（包括管理主控台）進行多少次變更。依權杖的主體計數，而非依位址。每個寫入的 POST 都計數；讀取不計。超過後，變更會以 429 和 Retry-After 被拒絕，直到時段過去，讀取不受影響。程式的權杖改由 adminApi.programWritesPerSubject 計數。0 表示不限制，為開發模式預設值。產品模式預設 1200。"
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "管理 API 每個程式每時段的變更次數"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "一個程式在 adminApi.writeWindowS 時段內可透過 /admin-api 進行多少次變更：client_credentials 權杖依其用戶端計數，服務帳戶的權杖依其主體計數。超過後，變更會以 429 和 Retry-After 被拒絕，直到時段過去。0 是所有模式下的預設值，表示不限制，因為一次佈建或移轉會在幾分鐘內合理地進行數千次變更；請依程式的需要設定。"
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "管理 API 變更時段（秒）"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "adminApi.writesPerSubject 與 adminApi.programWritesPerSubject 計數所用的時段，以秒為單位。固定時段，與這裡的每個速率限制一樣。"
+  },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
     "text": "在初始管理員登入前保持開放"
@@ -5638,6 +5842,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "等待夥伴回應多久後放棄。它比一般逾時更重要，因為瀏覽器正在「等待」它——聯合登入時，某人正看著空白分頁，而此服務在兌換代碼——因此它短到足以讓失效的夥伴產生錯誤頁面而不是卡住，且錯誤會指出逾時。在 2026-08-30 之前它是 5000，改變的是此處的夥伴「通常就是此程序」：信任領域是此服務的邏輯副本，而任何人向全新領域要求的第一樣東西就是其 JWKS——這會促使該領域的十一把後量子金鑰產生，其中一把是 SLH-DSA-SHAKE-128s 金鑰，產生約需五秒。5000 這個預算之所以能運作，只是因為此服務「過去在回應時會阻塞」：事件迴圈停止時，強制執行該預算的計時器要等到回應完成後才能觸發。現在金鑰在 libuv 的執行緒集區上產生（common/pq_native.js），並在建立領域時預先產生，因此一般擷取只需數毫秒——此值是為領域仍在誕生時抵達的那次擷取所準備的預算。"
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "每個目的地的輸出連線數"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "對於每次輸出 HTTP 呼叫，一個程序同時向一個目的地（合作夥伴、接收端、用戶端的 URL）保持開啟的連線數。超出的請求在其整體期限內等待連線，請求首次開始等待時會記錄一則警告（STS-HTTP-0032）。連線會保持作用中並重複使用。"
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "輸出連線總數"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "一個程序總共保持開啟的輸出 HTTP 連線數。超出的請求在其整體期限內等待連線（STS-HTTP-0032）。不得少於 federation.outboundMaxSockets。"
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "輸出整體期限（毫秒）"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "任何輸出 HTTP 呼叫總共最多可用的時間：包括等待連線、建立連線、交握以及接收完整回應。其他逾時針對的是無活動時間，因此回應緩慢的對端否則會讓呼叫一直保持開啟。自身逾時較長的呼叫改用其自身逾時。到達期限時，呼叫以逾時結束（STS-HTTP-0033）。"
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "輸出連線逾時（毫秒）"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "新建輸出連線（含 TLS 交握）最多可用多久。從連線集區重複使用的連線不計時。到達上限時，呼叫以逾時結束（STS-HTTP-0034）。"
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -6562,6 +6798,22 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "在主動-主動叢集中，每個節點的 LDAPS 接聽程式與主連接埠（除非 tls.mainPortSharedTickets 關閉）都以一把共用金鑰密封工作階段票證，因此一個節點簽發的票證可在另一個節點上恢復（除錯工具的接聽程式每個節點各有一把金鑰）。此值是 tls.ticket-key-rotate 工作替換該金鑰的頻率（秒）；被替換的金鑰會被刪除，因此只有在其金鑰存在期間，才能從擷取到的票證中還原已恢復工作階段的祕密，而票證較舊的用戶端會進行完整交握。金鑰保存在儲存區中，以金鑰加密金鑰密封。0 會關閉共用，而在主動-主動模式之外不會共用任何東西：單一節點回應時，會以 OpenSSL 自己的每個接聽程式金鑰恢復，這些金鑰永遠不會離開程序。"
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "無需重新啟動續期監聽器憑證"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "每小時的 tls.server-certificate-renew 工作是否在主連接埠、LDAPS 和偵錯工具所出示憑證的剩餘有效期不足三分之一（或進入 tls.serverCertificateRenewLeadDays）時，以相同金鑰續期，並在不重新啟動的情況下放到每個通訊端上。每個節點續期自己的憑證。關閉時僅在啟動時和主控台的續期操作中續期。您在 tls.certificateFile 中提供的憑證由您自行續期。"
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "在監聽器憑證到期前多久續期（天，0 = 剩餘三分之一有效期時）"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "在監聽器憑證到期前這麼多天續期它，前提是這早於剩餘三分之一有效期的時間點。預設值 0 保持三分之一。"
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7923,6 +8175,14 @@
     "en": "0ef945c098a1eeac",
     "text": "信任領域的 krbtgt 金鑰——密封每張 Ticket-Granting Ticket 的金鑰——保持為目前金鑰多久，之後由 krb5.krbtgt-rotate 工作以下一個 kvno 的新隨機金鑰取代。被取代的金鑰會保留（krb5.retainedKeyVersions，保留 krb5.retainedKeyTtlS），因此在輪替前一瞬間簽發的 TGT 仍可使用到過期為止，且在該時間窗開啟期間此工作絕不會輪替。180 天是常見的 Active Directory 建議。0 會關閉排程輪替；手動輪替（/admin/kerberos/principals、POST /admin-api/kerberos/principals/rotate-krbtgt）仍然可用。僅限產品模式。當 krb5.retainedKeyVersions 為 0 時，此工作也保持關閉，因為不保留任何東西的輪替會在毫無預告下讓領域中每個 Kerberos 使用者登出。"
   },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "本服務自身接受方金鑰的輪替間隔（天）"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "服務主體金鑰可以使用多久，之後由 krb5.service-key-rotate 工作以下一個 kvno 的新隨機金鑰取代，並保留被取代的金鑰（krb5.retainedKeyVersions，保留 krb5.retainedKeyTtlS），使已簽發的票證繼續可用，且該視窗開啟期間絕不輪替。只輪替本服務為其自身接受方產生的金鑰：keytab 已交給其他服務的金鑰會在 /admin/scheduler 上回報為到期，輪替它（會交出新的 keytab）仍由營運者執行。從金鑰最近一次輪替或建立時開始計算。0 關閉此排程。僅限產品模式。"
+  },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
     "text": "PKINIT（憑證預先驗證）"
@@ -8078,6 +8338,22 @@
   "ldap.timeLimit|description": {
     "en": "b74ec7b68f9251f2",
     "text": "搜尋的伺服器端時間限制，以秒為單位，這就是產生 LDAP_TIME_LIMIT_EXCEEDED 的原因；用戶端自己的 timeLimit 較短時以其為準。在此之前已送出的項目即為答覆，並標示為不完整。"
+  },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "已繫結用戶端的最大訊息（位元組）"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "已繫結的用戶端可傳送的最大 LDAP 訊息，以位元組計，依其 BER 標頭宣告的長度計算：下一則訊息宣告超過此值的連線，會在讀取其任何內容之前被關閉（STS-LDAP-0227）。搜尋結果由伺服器傳送，不計入。預設 5 MiB，即此處每個 HTTP 請求主體的上限。"
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "繫結前的最大訊息（位元組）"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "用戶端在繫結之前可傳送的最大 LDAP 訊息，以位元組計：一次繫結、StartTLS 或根 DSE 搜尋。超過此值時，會在讀取訊息任何內容之前關閉連線（STS-LDAP-0227）。預設 128 KiB，是 SASL 繫結可攜帶的最大 Kerberos 權杖的兩倍。實際生效時從不超過 ldap.maxMessageBytes。"
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
@@ -10047,6 +10323,14 @@
     "en": "5f61809aa07c4db6",
     "text": "當群組項目未反向列出某人時，由「該人員」自身 `memberOf` 所指名的群組是否算作成員資格。此目錄中沒有任何東西會維護 memberOf——它甚至不是標準屬性——因此寫入它的用戶端正好會造成這種不一致，而 /admin/groups 存在的部分原因就是為了「顯示」它。此設定決定權杖採信哪一方。預設開啟，因為寫入了 memberOf 卻沒有得到宣告的用戶端，完全沒有被告知原因；關閉則讓群組項目保持為唯一權威。無論哪種情況，群組都必須「存在」於此——未指名任何東西的 memberOf 不會虛構出一個群組放入權杖。"
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "權杖中最大的 groups 宣告（位元組）"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "groups 宣告在存取權杖或 ID Token 中最多可佔的大小，以其值的 JSON 計算，在 base64url 之前。超過後宣告不會被截斷：它會成為 OpenID Connect Core 第 5.6.2 節的分散式宣告 —— `_claim_names` 指名它，`_claim_sources` 指向本領域的 /oauth2/groups，後者針對所出示的存取權杖以簽章 JWT 回傳完整清單。存取權杖透過標頭傳遞，超過 8 KiB 的權杖會被大多數伺服器拒絕（Node.js 為 16 KiB），回傳的 431 不指向任何原因。預設值 4096 約合 150 個群組名稱或 60 個 DN，因此人們今天取得的權杖不變。UserInfo 與 SAML 斷言始終攜帶完整清單。0 關閉此上限。"
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "攜帶 roles 宣告"
@@ -11391,6 +11675,66 @@
     "en": "fe511fad2e40a74b",
     "text": "/admin/database 背後任一陳述式可執行的時間，以 PostgreSQL 自己的 statement_timeout 設定在該頁面借用的單一連線上。其中每一個都是對目錄檢視的讀取；設下此上限，是為了讓開啟主控台頁面永遠不會佔住此服務用來回應協定流量的連線集區中的連線。它設定在伺服器上，而不是以此處的計時器實作，因為計時器會放棄該 promise，而讓陳述式與連線都原封不動地留在原處。"
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "每個程序的資料庫連線數"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "每個程序在其連線集區中保持的資料庫連線數。預設值 0 表示節點請求工作程序數的兩倍，且不少於四個。超出的呼叫端最多等待 persistence.poolWaitMs 以取得閒置連線。"
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "等待資料庫連線（毫秒）"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "呼叫端在連線集區中等待閒置連線多久後失敗。因此失敗的寫入以 503 回應（STS-STORE-0066），其排清會重試。"
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "資料庫連線逾時（毫秒）"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "建立一個新的資料庫連線最多可用多久。"
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "閒置資料庫連線保留時間（毫秒）"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "閒置連線在連線集區中保留多久後被關閉。"
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "儲存區在程序啟動時開啟"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "資料庫陳述式逾時（毫秒）"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "一般資料庫陳述式在被伺服器取消前最多可執行多久（PostgreSQL 的 statement_timeout、MariaDB 的 max_statement_time），記錄為 STS-STORE-0178。0 表示不限制。開啟儲存區、其移轉、啟動時的還原以及線上索引建置不受此限制；回填以小批次執行。"
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "它在儲存區開啟並讀取後設定到連線集區上"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "資料目錄"
@@ -11486,6 +11830,14 @@
   "persistence.databasePasswordToken|restartReason": {
     "en": "81c3618a73d5aca7",
     "text": "在啟動時、連線集區開啟之前讀取一次"
+  },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "每隔多久重新讀取資料庫密碼（秒）"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "每個程序多久從 `persistence.databasePasswordProvider` 所指名的機密儲存區重新讀取一次資料庫密碼（persistence.database-password-refresh 工作）。變更後的密碼會用於其後建立的每個連線，無需重新啟動；已開啟的連線持續運作。資料庫拒絕登入時也會立即重新讀取。在資料庫中輪替密碼是機密儲存區或維運人員的工作，舊密碼在那裡至少必須在這段時間內保持有效。0 表示僅在啟動時以及登入被拒絕後讀取。"
   },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
@@ -11731,6 +12083,22 @@
     "en": "43d39d2a6820f37a",
     "text": "功能檢查在節點加入時執行一次"
   },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "每隔幾天輪替共用機密（天）"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "cluster.secret-rotate 工作多久替換一次屬於金鑰的每個共用機密：CSRF 金鑰、ACME nonce 金鑰、Shared Signals 接收端機密、OpenID Federation 頁面金鑰、登出結果金鑰與 DBSC 金鑰。新值會先發布，十分鐘後（每個程序都已讀取之後）成為目前值，舊值在 `cluster.secretOverlapS` 內仍被接受。成對主體機密與啟動名稱機密是識別碼，永不輪替；由環境變數設定的值則由維運人員自行變更。0 表示關閉輪替。早期版本所儲存的機密會在工作首次執行時標註日期，並在此天數之後首次輪替，絕不在升級時輪替。"
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "接受已輪替共用機密的時間（秒）"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "被輪替取代的共用機密在新機密之外仍被接受多久，使得在輪替前不久產生的表單、nonce、頁面指標或綁定的 Cookie 在輪替後仍然有效。不會再以它產生任何新內容。預設為一天。"
+  },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
     "text": "本單元"
@@ -11810,6 +12178,14 @@
   "cells.relayTimeoutMs|description": {
     "en": "839a4a009d203829",
     "text": "轉送至另一個單元的請求，或單元間通道上的呼叫，在被當作另一個單元無法連線而回應（並依 `cells.homeUnreachable` 的規定處理）之前，可花費的時間。"
+  },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "單元間最大回應（位元組）"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "對另一個單元的同步呼叫最多可傳回的回應大小。超過後連線將被關閉，呼叫失敗（STS-CELL-0212）。"
   },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
@@ -12043,6 +12419,14 @@
     "en": "de6b9c78cb258e07",
     "text": "每個屬性來源在每次排程重新整理（attribute-sources.refresh，每分鐘一次）中讀取的人數，下一次會從上次結束處接續。數值越大，完成一輪越快，但每次執行佔用節點的時間也越長。"
   },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "每個來源的連線數"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "每個程序對一個屬性來源保持的連線數。超出的查詢在該來源自身的逾時內等待連線。變更在每個來源的下一次查詢時生效。"
+  },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
     "text": "郵件傳輸方式"
@@ -12219,6 +12603,30 @@
     "en": "8fcee4b0bf32dfc4",
     "text": "要從 JSON 值中取出的成員。空白表示 `dkimKey`。"
   },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "下一個 DKIM 選擇器"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "輪替 DKIM 金鑰：新金鑰的選擇器，其記錄在簽署切換到它之前發布於 <selector>._domainkey.<domain>。要發布的記錄會在建立傳輸時記入日誌。空白：沒有進行中的輪替。"
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "下一個 DKIM 私密金鑰的欄位"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "DKIM 金鑰機密（mail.dkimKeyProvider 與 mail.dkimKeyRef 所指名的那個）中存放下一個選擇器 PEM 私密金鑰的成員。空白表示 `dkimNextKey`。"
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "從何時起以下一個 DKIM 選擇器簽署"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "郵件何時開始以 mail.dkimNextSelector 簽署，格式為 ISO 8601 時間（2026-12-01T00:00:00Z）——且須在 DNS 以其金鑰回應下一個選擇器的名稱之後；在此之前由目前的選擇器簽署，並發出警告。切換後讓舊選擇器的記錄繼續發布一週，然後將下一個選擇器設為 mail.dkimSelector，並清除這三項。空白：永不切換。"
+  },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",
     "text": "Amazon SES 區域"
@@ -12352,8 +12760,8 @@
     "text": "進行中的傳送數"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "一個程序在一次清理中同時傳送的訊息數量。"
+    "en": "d6de0478b866cf8b",
+    "text": "一個程序同時傳送多少則訊息，包括一次清理中以及訊息排入佇列後的首次嘗試。找不到空閒名額的訊息會等待下一次清理。"
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12368,8 +12776,8 @@
     "text": "每個領域的寄件匣列數"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "每個領域的寄件匣上限：最舊的「已完成」列會先被移除，待處理的列則絕不移除。"
+    "en": "3b7f698ec30a6ed1",
+    "text": "每個領域的寄件匣上限：最舊的「已完成」列會先被移除，待處理的列則絕不移除。會使「待處理」列超過該上限的訊息將被拒絕（STS-MAIL-0244）。"
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",
@@ -12498,6 +12906,30 @@
   "mail.signInAlertWindowS|description": {
     "en": "29547122992cacaf",
     "text": "同一類登入提醒——新裝置、新國家、匿名網路、被拒絕的密碼——在多長時間內最多通知此人一次。寄件匣即為紀錄，因此長於 mail.retentionS 的窗口實際只持續那麼久。"
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "認證資料到期提醒"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "在某人持有的憑證到期前，依其項目上的地址提醒對方：本領域透過 ACME、EST 或 SCEP 為其簽發的憑證、PIV 智慧卡憑證、S/MIME 憑證、TLS 用戶端憑證，或為憑證登入而儲存的憑證。每個憑證在 mail.expiryReminderDays 的每一天各提醒一次，所有到期的憑證合併為一封郵件，並說明到期時間與續約方式。安全通知關閉或未設定傳輸時不會傳送任何內容。"
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "認證資料到期提醒天數"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "憑證到期前多少天提醒其持有人，每個天數各提醒一次。首次出現時已在其中某個天數之內的憑證，會在最近的那一個提醒，絕不會在已經過去的步驟提醒。變更會在每個憑證的下一次提醒時生效。"
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "到期提醒列出的認證資料"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "到期提醒列出哪些類型的憑證：certificate（透過 ACME、EST 或 SCEP 簽發）、piv（PIV 插槽憑證）、smime（郵件加密所用的 S/MIME 憑證）、tls-client（在入口網站的「簽章金鑰」頁面或由管理員簽發的 TLS 用戶端憑證）及 signin-certificate（為憑證登入儲存在項目上的憑證）。未列出的類型仍會被追蹤，因此重新加入後會在其下一個步驟提醒。"
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

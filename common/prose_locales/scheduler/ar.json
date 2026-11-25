@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "يحذف نوافذ حد المعدل التي انقضت من الجدول الذي تتشاركه كل العقد."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "تحديث الأسرار المشتركة"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "يعيد قراءة الأسرار المشتركة من المخزن في هذه العملية، فيُستخدم هنا أي تدوير جرى على أي عقدة."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "تدوير الأسرار المشتركة"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "يُدوِّر كل سر مشترك هو مفتاح (مفاتيح CSRF وnonce الخاص بـ ACME ومستقبِل Shared Signals وصفحة OpenID Federation ونتيجة تسجيل الخروج وDBSC) كل cluster.secretRotationDays: تُنشر قيمة تالية وتصبح الحالية بعد عشر دقائق، ويظل القديم مقبولًا طوال cluster.secretOverlapS. وسرّا الموضوع pairwise واسم التمهيد معرّفان ولا يُدوَّران أبدًا."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "إعادة التحقق من إقرار Android"
@@ -167,6 +183,14 @@
     "en": "bbcb6fbdb123f2c7",
     "text": "يعيد كتابة سجل الرموز المادية ومخزوني OATH وYubiKey OTP من الرموز الموجودة على إدخالات الأشخاص، وهي المرجع: يُشغَّل يدويًا بعد الاستعادة أو عندما يخالف فهرسٌ إدخالًا."
   },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "تدوير موقِّع بيانات الاعتماد"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "ينقل عائلة مفاتيح كل موقِّع مخصص لبيانات الاعتماد إلى مفتاح جديد عندما يبلغ عمر مفتاحها keys.credentialSignerRotationIntervalDays. المفتاح الذي يستبدله لا يوقّع شيئًا بعد ذلك ويبقى منشورًا، فيستمر التحقق من كل بيانات اعتماد وقّعها."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "أعداد قيم مفاتيح تشفير البيانات"
@@ -199,6 +223,14 @@
     "en": "a4d23163545ebff6",
     "text": "يدوّر كل مفتاح تشفير بيانات مخزّن الآن — أو مفاتيح نطاق ثقة واحد، أو صنف واحد؛ وتستمر المفاتيح التي تستبدلها في فتح ما ختمته إلى أن يُعاد ختمه."
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "تدوير مفاتيح فك تشفير الطلبات"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "يستبدل مفاتيح تشفير كائنات الطلب ومفتاح تشفير طلبات OpenID4VCI ومفاتيح فك تشفير KEM عندما يبلغ عمرها keys.encryptionKeyRotationIntervalDays. يُنشر المفتاح الجديد فورًا، ويبقى المفتاح المستبدَل يفك التشفير مدة keys.encryptionKeyOverlapDays."
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "تدوير مفتاح تشفير المفاتيح، يدويًا"
@@ -223,6 +255,14 @@
     "en": "6fffa44535aa160d",
     "text": "يدوّر مفتاح krbtgt لنطاق الثقة الآن. مع invalidate، لا يُبقي أي إصدار سابق: يُرفَض كل TGT أُصدر قبله ويقول حدث Shared Signals ذلك."
   },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "تدوير مفاتيح خدمات Kerberos"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "يستبدل المفتاح الذي أنشأته هذه الخدمة لمستقبِلها الخاص بمفتاح عشوائي جديد عند kvno التالي عندما يبلغ عمره krb5.serviceKeyRotationIntervalDays، محتفظًا بالمفتاح المستبدَل أطول مدة يمكن أن تعيشها تذكرة صادرة به، ولا يفعل ذلك أبدًا ما دامت تلك النافذة مفتوحة. المفتاح الذي سُلِّم ملف keytab الخاص به يُبلَّغ عنه بأنه مستحق بدل تدويره: تحتاج خدمته إلى تثبيت ملف keytab الجديد."
+  },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
     "text": "صيانة مرآة اتصالات LDAP"
@@ -230,6 +270,14 @@
   "sched.jobs.ldap.connection-mirror-maintenance.describe": {
     "en": "76f7213ce5e8a506",
     "text": "يحذف اتصالات LDAP المنسوخة مرآتيًا للعقد التي لم تعد أعضاء، وتعليمات تسجيل الخروج التي تجاوزت مدة حياتها."
+  },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "تذكيرات انتهاء بيانات الاعتماد"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "يرسل إلى كل شخص تنتهي صلاحية شهادته خلال أحد أيام mail.expiryReminderDays تذكيرًا يذكر كل شهادة مستحقة: ما هي، واليوم الذي تنتهي فيه، وكيفية تجديدها، رسالة واحدة لكل شخص، وكل شهادة مرة واحدة لكل خطوة. لا يقرأ إلا صفوف فهرس الانتهاء المستحقة اليوم أو في الأيام الثلاثين الماضية، ولا يقرأ الدليل أبدًا، إلا شريحة من الأشخاص في كل تشغيل حتى تُسجَّل الشهادات التي كانت موجودة قبل الفهرس."
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -268,8 +316,8 @@
     "text": "انتهاء صلاحية سر العميل"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "يفحص كل سر عميل لكل تطبيق: صف تدقيق للتطبيق الذي يحمل سرًا تنتهي صلاحيته خلال oauth2.clientSecretExpiryWarningDays، ولمن انتهت صلاحية كل أسراره؛ ويزيل الأسرار المنتهية التي يحتفظ التطبيق إلى جانبها بسر غير منتهٍ — ولا يزيل آخر سر أبدًا، فهو يبقى ويُرفَض في وضع product."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "يفحص كل سر عميل لكل تطبيق: صف تدقيق للتطبيق الذي يحمل سرًا تنتهي صلاحيته خلال oauth2.clientSecretExpiryWarningDays، ولمن انتهت صلاحية كل أسراره؛ ويزيل الأسرار المنتهية التي يحتفظ التطبيق إلى جانبها بسر غير منتهٍ — ولا يزيل آخر سر أبدًا، فهو يبقى ويُرفَض في وضع product. ويُدوِّر أولًا سر كل تطبيق مدرج في oauth2.clientSecretAutoRotate تنتهي صلاحيته خلال oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",
@@ -406,6 +454,14 @@
   "sched.jobs.persistence.tombstone-purge-global.describe": {
     "en": "98370fb755b4ba95",
     "text": "في خدمة منشورة كخلايا، يحذف من قاعدة بيانات الطبقة العامة شواهد حذف الصفوف المُصدَرة المنتهية الأقدم من persistence.mintedRetention، وبالدفعات نفسها؛ تُطالَب تشغيلته في الطبقة العامة، فتشغّل خلية واحدة كل خانة. متوقف في خدمة ذات قاعدة بيانات واحدة، حيث يغطيها المسح الآخر."
+  },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "تجديد شهادات المرجع المصدِّق"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "يجدد الجذر، ثم كل مرجع وسيط، ثم كل مرجع مُصدِر داخل مهلته المسبقة (pki.rootRenewalLeadDays، pki.caRenewalLeadDays) بالمفتاح نفسه والموضوع نفسه، فيظل كل ما وقّعه قابلًا للتحقق. يُنشر الجذر المجدَّد بجانب الجذر الذي يستبدله حتى تنتهي صلاحيته. المرجع المستورد يجدده مشغّله."
   },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
@@ -702,6 +758,14 @@
   "sched.jobs.ssh-user-ca.krl.describe": {
     "en": "c84b42d3aab3bdde",
     "text": "يحدّث قائمة KRL لمرجع شهادات مستخدمي OpenSSH في كل نطاق ثقة بعد إلغاء شهادات صادرة، ويزيل الإلغاءات المنتهية."
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "تجديد شهادة المستمع"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "يجدد الشهادة التي يقدمها المنفذ الرئيسي وLDAPS ومصحح الأخطاء في هذه العملية، بالمفتاح نفسه، عندما يتبقى أقل من ثلث صلاحيتها أو تدخل في tls.serverCertificateRenewLeadDays، ويضعها على كل مقبس دون إعادة تشغيل. يعمل في العملية الأمامية لكل عقدة، التي تسلّم الشهادة المجدَّدة إلى عمّال الطلبات لديها."
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

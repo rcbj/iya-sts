@@ -31,11 +31,19 @@
 //      not hold;
 //   5. .dockerignore lets sdk/ into the build context;
 //   6. (#2159) tests/tools/dependency-windows.js audits sdk/package-lock.json
-//      as well as the root's, names the lockfile on every finding, reads the
-//      workspaces' pins as direct dependencies, and every `overrides` entry
+//      as well as the root's and names the lockfile on every finding; (#2219)
+//      its 90-day update review reads the root lockfile only, never the 27
+//      workspaces' pins, and the daily workflow runs the advisory windows
+//      alone, the update review only when a dispatch asks; and every
+//      `overrides` entry
 //      of sdk/package.json is the version the lockfile holds (npm's
 //      `--package-lock-only` leaves an existing entry as it was, so an
 //      override added without `npm update <name>` would not take).
+//   7. (#2220) every `npm ci` in the Dockerfile passes `--ignore-scripts`,
+//      the service's own included, and the only packages of the root
+//      lockfile with an install script are the ones the Dockerfile names
+//      as building nothing the service loads — so a new one cannot arrive
+//      unbuilt without failing here.
 // ===========================================================================
 
 const fs = require('fs');
@@ -209,7 +217,8 @@ function run(t) {
             'and .dockerignore names no rule that would leave it out');
   }
 
-  t.log.info('=== 6. the advisory windows cover sdk/ (#2159) ===');
+  t.log.info('=== 6. the advisory windows cover sdk/ (#2159), the update ' +
+             'review does not (#2219) ===');
   const windows = require(path.join(ROOT, 'tests', 'tools',
                                     'dependency-windows.js'));
   t.equal(JSON.stringify(windows.LOCKFILES.map(function (one) {
@@ -225,14 +234,25 @@ function run(t) {
                             package: 'tar',
                             lockfile: 'sdk/package-lock.json' }]),
           'a finding names the lockfile it came from');
-  const pins = workspaces.map(function (dir) {
-    return Object.keys(readJson('sdk/packages/' + dir + '/package.json')
-      .dependencies || {})[0];
-  }).sort();
-  t.equal(JSON.stringify(windows.directDependencies(SDK)),
-          JSON.stringify(pins),
-          'the 90-day review reads every workspace\'s pin as a direct ' +
-          'dependency (' + pins.length + ')');
+  t.equal(JSON.stringify(windows.UPDATE_REVIEW_LOCKFILES.map(function (one) {
+    return one.name;
+  })), JSON.stringify(['package-lock.json']),
+  'the 90-day update review reads the root lockfile only, not the ' +
+  workspaces.length + ' sdk/ workspace pins (#2219)');
+  const daily = fs.readFileSync(path.join(ROOT, '.github', 'workflows',
+                                          'dependency-windows.yml'), 'utf8');
+  const dailyRuns = daily.split('\n').filter(function (line) {
+    return /node tests\/tools\/dependency-windows\.js/.test(line);
+  });
+  t.check(dailyRuns.length === 1 && !/--updates/.test(dailyRuns[0]) &&
+          /--image-report=/.test(dailyRuns[0]),
+          'the daily workflow runs the advisory windows and the image scan, ' +
+          'without --updates', dailyRuns.join(' | '));
+  t.check(/^\s+if \[ "\$\{UPDATE_REVIEW\}" = true \]; then args\+=\(--updates\); fi$/m
+            .test(daily) &&
+          /UPDATE_REVIEW: \$\{\{ inputs\.updates && 'true' \|\| 'false' \}\}/
+            .test(daily),
+          'and adds the update review only when a dispatch asks for it');
   const overrides = root.overrides || {};
   const unheld = Object.keys(overrides).filter(function (name) {
     const held = (lock.packages || {})['node_modules/' + name] || {};
@@ -243,6 +263,41 @@ function run(t) {
           ' overrides is the version the lockfile holds');
   t.check(!(lock.packages || {})['node_modules/request'],
           'and the lockfile holds no `request` (node-gyp 7\'s, #2159)');
+
+  t.log.info('=== 7. no install script runs in the image build (#2220) ===');
+  const installs = runs.filter(function (one) {
+    return /\bnpm ci\b/.test(one);
+  });
+  const scripted = installs.filter(function (one) {
+    return !/\bnpm ci\b[^&;]*--ignore-scripts/.test(one) &&
+      one.indexOf('--prefix ./tests') < 0;
+  });
+  t.check(installs.length >= 3 && scripted.length === 0,
+          'every `npm ci` of the service and the SDKs passes ' +
+          '--ignore-scripts (' + installs.length + ' installs)',
+          scripted.join(' / '));
+  t.check(installs.some(function (one) {
+    return /npm ci --omit=dev --ignore-scripts && npm cache clean --force/
+      .test(one) && one.indexOf('npm sbom') >= 0;
+  }), 'the dependencies stage installs the service\'s tree with ' +
+      '--ignore-scripts before writing its SBOM');
+  // What the Dockerfile's dependencies-stage comment argues needs no
+  // rebuild. A name added here owes that comment a line saying why.
+  const NEEDS_NO_BUILD = ['dtrace-provider', 'protobufjs'];
+  const rootLock = readJson('package-lock.json');
+  const withScripts = Object.keys(rootLock.packages || {})
+    .filter(function (key) {
+      const one = rootLock.packages[key];
+      return key && one.hasInstallScript && !one.dev;
+    })
+    .map(function (key) {
+      return key.replace(/^.*node_modules\//, '');
+    })
+    .sort();
+  t.equal(withScripts.join(', '), NEEDS_NO_BUILD.join(', '),
+          'the root lockfile\'s only shipped packages with an install ' +
+          'script are the ones whose script builds nothing the service ' +
+          'loads');
   log.debug("Leaving run().");
 }
 

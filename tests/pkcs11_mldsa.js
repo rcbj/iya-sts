@@ -10,8 +10,9 @@
 //
 // CKM_ML_DSA is 0x1d (PKCS#11 3.2). A token that does not offer it with
 // CKF_SIGN refuses before C_Sign (STS-KEYS-0206). One that does is asked
-// for a buffer large enough for ML-DSA-87 (4627 octets). SLH-DSA is not a
-// mechanism here. The realm's published post-quantum set stays in software.
+// for a buffer large enough for ML-DSA-87 (4627 octets). SLH-DSA is
+// CKM_SLH_DSA (0x2e) since #2220, and the realm's published set is made in
+// the token where it offers both mechanisms — tests/pkcs11_pq_published_set.js.
 // ---------------------------------------------------------------------------
 
 const log = require('bunyan').createLogger({ name: 'pkcs11_mldsa',
@@ -39,8 +40,8 @@ function run(t) {
   const codes = require('../common/error_codes');
   const CK = pkcs11.CK;
   const key = { handle: 9, generation: 0, template: [], what: 'the key' };
-  t.equal(pkcs11.SIGNING['SLH-DSA-SHAKE-128s'], undefined,
-          '1. SLH-DSA is not a PKCS#11 signing algorithm here');
+  t.equal(pkcs11.SIGNING['SLH-DSA-SHAKE-128s'].mech, 0x2e,
+          '1. SLH-DSA-SHAKE-128s is PKCS#11 3.2\'s CKM_SLH_DSA (#2220)');
   t.equal(CK.CKM_ML_DSA, 0x1d, '2. CKM_ML_DSA is PKCS#11 3.2\'s 0x1d');
   t.equal(CK.CKM_ML_DSA_KEY_PAIR_GEN, 0x1c,
           '3. key-pair generation is 0x1c, not a pre-hash mechanism');
@@ -97,8 +98,10 @@ function run(t) {
                 '9. generation without the mechanism is STS-KEYS-0207');
         t.equal(bare.canGenerate({ kty: 'AKP', alg: 'ML-DSA-65' }), false,
                 '10. canGenerate is false until the mechanism is listed');
+        // Generation AND signing (#2220): a key the token could make and
+        // not sign with is not made there.
         const ready = tokenWith({}, new Map([
-          [CK.CKM_ML_DSA_KEY_PAIR_GEN, 0]]));
+          [CK.CKM_ML_DSA_KEY_PAIR_GEN, 0], [CK.CKM_ML_DSA, CK.CKF_SIGN]]));
         const plan = ready.keyPairPlan({ kty: 'AKP', alg: 'ML-DSA-65' },
                                        'lbl', Buffer.from('id'));
         t.equal(plan.mech, 0x1c,
@@ -109,7 +112,7 @@ function run(t) {
         t.equal(set && set.value, CK.CKP_ML_DSA_65,
                 '12. the parameter set is ML-DSA-65');
         t.equal(ready.canGenerate({ kty: 'AKP', alg: 'ML-DSA-65' }), true,
-                '13. canGenerate is true once the mechanism is listed');
+                '13. canGenerate is true once both mechanisms are listed');
         const raw = Buffer.alloc(1952, 7);
         const reader = tokenWith({
           C_GetAttributeValue: function (session, handle, template) {

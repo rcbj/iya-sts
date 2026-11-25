@@ -35,6 +35,7 @@ const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -305,11 +306,18 @@ async function setUp(realm, mode) {
   for (const who of [READER, OTHER, ADMIN]) {
     const made = await ok(api + "/users/create", {
       username: who, invent: false, credential: "password",
-      password: PASSWORD,
+      password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "LDR " + who, givenName: "LDR", sn: who,
                     mail: who + "@ldr.test", telephoneNumber: PHONE } },
       "created " + who + " in " + realm);
     dns[who] = String(made.dn);
+    // Temporary, then the person's own (#2160, `own_password.js`): an
+    // LDAP bind refuses a temporary password.
+    await ownPassword.ownPassword(realmBase(realm), who, PASSWORD,
+      function (one, value) {
+        return call("POST", api + "/users/set-password",
+                    { user: one, password: value });
+      });
   }
   const where = await call("GET", api + "/groups");
   assert.ok(where.status === 200 && where.json && where.json.usersDn &&

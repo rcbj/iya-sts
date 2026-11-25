@@ -32,6 +32,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -305,11 +306,20 @@ async function setUp() {
     }
     await ok(base + prefix + "/admin-api/users/create",
              { username: PERSON, invent: false, credential: "password",
-               password: PASSWORD,
+               password: ownPassword.temporaryFor(PASSWORD),
                // givenName, sn and mail: the attribute policy (#396).
                attributes: { cn: "OAuth 2.1 Person", givenName: "OAuth",
                              sn: PERSON, mail: PERSON + "@oauth21.test" } },
              "created the person who signs in, in " + prefix);
+    // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary
+    // in product, so they choose PASSWORD at the sign-in screen
+    // (`own_password.js`; in development it is simply set).
+    await ownPassword.ownPassword(base + prefix, PERSON, PASSWORD,
+      function (who, value) {
+        return send(base + prefix + "/admin-api/users/set-password",
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user: who, password: value }) });
+      });
   }
   // DECLARES NOTHING: an entry with a client_id and no protocol family, no
   // redirect URI, no method and no credential — what a sighting leaves.

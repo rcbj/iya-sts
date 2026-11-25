@@ -16008,6 +16008,11 @@ class Authn {
     // application, which is why the policy can say so here rather than
     // allowing every https image on every sign-in page.
     const shown = this.clientDisplay(application);
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220): the sign-in's own
+    // negotiation — `ui_locales`, the person, the chooser, Accept-Language,
+    // the application's locale policy — from the `browser` catalog.
+    const t = ShellDocument.translator({ application: application || '',
+                                         username: person || '' });
     const html = ShellDocument.document({
       title: 'Sign in — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
@@ -16020,10 +16025,13 @@ class Authn {
       script: SIGNIN_SCRIPT_PATH,
       open: '<div class="card">',
       close: '</div>',
-      noscript: '<h1>Sign in</h1><div class="err">This sign-in page is a ' +
+      noscript: '<h1>' + ShellDocument.said(t, 'browser.noscript.signin.title',
+        'Sign in') + '</h1><div class="err">' + ShellDocument.said(t,
+        'browser.noscript.signin', 'This sign-in page is a ' +
         'script that runs in your browser, and with scripts blocked there ' +
-        'is nothing it can show. Allow scripts for this page to sign in.' +
+        'is nothing it can show. Allow scripts for this page to sign in.') +
         '</div>',
+      translator: t,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     ShellDocument.serve(app, req, res, html,
@@ -19953,6 +19961,8 @@ class Authn {
     const written = credentials.setPassword(step.username, chosen,
                                             { via: 'the forced password ' +
                                                 'change',
+                                              // #2236: the person's own.
+                                              initiatingEntity: 'user',
                                               application: String(
                                                 (step.authn &&
                                                  step.authn.application) ||

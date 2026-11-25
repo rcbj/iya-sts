@@ -53,5 +53,19 @@
   "done.mail.openpgp": "Naka-encrypt na ngayon ang iyong mail gamit ang iyong OpenPGP key.",
   "done.mail.smime": "Naka-encrypt na ngayon ang iyong mail gamit ang iyong S/MIME certificate.",
   "done.smimeSet": "Naitakda na ang iyong S/MIME certificate.",
-  "done.smimeRemoved": "Naalis na ang iyong S/MIME certificate."
+  "done.smimeRemoved": "Naalis na ang iyong S/MIME certificate.",
+  "kem.heading": "Isang ML-KEM certificate mula sa serbisyong ito",
+  "kem.intro": "Maaaring bigyan ka ng serbisyong ito ng post-quantum S/MIME certificate para sa {mail}. Hindi makakapirma ng request ang ML-KEM key, kaya patunayan mo sa ibang paraan na iyo ito: mag-e-encrypt ang serbisyong ito ng sikreto rito, at ibabalik mo ang sikreto.",
+  "kem.step1": "Gumawa ng ML-KEM key gamit ang OpenSSL 3.5 o mas bago, itago ang private key, at i-paste ang public key sa ibaba.",
+  "kem.key": "Ang iyong ML-KEM public key (-----BEGIN PUBLIC KEY-----)",
+  "kem.ask": "Ipadala ang key",
+  "kem.step2": "I-decapsulate ang {algorithm} ciphertext na ito gamit ang iyong private key bago ang {at}, at i-paste sa ibaba ang sikretong ipi-print nito.",
+  "kem.secret": "Ang sikreto (64 na hex na character)",
+  "kem.issue": "I-issue ang certificate",
+  "kem.again": "Magsimula muli gamit ang ibang key",
+  "kem.issuedHeading": "Ang iyong bagong S/MIME certificate",
+  "kem.issuedSub": "Ang isang {algorithm} certificate, serial {serial}, ang iyong S/MIME certificate na ngayon. I-save ito at i-import kasama ng iyong private key sa iyong mail program.",
+  "kem.save": "I-save ang certificate",
+  "done.kemChallenge": "Tinanggap ang iyong {algorithm} key. I-decapsulate ang challenge sa ibaba at ibalik ang sikreto.",
+  "done.kemIssued": "Na-issue at naitakda na ang iyong {algorithm} S/MIME certificate na {serial}."
 }

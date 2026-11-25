@@ -144,6 +144,11 @@
       "subject": "Förnya ditt PIV-certifikat hos {{service}}",
       "text": "{{service}} ber {{username}} att skaffa ett nytt certifikat till det PIV-smartkort eller den säkerhetsnyckel som används vid inloggning: det som finns där signerades med en klassisk algoritm eller går snart ut. Ha kortet till hands och ett verktyg som skapar en certifikatbegäran från det, till exempel ykman.\n\nLogga in här, så ombeds du skaffa det direkt efter inloggningen:\n\n{{signin}}\n\nLänken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller inget om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.\n",
       "html": "<p>{{service}} ber <strong>{{username}}</strong> att skaffa ett nytt certifikat till det PIV-smartkort eller den säkerhetsnyckel som används vid inloggning: det som finns där signerades med en klassisk algoritm eller går snart ut. Ha kortet till hands och ett verktyg som skapar en certifikatbegäran från det, till exempel ykman.</p><p><a href=\"{{signin}}\">Logga in</a>, så ombeds du skaffa det direkt efter inloggningen.</p><p>Länken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller inget om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.</p>"
+    },
+    "credential-expiring": {
+      "subject": "En inloggningsuppgift för ditt {{service}}-konto upphör snart att gälla",
+      "text": "De här inloggningsuppgifterna för kontot {{username}} upphör snart att gälla: {{what}}.\n\nFörnya var och en innan den upphör att gälla, annars slutar den fungera. Där en rad nämner en sida i din portal loggar du in här:\n\n{{link}}\n\nDär den säger att du ska fråga din administratör kontaktar du den som hanterar ditt konto. Om du inte längre använder någon av dem kan du bortse från dess rad.\n",
+      "html": "<p>De här inloggningsuppgifterna för kontot <strong>{{username}}</strong> upphör snart att gälla: {{what}}.</p><p>Förnya var och en innan den upphör att gälla, annars slutar den fungera. Där en rad nämner en sida i din portal <a href=\"{{link}}\">loggar du in i din portal</a>.</p><p>Där den säger att du ska fråga din administratör kontaktar du den som hanterar ditt konto. Om du inte längre använder någon av dem kan du bortse från dess rad.</p>"
     }
   },
   "layout": {

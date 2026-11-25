@@ -272,8 +272,8 @@
     "text": "Ancienneté maximale de la connexion pour une modification sensible (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. Il en va de même lorsqu'un administrateur accorde ou retire un rôle, crée, modifie ou supprime un domaine de confiance, agit sur la PKI, les clés de signature, la clé de chiffrement des clés ou les destinations de transmission des secrets, ou modifie un paramètre quel qu'il soit (#2161). 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
+    "en": "b20d406d9605d06f",
+    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. Il en va de même lorsqu'un administrateur accorde ou retire un rôle, crée, modifie ou supprime un domaine de confiance, agit sur la PKI, les clés de signature, la clé de chiffrement des clés ou les destinations de transmission des secrets, ou modifie un paramètre quel qu'il soit (#2161). Il en va de même pour la modification d’une application, d’une relation de fédération, d’un fournisseur de services SAML, d’une politique d’accès, d’un groupe, d’une politique nommée, des claims qu’un jeton porte, ou de tout ce qui décide qui peut se connecter, ce qui lui est délivré ou où cela va (#2247). 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -418,6 +418,22 @@
   "malwareScan.timeoutMs|description": {
     "en": "59a643baa5f14b91",
     "text": "Temps d’attente du service. Un fichier volumineux dispose d’une seconde de plus par mébioctet."
+  },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Analyses simultanées"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Combien de fichiers un processus envoie simultanément au scanner, chacun sur sa propre connexion. Les autres attendent leur tour."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Analyses en attente"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Combien de fichiers peuvent attendre une analyse au-delà de ceux en cours. Un fichier au-delà est refusé avec 503 (STS-CORE-0182), comme lorsque le scanner ne répond pas."
   },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
@@ -1815,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "La clé qui signe les justificatifs dc+sd-jwt et jwt_vc_json de ce domaine et leurs Token Status List Tokens. `dedicated` — la valeur par défaut — est une clé qui leur est propre, par famille d'algorithmes, utilisée pour rien d'autre, sous un certificat dont le subjectAltName nomme comme URI chaque identifiant d'émetteur auquel le domaine répond (aucun nom DNS), avec l'usage étendu de clé id-kp-documentSigning (RFC 9336) et rien qu'une pile TLS accepterait, afin qu'un portefeuille puisse comparer l'iss du justificatif à son x5c (HAIP 1.0, section 6.1.1). Le certificat est réémis lorsque les identifiants d'émetteur changent (global.publicBaseUrl, tls.hostnames, un écouteur). `realm-key` les signe avec la clé JOSE générale du domaine, comme le faisait la 1.0.0, dont le certificat ne nomme aucun émetteur. Les justificatifs déjà émis restent vérifiables dans les deux cas. ldp_vc et mso_mdoc ne sont pas concernés."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Renouveler la clé de signature des attestations tous les (jours)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Combien de temps la clé d’un signataire d’attestations dédié (keys.credentialSigner dedicated) signe avant que la tâche keys.credential-signer-rotate ne crée la clé suivante de sa famille, qui signe dès lors. La clé remplacée ne signe plus rien et reste dans le JWKS et le document DID de l’émetteur d’attestations, de sorte que chaque attestation qu’elle a signée continue d’être vérifiée. Compté à partir du moment où la tâche a vu la clé pour la première fois. 0 désactive le calendrier. Mode produit uniquement."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Clés de déchiffrement post-quantiques / hybrides"
@@ -1822,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "Les algorithmes JWE ML-KEM et HPKE pour lesquels ce domaine détient une clé de déchiffrement — une paire de clés par algorithme, publiée dans le JWKS du domaine (`use: enc`, avec `alg`) et annoncée dans `request_object_encryption_alg_values_supported` et `assertion_encryption_alg_values_supported`, afin qu’un client puisse chiffrer pour ce domaine un request object ou une assertion RFC 7523 / 7522 avec un établissement de clé post-quantique ou hybride PQ/T. HPKE-10-KE est X-Wing (ML-KEM-768 + X25519). Chiffrer POUR un client qui a enregistré l’un de ces algorithmes ne nécessite rien ici. **Vide par défaut, et au choix d’un administrateur :** chacun de ces algorithmes provient d’un Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), et une clé AKP dans un JWKS est un type de clé que les bibliothèques JOSE de nombreux clients n’analysent pas encore — certaines refusent tout le jeu de clés. Ne nommez un algorithme ici que lorsque les clients qui lisent le JWKS de ce domaine sont connus pour le supporter. En retirer un cesse de le publier et de l’accepter ; le nommer à nouveau ramène la même clé."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Remplacer les clés de déchiffrement des requêtes tous les (jours)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Combien de temps les clés de chiffrement des objets de requête, la clé de chiffrement des requêtes OpenID4VCI et les clés de déchiffrement KEM sont conservées avant que la tâche keys.encryption-key-rotate ne les remplace. La nouvelle clé est publiée aussitôt (/oauth2/jwks, les métadonnées de l’émetteur d’attestations) et celle qu’elle remplace déchiffre encore pendant keys.encryptionKeyOverlapDays. Compté à partir du moment où la tâche a vu la clé pour la première fois. 0 désactive le calendrier. Mode produit uniquement."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "Une clé de déchiffrement des requêtes remplacée déchiffre encore pendant (jours)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Combien de temps une clé de déchiffrement des requêtes remplacée par keys.encryption-key-rotate continue d’ouvrir ce qu’un client a chiffré pour elle avant d’avoir lu la nouvelle clé. Elle n’est publiée nulle part entre-temps, et signing.retire la supprime une fois ce délai écoulé."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -2123,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Combien de temps une sonde derrière /admin/secrets peut attendre la réponse d’un magasin de secrets. Chacune d’elles est une LECTURE de métadonnées — un stat du fichier de clé, un point de terminaison sys, un historique de versions KV, un DescribeSecret — et aucune ne récupère jamais la valeur d’un secret. La limite existe pour que l’ouverture d’une page de la console ne puisse jamais rester bloquée sur le magasin de quelqu’un d’autre ; une sonde qui expire est affichée comme une ligne qui le signale, exactement comme une sonde refusée."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Délai d’un appel au magasin de secrets (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Combien de temps une tentative d’appel à OpenBao ou Vault, AWS KMS ou Secrets Manager, Google Cloud KMS ou Secret Manager, ou Azure Key Vault peut attendre ; transmis à chaque SDK comme sa propre option de délai."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Tentatives par appel au magasin de secrets"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Combien de fois un appel à un magasin de secrets ou à un service de clés est tenté au total : la borne de nouvelles tentatives propre aux SDK cloud, et pour OpenBao ou Vault un appel resté sans réponse, ou ayant reçu un 5xx ou un 429, est refait après une courte pause (STS-KEYS-0214 lorsque toutes les tentatives ont échoué). Un 4xx n’est jamais répété."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "Région AWS"
@@ -2180,6 +2236,30 @@
     "text": "Le nombre maximal de sessions que chaque processus et chaque worker de requêtes garde ouvertes sur un jeton, chacune exécutant une opération HSM à la fois. Un YubiHSM 2 a 16 sessions en tout, partagées par chaque processus de chaque nœud : gardez le produit de cette valeur, des processus et des nœuds en dessous de ce nombre."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "le jeton est ouvert une fois, au démarrage"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Délai d’une opération HSM (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Combien de temps une opération HSM, et l’attente d’une session pour l’exécuter, peuvent durer avant d’être refusées (STS-KEYS-0216). Une session dont l’opération l’a dépassé est abandonnée lorsque le module répond. 0 pour aucune limite."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "le jeton est ouvert une fois, au démarrage"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Opérations HSM en attente par jeton"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Combien d’opérations HSM peuvent attendre une session d’un jeton dans un processus ou un worker. Une de plus est refusée immédiatement (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "le jeton est ouvert une fois, au démarrage"
   },
@@ -2396,6 +2476,66 @@
     "text": "L’URL Azure Key Vault ou le point de terminaison HashiCorp Vault depuis lequel la clé précédente est lue. Il n’a aucune solution de repli."
   },
   "keys.previousKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "Provenance de la clé de chiffrement de clés précédente de la cellule"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "Pour effectuer la rotation de la clé de chiffrement de clés de cette cellule : faites pointer keys.cellKek* vers la NOUVELLE clé et ce paramètre vers l’ANCIENNE, puis démarrez. Chaque clé de chiffrement de données de cette cellule encore enveloppée sous l’ancienne clé est réenveloppée sous la nouvelle et réécrite ; une fois que chaque nœud de la cellule a démarré ainsi, remettez ce paramètre à none. Refusé sans clé de cellule."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "la clé est lue une seule fois, avant la restauration du stockage"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "Emplacement de la clé de chiffrement de clés précédente de la cellule"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "L’emplacement de la clé de cellule précédente, dans le fournisseur que nomme keys.previousCellKekProvider : un chemin, un ARN, une ressource ou un chemin de lecture Vault. Il n’a pas de valeur de repli."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "Champ contenant la clé de cellule précédente"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "Le membre d’un secret JSON qui contient la clé de cellule précédente. Vide, la valeur est prise en entier."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "Région AWS de la clé de cellule précédente"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "La région AWS où la clé de cellule précédente est lue. Vide, la résolution propre au SDK est utilisée."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "URL Key Vault de la clé de cellule précédente"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "L’URL Azure Key Vault ou le point de terminaison HashiCorp Vault où la clé de cellule précédente est lue. Il n’a pas de valeur de repli."
+  },
+  "keys.previousCellKekVault|restartReason": {
     "en": "d51b3caaa6125e92",
     "text": "lu une seule fois au démarrage"
   },
@@ -3131,6 +3271,22 @@
     "en": "c20e5f5d3aa6062e",
     "text": "Combien de secrets clients une application peut détenir simultanément (chacun étant un enregistrement oauthClientSecret avec sa propre expiration). Ajouter ou faire entrer par rotation un secret au-delà est refusé (STS-REG-0208) ; supprimez-en d’abord un. Les secrets expirés comptent jusqu’à ce que la tâche quotidienne oauth2.client-secret-expiry les supprime."
   },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "Effectuer automatiquement la rotation des secrets de ces clients"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "Les applications dont le secret client est renouvelé (ROTATION) par la tâche quotidienne oauth2.client-secret-expiry avant son expiration, séparées par des virgules. Chaque entrée est un `client_id`, ou `client_id=destination/secret-name` pour envoyer le nouveau secret vers cette destination de secrets (Directory → Secret destinations) avant qu’il ne soit validé ; un envoi qui échoue ne renouvelle rien et est retenté le lendemain. Sans destination, le client lit son nouveau secret depuis son point de terminaison de configuration client RFC 7592. L’ancien secret continue d’authentifier pendant oauth2.clientSecretOverlapS. sts-api-client n’est jamais renouvelé ici. Vide : aucun client n’est renouvelé, et chacun est signalé avant son expiration."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "Renouveler le secret d’un client listé ce nombre de jours à l’avance"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "Combien de temps avant l’expiration de son secret client principal une application listée dans oauth2.clientSecretAutoRotate est renouvelée. Un secret qui n’expire jamais n’est jamais renouvelé."
+  },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
     "text": "Avertir de l’expiration d’un secret client ce nombre de jours à l’avance"
@@ -3464,16 +3620,16 @@
     "text": "Algorithmes acceptés"
   },
   "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Les algorithmes OpenPGP qu’une clé peut utiliser, par ordre de préférence. Les composites RFC 9980 d’abord : ML-DSA-65+Ed25519 et ML-DSA-87+Ed448 signent, ML-KEM-768+X25519 et ML-KEM-1024+X448 chiffrent. Puis les noms classiques : ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sur nistP256, nistP384 et nistP521, rsaSign et rsaEncryptSign, x25519, x448, ecdh sur curve25519Legacy et les mêmes courbes NIST, et rsaEncrypt. Un nom absent de cette liste est refusé à l’enregistrement et à la vérification (STS-OPENPGP-0004). SLH-DSA n’est pas implémenté. La valeur par défaut nomme chacun d’eux."
+    "en": "f51a30de72243d25",
+    "text": "Les algorithmes OpenPGP qu'une clé peut utiliser, par ordre de préférence. D'abord les algorithmes post-quantiques de la RFC 9980 : ML-DSA-65+Ed25519 et ML-DSA-87+Ed448 signent, de même que SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f et SLH-DSA-SHAKE-256s sur une clé v6 ; ML-KEM-768+X25519 et ML-KEM-1024+X448 chiffrent. Puis les noms classiques : ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sur nistP256, nistP384 et nistP521, rsaSign et rsaEncryptSign, x25519, x448, ecdh sur curve25519Legacy et les mêmes courbes NIST, et rsaEncrypt. Un nom absent de cette liste est refusé à l'enregistrement et à la vérification (STS-OPENPGP-0004). La valeur par défaut les nomme tous."
   },
   "openpgp.pqcOnly|label": {
     "en": "d3ff53ec011bbf1f",
     "text": "N’enregistrer que des clés post-quantiques"
   },
   "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Activé, une clé nouvellement enregistrée doit utiliser un algorithme post-quantique nommé par openpgp.algorithms : ML-DSA-65+Ed25519 ou ML-DSA-87+Ed448 pour la clé de signature, et ML-KEM-768+X25519 ou ML-KEM-1024+X448 lorsqu’elle a une clé de chiffrement. Cela ne restreint que l’enregistrement : une clé classique déjà enregistrée se vérifie encore et reçoit encore le courrier. Ne peut pas être activé en même temps qu’openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Désactivé par défaut."
+    "en": "b0c222dfa3cda337",
+    "text": "Activé, une clé nouvellement enregistrée doit utiliser un algorithme post-quantique que nomme openpgp.algorithms : ML-DSA-65+Ed25519, ML-DSA-87+Ed448 ou l'un des trois algorithmes SLH-DSA pour la clé de signature, et ML-KEM-768+X25519 ou ML-KEM-1024+X448 lorsqu'elle a une clé de chiffrement. Cela ne restreint que l'enregistrement : une clé classique déjà enregistrée est toujours vérifiée et reçoit toujours le courrier. Ne peut pas être activé tant que openpgp.pqcAlongsideClassical l'est (STS-OPENPGP-0027). Désactivé par défaut."
   },
   "openpgp.pqcAlongsideClassical|label": {
     "en": "57f71c1990eb46d9",
@@ -4178,6 +4334,30 @@
   "pki.issuingLifetimeYears|description": {
     "en": "81c5c9dd24774a4b",
     "text": "Durée de validité de chaque autorité de certification émettrice lorsque la construction n’indique aucune durée. Zéro correspond aux cinq ans du profil `issuing-ca`. Plafonnée à l’expiration de son intermédiaire."
+  },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "Renouveler les certificats d’AC avant leur expiration"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Si la tâche quotidienne pki.ca-renew renouvelle la racine, chaque AC intermédiaire et chaque AC émettrice entrée dans son délai d’anticipation (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) avec la MÊME clé et le même sujet, de sorte que chaque certificat qu’elle a signé continue d’être vérifié et qu’un épinglage de sa clé tient. Une racine renouvelée est publiée à côté de celle qu’elle remplace, à /pki/ca/service/root-previous.cer, jusqu’à l’expiration de celle-ci. Une AC importée n’est jamais renouvelée. Désactivé, rien ne renouvelle une AC et elle expire comme avant la 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Renouveler la racine tant de jours avant son expiration (jours)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Combien de temps avant l’expiration de l’AC racine pki.ca-renew la renouvelle, au plus la moitié de sa durée de vie. Long par défaut (trois ans), car une racine renouvelée est un nouveau certificat d’ancre de confiance que chaque partie de confiance doit recevoir avant l’expiration de l’ancien."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Renouveler une AC intermédiaire ou émettrice tant de jours avant son expiration (jours)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Combien de temps avant l’expiration d’une AC intermédiaire ou émettrice pki.ca-renew la renouvelle, au plus la moitié de sa durée de vie. Une AC ne peut survivre à son parent ; celle dont le parent expire en premier attend donc le renouvellement du parent."
   },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
@@ -5427,6 +5607,30 @@
     "en": "60a2c7771a002257",
     "text": "Ce que la revendication `aud` doit nommer pour qu’un jeton soit accepté ici. Par défaut, l’URL de base de l’API de gestion — global.publicBaseUrl suivi de /admin-api lorsqu’il est défini, et sinon le schéma, l’hôte et le port propres à ce processus. Tant qu’elle est à cette valeur par défaut, un jeton ayant pour audience /admin-api sous l’hôte sur lequel la requête est arrivée est aussi accepté, ce qu’obtient un client en demandant `resource=<base>/admin-api` au point de terminaison de jeton (RFC 8707) sous le nom par lequel il a joint ce service. Définissez-la pour fixer une valeur unique lorsqu’un déploiement est joint sous plusieurs noms."
   },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Modifications par personne et par fenêtre dans l’API de gestion"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Combien de modifications un administrateur connecté peut faire via /admin-api (console d’administration comprise) dans une fenêtre de adminApi.writeWindowS. Compté par le sujet du jeton, non par adresse. Chaque POST qui écrit compte ; les lectures non. Au-delà, une modification est refusée avec 429 et Retry-After jusqu’à la fin de la fenêtre, et la lecture continue. Le jeton d’un programme est compté par adminApi.programWritesPerSubject à la place. 0 signifie aucune limite, valeur par défaut en développement. Le mode produit utilise 1200 par défaut."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Modifications par programme et par fenêtre dans l’API de gestion"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Combien de modifications un programme peut faire via /admin-api dans une fenêtre de adminApi.writeWindowS : un jeton client_credentials, compté par son client, ou celui d’un compte de service, compté par son sujet. Au-delà, une modification est refusée avec 429 et Retry-After jusqu’à la fin de la fenêtre. 0, la valeur par défaut dans tous les modes, signifie aucune limite, car un provisionnement ou une migration fait légitimement des milliers de modifications en quelques minutes ; réglez-le selon les besoins de vos programmes."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Fenêtre des modifications de l’API de gestion (secondes)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "La fenêtre dans laquelle adminApi.writesPerSubject et adminApi.programWritesPerSubject sont comptés, en secondes. Une fenêtre fixe, comme toute limite de débit ici."
+  },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
     "text": "Ouverte jusqu’à la connexion de l’administrateur d’amorçage"
@@ -5638,6 +5842,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "Durée d’attente de la réponse d’un partenaire avant abandon. Elle compte davantage qu’un délai d’expiration ordinaire car le navigateur l’ATTEND — une connexion fédérée, c’est une personne qui regarde un onglet vide pendant que ce service échange un code — elle est donc assez courte pour qu’un partenaire hors service produise une page d’erreur plutôt qu’un blocage, et l’erreur nomme le délai. Elle était de 5000 jusqu’au 2026-08-30, et ce qui a changé, c’est que le partenaire ici est LE PLUS SOUVENT CE PROCESSUS : un domaine de confiance est une copie logique de ce service, et la première chose qu’on demande à un domaine tout neuf est son JWKS — ce qui fait naître les onze clés post-quantiques de ce domaine, dont une génération de clé SLH-DSA-SHAKE-128s d’environ cinq secondes. 5000 était un budget qui n’a jamais fonctionné que parce que ce service SE BLOQUAIT AUTREFOIS pendant qu’il répondait : la boucle d’événements arrêtée, le minuteur qui faisait respecter ce budget ne pouvait se déclencher qu’une fois la réponse déjà produite. Les clés sont désormais générées sur le pool de threads de libuv (common/pq_native.js) et préparées à la création d’un domaine : la récupération ordinaire prend donc quelques millisecondes — ceci est le budget pour celle qui arrive pendant qu’un domaine est encore en train de naître."
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Connexions sortantes par destination"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Combien de connexions un processus garde ouvertes simultanément vers une destination (un partenaire, un récepteur, l’URL d’un client), pour chaque appel HTTP sortant. Une requête au-delà attend une connexion, dans la limite de son échéance globale, et un avertissement est journalisé lorsque des requêtes commencent à attendre (STS-HTTP-0032). Les connexions sont maintenues ouvertes et réutilisées."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Connexions sortantes au total"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Combien de connexions HTTP sortantes un processus garde ouvertes au total. Une requête au-delà attend une connexion, dans la limite de son échéance globale (STS-HTTP-0032). Jamais moins que federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Échéance globale des appels sortants (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "La durée maximale d’un appel HTTP sortant au total : l’attente d’une connexion, la connexion, la négociation et toute la réponse. Les autres délais portent sur l’inactivité, si bien qu’un pair qui répond lentement garderait sinon un appel ouvert. Un appel dont le propre délai est plus long obtient celui-ci à la place. À l’échéance, l’appel se termine par un dépassement de délai (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Délai de connexion sortante (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Combien de temps une nouvelle connexion sortante peut mettre à s’établir, négociation TLS comprise. Une connexion réutilisée depuis le pool n’est pas chronométrée. À la limite, l’appel se termine par un dépassement de délai (STS-HTTP-0034)."
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -6562,6 +6798,22 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "Dans un cluster actif-actif, l’écouteur LDAPS et le port principal de chaque nœud (sauf si tls.mainPortSharedTickets est désactivé) scellent les tickets de session sous une même clé partagée, afin qu’un ticket émis par un nœud permette la reprise sur un autre (l’écouteur du débogueur conserve une clé par nœud). Ce paramètre indique à quelle fréquence, en secondes, la tâche tls.ticket-key-rotate la remplace ; la clé remplacée est supprimée, de sorte que les secrets d’une session reprise ne peuvent être récupérés à partir d’un ticket capturé que tant que sa clé existe, et un client dont le ticket est plus ancien effectue une poignée de main complète. La clé est conservée dans le stockage, scellée sous la clé de chiffrement de clés. 0 désactive le partage, et hors du mode actif-actif rien n’est partagé : un nœud unique qui répond effectue les reprises avec les clés propres à chaque écouteur d’OpenSSL, qui ne quittent jamais le processus."
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Renouveler le certificat de l’écouteur sans redémarrage"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Si la tâche horaire tls.server-certificate-renew renouvelle le certificat que présentent le port principal, LDAPS et le débogueur, avec la même clé, dès qu’il reste moins d’un tiers de sa validité (ou qu’il entre dans tls.serverCertificateRenewLeadDays), et le place sur chaque socket sans redémarrage. Chaque nœud renouvelle le sien. Désactivé, il n’est renouvelé qu’au démarrage et par Renouveler dans la console. Un certificat que vous fournissez dans tls.certificateFile est à renouveler par vous."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Renouveler le certificat de l’écouteur tant de jours avant son expiration (jours, 0 = à un tiers de sa validité)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Renouveler le certificat de l’écouteur ce nombre de jours avant son expiration, lorsque c’est plus tôt que le moment où il ne reste qu’un tiers de sa validité. 0, la valeur par défaut, garde le tiers."
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7923,6 +8175,14 @@
     "en": "0ef945c098a1eeac",
     "text": "Pendant combien de temps la clé krbtgt d’un domaine de confiance — la clé sous laquelle est scellé chaque Ticket-Granting Ticket — reste courante avant que la tâche krb5.krbtgt-rotate ne la remplace par une nouvelle clé aléatoire au kvno suivant. La clé remplacée est conservée (krb5.retainedKeyVersions, pendant krb5.retainedKeyTtlS) afin qu’un TGT émis un instant avant la rotation fonctionne encore jusqu’à son expiration, et la tâche ne procède jamais à une rotation tant que cette fenêtre est ouverte. 180 jours est la recommandation courante pour Active Directory. 0 désactive la rotation planifiée ; une rotation manuelle (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) fonctionne toujours. Mode produit uniquement. Avec krb5.retainedKeyVersions à 0, la tâche reste également désactivée, car une rotation qui ne conserverait rien déconnecterait sans préavis tous les utilisateurs Kerberos du domaine."
   },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Renouveler la clé de l’accepteur propre à ce service tous les (jours)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "L’âge qu’une clé de principal de service peut atteindre avant que la tâche krb5.service-key-rotate ne la remplace par une nouvelle clé aléatoire au kvno suivant, en conservant celle qu’elle remplace (krb5.retainedKeyVersions, pendant krb5.retainedKeyTtlS) pour que les tickets déjà émis continuent de fonctionner, et jamais tant que cette fenêtre est ouverte. Seule la clé que ce service a créée pour son propre accepteur est renouvelée : une clé dont le keytab a été remis à un autre service est signalée comme due sur /admin/scheduler, et la renouveler, ce qui remet le nouveau keytab, reste l’acte de l’opérateur. Compté depuis la dernière rotation de la clé ou sa création. 0 désactive le calendrier. Mode produit uniquement."
+  },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
     "text": "PKINIT (pré-authentification par certificat)"
@@ -8078,6 +8338,22 @@
   "ldap.timeLimit|description": {
     "en": "b74ec7b68f9251f2",
     "text": "La limite de temps côté serveur d’une recherche, en secondes, qui est ce qui produit LDAP_TIME_LIMIT_EXCEEDED ; le timeLimit propre d’un client l’emporte lorsqu’il est plus court. Les entrées envoyées avant elle sont la réponse, marquée incomplète."
+  },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Plus grand message d’un client lié (octets)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Le plus grand message LDAP qu’un client lié peut envoyer, en octets, compté d’après la longueur que déclare son en-tête BER : une connexion dont le message suivant déclare davantage est fermée avant qu’on en lise quoi que ce soit (STS-LDAP-0227). Les résultats de recherche sont envoyés par le serveur et ne comptent pas. 5 Mio par défaut, la limite de tout corps HTTP ici."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Plus grand message avant une liaison (octets)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Le plus grand message LDAP qu’un client peut envoyer avant de s’être lié, en octets : une liaison, StartTLS ou une recherche du DSE racine. Au-delà, la connexion est fermée avant qu’on lise quoi que ce soit du message (STS-LDAP-0227). 128 Kio par défaut, le double du plus grand jeton Kerberos qu’une liaison SASL peut porter. Jamais plus que ldap.maxMessageBytes en pratique."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
@@ -10047,6 +10323,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Indique si un groupe nommé par le `memberOf` propre de la PERSONNE compte comme appartenance lorsque l’entrée du groupe ne la liste pas en retour. Rien dans cet annuaire ne maintient memberOf — ce n’est même pas un attribut standard — si bien qu’un client qui l’écrit crée exactement ce désaccord, et /admin/groups existe en partie pour le MONTRER. Ce paramètre détermine quel côté un jeton croit. Activé par défaut, car un client qui a écrit memberOf et n’a obtenu aucune revendication n’a reçu aucune explication ; désactivé, l’entrée du groupe reste la seule autorité. Dans les deux cas, le groupe doit EXISTER ici — un memberOf qui ne nomme rien n’invente pas de groupe à placer dans un jeton."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Plus grande revendication de groupes dans un jeton (octets)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Le maximum que la revendication de groupes peut occuper dans un jeton d’accès ou un ID Token, mesuré comme le JSON de ses valeurs, avant base64url. Au-delà, la revendication n’est pas tronquée : elle devient une revendication distribuée de la section 5.6.2 d’OpenID Connect Core — `_claim_names` la nomme et `_claim_sources` pointe vers /oauth2/groups de ce domaine, qui renvoie la liste complète sous forme de JWT signé pour le jeton d’accès présenté. Un jeton d’accès voyage dans un en-tête, et un jeton de plus de 8 Kio est refusé par la plupart des serveurs (16 Kio par Node.js) avec un 431 qui ne renvoie à rien. La valeur par défaut, 4096, correspond à environ 150 noms de groupes ou 60 DN, de sorte que les jetons que les personnes reçoivent aujourd’hui ne changent pas. UserInfo et les assertions SAML portent toujours la liste complète. 0 désactive la limite."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Porter une revendication de rôles"
@@ -11391,6 +11675,66 @@
     "en": "fe511fad2e40a74b",
     "text": "La durée maximale d’exécution de chaque requête derrière /admin/database, sous la forme du statement_timeout propre à PostgreSQL sur l’unique connexion qu’emprunte cette page. Chacune d’elles est une lecture d’une vue du catalogue ; la limite existe pour que l’ouverture d’une page de la console ne puisse jamais immobiliser une connexion d’un pool dont ce service se sert pour répondre au trafic protocolaire. Elle est définie sur le serveur plutôt que sous forme de minuterie ici, car une minuterie abandonnerait la promesse et laisserait la requête comme la connexion exactement où elles étaient."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Connexions à la base par processus"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Combien de connexions à la base de données chaque processus garde dans son pool. 0, la valeur par défaut, vaut deux fois le nombre de workers de requêtes du nœud et jamais moins de quatre. Un appelant au-delà attend une connexion libre jusqu’à persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Attente d’une connexion à la base (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Combien de temps un appelant attend une connexion libre dans le pool avant d’échouer. Une écriture qui échoue ainsi reçoit une réponse 503 (STS-STORE-0066) et son vidage est retenté."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Délai de connexion à la base (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Combien de temps l’établissement d’une nouvelle connexion à la base de données peut prendre."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Conservation d’une connexion inactive à la base (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Combien de temps une connexion inactive reste dans le pool avant d’être fermée."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "le stockage est ouvert au démarrage du processus"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Délai d’exécution des requêtes de la base (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "La durée maximale d’exécution d’une requête ordinaire de la base avant que le serveur ne l’annule (statement_timeout de PostgreSQL, max_statement_time de MariaDB), journalisée sous STS-STORE-0178. 0 pour aucun. L’ouverture du stockage, ses migrations, la restauration au démarrage et les constructions d’index en ligne n’y sont pas soumises ; les remplissages rétroactifs s’exécutent par petits lots."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "il est fixé sur le pool une fois le stockage ouvert et lu"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Répertoire de données"
@@ -11486,6 +11830,14 @@
   "persistence.databasePasswordToken|restartReason": {
     "en": "81c3618a73d5aca7",
     "text": "lu une seule fois au démarrage, avant l’ouverture du pool"
+  },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "Relire le mot de passe de la base de données toutes les (secondes)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "À quelle fréquence chaque processus relit le mot de passe de la base de données depuis le magasin de secrets que nomme `persistence.databasePasswordProvider` (la tâche persistence.database-password-refresh). Un mot de passe modifié est utilisé pour chaque connexion établie après lui, sans redémarrage ; les connexions ouvertes continuent de fonctionner. Il est aussi relu immédiatement lorsque la base de données refuse une connexion. Changer le mot de passe dans la base relève du magasin de secrets ou de l’opérateur, et l’ancien doit y rester valide au moins aussi longtemps. 0 ne le lit qu’au démarrage et après un refus de connexion."
   },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
@@ -11731,6 +12083,22 @@
     "en": "43d39d2a6820f37a",
     "text": "la vérification des capacités s’exécute une seule fois, lorsque le nœud rejoint le cluster"
   },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "Renouveler les secrets partagés tous les (jours)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "À quelle fréquence la tâche cluster.secret-rotate remplace chaque secret partagé qui est une clé : la clé CSRF, la clé de nonce ACME, le secret du récepteur Shared Signals, la clé de page OpenID Federation, la clé du résultat de déconnexion et la clé DBSC. Une nouvelle valeur est d’abord publiée puis devient courante dix minutes plus tard, une fois que chaque processus l’a lue, et l’ancienne reste acceptée pendant `cluster.secretOverlapS`. Le secret de sujet pairwise et le secret de nom d’amorçage sont des identifiants et ne changent jamais, et une valeur définie par une variable d’environnement relève de l’opérateur. 0 désactive la rotation. Un secret stocké par une version antérieure est daté à la première exécution de la tâche et renouvelé pour la première fois ce nombre de jours plus tard, jamais lors de la mise à niveau."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "Accepter un secret partagé renouvelé pendant (secondes)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "Combien de temps un secret partagé remplacé par une rotation reste accepté à côté du nouveau, afin qu’un formulaire, un nonce, un pointeur de page ou un cookie lié créé juste avant la rotation fonctionne encore après. Rien de nouveau n’est créé avec lui. Un jour par défaut."
+  },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
     "text": "Cette cellule"
@@ -11810,6 +12178,14 @@
   "cells.relayTimeoutMs|description": {
     "en": "839a4a009d203829",
     "text": "Combien de temps une requête relayée vers une autre cellule, ou un appel sur le canal inter-cellules, peut prendre avant que la réponse soit que l’autre cellule est injoignable (et traitée comme l’indique `cells.homeUnreachable`)."
+  },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Plus grande réponse inter-cellules (octets)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Le maximum qu’un appel synchrone à une autre cellule peut renvoyer. Au-delà, la connexion est fermée et l’appel échoue (STS-CELL-0212)."
   },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
@@ -12043,6 +12419,14 @@
     "en": "de6b9c78cb258e07",
     "text": "Combien de personnes chaque source d’attributs lit par exécution de l’actualisation planifiée (attribute-sources.refresh, chaque minute), en reprenant après la dernière la fois suivante. Une valeur plus grande termine un passage plus tôt et occupe un nœud plus longtemps par exécution."
   },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Connexions par source"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Combien de connexions chaque processus garde vers une source d’attributs. Une recherche au-delà attend une connexion dans la limite du délai propre à la source. Une modification prend effet à la recherche suivante de chaque source."
+  },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
     "text": "Transport du courrier"
@@ -12219,6 +12603,30 @@
     "en": "8fcee4b0bf32dfc4",
     "text": "Le membre d’une valeur JSON à extraire. Vide signifie `dkimKey`."
   },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "Le prochain sélecteur DKIM"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "Pour effectuer la rotation de la clé DKIM : le sélecteur de la NOUVELLE clé, dont l’enregistrement est publié à <selector>._domainkey.<domain> avant que la signature ne bascule vers elle. L’enregistrement à publier est consigné dans le journal lorsque le transport est construit. Vide : aucune rotation en cours."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "Champ de la prochaine clé privée DKIM"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "Le membre du secret de la clé DKIM (celui que nomment mail.dkimKeyProvider et mail.dkimKeyRef) qui contient la clé privée PEM du prochain sélecteur. Vide signifie `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "Signer avec le prochain sélecteur DKIM à partir de"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "Quand les messages commencent à être signés avec mail.dkimNextSelector, sous forme d’heure ISO 8601 (2026-12-01T00:00:00Z) — et seulement une fois que le DNS répond au nom du prochain sélecteur avec sa clé ; d’ici là, le sélecteur actuel signe, avec un avertissement. Gardez l’enregistrement de l’ancien sélecteur publié pendant une semaine après la bascule, puis faites du prochain sélecteur mail.dkimSelector et videz ces trois paramètres. Vide : ne jamais basculer."
+  },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",
     "text": "Région Amazon SES"
@@ -12352,8 +12760,8 @@
     "text": "Envois en cours"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Combien de messages un processus envoie simultanément lors d’un balayage."
+    "en": "d6de0478b866cf8b",
+    "text": "Combien de messages un processus envoie simultanément, lors d’un balayage et à la première tentative après la mise en file d’un message. Un message qui ne trouve aucune place libre attend le balayage suivant."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12368,8 +12776,8 @@
     "text": "Lignes de la boîte d’envoi par domaine"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Le plafond de la boîte d’envoi, par domaine : la ligne TERMINÉE la plus ancienne est retirée en premier, et une ligne en attente jamais."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Le plafond de la boîte d’envoi, par domaine : la ligne TERMINÉE la plus ancienne est retirée en premier, et une ligne en attente jamais. Un message qui porterait les lignes EN ATTENTE au-delà est refusé (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",
@@ -12498,6 +12906,30 @@
   "mail.signInAlertWindowS|description": {
     "en": "29547122992cacaf",
     "text": "Pendant combien de temps un type d’alerte de connexion — un nouvel appareil, un nouveau pays, un réseau d’anonymisation, des mots de passe refusés — n’est signalé qu’une fois à une personne. La boîte d’envoi en est la trace, de sorte qu’une fenêtre plus longue que mail.retentionS ne dure que cette durée."
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Rappels d’expiration des identifiants"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Prévenir une personne, à l’adresse de son entrée, avant l’expiration d’un certificat qu’elle détient : un certificat que ce domaine lui a délivré par ACME, EST ou SCEP, un certificat de carte à puce PIV, un certificat S/MIME, un certificat client TLS, ou un certificat enregistré pour la connexion par certificat. Chacun est signalé une fois à chacun des jours de mail.expiryReminderDays, tous les certificats concernés dans un seul message, avec leur date d’expiration et la façon de les renouveler. Rien n’est envoyé tant que les avis de sécurité sont désactivés ou qu’aucun transport n’est configuré."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Jours des rappels d’expiration des identifiants"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Combien de jours avant l’expiration d’un certificat son titulaire est prévenu, un rappel à chacun. Un certificat découvert à l’intérieur de l’un d’eux est signalé au plus proche, et jamais à une étape déjà passée. Une modification s’applique à chaque certificat à son prochain rappel."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Identifiants qu’un rappel d’expiration nomme"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Les types de certificat qu’un rappel d’expiration nomme : certificate (délivré par ACME, EST ou SCEP), piv (un certificat d’emplacement PIV), smime (un certificat S/MIME vers lequel les courriels sont chiffrés), tls-client (un certificat client TLS délivré depuis la page Clés de signature du portail ou par un administrateur) et signin-certificate (un certificat enregistré dans l’entrée pour la connexion par certificat). Un type omis reste suivi, de sorte que le remettre déclenche un rappel à sa prochaine étape."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

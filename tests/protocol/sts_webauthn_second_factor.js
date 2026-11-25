@@ -54,6 +54,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -434,6 +435,9 @@ async function completeCeremony(b, page, authenticator) {
 var PASSWORD = "webauthn-second-factor-Passw0rd!-" +
                String(Date.now()).slice(-6);
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses PASSWORD
+// at the sign-in screen (`own_password.js`; in development it is set).
 async function createThePerson() {
   log.debug("Entering createThePerson().");
   const r = await post("/users/create", {
@@ -441,11 +445,15 @@ async function createThePerson() {
     attributes: { cn: "Security Key Person " + PERSON, givenName: "Security",
                   sn: PERSON, displayName: "Security Key Person " + PERSON,
                   mail: PERSON + "@webauthn-second-factor.test" },
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   });
   assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
     "POST /admin-api/users/create should create " + PERSON + " with a " +
     "password; it answered " + r.status + " " + String(r.raw).slice(0, 300));
+  await ownPassword.ownPassword(base, PERSON, PASSWORD,
+    function (who, value) {
+      return post("/users/set-password", { user: who, password: value });
+    });
   log.debug("Leaving createThePerson().");
 }
 

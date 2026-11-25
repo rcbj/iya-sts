@@ -71,6 +71,8 @@ import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
 import PhotoPicker = require('./web_photo');
 import WebAccounts = require('../common/web_accounts');
+import WebClipboard = require('../common/web_clipboard');
+import WebPageState = require('../common/web_page_state');
 import DocLinks = require('../common/web_doc_links');
 import WebNavSections = require('../common/web_nav_sections');
 import WebAnnouncements = require('../common/web_announcements');
@@ -95,6 +97,9 @@ const SCOPE = 'openid account:read owner:read';
 const WRITE_SCOPES = ['account:manage', 'owner:write'];
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-portal-signin';
+// What a page held when a step had to leave it (#2220,
+// `common/web_page_state.ts`), the console's #508 arrangement.
+const RESTORE_KEY = 'sts-portal-restore';
 // How long before an access token's expiry it is refreshed, in seconds.
 const REFRESH_EARLY = 30;
 // The account API's base.
@@ -396,6 +401,8 @@ class PortalRuntime extends SpaClient {
     this.env.history.replaceState(null, '',
       this.prefix + String(saved.returnTo || kit.BASE));
     await this.route();
+    // What the page held when a step had to leave it (#2220).
+    this.restorePageState();
     // AN ACCOUNT THIS TAB ADDED TO THE BROWSER is announced, so the other
     // tabs' menus are read again (#561); a reload as the same account is
     // not a change.
@@ -672,16 +679,54 @@ class PortalRuntime extends SpaClient {
 
   /**
    * Signs in on this page for a write scope. The change waiting is not
-   * sent: the person makes it again when the page is back.
+   * sent: the person makes it again when the page is back, with the page's
+   * choices put back.
    *
    * @param scope - the scope to sign in with
    * @param prompt - `login`, or '' for none
    * @returns nothing
    */
   async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    // THE PAGE'S CHOICES GO FIRST (#2220), as the console's do (#508).
+    this.savePageState();
     await this.beginSignIn(this.here() + String(this.env.location.hash || ''),
       prompt ? { scope: scope, prompt: prompt, max_age: '0' }
              : { scope: scope });
+  }
+
+  /**
+   * Keeps the page's choices across a sign-in that leaves it (#2220,
+   * `common/web_page_state.ts`).
+   *
+   * @returns nothing
+   */
+  savePageState(): void {
+    WebPageState.save(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
+  }
+
+  /**
+   * After a sign-in that left the page: puts its choices back for the same
+   * realm, page and person, and says nothing was sent.
+   *
+   * @returns nothing
+   */
+  restorePageState(): void {
+    const done = WebPageState.take(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
+    if (done.state === 'none') {
+      return;
+    }
+    const t = this.t;
+    const key = done.state === 'other' ? 'browser.stateOtherPerson'
+                                       : 'browser.stateRestored';
+    const doc = this.env.document;
+    const main = doc && doc.querySelector ? doc.querySelector('.main') : null;
+    if (main && t && t.has(key)) {
+      WebSafeDom.insert(main, 'afterbegin', '<div class="' +
+        (done.state === 'other' ? 'err' : 'ok') + '" role="status">' +
+        t.html(key) + '</div>');
+    }
   }
 
   /**
@@ -892,12 +937,14 @@ class PortalRuntime extends SpaClient {
    *
    * @param title - what went wrong
    * @param detail - the detail
+   * @param more - optional; markup drawn after the detail (#2220: the link
+   *   to what this service needs from a browser)
    * @returns nothing
    */
-  drawProblem(title: string, detail: string): void {
+  drawProblem(title: string, detail: string, more?: string): void {
     this.put(title, PortalShell.bare('<div class="card"><h1>' +
       kit.esc(title) + '</h1><div class="err">' + kit.esc(detail) +
-      '</div><p><a href="' + kit.BASE + '">' +
+      '</div>' + (more || '') + '<p><a href="' + kit.BASE + '">' +
       (this.t.has('portal.signIn') ? this.t.html('portal.signIn')
                                    : 'Sign in') +
       '</a></p></div>'));
@@ -1704,13 +1751,11 @@ class PortalRuntime extends SpaClient {
         const source = from ? doc.getElementById(from) : null;
         const text = source ? String(source.value || source.textContent || '')
                             : String(button.getAttribute('data-copy') || '');
-        if (nav && nav.clipboard && nav.clipboard.writeText) {
-          nav.clipboard.writeText(text).then(function () {
-            return undefined;
-          }, function () {
-            return undefined;
-          });
-        }
+        // THE CONSOLE'S FALLBACK, AND THEN WORDS (#2220): without
+        // `navigator.clipboard`, or refused by it, a selected text area and
+        // `execCommand('copy')`; the button says in the page's language
+        // whether it copied, so a failure is not silent.
+        WebClipboard.copyFrom(doc, nav, self.t, button, text);
       });
     }
     PortalWebAuthn.wire(doc, this.env.window || {}, function (form: Json) {
@@ -1727,7 +1772,7 @@ class PortalRuntime extends SpaClient {
           return undefined;
         });
       }
-    });
+    }, this.t);
     PortalRuntime.wireDependentSelects(doc);
     // The Overview's profile photo (#719): choosing a file draws the preview.
     PhotoPicker.wire(doc, this.env.window || {}, this.t);
@@ -1808,7 +1853,16 @@ class PortalRuntime extends SpaClient {
     if (SpaClient.webCryptoMissing(this.env)) {
       const words = await this.noWebCryptoWords('portal');
       this.t = words.t;
-      this.drawProblem(words.title, words.text);
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
+      return;
+    }
+    // NO SESSION STORAGE, NO SIGN-IN (#2220): the same, in its words.
+    if (SpaClient.sessionStorageMissing(this.env)) {
+      const words = await this.noStorageWords('portal');
+      this.t = words.t;
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
       return;
     }
     const self = this;

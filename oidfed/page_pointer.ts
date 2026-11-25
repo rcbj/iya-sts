@@ -76,10 +76,11 @@ class PagePointer {
   }
 
   // The MAC over the parts of a pointer.
-  private static mac(realmId: string, endpoint: string, key: string): string {
+  private static mac(realmId: string, endpoint: string, key: string,
+                     secret?: string): string {
     log.debug("Entering PagePointer.mac().");
     const out = stsCrypto.deriveSharedCredential(
-      clusterSecrets.text(SECRET), LABEL, realmId, endpoint, key);
+      secret || clusterSecrets.text(SECRET), LABEL, realmId, endpoint, key);
     log.debug("Leaving PagePointer.mac().");
     return out;
   }
@@ -128,8 +129,14 @@ class PagePointer {
       log.debug("Leaving PagePointer.decode(). No key in it.");
       return null;
     }
-    const expected = PagePointer.mac(String(realmId), endpoint, key);
-    if (!stsCrypto.constantTimeEquals(expected, text.slice(dot + 1))) {
+    // UNDER ANY VALUE A VERIFIER ACCEPTS (#2220), so a page drawn just
+    // before a rotation is continued after it.
+    const presented = text.slice(dot + 1);
+    const ours = clusterSecrets.texts(SECRET).some(function (secret) {
+      return stsCrypto.constantTimeEquals(
+        PagePointer.mac(String(realmId), endpoint, key, secret), presented);
+    });
+    if (!ours) {
       log.debug("Leaving PagePointer.decode(). Not ours.");
       return null;
     }

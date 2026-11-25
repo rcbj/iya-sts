@@ -7,7 +7,8 @@
 # Source files this repository owns carry the two SPDX lines in their own
 # header, and tests/copyright_notices.js fails when one does not. This file
 # covers what cannot carry a comment (JSON, Markdown, XML, data, images),
-# the vendored copies that may not be edited here, and the third-party
+# the jobs that began as copies of the parent project's (MIT, edited here
+# since 2026-10-23, #430), and the third-party
 # material. When several annotations match a file, the LAST one wins, so the
 # catch-all is first and every third-party path comes after it.
 #

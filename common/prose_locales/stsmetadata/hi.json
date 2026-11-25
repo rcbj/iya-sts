@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). प्रत्येक स्थैतिक सतह के शेल द्वारा बनाए फ़ुटर के नियम — दस्तावेज़ीकरण, संपर्क और परिचय लिंक, सामाजिक आइकन, कॉपीराइट और संस्करण (common/web_footer.ts)। प्रत्येक लिसनर पर उत्तरित; इस बिल्ड का ?v= रखने वाला पता स्थायी रूप से कैश होता है।"
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220)। ECMAScript 5 में एक स्क्रिप्ट, जो किसी स्थिर सतह के बंडल से पहले चलती है, पूछती है कि ब्राउज़र में fetch, TextEncoder, URL और ECMAScript 2022 हैं या नहीं, और जहाँ नहीं हैं, वहाँ वह सूचना दिखाती है जिसे शेल ने पाठक की भाषा में छिपाकर बनाया था (common/web_browser_check.ts)। हर listener पर उत्तर दिया जाता है, no-cache।"
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). क्षेत्र के साइन-इन रंग CSS कस्टम प्रॉपर्टी के रूप में जिन्हें /web/card.css पढ़ता है (common/branding.ts): चार branding.* रंग और उनसे व्युत्पन्न टोन, केवल मान्य मानों से बने। शेल उसे कार्ड के बाद केवल वहाँ लिंक करता है जहाँ क्षेत्र का रूप सेवा के रूप से भिन्न हो; अपना डाइजेस्ट ?v= के रूप में रखने वाला पता स्थायी रूप से कैश होता है।"
@@ -2567,6 +2571,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls JSON रूप में: tls.* सेटिंग, सभी केवल-पुनरारंभ, क्योंकि प्रमाणपत्र ढाला जाता है और सॉकेट कुछ भी सुनने से पहले बंध जाते हैं। मुख्य पोर्ट HTTPS है या नहीं, यह global.https है, प्रक्रिया की अपनी सेटिंग के साथ /admin-api/config पर। केवल पढ़ने के लिए।"
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). इस नोड के लिसनर पर हर पूर्ण TLS हैंडशेक ने इसकी फ़्रंट प्रोसेस शुरू होने के बाद से जो कुंजी विनिमय समूह तय किया, प्रति लिसनर और समूह गिना गया, और उनमें से कितने पोस्ट-क्वांटम थे (एक ML-KEM समूह)। /admin/crypto-metadata पर दिखाया जाता है। यह कुछ नहीं बदलता।"
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust JSON रूप में: प्रत्येक क्लाइंट-प्रमाणपत्र विश्वास एंकर, उसके विषय, जारीकर्ता, क्रमांक, वैधता, फ़िंगरप्रिंट, PEM और स्रोत (`file` या `runtime`) के साथ, ?page= और ?per= से पृष्ठबद्ध। प्रक्रिया के लिए एक विश्वास-भंडार, इसलिए यह प्रत्येक विश्वास क्षेत्र उपसर्ग के अंतर्गत समान उत्तर देता है। इसमें कोई निजी कुंजी नहीं — विश्वास-भंडार प्रमाणपत्र रखता है और कुछ नहीं। runtime एंकर निर्देशिका में स्थायी रहता है; `file` एंकर नहीं।"
@@ -3578,6 +3586,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "खाली अनुसरण पर WWW-Authenticate challenge के साथ 401 का उत्तर देता है — यह संरक्षित संसाधन है और OIDC प्रवाह से access token चाहिए"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "सीमा से आगे के groups claim का DISTRIBUTED SOURCE (#2247)। जिस access token या ID Token का groups claim groups.claimMaxBytes से अधिक होता, वह उसकी जगह OpenID Connect Core section 5.6.2 के _claim_names और _claim_sources रखता है, जो यहाँ इशारा करते हैं, और यह प्रस्तुत access token के subject के लिए सूची एक हस्ताक्षरित application/jwt (iss, sub, aud, iat, exp और claim) के रूप में लौटाता है, जैसा section किसी distributed source से माँगता है। token की जाँच वैसे ही होती है जैसे UserInfo करता है — signature, issuer, sender constraint, typ, revocation — सिवाय उसके audience और openid scope के, क्योंकि किसी resource server का token वही है जिसका claim यहाँ इशारा करता था। केवल वही token इसे भुना सकता है जो स्वयं reference रखता है, और उसे वही मिलता है जो वह सीमा से नीचे रखता, उसके अपने client की group सेटिंग्स और release filter के माध्यम से, इससे अधिक कुछ नहीं। client_credentials token के पीछे कोई व्यक्ति नहीं होता और उसे अस्वीकार किया जाता है।"
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "बिना कुछ लिए खोलने पर WWW-Authenticate challenge के साथ 401 देता है — इसे इस सेवा द्वारा जारी access token चाहिए"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",

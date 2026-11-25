@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Die Regeln der Fußzeile, die die Shell jeder statischen Oberfläche darstellt — die Links zu Dokumentation, Kontakt und Über, die Social-Icons, das Urheberrecht und die Version (common/web_footer.ts). Auf jedem Listener beantwortet; eine Adresse, die das ?v= dieses Builds trägt, wird dauerhaft zwischengespeichert."
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Ein Skript in ECMAScript 5, das vor dem Bundle einer statischen Oberfläche läuft, fragt, ob der Browser fetch, TextEncoder, URL und ECMAScript 2022 hat, und zeigt, wo nicht, den Hinweis, den die Shell verborgen in der Sprache des Lesers gezeichnet hat (common/web_browser_check.ts). Auf jedem Listener beantwortet, no-cache."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Die Farben der Anmeldung des Vertrauensbereichs als die CSS-Custom-Properties, die /web/card.css liest (common/branding.ts): die vier Farben branding.* und die daraus abgeleiteten Töne, nur aus geprüften Werten gebaut. Eine Shell bindet es nur dort nach der Karte ein, wo das Erscheinungsbild des Vertrauensbereichs von dem des Dienstes abweicht; eine Adresse, die seinen Digest als ?v= trägt, wird dauerhaft zwischengespeichert."
@@ -2567,6 +2571,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls über JSON: die Einstellungen tls.*, sämtlich nur beim Neustart, weil das Zertifikat geprägt und die Sockets gebunden werden, bevor irgendetwas lauscht. Ob der HAUPT-Port HTTPS ist, entscheidet global.https, auf /admin-api/config bei den eigenen Einstellungen des Prozesses. Nur lesend."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Die Schlüsselaustauschgruppe, die jeder abgeschlossene TLS-Handshake auf den Listenern dieses Knotens seit dem Start seines Front-Prozesses ausgehandelt hat, gezählt pro Listener und Gruppe, und wie viele davon Post-Quanten waren (eine ML-KEM-Gruppe). Angezeigt auf /admin/crypto-metadata. Ändert nichts."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust über JSON: jeder Vertrauensanker für Client-Zertifikate mit Subject, Issuer, Seriennummer, Gültigkeit, Fingerabdruck, PEM und Quelle (`file` oder `runtime`), seitenweise mit ?page= und ?per=. Ein Truststore für den PROZESS, daher antwortet er unter jedem Präfix eines Vertrauensbereichs gleich. Kein privater Schlüssel liegt darin — der Truststore hält Zertifikate und sonst nichts. Ein Laufzeit-Anker wird im Verzeichnis persistiert; ein Anker `file` nicht."
@@ -3578,6 +3586,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "antwortet 401 mit einer WWW-Authenticate-Challenge, wenn es allein aufgerufen wird — es ist eine geschützte Ressource und braucht das Access-Token aus einem OIDC-Flow"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "DIE VERTEILTE QUELLE EINES GRUPPEN-CLAIMS ÜBER SEINER GRENZE (#2247). Ein Access Token oder ID Token, dessen Gruppen-Claim groups.claimMaxBytes überschreiten würde, trägt stattdessen die _claim_names und _claim_sources aus Abschnitt 5.6.2 von OpenID Connect Core, die hierher verweisen, und dieser Endpunkt liefert die Liste für das Subjekt des vorgelegten Access Tokens als signiertes application/jwt (iss, sub, aud, iat, exp und der Claim), wie der Abschnitt es von einer verteilten Quelle verlangt. Das Token wird so geprüft wie UserInfo eines prüft — Signatur, Aussteller, Sender-Bindung, typ, Widerruf — außer seiner Audience und dem openid-Scope, denn das Token eines Resource Servers ist dasjenige, dessen Claim hierher verwies. Nur ein Token, das die Referenz selbst trägt, kann sie einlösen, und es erhält, was es unterhalb der Grenze getragen hätte, über die Gruppeneinstellungen und den Freigabefilter seines eigenen Clients, und nichts weiter. Ein client_credentials-Token hat keine Person und wird abgelehnt."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "antwortet 401 mit einer WWW-Authenticate-Challenge, wenn es ohne alles aufgerufen wird — es braucht ein Access Token, das dieser Dienst ausgestellt hat"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",

@@ -267,6 +267,30 @@ bundle_surface "the description pages" common/web_description_pages.ts \
   StsDescriptions common/description-pages.bundle.js \
   common/web_description_surface.ts common/description-pages-spa.js
 
+# THE BROWSER CHECK EVERY SHELL RUNS FIRST (#2220): `common/browser-check.js`
+# (`common/web_browser_check.ts`), served at `/web/browser-check.js` by
+# `common/public_assets.ts`. Not a surface — no page table, no runtime — so
+# not a `bundle_surface` line: ONE file, built for ECMAScript 5
+# (`--target=es5`), because it is what tells a browser too old for the
+# ES2022 bundles that it is. esbuild refuses anything newer at that target,
+# so a later edit that used `let` or a class fails the image build here.
+if [ -f common/web_browser_check.ts ]; then
+  if [ ! -x "$ESBUILD" ]; then
+    echo "build-typescript.sh: $ESBUILD is missing; install" \
+         "tests/package.json first (npm install --prefix tests)." >&2
+    exit 1
+  fi
+  echo "build-typescript.sh: bundling the browser check for ECMAScript 5"
+  "$ESBUILD" common/web_browser_check.ts --bundle --platform=browser \
+    --format=iife --target=es5 --charset=ascii --legal-comments=none \
+    --minify --log-level=warning --banner:js="$BUNDLE_BANNER" \
+    --outfile=common/browser-check.js
+  if [ ! -s common/browser-check.js ]; then
+    echo "build-typescript.sh: esbuild wrote no common/browser-check.js" >&2
+    exit 1
+  fi
+fi
+
 # THE TLS DIAGNOSTIC PAGES' BUNDLE (#583) WENT WITH THEM (#597): `/tls` and
 # `/tls/forwarded` are Monitoring → TLS connection, a page of the console's
 # own bundle (`tls/web_tls_connection.ts`).

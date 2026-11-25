@@ -32,6 +32,22 @@
 //     blocked: rcbj's decision on #569 is that script is REQUIRED on every
 //     static surface, with no server-drawn fallback, so the notice says what
 //     the page is and that it needs its script.
+//     SINCE #2220 THE NOTICE IS IN THE REQUEST'S LANGUAGE: each surface
+//     draws it from the `browser` catalog through `ShellDocument.said()`
+//     with the page's translator (`translator()`, the ambient request's,
+//     `PageLocale` — the chooser's cookie, `Accept-Language`, the locale
+//     policy), and the writer marks it `lang`/`dir` where that is not the
+//     document's, and adds the link to what this service needs from a
+//     browser (`WebDocLinks.browserSupport()`).
+//   * THE BROWSER CHECK FIRST (#2220): `/web/browser-check.js`, deferred and
+//     before the surface's script, and the notice it shows HIDDEN after the
+//     body's opening markup (`#sts-browser-check`), in the request's
+//     language. The script is ECMAScript 5 (`common/web_browser_check.ts`):
+//     a browser without `fetch`, `TextEncoder`, `URL` or ECMAScript 2022 is
+//     told so in place of a page that never draws. Both are `'self'` and
+//     neither is inline, so `script-src 'self'` is untouched. Left out only
+//     where `browserCheck` is false, which a specification's own response
+//     says (`kerberos/spnego_authn.ts`, as for the footer).
 //   * A REFUSAL in place of the notice, and NO script, where the surface
 //     already knows it cannot work here (the console's callback refused).
 //   * `data-sts-accounts="on"` WHERE `authn.multipleAccounts` IS ON in the
@@ -72,6 +88,7 @@ import fs = require('fs');
 import path = require('path');
 import helpers = require('./helpers');
 import config = require('./config');
+import WebDocLinks = require('./web_doc_links');
 
 const { log } = helpers;
 
@@ -119,6 +136,13 @@ interface ShellSpec {
   // false — which only a specification's own response says
   // (`kerberos/spnego_authn.ts`, RFC 4559's exchange).
   footer?: boolean;
+  // THE BROWSER CHECK (#2220): `/web/browser-check.js` before the script and
+  // its hidden notice, unless this is false — which only a specification's
+  // own response says, as for the footer.
+  browserCheck?: boolean;
+  // The page's translator for the notices; the ambient request's
+  // (`ShellDocument.translator()`) where left out.
+  translator?: Json;
 }
 
 /**
@@ -175,6 +199,11 @@ const CARD_PATH = '/web/card.css';
  * The page footer's stylesheet (`common/public_assets.ts`).
  */
 const FOOTER_PATH = '/web/footer.css';
+
+/**
+ * The browser check every shell runs first (#2220, `common/public_assets.ts`).
+ */
+const CHECK_PATH = '/web/browser-check.js';
 
 /**
  * The default viewport.
@@ -286,6 +315,119 @@ class ShellDocument {
   }
 
   /**
+   * The translator of the ambient request's page (`PageLocale.forPage()`),
+   * for a shell's notices (#2220).
+   *
+   * @param page - optional; the application and person the page is for,
+   *   as `PageLocale.forPage()` takes them
+   * @returns the translator, or null where none can be had (English)
+   */
+  static translator(page?: Json): Json {
+    log.debug("Entering ShellDocument.translator().");
+    let t: Json = null;
+    try {
+      // LAZILY, as the footer's: `page_locale.ts` need not be loaded by a
+      // module drawing a shell at load.
+      t = require('./page_locale').forPage(page);
+    } catch (e) {
+      // A language that cannot be worked out draws the notices in English,
+      // which `said()` falls back to; a notice must not cost the page.
+      log.debug("Caught in ShellDocument.translator(): " +
+                ((e && (e as Error).message) || e));
+      t = null;
+    }
+    log.debug("Leaving ShellDocument.translator(). " +
+              (t ? String(t.locale) : 'None.'));
+    return t;
+  }
+
+  /**
+   * One message of a shell's notice, as HTML: the translator's where it has
+   * it, else the English given (which is HTML already).
+   *
+   * @param t - the page's translator, or null
+   * @param key - `namespace.key`
+   * @param english - the English, as HTML, its parameters already in it
+   * @param params - optional; the message's parameters, escaped by `html()`
+   * @returns the message as HTML
+   */
+  // Per notice drawn, so no Entering/Leaving pair — the hot-path exception
+  // the code style allows, stated.
+  static said(t: Json, key: string, english: string,
+              params?: Record<string, unknown>): string {
+    return t && typeof t.has === 'function' && t.has(key)
+      ? t.html(key, params || {}) : english;
+  }
+
+  /**
+   * The `lang` and `dir` attributes a notice carries where its language is
+   * not the document's.
+   *
+   * @param t - the page's translator, or null
+   * @param spec - the shell being drawn
+   * @returns the attributes, with a leading space, or ''
+   */
+  static languageAttributes(t: Json, spec: ShellSpec): string {
+    log.debug("Entering ShellDocument.languageAttributes().");
+    const esc = spec.esc || ShellDocument.esc;
+    const lang = t && t.lang ? String(t.lang) : '';
+    const dir = t && t.dir ? String(t.dir) : '';
+    // The LANGUAGE, not the region, decides: an `en-US` notice in an `en`
+    // document needs no attribute.
+    const own = lang.split('-')[0].toLowerCase();
+    const page = String(spec.lang || 'en').split('-')[0].toLowerCase();
+    const out = (lang && own !== page ? ' lang="' + esc(lang) + '"' : '') +
+      (dir && dir !== (spec.dir || 'ltr') ? ' dir="' + esc(dir) + '"' : '');
+    log.debug("Leaving ShellDocument.languageAttributes(). " + out);
+    return out;
+  }
+
+  /**
+   * The link to what this service needs from a browser (#2220), in the
+   * page's language.
+   *
+   * @param t - the page's translator, or null
+   * @returns a paragraph holding the link
+   */
+  static supportLink(t: Json): string {
+    log.debug("Entering ShellDocument.supportLink().");
+    const out = '<p class="sts-browser-support"><a href="' +
+      ShellDocument.esc(WebDocLinks.browserSupport()) +
+      '" rel="noopener noreferrer">' +
+      ShellDocument.said(t, 'browser.requirements',
+                         'What this service needs from a browser') +
+      '</a></p>';
+    log.debug("Leaving ShellDocument.supportLink().");
+    return out;
+  }
+
+  /**
+   * The notice the browser check shows (#2220), drawn hidden in the page's
+   * language: its title, its sentence, the place the check names what is
+   * missing, and the link.
+   *
+   * @param t - the page's translator, or null
+   * @param spec - the shell being drawn
+   * @returns the markup
+   */
+  static unsupportedNotice(t: Json, spec: ShellSpec): string {
+    log.debug("Entering ShellDocument.unsupportedNotice().");
+    // The wrapper carries no class, so `hidden` is not undone by a
+    // surface's rule for `.err`.
+    const out = '<div id="sts-browser-check" role="alert" hidden' +
+      ShellDocument.languageAttributes(t, spec) + '><div class="err"><p>' +
+      '<strong>' + ShellDocument.said(t, 'browser.unsupported.title',
+        'This browser cannot open this page') + '</strong></p><p>' +
+      ShellDocument.said(t, 'browser.unsupported.text', 'This browser ' +
+        'lacks features this page needs, so the page cannot be drawn. Use ' +
+        'a current version of your browser, or another browser.') +
+      '<span id="sts-browser-missing"></span></p>' +
+      ShellDocument.supportLink(t) + '</div></div>';
+    log.debug("Leaving ShellDocument.unsupportedNotice().");
+    return out;
+  }
+
+  /**
    * Draws a shell document.
    *
    * @param spec - what it is drawn from
@@ -312,6 +454,8 @@ class ShellDocument {
     // a shell drawn without one gets none from its runtime either.
     const footer = spec.footer === false ? ''
       : ShellDocument.footerHtml();
+    const checked = !refused && spec.browserCheck !== false;
+    const t = spec.translator || ShellDocument.translator();
     if (footer) {
       stylesheets.push(FOOTER_PATH);
     }
@@ -330,11 +474,17 @@ class ShellDocument {
       '</title>' + stylesheets.map(function (href) {
         return '<link rel="stylesheet" href="' + esc(href) + '">';
       }).join('') +
+      (checked ? '<script src="' + esc(CHECK_PATH) + '" defer></script>'
+               : '') +
       (refused ? '' : '<script src="' + esc(spec.script) +
                       '" defer></script>') +
       '</head><body>' + spec.open +
+      (checked ? ShellDocument.unsupportedNotice(t, spec) : '') +
       (refused ? spec.refusal
-               : '<noscript>' + spec.noscript + '</noscript>' + spec.loading) +
+               : '<noscript' + ShellDocument.languageAttributes(t, spec) +
+                 '>' + spec.noscript +
+                 (checked ? ShellDocument.supportLink(t) : '') +
+                 '</noscript>' + spec.loading) +
       spec.close + footer + '</body></html>\n';
     log.debug("Leaving ShellDocument.document(). " + html.length +
               " characters.");

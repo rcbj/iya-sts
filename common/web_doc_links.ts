@@ -473,6 +473,25 @@ class WebDocLinks {
   static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/v1.2.0/';
 
   /**
+   * WHAT THIS SERVICE NEEDS FROM A BROWSER, SAID TO PEOPLE (#2220): the
+   * section of the browser requirements page written for the person in
+   * front of the page rather than the operator. Every notice that a browser
+   * falls short links it — the `<noscript>`, the browser check's, the
+   * WebCrypto and the session-storage ones.
+   */
+  static readonly BROWSER_SUPPORT =
+    'browser-requirements.html#for-people-using-this-service';
+
+  /**
+   * The absolute address of what this service needs from a browser.
+   *
+   * @returns the URL
+   */
+  static browserSupport(): string {
+    return WebDocLinks.abs(WebDocLinks.BROWSER_SUPPORT);
+  }
+
+  /**
    * Turns a site-relative page into an absolute URL. An absolute URL is
    * returned as it was given.
    *

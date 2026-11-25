@@ -400,7 +400,15 @@ class PkiService {
     const { log, revocation, errorCodes, stsCrypto } = this.deps;
     log.debug("Entering PkiService.caCertificateFor().");
     const scope = revocation.scopeFromSegment(scopeSegment);
-    const authority = revocation.authorityFor(scope, caId);
+    // THE ROOT A RENEWAL REPLACED (#2220): published beside the renewed one
+    // until it expires, so a Root renewal is never a silent swap. Same key,
+    // same subject: every chain validates against either.
+    const previous = scope === this.deps.pki.SERVICE_SCOPE &&
+                     caId === 'root-previous'
+      ? this.deps.pki.previousRootCertificates()[0] : null;
+    const authority = previous
+      ? { tier: { certificatePem: previous.certificatePem } }
+      : revocation.authorityFor(scope, caId);
     if (!authority) {
       errorCodes.mark(res, 'STS-PKI-0070');
       this.refuse(res, 404,

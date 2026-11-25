@@ -23,6 +23,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -136,15 +137,24 @@ function payloadOf(token) {
   return json;
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses PASSWORD
+// at the sign-in screen (`own_password.js`; in development it is set).
 async function person(who, mail) {
   log.debug("Entering person().");
+  const temporary = ownPassword.temporaryFor(PASSWORD);
   await ok(realmBase() + "/admin-api/users/create",
            { username: who, invent: false,
              attributes: { givenName: "P", sn: who, cn: "P " + who,
                            mail: mail },
-             credential: "password", password: PASSWORD,
-             passwordConfirm: PASSWORD },
+             credential: "password", password: temporary,
+             passwordConfirm: temporary },
            "created " + who);
+  await ownPassword.ownPassword(realmBase(), who, PASSWORD,
+    function (one, value) {
+      return call("POST", realmBase() + "/admin-api/users/set-password",
+                  { user: one, password: value });
+    });
   const read = await call("GET", realmBase() + "/admin-api/users?user=" +
                           encodeURIComponent(who));
   const subject = String((read.json && read.json.subject) || "");

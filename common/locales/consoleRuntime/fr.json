@@ -5,6 +5,7 @@
   "reauth.here": "Se connecter sur cette page",
   "reauth.hereInstead": "Se connecter plutôt sur cette page",
   "reauth.noPopup": "Ce navigateur ne peut pas récupérer une connexion effectuée dans une autre fenêtre : connectez-vous donc sur cette page.",
+  "reauth.popupBlocked": "La fenêtre de connexion a été bloquée. Autorisez les fenêtres surgissantes pour ce site, ou connectez-vous sur cette page.",
   "reauth.finish": "Terminez la connexion dans la fenêtre qui s’est ouverte.",
   "otherPerson.waiting": "Une autre personne s’est connectée : ce qui attendait sur cette page n’a donc pas été envoyé.",
   "otherPerson.typed": "Une autre personne s’est connectée : ce qui avait été saisi sur cette page n’a donc pas été restauré.",

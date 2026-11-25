@@ -27,6 +27,10 @@
 //      add of a person with one does too; a person's modify of their OWN
 //      password does not.
 //   F. DEVELOPMENT, LDAP: an administrator's modify sets no `pwdReset`.
+//   G. PRODUCT, `set-service-account` on a person who owes a change (#2236,
+//      rcbj, 2026-11-25): the change is cleared, the audit row says
+//      `passwordResetCleared`, and the password works at a door that cannot
+//      ask for a new one; for one who owes none, nothing is said.
 //
 // The keytab reset's half (#2160: it neither sets nor clears the flag, and
 // product refuses it while a change is owed, STS-ADMIN-0969) is in
@@ -164,6 +168,46 @@ function childMain() {
            'D. product: a service account\'s typed password is not ' +
            'temporary (its password is a program\'s)',
            JSON.stringify({ flagged: flagged && flagged.ok, set: svcSet }));
+
+      // --- G. a person who BECOMES a service account (#2236) -----------
+      const LATER = 'atp-later-' + stamp;
+      person(LATER);
+      const laterSet = actions.usersAction({ action: 'set-password',
+        user: LATER, password: PW, passwordConfirm: PW }, context);
+      const owedBefore = credentials.passwordResetRequired(LATER);
+      const became = actions.usersAction({ action: 'set-service-account',
+        user: LATER, owners: [adminDn] }, context);
+      const becameRow = audit.list().filter(function (one) {
+        return one.action === 'admin.service-account.set' &&
+               one.target === LATER;
+      })[0];
+      note(laterSet.ok === true && owedBefore === true &&
+           became.ok === true && became.serviceAccount === true &&
+           credentials.passwordResetRequired(LATER) === false &&
+           !!becameRow && becameRow.detail &&
+           becameRow.detail.passwordResetCleared === true,
+           'G. product: set-service-account clears the pwdReset a typed ' +
+           'password left, and its audit row says passwordResetCleared',
+           JSON.stringify({ set: laterSet.ok, owedBefore: owedBefore,
+                            became: became, detail: becameRow &&
+                              becameRow.detail }).slice(0, 600));
+      const laterVerify = credentials.verify(LATER, PW, { via: 'the test',
+                                                          door: 'ldap' });
+      note(!!laterVerify && laterVerify.ok === true,
+           'G2. and a door that cannot ask for a new password takes it',
+           JSON.stringify(laterVerify));
+      const OWES = 'atp-owes-' + stamp;
+      person(OWES);
+      const plain = actions.usersAction({ action: 'set-service-account',
+        user: OWES, owners: [adminDn] }, context);
+      const plainRow = audit.list().filter(function (one) {
+        return one.action === 'admin.service-account.set' &&
+               one.target === OWES;
+      })[0];
+      note(plain.ok === true && !!plainRow && plainRow.detail &&
+           plainRow.detail.passwordResetCleared === undefined,
+           'G3. an account that owed no change: its audit row says nothing ' +
+           'was cleared', JSON.stringify(plainRow && plainRow.detail));
 
       // --- E. LDAP ---------------------------------------------------------
       const OTHER = 'atp-other-' + stamp;

@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Las reglas del pie de página que dibuja el shell de cada superficie estática — los enlaces de documentación, contacto y acerca de, los iconos de redes sociales, el copyright y la versión (common/web_footer.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Un script en ECMAScript 5, ejecutado antes del bundle de una superficie estática, que comprueba si el navegador tiene fetch, TextEncoder, URL y ECMAScript 2022 y, si no los tiene, muestra el aviso que el shell dibujó oculto en el idioma del lector (common/web_browser_check.ts). Se responde en cada listener, no-cache."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Los colores de inicio de sesión del dominio como las propiedades personalizadas CSS que lee /web/card.css (common/branding.ts): los cuatro colores branding.* y los tonos derivados de ellos, construidos solo a partir de valores validados. Un shell la enlaza después de la tarjeta solo donde la apariencia del dominio difiere de la del servicio; una dirección que lleva su resumen como ?v= se guarda en caché para siempre."
@@ -2567,6 +2571,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls en JSON: los ajustes tls.*, todos solo modificables con un reinicio porque el certificado se acuña y los sockets se enlazan antes de que nada escuche. Si el puerto PRINCIPAL es HTTPS lo decide global.https, en /admin-api/config con los ajustes propios del proceso. Solo lectura."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). El grupo de intercambio de claves que negoció cada negociación TLS completada en los listeners de este nodo desde que se inició su proceso frontal, contado por listener y grupo, y cuántos fueron poscuánticos (un grupo ML-KEM). Se muestra en /admin/crypto-metadata. No cambia nada."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust en JSON: cada ancla de confianza de certificados de cliente con su sujeto, emisor, número de serie, validez, huella, PEM y origen (`file` o `runtime`), paginado con ?page= y ?per=. Un único almacén de confianza para el PROCESO, así que responde lo mismo bajo cualquier prefijo de dominio. No contiene ninguna clave privada: el almacén de confianza guarda certificados y nada más. Un ancla de tiempo de ejecución se persiste en el directorio; un ancla `file`, no."
@@ -3578,6 +3586,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "responde 401 con un desafío WWW-Authenticate cuando se sigue sin más: es un recurso protegido y necesita el token de acceso de un flujo OIDC"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "LA FUENTE DISTRIBUIDA DE UNA RECLAMACIÓN DE GRUPOS POR ENCIMA DE SU LÍMITE (#2247). Un token de acceso o ID Token cuya reclamación de grupos superaría groups.claimMaxBytes lleva en su lugar los _claim_names y _claim_sources de la sección 5.6.2 de OpenID Connect Core, que apuntan aquí, y este endpoint responde con la lista para el sujeto del token de acceso presentado como un application/jwt firmado (iss, sub, aud, iat, exp y la reclamación), como la sección exige de una fuente distribuida. El token se comprueba como UserInfo comprueba uno — firma, emisor, restricción de remitente, typ, revocación — salvo su audiencia y el ámbito openid, porque el token de un servidor de recursos es aquel cuya reclamación apuntaba aquí. Solo un token que lleve él mismo la referencia puede canjearla, y recibe lo que habría llevado por debajo del límite, a través de los ajustes de grupos y el filtro de publicación de su propio cliente, y nada más. Un token client_credentials no tiene persona y se rechaza."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "responde 401 con un desafío WWW-Authenticate cuando se sigue sin nada — necesita un token de acceso emitido por este servicio"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",

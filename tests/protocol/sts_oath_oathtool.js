@@ -46,6 +46,7 @@ const lab = require("./client_lab.js");
 const names = require("./random_username.js");
 const portal = require("./portal_signin.js");
 const authnSignin = require("./authn_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -328,9 +329,15 @@ async function setUp() {
   for (const who of [HOLDER_H, HOLDER_T, ADMIN]) {
     dns[who] = String((await ok(rb + "/admin-api/users/create", {
       username: who, invent: false, credential: "password",
-      password: PASSWORD,
+      password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "Oath " + who, sn: who, givenName: "Oath",
                     mail: who + "@" + DOMAIN } }, "created " + who)).dn);
+    // Temporary, then the person's own (#2160, `own_password.js`): the
+    // holders sign in and the administrator binds with PASSWORD.
+    await ownPassword.ownPassword(rb, who, PASSWORD, function (one, value) {
+      return postJson(rb + "/admin-api/users/set-password",
+                      { user: one, password: value });
+    });
   }
   await ok(rb + "/admin-api/rbac/grant", { username: ADMIN, role: "read" },
            "granted " + ADMIN + " Admin Read on the realm's roster");

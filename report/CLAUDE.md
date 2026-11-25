@@ -43,7 +43,12 @@ REPORT_USE and REPORT_ADMIN authorize it at issuance and on every call
 `report:use report:admin` makes the page ask both by a second authorization
 (`common/CLAUDE.md` 3cl, `SpaClient.stepUp()`), issued narrowed to the roles
 held — either one is enough (`stepUpAny()`). A `report:use`/`report:admin`
-token is answered as it always was.
+token is answered as it always was. **A browser with no window or no
+BroadcastChannel** leaves for that authorization (`leaveForStepUp()`), and
+since #2220 the page's choices go first and come back after the callback
+(`common/web_page_state.ts`), with "nothing was sent" said in a bubble; the
+write that asked is still not sent. And at `start()`, beside WebCrypto, a
+browser that refuses session storage is told so (`browser.noStorage.*`).
 In product that `resource` is a registered target because `/report-api`
 is one of this service's own resource servers
 (`common/registered_targets.ts`), compared whole, as `/account-api` is.

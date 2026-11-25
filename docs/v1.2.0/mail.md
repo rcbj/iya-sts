@@ -135,7 +135,9 @@ through the same mechanism as the database password (see
 **An empty location means the key-encryption key's.** So one JSON secret can
 hold the key-encryption key, the database password and these four side by
 side. A secret is read when the transport is built, which happens again after
-any Mail setting changes. `/admin/secrets` shows where each secret is and
+any Mail setting changes, and at least once an hour, so a secret rotated in
+your secret store is used within the hour without a restart. Rotating these
+secrets is your job, in your secret store and at the provider. `/admin/secrets` shows where each secret is and
 whether it was read, never what it is.
 
 ## The sender's domain: SPF, DKIM and DMARC
@@ -159,8 +161,33 @@ service then signs every message it hands the relay (RFC 6376,
 relaxed/relaxed). The signing is done by `common/crypto.js`, not by the mail
 library. `rsa-sha256` needs a key of at least 2048 bits (RFC 8301), and
 `ed25519-sha256` (RFC 8463) is supported. Publish the public key at
-`<selector>._domainkey.<domain>`. To rotate the key, use a new selector.
+`<selector>._domainkey.<domain>`.
 **DKIM has no post-quantum algorithm registered yet.**
+
+### Rotating the DKIM key
+
+A DKIM key is replaced under a **new selector**, and the old selector's record
+stays in DNS for an overlap, so mail signed just before the switch still
+verifies when it is checked later. This service decides which key signs. DNS
+is yours.
+
+1. Put the new private key in the DKIM key's secret, under
+   `mail.dkimNextKeyField` (`dkimNextKey` by default), and set
+   `mail.dkimNextSelector` to its selector.
+2. Publish the record the log gives you (`mail: publish the DKIM record for
+   the next selector as the TXT record …`) at
+   `<next selector>._domainkey.<domain>`. It is `v=DKIM1; k=rsa; p=…`, or
+   `k=ed25519` for an Ed25519 key.
+3. Set `mail.dkimSwitchAt` to an ISO 8601 time. From then on, messages are
+   signed with the next selector, **but only once DNS answers the next
+   selector's name with its key**. Until it does, the current selector keeps
+   signing and `STS-MAIL-0245` is logged.
+4. Keep the old selector's record published for at least a week after the
+   switch.
+5. Make the next selector the current one: move the key to the
+   `mail.dkimKeyField` member, set `mail.dkimSelector` to the new selector,
+   and clear `mail.dkimNextSelector`, `mail.dkimNextKeyField` and
+   `mail.dkimSwitchAt`. Then withdraw the old record.
 
 ## What happens to a message
 
@@ -368,6 +395,41 @@ network, refused passwords just before, or a risk level at or above
 are told whether or not anybody signs in. Each kind is told at most once in
 `mail.signInAlertWindowS`. See
 [Risk scoring](risk-scoring.md#the-person-is-told-of-an-unusual-sign-in).
+
+**A credential that expires soon** (#2247) is a security notice too,
+`mail.expiryReminders` (on by default, per realm). A person is reminded
+before any of these of theirs expires:
+
+| What | How the message says to renew it |
+|---|---|
+| a certificate this realm issued over ACME, EST or SCEP | on the portal's **Certificates** page |
+| a PIV smart card or security key certificate | on the portal's **Security keys** page |
+| an S/MIME certificate mail to them is encrypted to | on the portal's **OpenPGP and mail encryption** page |
+| a TLS client certificate this realm issued them, from the portal or an administrator | on the portal's **Signing keys** page |
+| a certificate stored on their entry for certificate sign-in | ask their administrator |
+
+They are reminded at each of `mail.expiryReminderDays` before it expires
+(30, 7 and 1 days by default), once at each. A certificate first seen inside
+one of them, because it was issued for less than 30 days, is told at the
+nearest and never at a day it has already passed. Every certificate due is in
+one message, each with the day it expires, and the message links to the
+portal. `mail.expiryReminderKinds` narrows which kinds are named (`certificate`,
+`piv`, `smime`, `tls-client`, `signin-certificate`). The
+`mail.credential-expiry` scheduler job sends them hourly in every realm; it is
+off while the setting, security notices or a transport is.
+
+The reminders read an index of when each certificate expires, kept in step
+with every write of a person's entry, so a run reads only the certificates
+due and never the directory. A certificate that was on an entry before 1.2.0
+is added to the index by the job, a slice of the realm's people per run, so
+in a large realm its first reminder may come a few days after the upgrade.
+
+What is not reminded: an SSH user certificate, which lasts an hour at most
+and is asked for again at each use; and passkeys, authenticator apps, one-time
+code tokens, recovery codes, app passwords and passwords, which do not expire
+here. The PIV re-issue post-login activity is unchanged: it renews a PIV
+certificate at a sign-in, and is still off by default. See
+[Post-login activities](post-login-activities.md).
 
 ## Encrypted mail
 

@@ -127,6 +127,13 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
 * **Requests per address.** One address may make 6000 requests a minute to one
   process, `security.requestsPerAddressPerMinute`. More are answered `429`. See
   [Availability](availability.md).
+* **Changes per administrator.** One administrator may make 1200 changes in
+  ten minutes through `/admin-api` and the console, counted by who they are
+  rather than by address (`adminApi.writesPerSubject` in
+  `adminApi.writeWindowS`, #2247). More are answered `429` with `Retry-After`;
+  reading goes on. A program (a `client_credentials` token or a service
+  account) is not counted by it, and has its own limit,
+  `adminApi.programWritesPerSubject`, which is off unless you set it.
 * **Cookie names.** Over TLS, every cookie this service sets is prefixed: `__Host-`,
   or `__Secure-` when it carries a `Domain` (see `authn.cookieDomain`) or a path
   narrower than `/`.
@@ -223,7 +230,20 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   rotating, exporting or emergency-replacing the signing keys, the data keys
   and the key-encryption key, the TLS client truststore, the secret push
   destinations, the krbtgt key and a person's keytab, every setting (the mode
-  among them) and every change only a Security Administrator may make. A
+  among them) and every change only a Security Administrator may make.
+  **Since #2247 it also holds for** the access policies (XACML and ALFA, the
+  PEPs, AuthZEN), applications (their secrets, certificates, redirect
+  addresses, client authentication, grant types, scopes and claims),
+  federation relationships, SAML service providers, the authorization servers
+  and OpenID Federation trust, SPIFFE registrations, the named policies,
+  delegated permission grants and global consent, owners, groups, devices,
+  token lifetimes, the claims and attributes a token or assertion carries,
+  outbound SCIM clients, the risk datasets, UMA, ACME, EST and SCEP, the
+  attribute sources, hardware tokens, mail-encryption keys, cross-realm
+  Kerberos trusts, claim providers, Shared Signals streams, the listeners,
+  the audit export, a mail template, and on a person: an activation link, MFA
+  no longer required, a certificate added, the service-account settings, who
+  may act for them and a CIBA answer; and to restoring a revoked token. A
   program using the API with its own credentials is not asked.
 * **Clearing a lost factor needs a reason.** An administrator removing a
   person's authenticator app, passkeys, recovery codes or emailed factor must say
@@ -408,8 +428,9 @@ default. When it is on, product mode reaches the scanner over TLS only. See
 
 [`SECURITY.md`](https://github.com/rcbj/iya-sts/blob/main/SECURITY.md) sets how
 quickly a vulnerable dependency is fixed and how to report a vulnerability. Images
-install exactly what the lockfiles name, with `npm ci`, and a daily check covers
-the published image as well as the lockfiles. That includes the optional SDKs
+install exactly what the lockfiles name, with `npm ci` and no package's install
+script run, and a daily check covers the published image as well as the
+lockfiles, and the remote PEP, ICAP adapter and ClamAV images beside it. That includes the optional SDKs
 under `/opt/sts-sdk`, the Vault client every image carries and whatever
 `STS_CLOUD_SDKS` adds: each is pinned in the repository's `sdk/` directory and
 installed from `sdk/package-lock.json` with install scripts off (only `pkcs11js`,
@@ -427,7 +448,9 @@ controls.
 The image holds a CycloneDX inventory of its npm dependencies at
 `/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at
 `/usr/src/sts/sbom-sdks.cdx.json`, and a list of its operating-system packages
-at `/usr/src/sts/os-packages.txt`. It holds no source control metadata.
+at `/usr/src/sts/os-packages.txt`. It holds no source control metadata. The
+remote PEP's image holds a CycloneDX inventory of its Rust crates, the OpenSSL
+built into it included, at `/usr/src/pep/sbom.cdx.json`.
 
 ## Database
 

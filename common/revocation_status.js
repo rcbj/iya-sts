@@ -310,6 +310,8 @@ const pkiRevocation = require('./pki_revocation');
 // The outbound User-Agent's builder (a leaf). Asked per fetch since #2142:
 // product leaves the build out (`mode.publishesBuildDetail()`).
 const version = require('./version');
+// The overall deadline and the connect timeout of an outbound call (#2220).
+const OutboundLimits = require('./outbound_limits');
 
 /**
  * The values `pki.revocationCheck` may take.
@@ -1887,6 +1889,16 @@ function fetchBytes(url, options) {
              why: 'it did not answer within ' + timeout + 'ms ' +
                   '(pki.revocationFetchTimeoutMs)' });
     });
+    // NOT THE SHARED AGENT (#2220): `agent: false` stays, because this fetch
+    // is the one the outbound gate must not ask (`stsOutboundGate` above),
+    // and it is already one fetch per address at a time. The deadline and
+    // the connect timeout apply as to every other call.
+    OutboundLimits.guard(request, {
+      timeoutMs: timeout, secure: secure, where: target.origin,
+      onTimeout: function (why) {
+        done({ ok: false, why: 'it ' + why });
+      }
+    });
     request.on('error', function (e) {
       done({ ok: false, why: 'the request failed: ' +
                              (e.code ? e.code + ' — ' : '') + e.message });
@@ -2029,7 +2041,9 @@ function pemFileOf(settingKey) {
       return held;
     }
     pemFilesCount.miss();
-    text = fs.readFileSync(file, 'utf8');
+    // Checked again and read through one descriptor (#2247): a link swapped
+    // in after the check above is refused, not followed out of the roots.
+    text = require('./outbound_tls').readNamedFile(file);
   } catch (e) {
     if (settingKey === 'pki.revocationLdapCaFile') {
       log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + settingKey +

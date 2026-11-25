@@ -698,6 +698,12 @@ let dirFailedAt = 0;
 // periodic work: it exists only while a write is failing, which is the
 // "retry delay inside one operation" the scheduler directive leaves out
 // (root CLAUDE.md, *Anything periodic is a scheduler job*).
+//
+// ASKED AGAIN IN #2220 (the ASVS 5.0.0 L3 dependency review), and it stays a
+// timer: what it writes is THIS process's dirty state, which a cluster job
+// on another node cannot reach, and a per-process job would be periodic work
+// that runs when nothing has failed. It is recorded as a retry delay in
+// tests/no_periodic_timers.js.
 // ---------------------------------------------------------------------------
 const RETRY_FIRST_MS = 1000;
 const RETRY_MAX_MS = 30000;
@@ -2626,6 +2632,177 @@ function resolveDatabaseUrl() {
 }
 
 // ---------------------------------------------------------------------------
+// THE DATABASE PASSWORD, READ AGAIN WHILE THE SERVICE RUNS (#2220).
+//
+// It was read once, at start, so a password rotated in the secret store took
+// a restart of every node to reach the pool — and until then, every new
+// connection the pool made logged in with a password the database no longer
+// accepted. Now it is read again in two cases, and a changed one is handed
+// to the driver, which dials every connection made AFTER it with the new
+// password (`useConnectionString()`); open connections keep their sessions.
+//
+//   * ON A SCHEDULE: the per-process job `persistence.database-password-
+//     refresh`, every `persistence.databasePasswordRefreshS` (0 turns it
+//     off). Per process, because each process has its own pools.
+//   * WHEN THE DATABASE REFUSES A LOGIN (SQLSTATE 28P01 or 28000, MariaDB's
+//     1045): the password may just have been rotated, so it is read again at
+//     once — at most every PASSWORD_REREAD_MIN_MS, so a database refusing
+//     every login is not answered with a secret-store read per attempt. A
+//     debounce inside one failure, not a timer.
+//
+// ROTATING THE PASSWORD AT THE DATABASE IS NOT THIS SERVICE'S JOB: the
+// operator does it, or the secret store does (OpenBao's database secrets
+// engine rotates a static role's password and its stored copy together).
+// What this service owes is to pick the new one up, which this does; the old
+// password has to stay valid at the database until every node has read the
+// new one, which a refresh interval bounds. Only the password of this
+// process's own database is read again; the global tier's
+// (`persistence.globalDatabasePassword*`) is still read at start.
+// ---------------------------------------------------------------------------
+const PASSWORD_JOB = 'persistence.database-password-refresh';
+const PASSWORD_REREAD_MIN_MS = 30 * 1000;
+let passwordDriver = null;
+let lastDatabaseUrl = '';
+let passwordRefreshing = null;
+let lastFailureReread = 0;
+
+// Whether a connection error is the database refusing the login.
+function isLoginRefusal(err) {
+  log.debug("Entering isLoginRefusal().");
+  const code = String((err && err.code) || '');
+  log.debug("Leaving isLoginRefusal().");
+  return code === '28P01' || code === '28000' ||
+         code === 'ER_ACCESS_DENIED_ERROR' || Number(err && err.errno) === 1045;
+}
+
+// A pooled connection could not be made: a refused login reads the password
+// again, at most every PASSWORD_REREAD_MIN_MS.
+function onDatabaseConnectFailure(err) {
+  log.debug("Entering onDatabaseConnectFailure().");
+  if (!isLoginRefusal(err) ||
+      !secrets.configuredFor(secrets.DATABASE_PASSWORD) ||
+      Date.now() - lastFailureReread < PASSWORD_REREAD_MIN_MS) {
+    log.debug("Leaving onDatabaseConnectFailure(). Not read again.");
+    return;
+  }
+  lastFailureReread = Date.now();
+  refreshDatabasePassword('the database refused a login').catch(function (e) {
+    log.debug("Caught in onDatabaseConnectFailure(): " +
+              ((e && e.message) || e));
+  });
+  log.debug("Leaving onDatabaseConnectFailure().");
+}
+
+// The audit row a changed password, or a failed read, is recorded on.
+function auditPasswordRefresh(row) {
+  log.debug("Entering auditPasswordRefresh().");
+  try {
+    require('../common/audit').audit(Object.assign({
+      actor: 'scheduler', protocol: 'console', channel: 'internal',
+      target: 'persistence.databasePasswordProvider'
+    }, row));
+  } catch (e) {
+    log.debug("Caught in auditPasswordRefresh(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving auditPasswordRefresh().");
+}
+
+/**
+ * Reads the database password again from its provider and, when it changed,
+ * dials every new connection with it.
+ *
+ * @param reason - why it is read again, for the log and the audit row
+ * @returns a promise of `{ read, changed }`; it rejects when the read fails
+ */
+function refreshDatabasePassword(reason) {
+  log.debug("Entering refreshDatabasePassword().");
+  if (!passwordDriver || typeof passwordDriver.useConnectionString !==
+      'function' || !secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
+    log.debug("Leaving refreshDatabasePassword(). Nothing to read.");
+    return Promise.resolve({ read: false, changed: false });
+  }
+  if (passwordRefreshing) {
+    log.debug("Leaving refreshDatabasePassword(). Already reading.");
+    return passwordRefreshing;
+  }
+  passwordRefreshing = resolveDatabaseUrl().then(function (url) {
+    if (!url || url === lastDatabaseUrl) {
+      return { read: true, changed: false };
+    }
+    const used = passwordDriver.useConnectionString(url);
+    if (!used || !used.ok) {
+      throw new Error('the connection string would not be dialled: ' +
+                      String((used && used.refused) || 'refused'));
+    }
+    lastDatabaseUrl = url;
+    log.info('persistence: the database password read from ' +
+             secrets.describeDatabasePassword().label + ' has changed (' +
+             String(reason) + '); new connections log in with it.');
+    auditPasswordRefresh({
+      action: 'persistence.database-password-changed',
+      summary: 'The database password changed in its secret store and new ' +
+               'connections now use it (' + String(reason) + ')',
+      detail: { reason: String(reason) } });
+    return { read: true, changed: true };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-STORE-0179') + 'persistence: the ' +
+              'database password could not be read again (' + String(reason) +
+              '), so new connections go on using the one held: ' +
+              ((e && e.message) || e));
+    auditPasswordRefresh({
+      action: 'persistence.database-password-changed', outcome: 'failure',
+      errorCode: 'STS-STORE-0179',
+      summary: 'The database password could not be read again from its ' +
+               'secret store', detail: { reason: String(reason) } });
+    throw e;
+  }).finally(function () {
+    passwordRefreshing = null;
+  });
+  log.debug("Leaving refreshDatabasePassword().");
+  return passwordRefreshing;
+}
+
+/**
+ * Registers the per-process job that reads the database password again
+ * (#2220). Idempotent.
+ *
+ * @param schedulerInstance - the scheduler; required lazily when omitted
+ */
+function ensurePasswordJob(schedulerInstance) {
+  log.debug("Entering ensurePasswordJob().");
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  if (!scheduler || typeof scheduler.register !== 'function' ||
+      scheduler.job(PASSWORD_JOB)) {
+    log.debug("Leaving ensurePasswordJob(). Nothing to register.");
+    return;
+  }
+  scheduler.register({
+    id: PASSWORD_JOB,
+    title: 'Database password refresh',
+    describe: 'Reads the database password again from the secret store ' +
+              'persistence.databasePasswordProvider names, every ' +
+              'persistence.databasePasswordRefreshS, and dials every new ' +
+              'connection of this process with it when it has changed. ' +
+              'Rotating the password at the database is the secret ' +
+              'store\'s or the operator\'s job.',
+    owner: 'persistence/persistence.js',
+    kind: 'per-process', quiet: true,
+    everySetting: 'persistence.databasePasswordRefreshS',
+    everySettingUnit: 's',
+    off: function () {
+      if (!secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
+        return 'persistence.databasePasswordProvider is none';
+      }
+      return passwordDriver ? '' : 'this process has no database';
+    },
+    run: function () {
+      return refreshDatabasePassword('the scheduled refresh');
+    }
+  });
+  log.debug("Leaving ensurePasswordJob().");
+}
+
+// ---------------------------------------------------------------------------
 // A DATABASE PASSWORD COMES FROM A SECRET STORE IN PRODUCT (ASVS 5.0.0 13.3.1),
 // unless secrets.allowLocalSecrets is on. One written into the connection
 // string is in the service's configuration for anyone who can read that, and
@@ -2876,6 +3053,41 @@ function workerCount() {
   return n;
 }
 
+// THE POOL'S WAITS (#2220): the connect timeout, the wait for a free
+// connection, and how long an idle one is kept — settings since #2220, with
+// the 5 s, 5 s and 30 s the driver always had as their defaults. Read once,
+// when the store is opened.
+function poolWaits() {
+  log.debug("Entering poolWaits().");
+  log.debug("Leaving poolWaits().");
+  return {
+    connectTimeoutMs: Number(config.value('persistence.connectTimeoutMs')),
+    poolWaitMs: Number(config.value('persistence.poolWaitMs')),
+    idleTimeoutMs: Number(config.value('persistence.idleTimeoutMs'))
+  };
+}
+
+// THE STATEMENT BOUND (#2220), set once every restore is done — `coordinate()`
+// is the last step of the start, after the directory, the realms, the
+// settings and the minted rows were read — so that the start's own heavy
+// reads, and the schema's migrations before them, are never under it
+// (`knex_store.js`, `boundStatements()`, lists what else is outside it).
+// `persistence.statementTimeoutMs`, 0 for none.
+function boundStatements() {
+  log.debug("Entering boundStatements().");
+  if (!driver || typeof driver.boundStatements !== 'function') {
+    log.debug("Leaving boundStatements(). Not a database store.");
+    return;
+  }
+  const ms = Math.max(0, Number(config.value(
+    'persistence.statementTimeoutMs')) || 0);
+  driver.boundStatements(ms);
+  log.info('persistence: ordinary statements run under a ' +
+           (ms ? ms + ' ms' : 'no') + ' statement timeout ' +
+           '(persistence.statementTimeoutMs).');
+  log.debug("Leaving boundStatements().");
+}
+
 /**
  * Opens the configured store and restores the directory, realms and
  * overrides from it.
@@ -2908,6 +3120,10 @@ function start() {
   // In every mode, a store or none: a blocked loop is worth measuring in a
   // process with nothing to renew, and costs a histogram (#351).
   startLagMonitor();
+  // THE PASSWORD'S REFRESH (#2220), registered in every process that starts
+  // a store, before any store is open; its `off` says why it has nothing to
+  // do where no provider or no database is configured.
+  ensurePasswordJob();
   const chosen = mode();
   if (MODES.indexOf(chosen) < 0) {
     // Unreachable through config.value(), whose enum type refuses anything
@@ -3565,7 +3781,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           engine: chosen,
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
           tlsCa: tlsCa,
-          poolMax: require('./persistence_postgres').poolMax(workerCount()),
+          poolMax: require('./persistence_postgres').poolMax(workerCount(),
+            config.value('persistence.poolSize')),
+          // The pool's waits (#2220), read here for `verifyTls`'s reason.
+          ...poolWaits(),
           // Which coordination statements it sends (#677): read here, for
           // the reason `verifyTls` is.
           sqlDialect: String(config.value('persistence.sqlDialect') ||
@@ -3578,6 +3797,15 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           claimFenceOwner: !globalUrls
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
+    // THE DRIVER THE PASSWORD IS FOR (#2220): this process's own database —
+    // a cell's own when the store is tiered below — dialled with the
+    // password `persistence.databasePasswordProvider` names.
+    passwordDriver = storeModes.isDatabase(chosen) ? driver : null;
+    lastDatabaseUrl = String(resolvedUrl || '');
+    if (passwordDriver && typeof passwordDriver.onConnectFailure ===
+        'function') {
+      passwordDriver.onConnectFailure(onDatabaseConnectFailure);
+    }
     // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
     // own, and the global tier's is made beside it — its writer, and this
     // cell's replica for every read — and the two are one driver from here
@@ -3592,7 +3820,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
         tlsCa: tlsCa,
-        poolMax: require('./persistence_postgres').poolMax(workerCount()),
+        poolMax: require('./persistence_postgres').poolMax(workerCount(),
+          config.value('persistence.poolSize')),
+        ...poolWaits(),
         sqlDialect: String(config.value('persistence.sqlDialect') ||
                            'native'),
         // The status row's database, so the fence lock lives here (#884).
@@ -5547,6 +5777,7 @@ function coordinate() {
     log.debug('Leaving coordinate(). Nothing is being persisted.');
     return Promise.resolve({ coordinating: false });
   }
+  boundStatements();
   log.debug("Leaving coordinate().");
   const appliers = {
     // WITH `ownFlushWait` BESIDE IT (#1934), the `prepare` arrangement: the
@@ -6400,6 +6631,9 @@ module.exports = {
   // returns, put through `pg`'s own parser: two implementations meeting, which
   // is the arrangement `tests/webauthn_cross_impl.js` describes.
   resolveDatabaseUrl: resolveDatabaseUrl,
+  refreshDatabasePassword: refreshDatabasePassword,
+  ensurePasswordJob: ensurePasswordJob,
+  PASSWORD_JOB: PASSWORD_JOB,
   // The connection an out-of-process tool dials the database with, made the
   // way this service makes its own (#213) — see databaseConnection().
   databaseConnection: databaseConnection,

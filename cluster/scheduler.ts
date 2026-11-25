@@ -873,7 +873,7 @@ class Scheduler {
           require('../common/process_memory').requestWorkers() +
           Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
         return Number(require('../persistence/persistence_postgres')
-          .poolMax(workers)) || 0;
+          .poolMax(workers, config.value('persistence.poolSize'))) || 0;
       },
       requestWorkers: function (): number {
         // LAZILY, for storeConnections()'s reason. Only the PROTOCOL pool:
@@ -5035,6 +5035,10 @@ realms.onRemove(function (id: string): void {
 clusterClaims.ensurePurgeJob(scheduler);
 clusterCounters.ensureWindowPurgeJob(scheduler);
 usedAssertions.ensurePurgeJob(scheduler);
+// #2220: the shared secrets' rotation and refresh, for the same reason —
+// required here, because `cluster_secrets.ts` does not require this module
+// and so the require closes no cycle.
+require('./cluster_secrets').ensureJobs(scheduler);
 
 /**
  * One scheduler for every periodic job in this service (#49), each job run on

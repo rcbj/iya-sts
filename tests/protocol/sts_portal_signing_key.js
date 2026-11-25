@@ -62,6 +62,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 // RFC 7522's signer is this suite's own XML Signature, for the reason the JWS
 // signer below is this file's own: see `saml_xmldsig.js`'s header.
 const samlSigner = require("./saml_xmldsig.js");
@@ -428,7 +429,7 @@ async function test() {
   log.info("=== 0. two people ===");
   const made = await apiPost("/users/create",
     { username: OWNER, invent: false, attributes: personAttributes(OWNER),
-      credential: "password", password: PASSWORD });
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD) });
   const madeOther = await apiPost("/users/create",
     { username: OTHER, invent: false, attributes: personAttributes(OTHER),
       credential: "password", password: PASSWORD });
@@ -443,6 +444,13 @@ async function test() {
     assert.strictEqual(made.body.invented, false,
       "the create invented attributes: " +
       JSON.stringify(made.body).slice(0, 300));
+  });
+  // THE PASSWORD IS THE OWNER'S OWN (#2160): a typed one is temporary in
+  // product, so OWNER chooses PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set). OTHER never signs
+  // in, so theirs stays as typed.
+  await ownPassword.ownPassword(base, OWNER, PASSWORD, function (who, value) {
+    return apiPost("/users/set-password", { user: who, password: value });
   });
 
   // -------------------------------------------------------------------------

@@ -54,12 +54,13 @@ The key is accepted only if all of these hold:
 
 | Use | Accepted | Refused |
 |---|---|---|
-| Signing | ML-DSA-65+Ed25519 and ML-DSA-87+Ed448 (RFC 9980), then Ed25519, Ed448, ECDSA on P-256, P-384 and P-521, RSA of `openpgp.minRsaBits` (3072 at least) | DSA, Brainpool curves, SLH-DSA, shorter RSA |
+| Signing | ML-DSA-65+Ed25519 and ML-DSA-87+Ed448 (RFC 9980), SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f and SLH-DSA-SHAKE-256s (RFC 9980 section 7, on a v6 key only), then Ed25519, Ed448, ECDSA on P-256, P-384 and P-521, RSA of `openpgp.minRsaBits` (3072 at least) | DSA, Brainpool curves, SLH-DSA on a v4 key, shorter RSA |
 | Encryption | ML-KEM-768+X25519 and ML-KEM-1024+X448 (RFC 9980), then X25519, X448, ECDH on Curve25519, P-256, P-384 and P-521, RSA of `openpgp.minRsaBits` | ElGamal, Brainpool curves, shorter RSA |
 
 The list is `openpgp.algorithms`, post-quantum names first. A composite name
-counts as post-quantum, not as its classical half. `openpgp.pqcOnly` (off by
-default) narrows a **new** registration to those composites. A classical key
+counts as post-quantum, not as its classical half, and so does SLH-DSA, which
+is a post-quantum signature on its own. `openpgp.pqcOnly` (off by default)
+narrows a **new** registration to those algorithms. A classical key
 already registered still verifies and still receives mail.
 `openpgp.pqcAlongsideClassical` (also off, and not together with
 `openpgp.pqcOnly`) asks a new key to carry a post-quantum algorithm and a
@@ -70,21 +71,33 @@ separate classical one.
 `openpgp.algorithms` (`STS_OPENPGP_ALGORITHMS`) is per realm and takes
 effect while the service is running. On **Protocols → OpenPGP**
 (`/admin/openpgp-settings`) each name is a checkbox and an order number. **Select
-all** ticks every name, or only the four composites while
-`openpgp.pqcOnly` is on. At least one name must stay ticked; a save of an
+all** ticks every name, or only the post-quantum ones (the four composites
+and the three SLH-DSA names) while `openpgp.pqcOnly` is on. At least one name must stay ticked; a save of an
 empty list is refused (`STS-ADMIN-0840`). The same value can be set with
 `POST /admin-api/config/set`.
 
-The default names every algorithm below, composites first:
-`ML-DSA-65+Ed25519`, `ML-DSA-87+Ed448`, `ML-KEM-768+X25519`,
+The default names every algorithm below, post-quantum first:
+`ML-DSA-65+Ed25519`, `ML-DSA-87+Ed448`, `SLH-DSA-SHAKE-128s`,
+`SLH-DSA-SHAKE-128f`, `SLH-DSA-SHAKE-256s`, `ML-KEM-768+X25519`,
 `ML-KEM-1024+X448`, `ed25519`, `ed448`, `eddsaLegacy/ed25519Legacy`,
 `ecdsa/nistP256`, `ecdsa/nistP384`, `ecdsa/nistP521`, `rsaSign`,
 `rsaEncryptSign`, `x25519`, `x448`, `ecdh/curve25519Legacy`,
 `ecdh/nistP256`, `ecdh/nistP384`, `ecdh/nistP521`, `rsaEncrypt`.
 
 A name left out of the list is refused at registration and at verification
-(`STS-OPENPGP-0004`). SLH-DSA is not implemented. DSA, ElGamal and the
-Brainpool curves are never accepted.
+(`STS-OPENPGP-0004`). DSA, ElGamal and the Brainpool curves are never
+accepted. A realm that set its own `openpgp.algorithms` before 1.2.0 keeps
+its list, and accepts SLH-DSA only once it adds the names.
+
+**SLH-DSA (#2220).** RFC 9980 section 7 defines SLH-DSA-SHAKE-128s (32),
+SLH-DSA-SHAKE-128f (33) and SLH-DSA-SHAKE-256s (34) as standalone signing
+algorithms for v6 keys. Their signatures must use a digest of at least 256
+bits (section 6.2.1): SHA2-256, SHA2-384, SHA2-512, SHA3-256 and SHA3-512 are
+accepted, and a self-signature or a signed challenge over SHA-1 or SHA2-224
+is not believed. An SLH-DSA key in a v4 packet is refused. The signature is checked by node's OpenSSL; a runtime that cannot
+check it refuses the key (`STS-OPENPGP-0026`) rather than storing it
+unchecked. The key's encryption subkey, if it has one, must be one of the
+RFC 9980 ML-KEM composites for mail to be encrypted to it.
 
 `openpgp.pqcOnly` (`STS_OPENPGP_PQC_ONLY`) and
 `openpgp.pqcAlongsideClassical` (`STS_OPENPGP_PQC_ALONGSIDE_CLASSICAL`)
@@ -92,7 +105,8 @@ are on the same page. They cannot both be on (`STS-OPENPGP-0027`).
 
 Both version 4 keys (RFC 4880, what GnuPG 2.2 and 2.4 make) and version 6 keys
 (RFC 9580) are read. An RFC 9980 key is read by this service's own reader,
-which checks both halves of a composite signature. A new registration replaces
+which checks both halves of a composite signature, and an SLH-DSA
+signature over a digest of at least 256 bits. A new registration replaces
 the key you had.
 
 **The service cannot tell a key on a card from one in a file.** A signature
@@ -230,6 +244,55 @@ reads the message, and nothing without the card can. A key generated on the
 card is lost with it, and so is every message encrypted to it; a realm that
 must keep old mail readable generates and escrows 9d keys instead
 ([Escrowed encryption keys](hardware-tokens.md#escrowed-encryption-keys)).
+
+**A person is reminded before their S/MIME certificate expires** (#2247): 30,
+7 and 1 days before by default, by mail, naming this page. See [Mail](mail.md#the-uses).
+
+### An ML-KEM S/MIME certificate issued here
+
+A person can also have this service **issue** them a post-quantum S/MIME
+certificate (#2220), under **An ML-KEM certificate from this service** on
+the same page. An ML-KEM key cannot sign, so it cannot sign a certification
+request; possession is proved by a challenge instead, RFC 9810 (CMP)
+section 5.2.8.3.3's challenge-response protocol, which section 5.2.8.4 lists
+for a KEM key as `KEMKPOPChallengeResp`:
+
+1. Make a key with OpenSSL 3.5 or later and send its public half:
+
+   ```bash
+   openssl genpkey -algorithm ML-KEM-768 -out mlkem.key
+   openssl pkey -in mlkem.key -pubout
+   ```
+
+   ML-KEM-512 and ML-KEM-1024 are accepted too. The service encapsulates a
+   secret to the key and shows the ciphertext. It keeps only the SHA-256 of
+   the secret, for `openpgp.challengeLifetimeS`.
+2. Recover the secret with the private key and send it back:
+
+   ```bash
+   base64 -d > challenge.bin        # paste the ciphertext
+   openssl pkeyutl -decap -inkey mlkem.key -in challenge.bin -secret secret.bin
+   xxd -p -c 64 secret.bin
+   ```
+
+   The 64 hex characters (or the base64 of the 32 octets) are the answer.
+   The challenge is spent by the first answer, right or wrong: a wrong one
+   is refused (`STS-OPENPGP-0038`) and a new challenge must be asked for.
+3. On a match the realm's **EST Issuing CA** issues the certificate under
+   the `email` profile, through the same enrollment core as EST itself: it
+   names the address on the entry, its only key usage is `keyEncipherment`
+   (RFC 9935), its extended key usage `emailProtection`, and
+   `est.allowedProfiles`, the lifetime and
+   `pki.enrollmentMaxCertificatesPerEntry` apply. It becomes the person's
+   S/MIME certificate at once, and the page shows it once, with its chain,
+   to save and import with the private key into a mail program.
+
+The same two acts are `POST /account-api/openpgp` with `action`
+`smime-kem-challenge` (`publicKey`) and `smime-kem-issue` (`secret`); the
+challenge is in the view's `smimeKemChallenge`, and the certificate in the
+answer's `view.smimeKemIssued`. A key that is not ML-KEM is refused
+(`STS-OPENPGP-0035`), as is the whole request where the runtime cannot
+encapsulate (`STS-OPENPGP-0036`). Uploading a certificate works as before.
 
 An encrypted message's **Subject is not encrypted**, so it goes out under a
 neutral subject for its kind — "A security notice from …", "A message from

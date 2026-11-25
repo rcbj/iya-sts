@@ -5,6 +5,7 @@
   "reauth.here": "Iniciar sesión en esta página",
   "reauth.hereInstead": "Iniciar sesión en esta página en su lugar",
   "reauth.noPopup": "Este navegador no puede devolver un inicio de sesión desde otra ventana, así que inicie sesión en esta página.",
+  "reauth.popupBlocked": "Se bloqueó la ventana de inicio de sesión. Permita las ventanas emergentes para este sitio, o inicie sesión en esta página.",
   "reauth.finish": "Termine de iniciar sesión en la ventana que se abrió.",
   "otherPerson.waiting": "Inició sesión otra persona, así que lo que esperaba en esta página no se envió.",
   "otherPerson.typed": "Inició sesión otra persona, así que lo que se había escrito antes en esta página no se restauró.",

@@ -90,6 +90,7 @@ const names = require("./random_username.js");
 const authnSignin = require("./authn_signin");
 const consentScreen = require("./consent_screen.js");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -497,13 +498,23 @@ async function setUp() {
             "created the realm: " + brief(made));
   await must("/config/set", { key: "uma.enabled", value: "true" },
              "turned UMA on");
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so each person is made with a temporary one and chooses
+  // PASSWORD at the sign-in screen (`own_password.js`; in development it is
+  // simply set).
   for (const who of [OWNER, PARTY, STRANGER]) {
     await must("/users/create", { username: who, invent: false,
-      credential: "password", password: PASSWORD,
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "UMA " + who, sn: who, givenName: "UMA",
                     displayName: "UMA " + who,
                     mail: who + "@" + REALM + ".example.net" } },
       "created " + who);
+    await ownPassword.ownPassword(REALM_BASE, who, PASSWORD,
+      function (one, value) {
+        return fetchJson(api("/users/set-password"), { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user: one, password: value }) });
+      });
   }
   const apps = [
     { id: RS, protocols: ["oauth2"], fields: { oauthGrantType: [

@@ -55,6 +55,7 @@ const lab = require("./client_lab.js");
 const names = require("./random_username.js");
 const portal = require("./portal_signin.js");
 const authnSignin = require("./authn_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -362,10 +363,19 @@ async function setUp() {
     "created the realm " + REALM);
   const rb = base + "/realm/" + REALM;
   await ok(rb + "/admin-api/users/create", { username: RECIPIENT,
-    invent: false, credential: "password", password: PASSWORD,
+    invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Recipient " + STAMP, sn: RECIPIENT,
                   givenName: "Recipient", mail: ADDRESS } },
     "created " + RECIPIENT);
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(rb, RECIPIENT, PASSWORD,
+    function (who, value) {
+      return postJson(rb + "/admin-api/users/set-password",
+                      { user: who, password: value });
+    });
   log.debug("Leaving setUp().");
   return rb;
 }

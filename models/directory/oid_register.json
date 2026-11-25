@@ -298,6 +298,7 @@
   "oauthRequireSignedRequestObject": 289,
   "oauthResourceMetadata": 290,
   "oauthResourceMetadataUrl": 291,
+  "oauthResponseMode": 1012,
   "oauthResponseType": 292,
   "oauthResponseTypeObserved": 293,
   "oauthRevokeRefreshOnLogout": 294,

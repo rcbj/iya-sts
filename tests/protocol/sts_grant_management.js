@@ -45,6 +45,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -238,11 +239,18 @@ async function test() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Grant management " + STAMP },
     "created the realm");
+  // Temporary, then the person's own (#2160, `own_password.js`).
   await ok(realmApi + "/users/create", {
     username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Grants " + ALICE, givenName: "Grants", sn: ALICE,
                   mail: ALICE + "@grants.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return send(realmApi + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
   await ok(realmApi + "/applications/create",
            application(A, "client_secret_basic"), "client A");
   await ok(realmApi + "/applications/create",

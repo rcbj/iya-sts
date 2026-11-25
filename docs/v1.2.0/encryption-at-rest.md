@@ -352,10 +352,25 @@ rotated this way: its successor has to be supplied, as above.
 
 The keyed digests behind the cell routing index and the cell locator tags are
 made under a **stored digest key**, wrapped like the data keys, so a rotated
-key-encryption key changes none of them. That key is never rotated.
+key-encryption key changes none of them. That key is never rotated, by design:
+see [Key management](key-management.md#rotation-schedule).
 
-> **Not yet covered.** A cell's own key-encryption key (`keys.cellKek*`, #98)
-> has no "previous key" setting yet, so it cannot be rotated this way.
+### Rotating a cell's key-encryption key
+
+A cell's own key-encryption key (`keys.cellKek*`, #98) is rotated the same way,
+with its own previous-key settings:
+
+1. Put the new cell key where the cell reads it (`keys.cellKek*`), and point
+   `keys.previousCellKekProvider`, `keys.previousCellKekRef` (and `…Field`,
+   `…Region`, `…Vault` as the provider needs) at the **old** cell key.
+2. Restart every node of the cell. Every data key of the cell still wrapped
+   under the old key is re-wrapped under the new one and written back (logged
+   as `STS-KEYS-0096`).
+3. Once every node of the cell has started with the new key, set
+   `keys.previousCellKekProvider` back to `none` and restart again.
+
+The previous cell key has no fallback location, and is refused when no cell
+key is configured (`STS-CELL-0213`).
 
 ---
 

@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC（2026-11-14）。每個靜態介面的外殼所繪製的頁尾規則——文件、聯絡和關於連結、社群媒體圖示、版權和版本（common/web_footer.ts）。在每個監聽器上提供；帶有本建置 ?v= 的位址會被永久快取。"
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220)。一個 ECMAScript 5 指令碼，在靜態介面的 bundle 之前執行，檢查瀏覽器是否具備 fetch、TextEncoder、URL 和 ECMAScript 2022；若不具備，則以讀者的語言顯示外殼隱藏繪製的提示（common/web_browser_check.ts）。在每個監聽器上回應，no-cache。"
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717)。領域的登入顏色，作為 /web/card.css 讀取的 CSS 自訂屬性（common/branding.ts）：四種 branding.* 顏色以及由它們衍生的色調，僅由經過驗證的值建構。僅當領域的外觀與服務的外觀不同時，外殼才在卡片之後連結它；帶有其摘要作為 ?v= 的位址會被永久快取。"
@@ -2567,6 +2571,10 @@
     "en": "019419feb342ad45",
     "text": "以 JSON 提供的 GET /admin/tls：tls.* 設定，全部僅能在重新啟動時生效，因為憑證是在任何東西開始接聽之前產生、通訊端也在那時繫結。「主」連接埠是否使用 HTTPS 由 global.https 決定，它與程序本身的設定一起位於 /admin-api/config。唯讀。"
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220)。自本節點前端程序啟動以來，其監聽器上每次完成的 TLS 交握協商出的金鑰交換群組，依監聽器與群組計數，以及其中有多少是後量子的（ML-KEM 群組）。顯示於 /admin/crypto-metadata。它不變更任何內容。"
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "以 JSON 提供的 GET /admin/tls/trust：每個用戶端憑證信任錨點，附上其主體、簽發者、序號、有效期間、指紋、PEM 與來源（`file` 或 `runtime`），以 ?page= 與 ?per= 分頁。整個「程序」只有一個信任存放區，因此在每個領域前置路徑下的回答都相同。其中沒有私密金鑰——信任存放區只保存憑證。執行階段錨點會持久保存在目錄中；`file` 錨點則不會。"
@@ -3578,6 +3586,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "直接開啟時以 WWW-Authenticate 挑戰回應 401——它是受保護資源，需要來自 OIDC 流程的存取權杖"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "超出上限的 groups 宣告的分散式來源（#2247）。groups 宣告會超過 groups.claimMaxBytes 的存取權杖或 ID Token 改為攜帶 OpenID Connect Core 第 5.6.2 節的 _claim_names 與 _claim_sources，指向這裡，此端點針對所出示存取權杖的主體以簽章的 application/jwt（iss、sub、aud、iat、exp 與該宣告）回傳清單，正如該節對分散式來源的要求。權杖的檢查方式與 UserInfo 相同 —— 簽章、簽發者、傳送者約束、typ、撤銷 —— 但不檢查其對象與 openid 範圍，因為資源伺服器的權杖正是其宣告指向這裡的那一個。只有自身攜帶該參照的權杖才能兌現它，得到的正是它在上限以下本會攜帶的內容，經過其自身用戶端的群組設定與發布篩選，僅此而已。client_credentials 權杖背後沒有人，會被拒絕。"
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "直接存取時以 401 與 WWW-Authenticate 挑戰回應 —— 它需要本服務簽發的存取權杖"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",

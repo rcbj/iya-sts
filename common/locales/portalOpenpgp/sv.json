@@ -53,5 +53,19 @@
   "done.mail.openpgp": "Din e-post krypteras nu med din OpenPGP-nyckel.",
   "done.mail.smime": "Din e-post krypteras nu med ditt S/MIME-certifikat.",
   "done.smimeSet": "Ditt S/MIME-certifikat är angivet.",
-  "done.smimeRemoved": "Ditt S/MIME-certifikat är borttaget."
+  "done.smimeRemoved": "Ditt S/MIME-certifikat är borttaget.",
+  "kem.heading": "Ett ML-KEM-certifikat från den här tjänsten",
+  "kem.intro": "Den här tjänsten kan utfärda ett postkvant-S/MIME-certifikat åt dig för {mail}. En ML-KEM-nyckel kan inte signera en begäran, så du visar på ett annat sätt att den är din: tjänsten krypterar en hemlighet till den, och du skickar tillbaka hemligheten.",
+  "kem.step1": "Skapa en ML-KEM-nyckel med OpenSSL 3.5 eller senare, behåll den privata nyckeln och klistra in den publika nyckeln nedan.",
+  "kem.key": "Din publika ML-KEM-nyckel (-----BEGIN PUBLIC KEY-----)",
+  "kem.ask": "Skicka nyckeln",
+  "kem.step2": "Avkapsla den här {algorithm}-chiffertexten med din privata nyckel före {at} och klistra in hemligheten som skrivs ut nedan.",
+  "kem.secret": "Hemligheten (64 hexadecimala tecken)",
+  "kem.issue": "Utfärda certifikatet",
+  "kem.again": "Börja om med en annan nyckel",
+  "kem.issuedHeading": "Ditt nya S/MIME-certifikat",
+  "kem.issuedSub": "Ett {algorithm}-certifikat med serienummer {serial} är nu ditt S/MIME-certifikat. Spara det och importera det tillsammans med din privata nyckel i ditt e-postprogram.",
+  "kem.save": "Spara certifikatet",
+  "done.kemChallenge": "Din {algorithm}-nyckel godtogs. Avkapsla utmaningen nedan och skicka tillbaka hemligheten.",
+  "done.kemIssued": "Ditt {algorithm}-S/MIME-certifikat {serial} är utfärdat och angivet."
 }

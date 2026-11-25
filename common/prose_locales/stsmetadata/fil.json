@@ -1363,6 +1363,10 @@
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Ang mga patakaran ng footer na iginuguhit ng shell ng bawat static na surface — ang mga link sa dokumentasyon, pakikipag-ugnayan at tungkol, ang mga icon ng social media, ang copyright at ang bersyon (common/web_footer.ts). Inihahain sa bawat listener; ang address na may ?v= ng build na ito ay naka-cache nang permanente."
   },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Isang script sa ECMAScript 5, pinapatakbo bago ang bundle ng isang static surface, na sumusuri kung may fetch, TextEncoder, URL at ECMAScript 2022 ang browser at, kung wala, ipinapakita ang abisong iginuhit ng shell nang nakatago sa wika ng mambabasa (common/web_browser_check.ts). Sinasagot sa bawat listener, no-cache."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Ang mga kulay ng pag-sign in ng realm bilang mga CSS custom property na binabasa ng /web/card.css (common/branding.ts): ang apat na kulay na branding.* at ang mga tonong hinango mula sa mga ito, binuo lamang mula sa mga napatunayang value. Iniuugnay ito ng shell pagkatapos ng card kung saan lamang naiiba ang itsura ng realm sa itsura ng serbisyo; ang address na may digest nito bilang ?v= ay naka-cache nang permanente."
@@ -2567,6 +2571,10 @@
     "en": "019419feb342ad45",
     "text": "GET /admin/tls sa JSON: ang mga tls.* setting, lahat ay restart-only dahil mina-mint ang certificate at bina-bind ang mga socket bago may makinig. Kung HTTPS ang MAIN port ay global.https, nasa /admin-api/config kasama ang sariling mga setting ng process. Read-only."
   },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Ang grupo ng palitan ng susi na napagkasunduan ng bawat natapos na TLS handshake sa mga listener ng node na ito mula nang magsimula ang front process nito, binilang bawat listener at grupo, at kung ilan ang post-quantum (isang grupong ML-KEM). Ipinapakita sa /admin/crypto-metadata. Walang binabago."
+  },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
     "text": "GET /admin/tls/trust sa JSON: bawat client-certificate trust anchor kasama ang subject, issuer, serial, validity, fingerprint, PEM at pinagmulan nito (`file` o `runtime`), naka-page gamit ang ?page= at ?per=. Iisang truststore para sa PROCESS, kaya pareho ang sagot nito sa ilalim ng bawat realm prefix. Walang private key dito — certificate lang ang hawak ng truststore at wala nang iba. Ang runtime anchor ay pine-persist sa directory; ang `file` anchor ay hindi."
@@ -3578,6 +3586,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "sumasagot ng 401 na may WWW-Authenticate challenge kapag sinundan nang walang laman — protected resource ito at kailangan ang access token mula sa isang OIDC flow"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "ANG DISTRIBUTED SOURCE NG ISANG GROUPS CLAIM NA LAMPAS SA LIMITASYON NITO (#2247). Ang access token o ID Token na ang groups claim ay lalampas sa groups.claimMaxBytes ay may dalang _claim_names at _claim_sources ng OpenID Connect Core section 5.6.2 sa halip nito, na tumuturo rito, at sinasagot nito ang listahan para sa subject ng iniharap na access token bilang signed application/jwt (iss, sub, aud, iat, exp at ang claim), gaya ng hinihingi ng section sa isang distributed source. Sinusuri ang token gaya ng pagsuri ng UserInfo — signature, issuer, sender constraint, typ, revocation — maliban sa audience nito at sa openid scope, dahil ang token ng isang resource server ang siyang claim na tumuro rito. Tanging ang token na mismong may dala ng reference ang maaaring tumubos nito, at sinasagot ito ng dadalhin sana nito sa ilalim ng limitasyon, sa pamamagitan ng mga setting ng grupo at release filter ng sarili nitong client, at wala nang iba pa. Walang tao ang client_credentials token at tinatanggihan ito."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "sumasagot ng 401 na may WWW-Authenticate challenge kapag sinundan nang walang dala — kailangan nito ng access token na inisyu ng serbisyong ito"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",

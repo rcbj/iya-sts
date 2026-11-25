@@ -202,9 +202,27 @@ RUN rm -rf ./tests ./xacml-pep ./README.md ./SECURITY.md ./docker-compose.yml ./
 #
 # The final stage carries no npm, so every install happens in this stage, on
 # the same node as the one the service runs on (its binary is copied from this
-# image). A package with an install script runs it here exactly as it ran in
-# the final stage before: there is no compiler in either, so bunyan's optional
-# `dtrace-provider` skips its build as it always has.
+# image).
+#
+# **WITH INSTALL SCRIPTS OFF SINCE #2220 (2026-11-25, ASVS 5.0.0 15.2.4)**, as
+# the `typescript` stage and the SDK install below already were: a package's
+# install script is code from the registry run with the build's network and
+# its access to the context. Of the service's tree only two packages have one
+# (the root lockfile's `hasInstallScript`), and neither builds anything the
+# service loads, so NOTHING is rebuilt afterwards:
+#
+#   * bunyan's optional `dtrace-provider` runs `node-gyp rebuild || node
+#     suppress-error.js`. This stage has no compiler, so it never built: the
+#     script failed into its suppressor and the library falls back to its
+#     stub, which is exactly what it does when the script never ran;
+#   * `protobufjs` runs `scripts/postinstall`, which only prints a warning
+#     when a parent names it with the wrong version scheme.
+#
+# (`@fastify/pre-commit` has one too, a devDependency of the node-ldapjs
+# submodule, and `--omit=dev` keeps it out.) tests/sdk_lockfile.js holds the
+# root lockfile to that list: a new package with an install script fails it,
+# so whoever adds one decides here whether it needs an `npm rebuild <name>`,
+# as pkcs11js does in the SDK install.
 #
 # The LDAP server's library is `"ldapjs": "file:node-ldapjs"` — the git
 # SUBMODULE, not a registry package — so it has to be in the build context
@@ -230,7 +248,7 @@ FROM node:24.22.1-bookworm-slim AS dependencies
 WORKDIR /usr/src/sts
 COPY package*.json .npmrc ./
 COPY node-ldapjs ./node-ldapjs
-RUN npm ci --omit=dev && npm cache clean --force \
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force \
  && mkdir -p ./node-ldapjs/node_modules /out \
  && npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx \
       --sbom-type=application > /out/sbom.cdx.json

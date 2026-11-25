@@ -23,10 +23,30 @@
 # and serves every certificate the realm's `pep-tls` CA can issue.
 # ===========================================================================
 
+# ---------------------------------------------------------------------------
+# AND ITS INVENTORY, A CycloneDX SBOM (#2220, ASVS 5.0.0 15.1.2).
+#
+# The binary links every crate it uses, OpenSSL among them, so an image scan
+# that reads the operating system's packages sees none of them. The build
+# stage writes `cargo cyclonedx`'s SBOM of the `xacml-pep` package — every
+# crate of its graph at the version Cargo.lock holds, build dependencies
+# included — and the image carries it at /usr/src/pep/sbom.cdx.json, beside
+# the service image's own. The OpenSSL built in is the `openssl-src`
+# component, whose version carries the OpenSSL release after its `+`
+# (300.6.1+3.6.3 is OpenSSL 3.6.3); tests/xacml_pep.js holds
+# docs/v1.2.0/risky-components.md to that version. The tool is pinned and
+# installed `--locked`, in a layer of its own so a source change does not
+# rebuild it. Advisories in Cargo.lock are the daily workflow's `cargo audit`
+# (.github/workflows/dependency-windows.yml, rust/.cargo/audit.toml).
+# ---------------------------------------------------------------------------
 FROM rust:1.97-bookworm AS build
 WORKDIR /usr/src/rust
+RUN cargo install cargo-cyclonedx --version 0.5.9 --locked
 COPY rust/ ./
-RUN cargo build --release --locked -p xacml-pep
+RUN cargo build --release --locked -p xacml-pep \
+ && cargo cyclonedx --manifest-path bins/xacml-pep/Cargo.toml \
+      --format json --spec-version 1.5 \
+ && test -s bins/xacml-pep/xacml-pep.cdx.json
 
 FROM debian:bookworm-slim
 # The only package: the system anchors, for a PDP whose certificate a public
@@ -36,6 +56,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /usr/src/pep
 COPY --from=build /usr/src/rust/target/release/xacml-pep /usr/local/bin/xacml-pep
+COPY --from=build /usr/src/rust/bins/xacml-pep/xacml-pep.cdx.json ./sbom.cdx.json
 
 # THE VERSION, M.N.O.<build>, STAMPED AT BUILD TIME by the binary itself
 # (`sts-core::version`, a port of common/version.js, under the same rules,

@@ -48,6 +48,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const consoleSignIn = require("./console_signin.js");
+const ownPassword = require("./own_password");
 const x509 = require("../../common/crypto_impl/x509");
 const keyMaterial = require("../../common/crypto_impl/key_material");
 
@@ -601,10 +602,20 @@ async function test() {
   log.info("=== setup: the realm, the person, the vendor's root ===");
   await ok(base + "/admin-api/realms/create", { id: REALM, domain: DOMAIN,
     name: "WebAuthn attestation " + STAMP }, "created the realm");
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so the person is made with a temporary one and chooses
+  // PASSWORD at the sign-in screen (`own_password.js`; in development it is
+  // simply set).
   await ok(realmApi + "/users/create", { username: PERSON, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "WA " + PERSON, givenName: "WA", sn: PERSON,
                   mail: PERSON + "@wa105.test" } }, "created " + PERSON);
+  await ownPassword.ownPassword(realmBase, PERSON, PASSWORD,
+    function (who, value) {
+      return send(realmApi + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
   const model = await vendor("Synthetic Vendor " + STAMP);
   const AAGUID = nodeCrypto.randomBytes(16);
   const OTHER = nodeCrypto.randomBytes(16).toString("hex");

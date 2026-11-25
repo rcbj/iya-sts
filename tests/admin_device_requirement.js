@@ -34,6 +34,10 @@
 //   F. A LATCH: removing the device does not disarm; the setting off
 //      admits again and on again is still armed; development (`auto`)
 //      admits whatever the latch says.
+//   G. A TRUST REALM (#2236 F): the roster asked is the realm's own — a
+//      member of it arms the realm, a person of the same name on the
+//      default realm's roster does not, and the default realm stays
+//      unarmed.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -71,10 +75,10 @@ function childMain() {
     const SETTING = 'devices.requireCompliantDeviceForAdmin';
     const CONSOLE = 'sts-admin-console';
     const RUN = nodeCrypto.randomBytes(3).toString('hex');
-    // THE DEFAULT REALM of this throwaway child: the console roster a
-    // grant writes is the default realm's (a realm created here would be
-    // handed a person its roster cannot find), and nothing outlives the
-    // child.
+    // THE DEFAULT REALM of this throwaway child for A-F, and a trust realm
+    // of its own for G (#2236 F): the roster is asked of the realm being
+    // armed, which the default realm alone could not show. Nothing outlives
+    // the child.
     await realms.run(realms.DEFAULT_REALM, async function () {
       const ADMIN = 'adr-admin-' + RUN;
       const OTHER = 'adr-other-' + RUN;
@@ -303,6 +307,60 @@ function childMain() {
            'F3. development (auto) admits whatever the latch says',
            devArmed.why);
       requirement.forgetForTests();
+
+      // --- G. a trust realm (#2236 F) ---------------------------------------
+      // The roster asked is THE REALM'S OWN. Until #2236 the default
+      // realm's was asked whatever realm was ambient, so a trust realm never
+      // armed (sts_admin_device_requirement.js, in every mode) and a person
+      // of the same name on the default realm's roster would have armed it.
+      const TRUST = 'adr' + RUN;
+      const made = realms.create({ id: TRUST, name: 'adr ' + RUN });
+      note(made.ok, 'precondition: a trust realm',
+           JSON.stringify(made.errors || []));
+      if (made.ok) {
+        try {
+          await realms.run(made.realm, async function () {
+            const RADMIN = 'adr-radmin-' + RUN;
+            // ADMIN's NAME, on the default realm's roster and not this one's.
+            const TWIN = ADMIN;
+            [RADMIN, TWIN].forEach(function (name) {
+              ldap.createUser(name, { invent: false, attributes: {} });
+            });
+            const realmGrant = rbac.grant(RADMIN, 'write',
+              { via: 'test', actor: 'adr', realm: TRUST });
+            const radminJwk = pub();
+            const twinJwk = pub();
+            const own = devices.create({ owner: RADMIN, label: 'adr realm',
+              keys: [{ kind: 'jwk', value: radminJwk }] }, 'adr');
+            const twins = devices.create({ owner: TWIN, label: 'adr twin',
+              keys: [{ kind: 'jwk', value: twinJwk }] }, 'adr');
+            note(realmGrant && realmGrant.ok !== false && own.ok && twins.ok,
+                 'precondition: the trust realm\'s administrator on its own ' +
+                 'roster, and both people\'s devices',
+                 JSON.stringify([realmGrant, own.errors, twins.errors]));
+            devices.setCompliance(own.device.id, 'compliant', 'admin', 'adr');
+            devices.setCompliance(twins.device.id, 'compliant', 'admin',
+                                  'adr');
+            config.setOverride(SETTING, 'on');
+            const twin = ask(TWIN, factOf(twinJwk, TWIN));
+            note(twin.allowed && !requirement.armedRow(),
+                 'G1. a person on the DEFAULT realm\'s roster and not the ' +
+                 'trust realm\'s does not arm the trust realm from their ' +
+                 'own compliant device', twin.why);
+            const realmArming = ask(RADMIN, factOf(radminJwk, RADMIN));
+            note(realmArming.allowed && !!requirement.armedRow(),
+                 'G2. a member of the trust realm\'s OWN roster, on their ' +
+                 'own compliant device, arms the trust realm',
+                 JSON.stringify([realmArming.why, requirement.view()]));
+            config.clearOverride(SETTING);
+            requirement.forgetForTests();
+          });
+        } finally {
+          realms.remove(TRUST);
+        }
+      }
+      note(!requirement.armedRow(),
+           'G3. arming the trust realm left the default realm unarmed');
     });
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

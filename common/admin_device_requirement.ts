@@ -267,12 +267,20 @@ class AdminDeviceRequirement {
   // never `read`/`write`, which are true for everybody while the roster is
   // empty, so an open console cannot arm the realm for a person who is not
   // an administrator.
+  //
+  // THE ROSTER OF THE REALM BEING ARMED, NAMED (#2236 F). `rolesOf()` with
+  // no realm reads the roster BOUND in `admin_rbac`, which is the DEFAULT
+  // realm's whatever realm is ambient — so until then a trust realm never
+  // armed (its administrators are on its own roster, not the default's), and
+  // a person of the same name on the default realm's roster would have armed
+  // it. `role_permissions.ts` asks it the same way.
   private isAdministrator(username: string): boolean {
     const { log } = this.deps;
     log.debug("Entering AdminDeviceRequirement.isAdministrator().");
     let out = false;
     try {
-      const roles = this.deps.rbac().rolesOf(username) || {};
+      const roles = this.deps.rbac().rolesOf(username,
+                                             realms.currentId()) || {};
       const groups = Array.isArray(roles.groups) ? roles.groups : [];
       out = groups.some(function (g: Json): boolean {
         return !!g && (g.role === 'read' || g.role === 'write');

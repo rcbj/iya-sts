@@ -5313,6 +5313,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'links, the social icons, the copyright and the version ' +
           '(common/web_footer.ts). Answered on every listener; an address ' +
           'carrying this build\'s ?v= is cached for good.' },
+  { path: '/web/browser-check.js', group: 'Service',
+    name: 'The browser check every shell runs first', specs: [],
+    what: 'NON-SPEC (#2220). A script in ECMAScript 5, run before a static ' +
+          'surface\'s bundle, that asks whether the browser has fetch, ' +
+          'TextEncoder, URL and ECMAScript 2022 and, where it does not, ' +
+          'shows the notice the shell drew hidden in the reader\'s language ' +
+          '(common/web_browser_check.ts). Answered on every listener, ' +
+          'no-cache.' },
   { path: '/web/theme.css', group: 'Service',
     name: 'A realm\'s sign-in appearance stylesheet', specs: [],
     what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +
@@ -8035,6 +8043,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'bound before anything is listening. Whether the MAIN port is ' +
           'HTTPS is global.https, on /admin-api/config with the process\'s ' +
           'own settings. Read-only.' },
+  { path: '/admin-api/tls/key-exchange', group: 'Management API',
+    name: 'TLS key exchange negotiated',
+    specs: ['rfc8446', 'openapi'],
+    what: 'NON-SPEC (#2220). The key exchange group every completed TLS ' +
+          'handshake on this node\'s listeners negotiated since its front ' +
+          'process started, counted per listener and group, and how many ' +
+          'were post-quantum (an ML-KEM group). Drawn on ' +
+          '/admin/crypto-metadata. It changes nothing.' },
   { path: '/admin-api/tls/trust', group: 'Management API',
     name: 'Client-certificate truststore',
     specs: ['rfc5280', 'openapi'],
@@ -10259,6 +10275,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'section 5.3.1 does not define, as a UNION with what the access ' +
           'token carries and never as a way to take a claim away from it; a ' +
           'malformed one is refused invalid_request rather than ignored.' },
+  { path: '/oauth2/groups', group: 'OAuth 2.0 / OIDC',
+    name: 'Groups claim source',
+    specs: ['oidc', 'rfc6750', 'rfc9068', 'rfc9449'],
+    effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
+            'bare — it needs an access token this service issued',
+    what: 'THE DISTRIBUTED SOURCE OF A GROUPS CLAIM PAST ITS CAP (#2247). ' +
+          'An access token or ID Token whose groups claim would be over ' +
+          'groups.claimMaxBytes carries OpenID Connect Core section 5.6.2\'s ' +
+          '_claim_names and _claim_sources instead, pointing here, and this ' +
+          'answers the list for the presented access token\'s subject ' +
+          'as a signed application/jwt (iss, sub, aud, iat, exp and the ' +
+          'claim), as the section requires of a distributed source. The ' +
+          'token is checked as UserInfo checks one — signature, issuer, ' +
+          'sender constraint, typ, revocation — except its audience and the ' +
+          'openid scope, because a resource server\'s token is the one whose ' +
+          'claim pointed here. Only a token that itself carries the ' +
+          'reference may redeem it, and it is answered what it would have ' +
+          'carried below the cap, through its client\'s own group settings ' +
+          'and release filter, and nothing more. A client_credentials token ' +
+          'has no person and is refused.' },
   { path: '/oauth2/introspect', group: 'OAuth 2.0 / OIDC',
     name: 'Introspection ' +
       'endpoint',

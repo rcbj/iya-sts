@@ -177,6 +177,8 @@ var config = {
     softwareStatementLifetimeS: 31536000,          // Issued software statement lifetime (s)
     clientSecretOverlapS: 604800,                  // Keep a rotated client secret working for (seconds)
     clientSecretsMax: 5,                           // Client secrets an application may hold
+    clientSecretAutoRotate: "",                    // Rotate these clients' secrets automatically
+    clientSecretAutoRotateDays: 30,                // Rotate a listed client's secret this many days ahead
     clientSecretExpiryWarningDays: 14,             // Warn about an expiring client secret this many days ahead
     clientSecretLifetimeDays: 365,                 // Client secret lifetime (days)
     registeredClientIdPrefix: "sts-client-",       // Dynamically registered client_id prefix
@@ -309,6 +311,10 @@ var config = {
     consumerProvisionCap: 10000,                                             // Consumer providers: accounts each may create
     outbound: true,                                                          // Make back-channel requests to partners
     outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
+    outboundMaxSockets: 64,                                                  // Outbound connections per destination
+    outboundMaxTotalSockets: 1024,                                           // Outbound connections in all
+    outboundDeadlineMs: 120000,                                              // Outbound overall deadline (ms)
+    outboundConnectTimeoutMs: 10000,                                         // Outbound connect timeout (ms)
     outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
     outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
     outboundCaFile: "",                                                      // CA certificates for outbound requests
@@ -336,6 +342,11 @@ var config = {
     mode: "memory",                                        // Persistence mode; restart to apply
     sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
     metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    poolSize: 0,                                           // Database connections per process; restart to apply
+    poolWaitMs: 5000,                                      // Wait for a database connection (ms); restart to apply
+    connectTimeoutMs: 5000,                                // Database connect timeout (ms); restart to apply
+    idleTimeoutMs: 30000,                                  // Idle database connection kept for (ms); restart to apply
+    statementTimeoutMs: 300000,                            // Database statement timeout (ms); restart to apply
     dataDir: "./data",                                     // Data directory; restart to apply
     databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
     databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
@@ -344,6 +355,7 @@ var config = {
     databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
     databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
     databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databasePasswordRefreshS: 3600,                        // Read the database password again every (seconds)
     databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
     databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
     globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
@@ -406,6 +418,8 @@ var config = {
     enabled: false,        // Scan files for malware
     url: "",               // ICAP service address
     timeoutMs: 30000,      // Scan timeout (milliseconds)
+    concurrency: 8,        // Scans at once
+    queueLimit: 64,        // Scans waiting
     caFile: "",            // CA file for an icaps service
     allowCleartext: false  // Allow plain ICAP in product mode
   },
@@ -608,58 +622,70 @@ var config = {
 
   // --- Key material ----------------------------------------------------
   keys: {
-    source: "auto",                    // Where signing keys come from; restart to apply
-    plaintextRetention: "timed",       // How long a decrypted private key is kept
-    plaintextTtlS: 300,                // Decrypted key idle timeout (seconds)
-    signerModel: "per-algorithm",      // Signer model
-    credentialSigner: "dedicated",     // Credential signing key
-    encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
-    offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
-    postQuantumSigning: true,          // Post-quantum signing
-    eddsaSigning: false,               // EdDSA signing
-    signingAlgorithms: "",             // Signing algorithms this realm uses
-    pqcOnly: false,                    // Sign post-quantum only
-    acceptedSigningAlgorithms: "",     // JWS algorithms accepted
-    jwksCertificateUrl: false,         // Name a published key's certificates by URL
-    kidFormat: "internal",             // Signed token kid format
-    kekProvider: "file",               // Key-encryption key provider; restart to apply
-    kekTransitMount: "transit",        // Transit engine mount; restart to apply
-    kekFile: "/run/secrets/sts-kek",   // Key-encryption key file; restart to apply
-    kekRef: "",                        // Key-encryption key reference; restart to apply
-    kekVault: "",                      // Vault or Key Vault URL; restart to apply
-    vaultClientCert: "",               // Client certificate for the secret store; restart to apply
-    vaultClientKey: "",                // Client key for the secret store; restart to apply
-    vaultCaCert: "",                   // Trust anchor for the secret store; restart to apply
-    vaultCertRole: "",                 // Certificate auth role; restart to apply
-    vaultCertAuthMount: "cert",        // Certificate auth mount path; restart to apply
-    kekField: "value",                 // Vault secret field; restart to apply
-    kekToken: "",                      // Vault token; restart to apply
-    storeProbeTimeoutMs: 5000,         // Secret store probe timeout (ms)
-    kekRegion: "",                     // AWS region; restart to apply
-    pkcs11Module: "",                  // PKCS#11 module; restart to apply
-    pkcs11Mechanism: "auto",           // How the HSM wraps a data key; restart to apply
-    pkcs11GenerateKey: false,          // Make the HSM key on first use; restart to apply
-    pkcs11Sessions: 4,                 // PKCS#11 sessions per process; restart to apply
-    pkcs11PinProvider: "none",         // Where the PKCS#11 PIN is read from; restart to apply
-    pkcs11PinRef: "",                  // The PKCS#11 PIN's location; restart to apply
-    pkcs11PinField: "",                // The field the PKCS#11 PIN is in; restart to apply
-    signingKeyStore: "software",       // Where a realm's signing keys are made
-    signingKeyToken: "",               // The HSM token signing keys are made on; restart to apply
-    pkcs11SynchronousSign: false,      // Allow blocking PKCS#11 calls
-    cellKekProvider: "none",           // Where the cell key-encryption key is read from; restart to apply
-    cellKekRef: "",                    // The cell key-encryption key's location; restart to apply
-    cellKekField: "",                  // The field the cell key is in; restart to apply
-    cellKekRegion: "",                 // AWS region of the cell key; restart to apply
-    cellKekVault: "",                  // Key Vault URL of the cell key; restart to apply
-    dataKeyRotationDays: 365,          // Rotate every data encryption key after (days)
-    directoryCipher: "aes-256-gcm",    // Cipher for data stored in the directory
-    dataKeyActivationLeadSeconds: 300, // A new data encryption key is used after (seconds)
-    dataKeyRetireAfterDays: 7,         // Keep a replaced data encryption key at least (days)
-    previousKekProvider: "none",       // Where the previous key-encryption key is read from; restart to apply
-    previousKekRef: "",                // The previous key-encryption key's location; restart to apply
-    previousKekField: "",              // The field the previous key is in; restart to apply
-    previousKekRegion: "",             // AWS region of the previous key; restart to apply
-    previousKekVault: ""               // Key Vault URL of the previous key; restart to apply
+    source: "auto",                            // Where signing keys come from; restart to apply
+    plaintextRetention: "timed",               // How long a decrypted private key is kept
+    plaintextTtlS: 300,                        // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",              // Signer model
+    credentialSigner: "dedicated",             // Credential signing key
+    credentialSignerRotationIntervalDays: 365, // Rotate the credential signing key every (days)
+    encryptionKemAlgs: "",                     // Post-quantum / hybrid decryption keys
+    encryptionKeyRotationIntervalDays: 180,    // Replace the request decryption keys every (days)
+    encryptionKeyOverlapDays: 30,              // A replaced request decryption key still decrypts for (days)
+    offerKemEncryption: false,                 // Offer post-quantum / hybrid encryption to clients
+    postQuantumSigning: true,                  // Post-quantum signing
+    eddsaSigning: false,                       // EdDSA signing
+    signingAlgorithms: "",                     // Signing algorithms this realm uses
+    pqcOnly: false,                            // Sign post-quantum only
+    acceptedSigningAlgorithms: "",             // JWS algorithms accepted
+    jwksCertificateUrl: false,                 // Name a published key's certificates by URL
+    kidFormat: "internal",                     // Signed token kid format
+    kekProvider: "file",                       // Key-encryption key provider; restart to apply
+    kekTransitMount: "transit",                // Transit engine mount; restart to apply
+    kekFile: "/run/secrets/sts-kek",           // Key-encryption key file; restart to apply
+    kekRef: "",                                // Key-encryption key reference; restart to apply
+    kekVault: "",                              // Vault or Key Vault URL; restart to apply
+    vaultClientCert: "",                       // Client certificate for the secret store; restart to apply
+    vaultClientKey: "",                        // Client key for the secret store; restart to apply
+    vaultCaCert: "",                           // Trust anchor for the secret store; restart to apply
+    vaultCertRole: "",                         // Certificate auth role; restart to apply
+    vaultCertAuthMount: "cert",                // Certificate auth mount path; restart to apply
+    kekField: "value",                         // Vault secret field; restart to apply
+    kekToken: "",                              // Vault token; restart to apply
+    storeProbeTimeoutMs: 5000,                 // Secret store probe timeout (ms)
+    storeTimeoutMs: 30000,                     // Secret store call timeout (ms)
+    storeAttempts: 3,                          // Secret store attempts per call
+    kekRegion: "",                             // AWS region; restart to apply
+    pkcs11Module: "",                          // PKCS#11 module; restart to apply
+    pkcs11Mechanism: "auto",                   // How the HSM wraps a data key; restart to apply
+    pkcs11GenerateKey: false,                  // Make the HSM key on first use; restart to apply
+    pkcs11Sessions: 4,                         // PKCS#11 sessions per process; restart to apply
+    pkcs11TimeoutMs: 60000,                    // HSM operation timeout (ms); restart to apply
+    pkcs11QueueLimit: 1000,                    // HSM operations waiting per token; restart to apply
+    pkcs11PinProvider: "none",                 // Where the PKCS#11 PIN is read from; restart to apply
+    pkcs11PinRef: "",                          // The PKCS#11 PIN's location; restart to apply
+    pkcs11PinField: "",                        // The field the PKCS#11 PIN is in; restart to apply
+    signingKeyStore: "software",               // Where a realm's signing keys are made
+    signingKeyToken: "",                       // The HSM token signing keys are made on; restart to apply
+    pkcs11SynchronousSign: false,              // Allow blocking PKCS#11 calls
+    cellKekProvider: "none",                   // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                            // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                          // The field the cell key is in; restart to apply
+    cellKekRegion: "",                         // AWS region of the cell key; restart to apply
+    cellKekVault: "",                          // Key Vault URL of the cell key; restart to apply
+    dataKeyRotationDays: 365,                  // Rotate every data encryption key after (days)
+    directoryCipher: "aes-256-gcm",            // Cipher for data stored in the directory
+    dataKeyActivationLeadSeconds: 300,         // A new data encryption key is used after (seconds)
+    dataKeyRetireAfterDays: 7,                 // Keep a replaced data encryption key at least (days)
+    previousKekProvider: "none",               // Where the previous key-encryption key is read from; restart to apply
+    previousKekRef: "",                        // The previous key-encryption key's location; restart to apply
+    previousKekField: "",                      // The field the previous key is in; restart to apply
+    previousKekRegion: "",                     // AWS region of the previous key; restart to apply
+    previousKekVault: "",                      // Key Vault URL of the previous key; restart to apply
+    previousCellKekProvider: "none",           // Where the previous cell key-encryption key is read from; restart to apply
+    previousCellKekRef: "",                    // The previous cell key-encryption key's location; restart to apply
+    previousCellKekField: "",                  // The field the previous cell key is in; restart to apply
+    previousCellKekRegion: "",                 // AWS region of the previous cell key; restart to apply
+    previousCellKekVault: ""                   // Key Vault URL of the previous cell key; restart to apply
   },
 
   // --- Signing algorithms ----------------------------------------------
@@ -714,6 +740,9 @@ var config = {
     rootLifetimeYears: 0,                                                                                                                  // Root CA lifetime (years, 0 = the profile's)
     intermediateLifetimeYears: 0,                                                                                                          // Intermediate CA lifetime (years, 0 = the profile's)
     issuingLifetimeYears: 0,                                                                                                               // Issuing CA lifetime (years, 0 = the profile's)
+    caRenewal: true,                                                                                                                       // Renew CA certificates before they expire
+    rootRenewalLeadDays: 1095,                                                                                                             // Renew the Root this long before it expires (days)
+    caRenewalLeadDays: 365,                                                                                                                // Renew an Intermediate or Issuing CA this long before it expires (days)
     maxStoredObjects: 200,                                                                                                                 // Certificates and keys the workbench store keeps, per realm
     personSelfServicePerIdentity: 5,                                                                                                       // Self-issued key pairs one person may ask for per window
     personSelfServicePerAddress: 5,                                                                                                        // Self-issued key pairs one address may ask for per window
@@ -864,14 +893,14 @@ var config = {
 
   // --- OpenPGP ---------------------------------------------------------
   openpgp: {
-    wkd: false,                                                                                                                                                                                                                                                                            // Publish keys in the Web Key Directory
-    wkdDomains: "",                                                                                                                                                                                                                                                                        // Mail domains the Web Key Directory serves
-    challengeLifetimeS: 600,                                                                                                                                                                                                                                                               // Registration challenge lifetime (seconds)
-    signatureSkewS: 300,                                                                                                                                                                                                                                                                   // Proof signature clock skew (seconds)
-    algorithms: "ML-DSA-65+Ed25519,ML-DSA-87+Ed448,ML-KEM-768+X25519,ML-KEM-1024+X448,ed25519,ed448,eddsaLegacy/ed25519Legacy,ecdsa/nistP256,ecdsa/nistP384,ecdsa/nistP521,rsaSign,rsaEncryptSign,x25519,x448,ecdh/curve25519Legacy,ecdh/nistP256,ecdh/nistP384,ecdh/nistP521,rsaEncrypt", // Algorithms accepted
-    pqcOnly: false,                                                                                                                                                                                                                                                                        // Register post-quantum keys only
-    pqcAlongsideClassical: false,                                                                                                                                                                                                                                                          // Post-quantum key alongside a classical one
-    minRsaBits: 3072                                                                                                                                                                                                                                                                       // Smallest RSA OpenPGP key
+    wkd: false,                                                                                                                                                                                                                                                                                                                                     // Publish keys in the Web Key Directory
+    wkdDomains: "",                                                                                                                                                                                                                                                                                                                                 // Mail domains the Web Key Directory serves
+    challengeLifetimeS: 600,                                                                                                                                                                                                                                                                                                                        // Registration challenge lifetime (seconds)
+    signatureSkewS: 300,                                                                                                                                                                                                                                                                                                                            // Proof signature clock skew (seconds)
+    algorithms: "ML-DSA-65+Ed25519,ML-DSA-87+Ed448,SLH-DSA-SHAKE-128s,SLH-DSA-SHAKE-128f,SLH-DSA-SHAKE-256s,ML-KEM-768+X25519,ML-KEM-1024+X448,ed25519,ed448,eddsaLegacy/ed25519Legacy,ecdsa/nistP256,ecdsa/nistP384,ecdsa/nistP521,rsaSign,rsaEncryptSign,x25519,x448,ecdh/curve25519Legacy,ecdh/nistP256,ecdh/nistP384,ecdh/nistP521,rsaEncrypt", // Algorithms accepted
+    pqcOnly: false,                                                                                                                                                                                                                                                                                                                                 // Register post-quantum keys only
+    pqcAlongsideClassical: false,                                                                                                                                                                                                                                                                                                                   // Post-quantum key alongside a classical one
+    minRsaBits: 3072                                                                                                                                                                                                                                                                                                                                // Smallest RSA OpenPGP key
   },
 
   // --- ACME ------------------------------------------------------------
@@ -918,8 +947,10 @@ var config = {
 
   // --- Management API --------------------------------------------------
   adminApi: {
-    authRequired: true, // Require an access token on /admin-api
-    clientSecret: ""    // The management API client's secret; restart to apply
+    authRequired: true,         // Require an access token on /admin-api
+    clientSecret: "",           // The management API client's secret; restart to apply
+    programWritesPerSubject: 0, // Management API writes per program per window
+    writeWindowS: 600           // Management API write window (seconds)
   },
 
   // --- Protocol debugger -----------------------------------------------
@@ -1044,6 +1075,8 @@ var config = {
     mainPortDisableOptionalClientCertificate: false,                                                                                                                                                                                                                                                           // Main port: do not ask for a client certificate
     mainPortRequireClientCertificate: false,                                                                                                                                                                                                                                                                   // Main port: require a client certificate
     sessionTicketRotationS: 3600,                                                                                                                                                                                                                                                                              // Shared session-ticket key rotation (s)
+    serverCertificateRenewal: true,                                                                                                                                                                                                                                                                            // Renew the listener certificate without a restart
+    serverCertificateRenewLeadDays: 0,                                                                                                                                                                                                                                                                         // Renew the listener certificate this long before it expires (days, 0 = at a third of its validity)
     mainPortSharedTickets: true,                                                                                                                                                                                                                                                                               // Main port shares the cluster session-ticket key; restart to apply
     sessionTimeoutS: 300,                                                                                                                                                                                                                                                                                      // TLS session lifetime (s)
     sessionCacheSize: 2048,                                                                                                                                                                                                                                                                                    // TLS session cache size (sessions)
@@ -1074,6 +1107,8 @@ var config = {
     workerDirectoryBudgetMs: 5000,                                                                                                 // Worker directory budget per request (ms)
     sizeLimit: 500,                                                                                                                // Search size limit
     timeLimit: 30,                                                                                                                 // Search time limit (s)
+    maxMessageBytes: 5242880,                                                                                                      // Largest message from a bound client (bytes)
+    maxMessageBytesBeforeBind: 131072,                                                                                             // Largest message before a bind (bytes)
     selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode", // Attributes a person may change on their own entry
     directoryReadableAttributes: "",                                                                                               // Attributes a person may read of other people
     groupMembersReadable: false                                                                                                    // Members may read their group's member list
@@ -1254,6 +1289,7 @@ var config = {
     retainedKeyVersions: 1,                                // Previous key versions kept
     retainedKeyTtlS: 0,                                    // Previous key version lifetime (s)
     krbtgtRotationIntervalDays: 180,                       // Rotate the krbtgt key every (days)
+    serviceKeyRotationIntervalDays: 180,                   // Rotate this service's own acceptor key every (days)
     pkinit: true,                                          // PKINIT (certificate pre-authentication)
     pkinitRequireFreshness: true,                          // PKINIT requires a freshness token
     pkinitRequirePaChecksum2: false,                       // PKINIT requires paChecksum2
@@ -1520,7 +1556,8 @@ var config = {
     claim: true,             // Carry a groups claim
     claimName: "groups",     // Claim name
     claimValue: "cn",        // What names a group
-    claimFromMemberOf: true  // Believe an entry's own memberOf
+    claimFromMemberOf: true, // Believe an entry's own memberOf
+    claimMaxBytes: 4096      // Largest groups claim in a token (bytes)
   },
 
   // --- Roles -----------------------------------------------------------
@@ -1700,7 +1737,9 @@ var config = {
     nodeSnapshotRetentionHours: 24, // Keep a gone node's snapshot (hours)
     heartbeatMs: 2000,              // Heartbeat interval (ms); restart to apply
     nodeTtlMs: 30000,               // Node lifetime (ms); restart to apply
-    acceptMissingCapabilities: ""   // Capabilities accepted as missing; restart to apply
+    acceptMissingCapabilities: "",  // Capabilities accepted as missing; restart to apply
+    secretRotationDays: 90,         // Rotate the shared secrets every (days)
+    secretOverlapS: 86400           // Accept a rotated shared secret for (seconds)
   },
 
   // --- Cells -----------------------------------------------------------
@@ -1712,6 +1751,7 @@ var config = {
     hostname: "",                   // This cell's inter-cell host name; restart to apply
     consoleUrl: "",                 // This cell's own console address; restart to apply
     relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
+    maxAnswerBytes: 16777216,       // Largest inter-cell answer (bytes)
     deliveryAttempts: 12,           // Inter-cell delivery attempts
     deliveryBackoffMs: 2000,        // Inter-cell delivery backoff (ms)
     deliveryRetentionS: 86400,      // Inter-cell delivery retention (s)
@@ -1752,68 +1792,75 @@ var config = {
   // --- Attribute sources -----------------------------------------------
   attributeSources: {
     hostPatterns: "",  // Hosts an attribute source may name
-    refreshBatch: 200  // People per scheduled refresh
+    refreshBatch: 200, // People per scheduled refresh
+    poolSize: 4        // Connections per source
   },
 
   // --- Mail ------------------------------------------------------------
   mail: {
-    transport: "default",                 // Mail transport
-    from: "",                             // From address
-    fromName: "",                         // From display name
-    smtpPreset: "custom",                 // SMTP preset
-    smtpHost: "",                         // SMTP host
-    smtpPort: 587,                        // SMTP port
-    smtpTls: "starttls",                  // SMTP TLS
-    smtpCaFile: "",                       // SMTP trust anchor file
-    smtpServerName: "",                   // SMTP certificate name
-    smtpAuth: "none",                     // SMTP authentication
-    smtpUser: "",                         // SMTP username
-    smtpPasswordProvider: "none",         // Where the SMTP password is read from
-    smtpPasswordRef: "",                  // The SMTP password's location
-    smtpPasswordField: "",                // The SMTP password's field
-    smtpClientCertFile: "",               // SMTP client certificate file
-    smtpClientKeyFile: "",                // SMTP client key file
-    dkimDomain: "",                       // DKIM signing domain
-    dkimSelector: "",                     // DKIM selector
-    dkimAlgorithm: "rsa-sha256",          // DKIM algorithm
-    dkimKeyProvider: "none",              // Where the DKIM private key is read from
-    dkimKeyRef: "",                       // The DKIM private key's location
-    dkimKeyField: "",                     // The DKIM private key's field
-    sesRegion: "",                        // Amazon SES region
-    sesConfigurationSet: "",              // Amazon SES configuration set
-    acsEndpoint: "",                      // Azure Communication Services endpoint
-    acsAuth: "managed-identity",          // Azure Communication Services authentication
-    acsConnectionStringProvider: "none",  // Where the Azure connection string is read from
-    acsConnectionStringRef: "",           // The Azure connection string's location
-    acsConnectionStringField: "",         // The Azure connection string's field
-    gmailSender: "",                      // Gmail API mailbox
-    gmailKeyProvider: "none",             // Where the Gmail service account key is read from
-    gmailKeyRef: "",                      // The Gmail service account key's location
-    gmailKeyField: "",                    // The Gmail service account key's field
-    deliverS: 15,                         // Outbox sweep (seconds)
-    attempts: 5,                          // Delivery attempts
-    backoffS: 60,                         // Retry backoff (seconds)
-    timeoutMs: 30000,                     // Send timeout (ms)
-    leaseMs: 120000,                      // Attempt lease (ms)
-    concurrency: 4,                       // Sends in flight
-    retentionS: 604800,                   // Outbox retention (seconds)
-    maxRows: 10000,                       // Outbox rows per realm
-    ratePerRecipient: 20,                 // Messages per recipient per window
-    ratePerCategory: 5,                   // Messages per recipient per category per window
-    rateWindowS: 3600,                    // Rate window (seconds)
-    dedupWindowS: 600,                    // Duplicate suppression window (seconds)
-    encryptionRequired: "",               // Messages that must be encrypted
-    smimeContentEncryption: "aes256-gcm", // S/MIME content encryption
-    selfServiceReset: true,               // Self-service password reset
-    resetRequiresVerifiedAddress: true,   // Self-service reset needs a verified address
-    resetRequiresBackupCode: true,        // Self-service reset needs a recovery code
-    verificationTtlMinutes: 1440,         // Address verification link lifetime (minutes)
-    securityNotices: true,                // Security notices
-    credentialChangeNotices: true,        // Credential change notices
-    notifyAdministrators: true,           // Tell administrators of system acts
-    signInAlerts: true,                   // Sign-in alerts
-    signInAlertLevel: "MEDIUM",           // Sign-in alert level
-    signInAlertWindowS: 86400             // Sign-in alert window (seconds)
+    transport: "default",                                                       // Mail transport
+    from: "",                                                                   // From address
+    fromName: "",                                                               // From display name
+    smtpPreset: "custom",                                                       // SMTP preset
+    smtpHost: "",                                                               // SMTP host
+    smtpPort: 587,                                                              // SMTP port
+    smtpTls: "starttls",                                                        // SMTP TLS
+    smtpCaFile: "",                                                             // SMTP trust anchor file
+    smtpServerName: "",                                                         // SMTP certificate name
+    smtpAuth: "none",                                                           // SMTP authentication
+    smtpUser: "",                                                               // SMTP username
+    smtpPasswordProvider: "none",                                               // Where the SMTP password is read from
+    smtpPasswordRef: "",                                                        // The SMTP password's location
+    smtpPasswordField: "",                                                      // The SMTP password's field
+    smtpClientCertFile: "",                                                     // SMTP client certificate file
+    smtpClientKeyFile: "",                                                      // SMTP client key file
+    dkimDomain: "",                                                             // DKIM signing domain
+    dkimSelector: "",                                                           // DKIM selector
+    dkimAlgorithm: "rsa-sha256",                                                // DKIM algorithm
+    dkimKeyProvider: "none",                                                    // Where the DKIM private key is read from
+    dkimKeyRef: "",                                                             // The DKIM private key's location
+    dkimKeyField: "",                                                           // The DKIM private key's field
+    dkimNextSelector: "",                                                       // The next DKIM selector
+    dkimNextKeyField: "",                                                       // The next DKIM private key's field
+    dkimSwitchAt: "",                                                           // Sign with the next DKIM selector from
+    sesRegion: "",                                                              // Amazon SES region
+    sesConfigurationSet: "",                                                    // Amazon SES configuration set
+    acsEndpoint: "",                                                            // Azure Communication Services endpoint
+    acsAuth: "managed-identity",                                                // Azure Communication Services authentication
+    acsConnectionStringProvider: "none",                                        // Where the Azure connection string is read from
+    acsConnectionStringRef: "",                                                 // The Azure connection string's location
+    acsConnectionStringField: "",                                               // The Azure connection string's field
+    gmailSender: "",                                                            // Gmail API mailbox
+    gmailKeyProvider: "none",                                                   // Where the Gmail service account key is read from
+    gmailKeyRef: "",                                                            // The Gmail service account key's location
+    gmailKeyField: "",                                                          // The Gmail service account key's field
+    deliverS: 15,                                                               // Outbox sweep (seconds)
+    attempts: 5,                                                                // Delivery attempts
+    backoffS: 60,                                                               // Retry backoff (seconds)
+    timeoutMs: 30000,                                                           // Send timeout (ms)
+    leaseMs: 120000,                                                            // Attempt lease (ms)
+    concurrency: 4,                                                             // Sends in flight
+    retentionS: 604800,                                                         // Outbox retention (seconds)
+    maxRows: 10000,                                                             // Outbox rows per realm
+    ratePerRecipient: 20,                                                       // Messages per recipient per window
+    ratePerCategory: 5,                                                         // Messages per recipient per category per window
+    rateWindowS: 3600,                                                          // Rate window (seconds)
+    dedupWindowS: 600,                                                          // Duplicate suppression window (seconds)
+    encryptionRequired: "",                                                     // Messages that must be encrypted
+    smimeContentEncryption: "aes256-gcm",                                       // S/MIME content encryption
+    selfServiceReset: true,                                                     // Self-service password reset
+    resetRequiresVerifiedAddress: true,                                         // Self-service reset needs a verified address
+    resetRequiresBackupCode: true,                                              // Self-service reset needs a recovery code
+    verificationTtlMinutes: 1440,                                               // Address verification link lifetime (minutes)
+    securityNotices: true,                                                      // Security notices
+    credentialChangeNotices: true,                                              // Credential change notices
+    notifyAdministrators: true,                                                 // Tell administrators of system acts
+    signInAlerts: true,                                                         // Sign-in alerts
+    signInAlertLevel: "MEDIUM",                                                 // Sign-in alert level
+    signInAlertWindowS: 86400,                                                  // Sign-in alert window (seconds)
+    expiryReminders: true,                                                      // Credential expiry reminders
+    expiryReminderDays: "30,7,1",                                               // Credential expiry reminder days
+    expiryReminderKinds: "certificate,piv,smime,tls-client,signin-certificate"  // Credentials an expiry reminder names
   },
 
   // --- Reporting -------------------------------------------------------

@@ -11,6 +11,7 @@ more than one family needs it, not because it felt general.
 | `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
 | `subject_urn.ts` | **THE NAMES A LEAF GIVES ITS HOLDER, DEFINED ONCE (#1827, 2026-11-16).** `SubjectUrn`: the one table of `urn:sts:<form>:` prefixes (person, sa, application, federation, cell, device), `forPerson()`, `forHolder()`, `parse()` (bare or `URI:`), `namesIn()`, `namesPerson()`, `isServiceAccountForm()`, `sameHolder()`. A static utility class and a leaf (`bunyan`, `config`). See *3df*. |
 | `csv_cell.ts` | **`CsvCell.of()`, EVERY CSV CELL THIS SERVICE WRITES (#2138).** A string whose first character is `=`, `+`, `-`, `@`, tab, CR or NUL gets a single quote in front (OWASP's CSV injection guidance, ASVS 5.0.0 1.2.10), then RFC 4180 quoting. A JavaScript number or bigint is never prefixed, so a negative count stays a number; the string `-5` is prefixed. Used by `report/formats.ts` and `passkey_report.ts`'s export; a new CSV writer uses it too. A static utility class. |
+| `pattern_safety.js` | **`PatternSafety.problem()`, THE BOUND ON A REGULAR EXPRESSION SOMEBODY ELSE WROTE (#2220, ASVS 5.0.0 1.3.12).** Too long (the caller's number), a backreference, or a quantifier on a group that is itself quantified or an alternation (`nestedQuantifier()`, the exponential shape on a backtracking engine) — read on the source text, erring towards refusing; compiling is the caller's question, in its dialect. Federation's `fedSubjectPattern`, XACML's regexp-match (save and evaluation), the two SPIFFE pattern settings (`config.js`'s `csvPatterns` rows) and an RFC 9396 type's schema patterns (`applications.js`'s `accessTypeWriteProblem()`). JavaScript, not TypeScript, because `config.js` reads it on the host. A static utility class with no logger. |
 | `image_metadata.ts` | **`ImageMetadata.stripped()`, A PUBLISHED IMAGE WITHOUT ITS METADATA (#2140).** The JPEG and PNG writers `profile_photo.ts` had (#719), moved here so the sign-in logo (`branding.ts`) uses them too, and a WebP writer for the logo. Each walks the container and keeps the listed segments or chunks; one it cannot walk answers null and the caller refuses. A JPEG ends at its FIRST end marker since #2140 (the last kept an appended MPF image and its EXIF), and an APP2 is kept only as an ICC profile. A library with no route, requiring only `helpers`, so 6a-brand and 6a-photo each require it without moving anything. A static utility class. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
 | `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
@@ -52,6 +53,7 @@ more than one family needs it, not because it felt general.
 | `limits_form.ts` | **A LIMIT AS A FORM A PERSON CAN LOWER (#432 phase 5).** The controls under each right or detail carrying `limits`, and the reading back that accepts only lower values and values still meeting the type: one static utility class for GNAP's approval page, `/portal/ciba`'s absent-owner approvals and OAuth's consent screen, so the three cannot draw or judge a limit differently. In `common/` because two protocol directories read it. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
+| `outbound_limits.ts` | **THE LIMITS EVERY OUTBOUND HTTP CALL SHARES (#2220)** — one keep-alive agent per scheme with `federation.outboundMaxSockets` per destination and `federation.outboundMaxTotalSockets` in all (`useAgent()`), an overall deadline (`federation.outboundDeadlineMs`, never shorter than the caller's own inactivity timeout) and a connect timeout (`federation.outboundConnectTimeoutMs`) (`guard()`, `guardSocket()` for the ICAP scanner). **The agent's pool key carries what node's does not**: the pinned address (`pinnedLookup()`'s `stsPinned`), the identity of any `checkServerIdentity`, the realm and the outbound gate's options, so a socket verified under one check is never lent to a request that asked for another. A static utility class; the timers are per request and cleared when it closes. **`guard()` also bounds what is SENT (#2247)**: a request-target over 8 KiB (`STS-HTTP-0035`) or header fields over 16 KiB (`STS-HTTP-0036`) is destroyed before it is sent, with an error the caller's own `error` path reports — not `onTimeout`, which would mislabel it. Constants, not settings: RFC 9110's 8000 octets and Node.js's own `maxHeaderSize`. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
 | `http2_express.ts` | **EXPRESS 4 ON AN HTTP/2 REQUEST, FOR THE TWO APPS THIS SERVICE BUILDS AND NO OTHER (#407, 2026-10-19).** `adapt(app)` gives one app an own `lazyrouter` — express 4's: the router, the query parser, then an `init` that is express's six lines with the request's and response's prototypes chosen by protocol (express's methods over `Http2ServerRequest`/`Http2ServerResponse` for HTTP/2; express's own for HTTP/1.1). `common/app.js` adapts the shared app and `debugger/debugger_server.ts` its own; **nothing on the express module changes**, which is why it replaced the `http2-express` package #703 first used: that replaced `express.application.lazyrouter` for every app in the process. The same `init` writes `host` from `:authority` and refuses 400, `STS-HTTP-0024`, a request whose two name different hosts (RFC 9113 section 8.3.1; default port and case are not a difference); `hostProblem()` is asked again by `request_pool.proxy()` and the debugger's API proxy. **And an HTTP/2 response's `write()` and `end()` hand a chunk over 64 KiB to the stream a slice at a time, each after `drain` (#1725)**: `res.send()` gave node's stream a 6.5 MB `/admin-api/openapi.json` whole, two of them passed the session's `maxSessionMemory` (10 MB), node refused every new stream on the connection ENHANCE_YOUR_CALM and then tore the session down, and a body whose headers had arrived never ended. `writableEnded` and `finished` read true from the `end()` call; a small body and HTTP/1.1 are node's and express's own. `tests/http2_large_body.js`. A static utility class over node, express and the error-code table, so the pool may require it. |
 | `http2_framing.ts` | **AN HTTP/2 BODY WITH NO `content-length` IS STILL A BODY (#407).** `markFramedBody()`, on each TLS HTTP listener's `request` event ahead of the app, adds `transfer-encoding: chunked` to an HTTP/2 request whose HEADERS did not end the stream and that sent no length, so body-parser's `hasBody()` reads it. **The header is SYNTHETIC and exists only on this service's side**: HTTP/2 forbids `transfer-encoding` (RFC 9113 section 8.2.2) and no client sent it — it is what the request pool forwards to a worker as the chunked body node's client sends there anyway, so it is real on that HTTP/1.1 hop and nowhere else. **It also appears in anything that captures `req.headers`** (the call log, the debugger's capture, a test echo) as though the client had sent it; read it there as "framed by HTTP/2", never as a client's request header. |
@@ -410,10 +412,13 @@ signature as something it is not. Everything else in `options.header` is merged.
 `helpers.signJwtAs()` and `signJwtAsAsync()` thread it through, which is how the
 one caller that needs it reaches it.
 
-**xml-crypto IS STILL A DEPENDENCY AND NOTHING IN THE SERVICE REQUIRES IT.** It
+**xml-crypto IS A TEST DEPENDENCY AND NOTHING IN THE SERVICE REQUIRES IT.** It
 is there for `tests/crypto_module.js`, which is the only independent reading of
 XMLDSIG in this repository — the thing that makes "our signature verifies"
-mean something. Removing it saves a package and costs that.
+mean something. Since #2220 (2026-11-25) it is in `tests/package.json`, so the
+service image no longer carries it; a service module that required it again
+would fail to load in the image. `tests/package.json` says why
+`@xmldom/xmldom` is a link there.
 
 ### Held to Wycheproof and ACVP (#202, #203, 2026-09-24)
 
@@ -4738,6 +4743,29 @@ with `Cannot find module` naming a file the operator never mentioned.
    reading the first and silently seeing one group where the person is in four,
    the exact defect `samlAttributes()`'s dedup filter exists to prevent.
 
+   **PAST `groups.claimMaxBytes` THE CLAIM IS REFERENCED, NEVER CUT (#2247,
+   ASVS 5.0.0 4.2.5).** A person in a few hundred groups got an access token
+   over the 8 KiB most servers accept in a header (16 KiB for Node.js), and
+   every API they called answered 431. The cap (4096 bytes of the values'
+   JSON by default, about 150 names; `0` is no cap) applies to the
+   `access_token` and `id_token` sets only, and past it the claim is replaced
+   by OpenID Connect Core section 5.6.2's `_claim_names` / `_claim_sources`
+   (source `sts-groups`, no `access_token` member) pointing at the realm's
+   `/oauth2/groups`, which `oauth2.ts` answers as a signed JWT for the
+   presented access token's subject. A shorter list was rejected because a
+   relying party would branch on somebody being in fewer groups than they
+   are. **UserInfo and both SAML assertions are not capped**: a response
+   body, a POST or SOAP body, never a header, and SAML has no reference to
+   attributes held elsewhere. **The cut is `overage()`, run by
+   `admin_stats.js`'s `jwtClaims()` AFTER every layer and the release
+   filter, and only on the array this layer produced** — the same object,
+   compared by identity — so a typed claim or ticked attribute of the same
+   name is never cut. A context with no `base_url` (the console's preview,
+   a WS-Trust JWT) is left whole, because there is nowhere to point; and
+   `oauth2.ts` MERGES a Claims Provider's `_claim_names` into the ID Token
+   rather than assigning it (`mergeClaimSources()`), which would drop this
+   reference.
+
    **CARRYING A GROUP IS NOT GRANTING ONE.** No endpoint here reads this claim
    and nothing decides anything on one, which is the same distinction this
    service already draws between an identity being RECORDED and one being
@@ -7943,15 +7971,21 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   `secrets.PREVIOUS_KEK`, restart-only) is read at start beside the new key; a
   service DEK that unwraps only under it is re-wrapped and its row written
   (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
-  wrapped under the old refuses (`STS-KEYS-0091`). **Cell keys are not covered**
-  — a rotated cell key has no previous-key descriptor yet.
+  wrapped under the old refuses (`STS-KEYS-0091`). **A cell key is rotated the
+  same way since #2220**: `keys.previousCellKek*` (`secrets.PREVIOUS_CELL_KEK`,
+  no fallback, refused without a cell key, `STS-CELL-0213`) is read beside the
+  new cell key, and `unwrapWithRotation()` tries each scope's OWN previous key
+  — the service key's for `service`, the cell key's for this cell's scope.
 * **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's
   tag) was HKDF of the KEK, so a rotated KEK would have changed every digest.
   Where DEKs are stored it is one random key of its own, class `keyed-digest`
   in the service scope's default-realm row, FIRST WRITER WINS in the merge
   (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
   rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
-  is kept — nothing a digest names outlives the process there.
+  is kept — nothing a digest names outlives the process there. **Not rotating
+  it is a decision (#2220), not a gap**: it is a blind-index key, every digest
+  it makes is stored and looked up again, and a new key would orphan all of
+  them; the KEK it is wrapped under rotates instead (`keystore.js` argues it).
 * **THE HMAC KEY EACH LABEL DERIVES IS KEPT (#760, 2026-10-20)**, beside the
   input it came from (the digest key, or the KEK's bytes), which is compared
   on every call: HKDF ran per digest, and the minted store asks one for every
@@ -11490,6 +11524,31 @@ SSF and XACML not requiring the federation module for their transport).
   `…CaFile` is read on EVERY request (no cache — a handshake costs more, and a
   rotated file is in force at once) and added BESIDE `tls.rootCertificates`;
   a file that cannot be used refuses the request, `STS-CORE-0104`.
+* **`readNamedFile(file, seams?)` (#2247, ASVS 5.0.0 15.4.2) — EVERY READER
+  OF A FILE A SETTING OR AN ADMINISTRATOR NAMES GOES THROUGH IT.** In product
+  `namedFileAllowed()` (#1481) checks the PATH against `security.fileRoots`,
+  and until #2247 each caller then opened the path again, so a link swapped
+  in between was followed out of the roots. The helper checks the path, opens
+  it ONCE (`O_NONBLOCK`, so a FIFO cannot hold the open), and checks the
+  DESCRIPTOR: `fstat` a regular file, and its real path as the kernel holds
+  it (`readlink /proc/self/fd/<fd>`; without /proc, the path resolved again
+  and accepted only when its device and inode are the descriptor's) inside a
+  root; then reads through it and closes it. **No `O_NOFOLLOW`**: a link
+  inside the roots to a file inside them is what `/etc/ssl/certs` and a
+  Kubernetes secret volume (`..data`) are, and was always followed. A
+  refusal is `namedFileRefusal()`, the one sentence, marked
+  `namedFileRefused` so a caller tells it from an fs error and keeps its own
+  code and sentence (`caFilePems()`, the SCIM client, attribute sources,
+  AuthZEN's external PDP). Readers: `caFilePems()`, the truststores' setting
+  files (`readNamedFile` dep), the mail DKIM key, the revocation CA files,
+  the SCIM client's CA file, an attribute source's CA file, AuthZEN's PDP
+  PEMs, and SPIFFE's sigstore registry auth, PSAT CA and token, kubelet
+  files and Azure token file. **`assertNamedFile()` stays only for a path
+  handed to a library that opens it**: the GCP IIT key file is now read here
+  and handed over as `credentials` when it is JSON, and by name, after the
+  path check, only when it is not (a legacy P12). The seams (`fs`,
+  `beforeOpen`, `descriptorLink`) are what `tests/named_file_descriptor.js`
+  swaps a path through; a caller with an injected `fs` passes it.
 * **`describe(family)`** — the three as they are IN FORCE, for the console and
   `/admin-api` views, where a skip stored in a product realm reads false.
 * **`checkServerIdentity(host, cert)` (#201)** — returned on every verifying
@@ -13521,6 +13580,25 @@ The file's header is the argument; what a maintainer needs beside it:
   AuthEnvelopedData parsed and opened with node alone, a tampered one
   refused, the CBC setting, the mode row), `tests/protocol/sts_openpgp.js`.
 
+### An ML-KEM S/MIME certificate issued on a proof of possession (#2220, 2026-11-25)
+
+#2009's D4 made an ML-KEM certificate uploaded only, because a KEM key
+cannot sign a request. `openpgp_keys.ts`'s `issueSmimeKemChallenge()` and
+`issueSmimeKemCertificate()` are the later ticket's route, RFC 9810
+section 5.2.8.3.3's challenge-response (written for a decryption key; the
+KEM case is `KEMKPOPChallengeResp` in section 5.2.8.4): `crypto.js`'s
+`smimeKemPublicKeyOf()` holds the key to RFC 9935, `smimeKemChallenge()`
+encapsulates and answers the ciphertext and the SHA-256 of the secret
+(all that is kept, in the OpenPGP challenge store under `kem:<entryUUID>`),
+and `smimeKemAnswerMatches()` compares the person's decapsulated secret in
+constant time. The challenge is spent by the first answer (a cluster claim
+on its nonce). A match is issued by `cert_enrollment.ts`'s `issue()` —
+family `est`, profile `email`, the person as their own principal — so
+every enrollment rule applies, and `pki.js`'s `issueEnrolled()` certifies
+`keyEncipherment` alone for an ML-KEM key. The certificate is then set
+through `setSmimeCertificate()`, unchanged. `portal/account_openpgp.ts`
+carries the two acts; `tests/smime_kem_issuance.js` holds it.
+
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
 A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —
@@ -13660,7 +13738,11 @@ each argued there:
     realm is armed (store `devices.adminRequirement`, global tier, `{ at }`
     only, audited `device.admin-requirement-armed`) by the gate's first
     ALLOWED administrative token from a compliant device owned by a member
-    of a console roster group. Until then every administrator is admitted:
+    of a console roster group — THAT REALM'S roster, asked by name
+    (`rolesOf(username, realms.currentId())`; #2236: unnamed, it read the
+    default realm's, and no trust realm ever armed — and so did
+    `credentials.ts`'s and `browser_devices.ts`'s `consoleRolesOf`). Until then every
+    administrator is admitted:
     that is the no-lockout rule. It is a latch rather than a count, because
     a person removes their own device on the exempt portal, so a count
     could be emptied by a stolen password. Nothing disarms it. A program
@@ -14459,6 +14541,49 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   the recipient's language (`Intl.ListFormat`). The doors this ticket added
   a CAEP call to: `/admin-api`'s `assign-oath` and `assign-yubiotp`, and the
   OATH and YubiKey OTP lost-token retirers. `tests/credential_change_mail.js`.
+- **A certificate that expires soon (#2247, ASVS 5.0.0 6.4.5)** is the
+  `credential-expiring` notice, `mail.expiryReminders` (on), sent by
+  `credentialsExpiring()` for `credential_expiry.ts`'s job — see
+  *Credential expiry reminders* below.
+
+### Credential expiry reminders: `credential_expiry.ts` (#2247, 2026-11-25)
+
+Nothing reminded a person before a certificate they hold expired. The
+module's header argues the design; what a maintainer needs beside it:
+
+- **The index is `credential_expiry.due`**, one row per certificate a
+  person holds, on demand with `indexBy` in the existing
+  `sts_minted_index` — no schema version, no upgrade script. A row is filed
+  under the DAY ITS NEXT REMINDER IS DUE (`n:`) and its person (`p:`), so
+  the hourly job (`mail.credential-expiry`) makes at most 31 equality
+  lookups a run whatever the realm holds, and a row told at its step moves
+  on. It expires with its certificate.
+- **It is kept by the entries' writes, through `entry_observer.ts`'s
+  `watch()`**, a second kind of registration beside `register()`: a
+  watcher owns nothing, may share an attribute, and is told the whole
+  entry once. `ldap_server.js`'s two in-place certificate writers (the
+  enrollment slot's `write()`, `changeStoredCertificate()`) do not go
+  through `noteAccountChange()`, so they call `tellCredentialWatchers()`.
+  A new writer of `stsEnrolledCertificate`, `userSMIMECertificate` or
+  `userCertificate` that bypasses both is a certificate nobody is reminded
+  of. A person's TLS client certificate is not on the entry at all (the
+  realm's PKI register), so `tls_client_certificates.js`'s `issue()` and
+  `revoke()` tell the module themselves (`noteHeld()`, `noteGone()`), and a
+  deleted person's rows all go (`forget()`).
+- **Once per step is the row's `told`**, which outlives the outbox; the
+  outbox (`queuedWithin()`, `dedupKey`/`dedupAlso` per item and step) is
+  the cluster's record for a race. A refusal that will be the same next run
+  is told; a ceiling, a full outbox or the realm's own problem (no
+  transport, no link base) is not, and the last stops the run.
+- **The backfill** is the one walk: `passkeyScanAsync()` over every person,
+  5,000 a run after a cursor on the `$backfill$` row, until done; then the
+  realm's TLS client register once (`personCertificatesOf()`).
+- **SSH user certificates are not followed** (an hour at most), nor
+  anything that does not expire here. The PIV `piv-reissue` activity is
+  unchanged and off by default: it renews at a sign-in, and the reminder
+  names the Security keys page for every holder whether or not it is on.
+
+`tests/credential_expiry_mail.js` holds it in process.
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
 `smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it
@@ -14718,6 +14843,14 @@ is the operator's page; each file's header argues its part.
   asks. A browser session from ANY first factor is refused in
   `authn.startSession()`; a KEYED session (SCIM, SPIRE) is a program's and
   is not.
+* **BECOMING ONE CLEARS A PENDING `pwdReset`** (#2236, rcbj, 2026-11-25):
+  `set-service-account` (`AdminActions.serviceAccountAction()`) clears the
+  flag a typed password left on an ordinary person (#2160), because a
+  program has no sign-in screen to clear it at and every door it uses would
+  refuse its right password (STS-AUTHN-0142). The audit row carries
+  `passwordResetCleared`. `create` with `serviceAccount: true` sets the
+  flag before the password, so nothing is owed there; an LDAP write of the
+  flag does not go through the act and clears nothing.
 * **THE EXEMPTION** is `mfaRequirementFor()` answering nothing required and
   `secondFactorDemand()` answering nothing needed. A factor the account holds
   is still asked at the sign-in screen — the authentication policy's "there
@@ -16209,7 +16342,7 @@ specification's endpoint is never converted**.
 | Module | What it is |
 |---|---|
 | `web_page.ts` (`WebPage`) | The base of every runtime, client or not: `basesOf()`/`attribute()` read the shell's `data-sts-*`; `prefixAt(pathname, base)` the realm prefix; `queryOf()`; `url(path)` — this origin and prefix, or the base of the listener that answers the path (#472); `publicJson(method, path, body)` → `{ status, json, res }` with `json` null for a body that is not JSON; `realmLinks(html, prefix)`, `app.js`'s `withRealmLinks()` in the browser; `formFields(form, submitter)` — a form as an operation's JSON, the pressed button included and `csrf_token` left out; `targetFragment()`; `saveBase64()`. The console's and the portal's copies of each were deleted and both inherit these. |
-| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. **Since #561** it also holds what one account per tab needs in both runtimes: the tab's `{ sub, username }` in sessionStorage under the runtime's `accountKey` (`storedAccount()`, `keepAccount()`, `readAccounts()`, which removes it when the list is off) and the `login_hint` a sign-in sends from it (`hintFor()`); the IDENTITY requests are sent for — `identitySignal()`, one AbortController per identity, passed to `tokenRequest()`'s fetch, and `endIdentity()`, which aborts it and moves `identity` on so an answer under the old one is not kept; `discardClient()` (tokens, subject, DPoP key, nonce, metadata); `answerIsFor()`, the one subject check the console's popup made and every switch makes; and the change signal (`listenForAccounts()`, `announceAccounts()`; a read on a message that answers off keeps the list in hand, since off is also what a dropped request reads as — #731). All inert with `authn.multipleAccounts` off: nothing is kept, so nothing is hinted. `admin-ui/CLAUDE.md` 8c-iv argues it. **Since #2143 it is also asked FIRST** (ASVS 5.0.0 3.7.5): each runtime's `start()` calls `SpaClient.webCryptoMissing(env)` — `crypto`, `getRandomValues` and every `crypto.subtle` call a sign-in makes (`WEBCRYPTO_CALLS`) — before it wires or draws anything, and where something is missing (a page on plain HTTP has no `crypto.subtle`) draws the namespace's `noWebCrypto.title`/`noWebCrypto.text` (`consoleRuntime`, `portal`, `report`) through its own problem drawing and starts no sign-in, where it used to throw at `generateKey()` and leave the page blank. `noWebCryptoWords()` loads the words with `WebI18n`, since no API locale is had before a sign-in, and falls back to English; `tests/spa_webcrypto_missing.js`. **Since #2168 (ASVS 5.0.0 10.2.3, rcbj's decision) it holds the SECOND AUTHORIZATION all three runtimes use**: each signs in with read scopes only (`options.scope`) and names the scopes a step may add (`writeScopes`) and those asked with a fresh sign-in (`freshScopes`: the console's `admin:security`). A 403 whose `WWW-Authenticate` is RFC 6750's `insufficient_scope` (`insufficientScopeOf()`) — the server says which scope, the client keeps no table — makes `stepUp(resource, named)` open the realm's own authorization request in a WINDOW (PKCE, a nonce, a `step.` state, `prompt=none`; for a fresh scope `prompt=none max_age=300` — silent only for a sign-in that recent — and `prompt=login max_age=0` when the session is older, or after RFC 9470's `insufficient_user_authentication`): `/oauth2/authorize` forbids framing on every answer, so no hidden iframe can carry it, and the window is opened straight after the refusal, inside the click's transient activation, with a bar (`drawStepBar()`, class `reauth`) offering Continue where the browser blocked it or a sign-in is needed, and Cancel. Each runtime's callback calls `handBackStepUp()` first, which posts the answer on `STEP_CHANNEL` and closes; the opener redeems it with its own verifier and DPoP key for the API's resource, holds the subject to the tab's, and keeps a per-resource WRITE TOKEN (`writeGrants`) — **never its refresh token**, so it ends at its own expiry or `WRITE_HOLD_MS` (ten minutes), whichever is first. `tokenFor(method, resource)` sends a GET with the read token always and anything else with a live write token. The write waiting is the caller's closure, so it never leaves memory; only a browser without `window.open` or BroadcastChannel goes to `leaveForStepUp()`, a top-level sign-in that loses it. A runtime supplies `authorizeUrl(state, verifier, extra)` honouring `extra.scope`/`prompt`/`max_age`, `callbackUrl()`, `leaveForStepUp()` and `stepWords()` (its catalog's `step.*`); `tests/spa_write_scope_step.js`. **The issuing realm (#2200)**: `issuerPrefix` is the prefix of the realm whose authorization server issued the tokens in hand (the reports application's #1038 field, moved here), and `issuerUrl(path)` is that realm's address for a path — the token, authorize, PAR, metadata and JWKS endpoints all go there, so a runtime whose realm switcher keeps the token (the console's, the reports application's) refreshes and steps up at the realm that signed it in, its `callbackUrl()`, `redirect_uri` and `resource()` that realm's too, while the pages and API calls name the realm on screen. Null — the realm on screen — until a runtime records one; the portal has no switcher. `tests/spa_write_scope_step.js` 9. |
+| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. **Since #561** it also holds what one account per tab needs in both runtimes: the tab's `{ sub, username }` in sessionStorage under the runtime's `accountKey` (`storedAccount()`, `keepAccount()`, `readAccounts()`, which removes it when the list is off) and the `login_hint` a sign-in sends from it (`hintFor()`); the IDENTITY requests are sent for — `identitySignal()`, one AbortController per identity, passed to `tokenRequest()`'s fetch, and `endIdentity()`, which aborts it and moves `identity` on so an answer under the old one is not kept; `discardClient()` (tokens, subject, DPoP key, nonce, metadata); `answerIsFor()`, the one subject check the console's popup made and every switch makes; and the change signal (`listenForAccounts()`, `announceAccounts()`; a read on a message that answers off keeps the list in hand, since off is also what a dropped request reads as — #731). All inert with `authn.multipleAccounts` off: nothing is kept, so nothing is hinted. `admin-ui/CLAUDE.md` 8c-iv argues it. **Since #2143 it is also asked FIRST** (ASVS 5.0.0 3.7.5): each runtime's `start()` calls `SpaClient.webCryptoMissing(env)` — `crypto`, `getRandomValues` and every `crypto.subtle` call a sign-in makes (`WEBCRYPTO_CALLS`) — before it wires or draws anything, and where something is missing (a page on plain HTTP has no `crypto.subtle`) draws the namespace's `noWebCrypto.title`/`noWebCrypto.text` (`consoleRuntime`, `portal`, `report`) through its own problem drawing and starts no sign-in, where it used to throw at `generateKey()` and leave the page blank. `noWebCryptoWords()` loads the words with `WebI18n`, since no API locale is had before a sign-in, and falls back to English; `tests/spa_webcrypto_missing.js`. **Since #2168 (ASVS 5.0.0 10.2.3, rcbj's decision) it holds the SECOND AUTHORIZATION all three runtimes use**: each signs in with read scopes only (`options.scope`) and names the scopes a step may add (`writeScopes`) and those asked with a fresh sign-in (`freshScopes`: the console's `admin:security`). A 403 whose `WWW-Authenticate` is RFC 6750's `insufficient_scope` (`insufficientScopeOf()`) — the server says which scope, the client keeps no table — makes `stepUp(resource, named)` open the realm's own authorization request in a WINDOW (PKCE, a nonce, a `step.` state, `prompt=none`; for a fresh scope `prompt=none max_age=300` — silent only for a sign-in that recent — and `prompt=login max_age=0` when the session is older, or after RFC 9470's `insufficient_user_authentication`): `/oauth2/authorize` forbids framing on every answer, so no hidden iframe can carry it, and the window is opened straight after the refusal, inside the click's transient activation, with a bar (`drawStepBar()`, class `reauth`) offering Continue where the browser blocked it or a sign-in is needed, and Cancel. Each runtime's callback calls `handBackStepUp()` first, which posts the answer on `STEP_CHANNEL` and closes; the opener redeems it with its own verifier and DPoP key for the API's resource, holds the subject to the tab's, and keeps a per-resource WRITE TOKEN (`writeGrants`) — **never its refresh token**, so it ends at its own expiry or `WRITE_HOLD_MS` (ten minutes), whichever is first. `tokenFor(method, resource)` sends a GET with the read token always and anything else with a live write token. The write waiting is the caller's closure, so it never leaves memory; only a browser without `window.open` or BroadcastChannel goes to `leaveForStepUp()`, a top-level sign-in that loses it. A runtime supplies `authorizeUrl(state, verifier, extra)` honouring `extra.scope`/`prompt`/`max_age`, `callbackUrl()`, `leaveForStepUp()` and `stepWords()` (its catalog's `step.*`); `tests/spa_write_scope_step.js`. **The issuing realm (#2200)**: `issuerPrefix` is the prefix of the realm whose authorization server issued the tokens in hand (the reports application's #1038 field, moved here), and `issuerUrl(path)` is that realm's address for a path — the token, authorize, PAR, metadata and JWKS endpoints all go there, so a runtime whose realm switcher keeps the token (the console's, the reports application's) refreshes and steps up at the realm that signed it in, its `callbackUrl()`, `redirect_uri` and `resource()` that realm's too, while the pages and API calls name the realm on screen. Null — the realm on screen — until a runtime records one; the portal has no switcher. `tests/spa_write_scope_step.js` 9. **Since #2220 session storage is asked beside it** (ASVS 5.0.0 3.1.1): `sessionStorageMissing(env)` writes, reads and removes a probe key, and each `start()` asks it right after `webCryptoMissing()` and draws `noStorageWords()` (`browser.noStorage.*`) where a sign-in could not keep its PKCE record; each entry hands its runtime `storageOf(window)`, which never throws where a browser refuses the property itself. Both problems carry `browserSupportHtml(t)`, the link to `WebDocLinks.browserSupport()`. `tests/browser_support.js` D. |
 | `web_messages.ts` | The formatter and translator (#539 phase 5), moved from `admin-ui/`. |
 | `web_locale.ts` (`WebLocale`) | Pure language code: `canonical()`, `partsOf()`, `acceptLanguage()`, `uiLocales()`, `preferences(inputs)` (#539's order from `{ uiLocales, own, chooser, acceptLanguage }`), `chainFor()`/`negotiate(prefs, lastResort, parts)` against a list of catalog parts, `catalogParts(index.catalogs)`, `safeReturn()`, and `chooserHtml(t, offered, parts, returnTo)`. **`i18n.ts` and `page_locale.ts` hand their work to it** (keeping their names and log lines), so the server and a browser negotiate with one copy; `tests/web_foundation.js` B holds the browser's negotiation over the SERVED index to the server's, and the chooser to the one drawn by hand before. |
 | `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `include(ns)` (#561) adds a namespace for the next `load()`, so the words of a control the service turns on are fetched only then. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
@@ -16218,14 +16351,17 @@ specification's endpoint is never converted**.
 | `web_nav_sections.ts` (`WebNavSections`) | **The collapsible navigation column the console and the portal share (#750, #1229).** `section()` draws one section as a `<details class="navsec" name="<group>" data-section="<key>">` with a `<summary class="navhead">` heading and the caller's `<li>`s, `current` marking the section that holds the page whether open or not; `initial(chosen, holding)` is the first drawing's choice (the section holding the page) and leaves any later one alone; `toggled(doc, selector, target, chosen)` answers a `toggle` (caught in the capture phase, since it does not bubble) with the reader's choice after it, closing the other open sections for a browser that predates the shared `name`; `css(accent, muted, inset)` and `narrowCss(accent, minWidth)` are the heading's rules in the caller's colours, read by `admin-ui/admin.ts` and `portal/web_portal_kit.ts`. Each runtime holds the choice (`openSection`), never storage. What each column lists, and its labels, stay its own. |
 | `web_doc_links.ts` (`WebDocLinks`) | The documentation link on every admin-console and user-portal page and tab (#895). A new screen owes its row here in the same change; `tests/doc_links.js` fails without it. Where it is drawn is in `admin-ui/CLAUDE.md` and `portal/CLAUDE.md`. |
 | `web_footer.ts` (`WebFooter`), `page_footer.ts` (`PageFooter`, server) | **The footer on every human-facing page (rcbj, 2026-11-14)**, modelled on the parent project's: Documentation, Contact and About (this service's site, issues and repository), the LinkedIn and GitHub icons as inline `<svg>` with `fill="currentColor"`, the copyright and the version with its build line in the `title`. `WebFooter.html(t, facts)` is the ONE markup builder and `WebFooter.CSS` the one rule set, served as `/web/footer.css` (`public_assets.ts`) and inlined in the error page's `<style>`; words from the `footer` namespace, which `WebI18n` loads for every surface and `i18n.catalogData()` gives the console and the portal. `PageFooter.html(t?)` is the server's half: `version.load()` and `version.buildInfo()` (`tests/version.js`), the UTC year, the ambient page's translator. **Two writers draw it**: `ShellDocument.document()`, at the end of every shell's body with the stylesheet linked last (`footer: false` turns it off, which only the RFC 4559 exchange's shell says), and `ErrorPage.document()`, below the diagnostics. **Each runtime draws it again** from the facts the shell's `<footer>` carries (`data-sts-footer-*`, `drawnIn()`), so a shell with none gets none: `WebSurface.put()`, `PortalRuntime.put()`, the console's three body renders, and the reports application's `redraw()` (it draws only `<main>`). A specification's document — the auto-POST forms, the OP iframe, the fragment page — is drawn by neither writer and has none (`page_footer.ts`'s header lists them); `tests/page_footer.js` holds both directions. |
-| `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
+| `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). Since #2220 `missing(navigator, window, call?)` and `missingText(t)` (`browser.noPasskeys`), asked before the portal's ceremonies and the console's passkey upgrade. |
+| `web_browser_check.ts` (`BrowserCheck`) | **The first script every shell runs (#2220), and the one `web_` module in ECMAScript 5**: `var` and functions, no class (ES5 has no class syntax and esbuild lowers none to it), bundled by `build-typescript.sh` with `--target=es5` into `common/browser-check.js` and served by `public_assets.ts` at `/web/browser-check.js`. `missing(w)` names `fetch`, `Promise`, `TextEncoder`, `TextDecoder`, `URL`, `URLSearchParams`, `history.pushState` and ECMAScript 2022 (`Object.hasOwn`, `Array.prototype.at` stand in, since `eval` is refused); `run()` shows the shell's notice, names what is missing, and marks `<html data-sts-unsupported="1">`, which every entry asks through `WebPage.browserFellShort(document)` before it starts — and listens until `DOMContentLoaded` for a `SyntaxError`, a bundle this browser cannot parse. It draws no words: the server drew them. `tests/browser_support.js` A, B. |
+| `web_clipboard.ts` (`WebClipboard`) | A Copy button's one copy (#2220): `copy()` through `navigator.clipboard`, falling back to a selected hidden text area and `execCommand('copy')` (the console's since its start), and `copyFrom()`, which says on the button in the page's language whether it copied (`browser.copied`, `browser.copyFailed`, and `copyFailed.hint` as the title). The console's and the portal's buttons. |
+| `web_page_state.ts` (`WebPageState`) | A page's forms' CHOICES across a sign-in that leaves it (#508's three functions, moved from the console by #2220): `keepsField()` (checkboxes, radios and selects only — never typed text, a password, a file, a hidden field or anything named for a secret), `formSnapshot()`, `restoreForms()`, and `save(env, key, facts)` / `take(env, key, facts)` around them, `take()` answering `none`, `other` (another person) or `restored`. The console keeps its own statics as delegates; the portal and the reports application save in `leaveForStepUp()` and put back after their callback. |
 | `web_limits_form.ts` (`WebLimitsForm`) | A right's limits as controls a person may lower (#576): the markup `limits_form.ts`'s `controls()` drew for GNAP's approval page, the portal's absent-owner approvals and the consent screen, moved here so the consent screen's renderer draws it in the browser from the rows its view carries. `LimitsForm.controls()` hands its work to it with `AccessLimits.rows()`; `lowered()`, which reads the controls back, stays on the server. English, as it always was. |
 | `web_outcome.ts` (`WebOutcome`) | The one renderer of an error or outcome page (#580): a heading, what was refused (`.bad`), why (a paragraph, or the steps' `.err` box), notes (`.meta`, markup the caller built) and the ways on, the ids the caller's. Words are the caller's — a refusal's English (#539's decision 6), escaped here. The federation pages' refusals and 404s draw through it, and the emailed factor's `end` page (#573) does to the bytes it drew before. |
 | `web_description.ts` (`WebDescription`), `web_description_pages.ts`, `web_description_surface.ts`, `description_pages.ts` (server) | The protocol families' description pages (#584): `/saml2`, `/saml11`, `/xacml`, `/ssf`, `/scim`, `/spiffe`, each a path no specification defines. The kit draws what the six share — a table, a list, a note, a link, and `rich()`/`linked()`, a catalog message whose sentence holds a link or a run of `<code>` (a raw slot between `\uE010`/`\uE011`, which no catalog may carry) — and each family's renderer is beside its server module (`saml/web_saml_description.ts`, `xacml/`, `ssf/`, `scim/`, `spiffe/`), words from a namespace of its own (`describeSaml2` … `describeSpiffe`), the description document's values English. `DescriptionPages` answers the JSON form (`asksForJson()`: the family's `?format=` where the query names one, else an `Accept` preferring JSON — the four documents to the byte as before, SAML's view new), the shell carrying the view, and the script. **ONE bundle, SIX paths**: the renderers are the small part of a runtime the six share, so one surface and one bundle (#570's decision 2), served at `<family>/description.js` because each family is a hosted application a realm may put on its own listener (#472); `/xacml`'s copy is behind the XACML gate, as the page is. |
 | `web_embedded_surface.ts` (`WebEmbeddedSurface extends WebSurface`) | The runtime of a surface whose every page is the SHELL'S (#583): the view read off `data-sts-state` and never fetched, a link left to the browser, the page drawn again from the view in hand when a language is chosen, `drawInPlace(view)` for what an act answered, and every form refused unless the subclass's `submit()` says how. `match(pages, path)` reads a row's `/:id`. It is `federation/web_federation_surface.ts`'s runtime (#580) with the federation taken out; the TLS diagnostic pages and the SPNEGO demonstration pages stood on it until #597 and #595 took them out of the runtime, and the three older embedded runtimes (the sign-in screen's embedded pages, GNAP's refusals, the federation pages) may move onto it. |
 | `web_qr.ts` (`WebQr`) | A QR code drawn in the browser as inline SVG, ISO/IEC 18004 byte mode (#589) — the portal's Credential Offer, and since #572 the set-up step's authenticator app (`otpauth:`); moved here from `portal/` by #572. |
 | `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. `STEP_CSS` (#572, #573), appended to it, is what the sign-in surface's steps drew in their own stylesheets: a notice, a warning, a code's wide field, the ways round a factor, the technical fold, the QR code.`VC_DEMO_CSS` (#582), the OpenID4VC demonstration's, left with it on #594. `DIAG_CSS` (#583), last, is what the TLS diagnostic pages (and, until #595 moved them to the companion, the SPNEGO ones) drew in their own server-drawn shells: a verdict's band, the PEM box, a list's indent, scoped to `.diag`, and the TLS page's wider card to `.tls`. |
-| `shell_document.ts` (`ShellDocument`, server) | `document(spec)` — doctype, `<html lang dir data-sts-*>` (an empty attribute left out), viewport, title, stylesheets, the deferred script, and in the body the `<noscript>` notice and a loading line, or a refusal and no script; `policy(app, { connect, csp })` and `serve(app, req, res, html, { connect, csp, compress, prefix })` — `no-store`, the CSP through `app.contentSecurityPolicy()` only, compressed with the realm's links put on first where asked; `acceptedEncoding()`, `sendCompressed()` (`AdminConsole.sendConsoleFile()` until #570), `readFile(dir, name, placeholder)` and `sendFile(req, res, file, type)` for a surface's built bundle and its `.br`/`.gz`. **`compressDocument(req, res)` (run 44544256231) is the one API answer compressed**: the two `/admin-api` OpenAPI documents, about 7 MB of JSON the console fetches before it sends a form. Over HTTP/2, Chrome sometimes stopped handing that body to the page 4 to 5 MB in, after this service had written all of it and closed the stream, while every other request on the connection was answered — the form waited for ever, which is a person's press doing nothing. It wraps `end()`, so the answer's model check and the call log still read the JSON; it is the caller's choice and never a size rule, because a document with no secret in it is what keeps BREACH out (the header). `tests/http2_large_body.js` E. The console's and the portal's shells go through it, held to the bytes they drew by hand (`tests/web_foundation.js` A). |
+| `shell_document.ts` (`ShellDocument`, server) | `document(spec)` — doctype, `<html lang dir data-sts-*>` (an empty attribute left out), viewport, title, stylesheets, the deferred script, and in the body the `<noscript>` notice and a loading line, or a refusal and no script; `policy(app, { connect, csp })` and `serve(app, req, res, html, { connect, csp, compress, prefix })` — `no-store`, the CSP through `app.contentSecurityPolicy()` only, compressed with the realm's links put on first where asked; `acceptedEncoding()`, `sendCompressed()` (`AdminConsole.sendConsoleFile()` until #570), `readFile(dir, name, placeholder)` and `sendFile(req, res, file, type)` for a surface's built bundle and its `.br`/`.gz`. **`compressDocument(req, res)` (run 44544256231) is the one API answer compressed**: the two `/admin-api` OpenAPI documents, about 7 MB of JSON the console fetches before it sends a form. Over HTTP/2, Chrome sometimes stopped handing that body to the page 4 to 5 MB in, after this service had written all of it and closed the stream, while every other request on the connection was answered — the form waited for ever, which is a person's press doing nothing. It wraps `end()`, so the answer's model check and the call log still read the JSON; it is the caller's choice and never a size rule, because a document with no secret in it is what keeps BREACH out (the header). `tests/http2_large_body.js` E. The console's and the portal's shells go through it, held to the bytes they drew by hand (`tests/web_foundation.js` A). **Since #2220** every shell also runs `/web/browser-check.js` (deferred, before its own script) and holds that check's notice HIDDEN after its opening markup (`#sts-browser-check`, `unsupportedNotice()`), and the `<noscript>` ends with `supportLink()`; all three in the request's language from the `browser` catalog, through `translator()` (`PageLocale.forPage()`) or the spec's `translator`, marked `lang`/`dir` where that is not the document's. A surface draws its `<noscript>` words with `said(t, key, english, params)`. `browserCheck: false` (the RFC 4559 exchange alone) draws none of it. `tests/browser_support.js` C, J. |
 | `public_assets.ts` (`PublicAssets`, server) | `/web/card.css`, `/web/locales/catalogs.json` and `/web/locales/<ns>/<catalog>.json`, from what `i18n.ts` loaded — **nothing read from disk by a requested name**, an unknown name a 404 (`STS-I18N-0012`), a known pair with no file `{}`. `?v=<build>` equal to this build's version is `immutable` for a year, anything else `no-cache`. `/web` is `EVERYWHERE` in `hosted_applications.js` and `local` in `cell_placement.ts`. Registered at 6a-web. |
 
 `PageLocale.shellAttributes(req, application)` answers the three language
@@ -17598,9 +17734,45 @@ the decisions (D1–D5) are on the issue; what a maintainer needs:
   `trustMaterial()`) and `tuf-root` (ONE root: TUF bootstraps from the
   first). `documentsFor()` reads a setting view's files through
   `readNamedFile()`, which asks `security.fileRoots`
-  (`tests/asvs_product_limits.js` looks for the rule there). TUF's state
+  (`tests/asvs_product_limits.js` looks for the rule there) and, since
+  #2247, is `OutboundTls.readNamedFile()`: checked and read through one
+  descriptor. TUF's state
   stays keyed on the repository and the root's BYTES, so a deployment that
   keeps the setting keeps its refreshed state.
 * **THE KIND CHECK** (`assignmentProblem()`, STS-PKI-0309) compares what a
   use case wants with what a truststore holds across every kind in
   `NOT_X509`; nothing stands in for anything else.
+
+## `key_renewal.ts`: THE RENEWALS NOTHING DID ON ITS OWN (#2220, 2026-11-25)
+
+Three jobs, the module deciding WHEN and the key's owner what a renewal IS,
+`signing_rotation.ts`'s split:
+
+* **`pki.ca-renew`** (service, daily, both modes, no Run now) calls
+  `pki.js`'s `renewCaCertificate()`: the SAME key and subject, a fresh
+  certificate signed by the parent (the Root by itself), top down, and only
+  inside the lead (`pki.rootRenewalLeadDays`, `pki.caRenewalLeadDays`, at most
+  half the CA's life) and only where the parent's expiry lets it gain. The
+  replaced certificate goes into the tier's `previous`, public only:
+  `pki_revocation.js`'s `issuedList()` keeps its serial known to the parent's
+  responder (paranoid PKI mode asks OCSP, and `unknown` would refuse), and the
+  Root's is served at `/pki/ca/service/root-previous.cer` until it expires, so
+  a Root renewal is published rather than swapped in. A pin on the key holds.
+  A re-key stays an on-demand act, in `admin-core/dual_control.ts`'s table.
+* **`keys.credential-signer-rotate`** (realm, hourly, product) moves a
+  dedicated credential signer family to its next generation
+  (`credential_signer.js`'s `rotateFamilyAsync()`, the distrust path's door);
+  the old generation stays in `trustedMembersOf()` and is never dropped.
+* **`keys.encryption-key-rotate`** (realm, hourly, product) calls
+  `helpers.rotateEncryptionKeys()`: a new generation of the key set whose
+  request object, OpenID4VCI and KEM keys are new, the old ones in
+  `generations.retiredEnc` (sealed with the set, `keystore.js`'s
+  `serialiseRetiredEncKeys()`) until `retiredUntil`, published nowhere and
+  tried by kid at the three decrypt sites (`request_object.ts`,
+  `assertion_grant.js`, `vc_issuer.ts`); `retireExpiredGenerations()` drops
+  them.
+
+**AGE IS COUNTED FROM FIRST SIGHT** (`keys.renewalClock`, a persisted global
+store of kid → instant), because neither kind of key records when it was
+made and a stored row is never changed. So the first run after an upgrade
+rotates nothing. `tests/key_renewal.js` A, D and E hold it.

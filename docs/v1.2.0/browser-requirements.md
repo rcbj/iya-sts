@@ -4,8 +4,30 @@ title: Browser requirements
 
 # Browser requirements
 
-This page is for an operator deciding which browsers their people can use,
-and for whoever answers "this page doesn't work in my browser". It lists the
+## For people using this service
+
+The sign-in pages, your account portal, the reports pages and the admin
+console run in your web browser. They work in a **current version** of any
+mainstream browser on a computer, phone or tablet. Your browser needs to:
+
+* **allow JavaScript** for this site;
+* open the page over **HTTPS** (an address starting `https://`);
+* **allow site data** for this site: cookies and session storage. Private
+  browsing and some privacy settings block it, and then you cannot sign in;
+* for **passkeys**, support WebAuthn, which every current browser does.
+
+If something is missing, the page says so in your language instead of
+staying blank. The page then shows "This browser cannot open this page",
+"This browser cannot sign you in here", or "This browser cannot use
+passkeys". Update your browser, or try another one. Some features use
+pop-up windows. If your browser blocks them, the page tells you and you can
+continue on the same page.
+
+## For operators
+
+The rest of this page is for an operator deciding which browsers their people
+can use, and for whoever answers "this page doesn't work in my browser". It
+lists the
 browser features that the admin console (`/admin`), the user portal
 (`/portal`), the reports application (`/report`) and the sign-in screens
 (`/authn/*`) depend on, and what a person sees when one is missing. It
@@ -21,16 +43,17 @@ matters is whether the browser has the feature.
 
 | Feature | Console, portal, reports | Sign-in screens | When it is missing |
 |---|---|---|---|
-| JavaScript (ECMAScript 2022) | Required | Required | The `<noscript>` notice, and nothing else |
+| JavaScript (ECMAScript 2022) | Required | Required | The `<noscript>` notice with scripts blocked; "This browser cannot open this page" in a browser too old to run them |
 | WebCrypto (`crypto.subtle`, `crypto.getRandomValues`) | Required | Not used | "This browser cannot open this page", and no sign-in starts |
 | A secure context (HTTPS) | Required, for WebCrypto | Recommended | As WebCrypto |
+| Strict-Transport-Security (HSTS) | Sent in product mode | Sent in product mode | A visit typed or linked as `http://` is not upgraded; the service answers no page over plain HTTP |
 | Content Security Policy | Required for protection | Required for protection | The pages still work, without that protection |
 | `SameSite` cookies | Used | Used | The session cookie is sent more widely; nothing breaks |
-| Fetch, Promises, `TextEncoder`, `URL` | Required | Required | The page does not load its content |
-| `sessionStorage` | Required for sign-in | Not used | Sign-in does not complete (see [Known gaps](#known-gaps)) |
-| `window.open` and `BroadcastChannel` | Used for a write that needs more permission | Not used | The browser leaves the page to get permission, and the pending change is lost |
+| Fetch, Promises, `TextEncoder`, `URL` | Required | Required | "This browser cannot open this page", naming what is missing |
+| `sessionStorage` | Required for sign-in | Not used | "This browser cannot sign you in here", and no sign-in starts |
+| `window.open` and `BroadcastChannel` | Used for a write that needs more permission | Not used | The browser leaves the page to get permission. The page's choices are kept; the pending change is not sent |
 | `Intl` | Used for plurals, numbers, dates and text direction | Used | English plural forms, plain numbers and ISO dates |
-| WebAuthn | Needed for passkeys | Needed for passkeys | A passkey cannot be used or enrolled |
+| WebAuthn | Needed for passkeys | Needed for passkeys | "This browser cannot use passkeys", and no ceremony starts |
 | Device Bound Session Credentials | Optional, off by default | Optional | The session stays an ordinary cookie session |
 | Reporting API | Optional | Optional | CSP violations are not reported by that browser |
 | `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy` | Sent | Sent, except COOP | The pages still work, without that isolation |
@@ -52,7 +75,37 @@ With scripts blocked, the page shows its `<noscript>` notice and nothing else:
 | Reports | "This page needs its script." |
 | Sign-in | **Sign in.** "This sign-in page is a script that runs in your browser, and with scripts blocked there is nothing it can show. Allow scripts for this page to sign in." |
 
-These notices are in English only.
+The front page, consent, the sign-out, GNAP's interaction pages, the
+federation pages and the protocol description pages have notices of the
+same kind. The server draws each notice in the request's language, chosen as
+it chooses every page's ([Languages and regions](languages.md)): the language
+chooser's cookie, `Accept-Language`, and the locale policy. Each notice ends
+with a link to [For people using this service](#for-people-using-this-service).
+
+### A browser too old for the scripts
+
+A browser can run JavaScript and still be too old for these pages. Every
+page's document therefore loads a small check, `/web/browser-check.js`,
+before its main script. The check is written in ECMAScript 5, so an old
+browser can run it (`common/web_browser_check.ts`). It asks for `fetch`,
+`Promise`, `TextEncoder`, `TextDecoder`, `URL`, `URLSearchParams`,
+`history.pushState`, and ECMAScript 2022. A script cannot test ECMAScript
+2022 syntax without `eval`, which the Content Security Policy refuses. So the
+check asks for `Object.hasOwn` and `Array.prototype.at`, which arrived in
+that edition. It also watches for a `SyntaxError` from the main script while
+the page loads.
+
+If something is missing, the check shows a notice that the server drew
+hidden, in the person's language:
+
+> **This browser cannot open this page**
+> This browser lacks features this page needs, so the page cannot be drawn.
+> Use a current version of your browser, or another browser. (fetch, URL)
+
+The names in brackets are what is missing. The notice links to
+[For people using this service](#for-people-using-this-service), and the
+page's main script does not start. Both scripts are this service's own files,
+under `script-src 'self'`; neither is inline.
 
 ## WebCrypto
 
@@ -76,6 +129,7 @@ sign-in starts and the page shows, in the person's language:
 > usually because the page was not opened over HTTPS or the browser is too
 > old.
 
+The message links to [For people using this service](#for-people-using-this-service).
 The sign-in screens use no WebCrypto.
 
 ## A secure context
@@ -86,9 +140,62 @@ HTTPS, or from `localhost`. A product deployment always serves HTTPS
 Nothing checks `window.isSecureContext` directly. A page opened over plain
 HTTP elsewhere fails the WebCrypto check above and shows the same message.
 
-The console's **Copy** buttons also use `navigator.clipboard`, which needs a
-secure context. Without it the console falls back to selecting the text and
-`document.execCommand('copy')`.
+The console's and the portal's **Copy** buttons use `navigator.clipboard`,
+which needs a secure context. Without it, or when the browser refuses it,
+they select the text and use `document.execCommand('copy')`
+(`common/web_clipboard.ts`). If that fails too, the button says **Copy
+failed** in the person's language, and its tooltip says to select the text
+and copy it by hand.
+
+## Strict-Transport-Security (HSTS)
+
+**What the service sends.** In product mode every response that arrives over
+TLS carries
+
+```
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+```
+
+which tells a browser to use only HTTPS for this host name, every port of
+it and, with `includeSubDomains`, every subdomain, for a year (RFC 6797
+section 6.1). `includeSubDomains` is `security.hstsIncludeSubDomains`, on by
+default in product mode; with it off the header carries `max-age` alone.
+`security.hstsPreload`, off by default, adds `preload` so the domain can be
+submitted to the browsers' built-in preload list, and is sent only while
+`includeSubDomains` is. Development mode sends no header. The plain-HTTP
+revocation and SCEP listener never sends it. [TLS](tls.md#strict-transport-security)
+has the settings and [Preloading](tls.md#preloading) what preloading commits
+the domain to.
+
+**Every current browser supports HSTS.** A browser that has seen the header
+turns an `http://` address for this host into `https://` before anything is
+sent, and refuses an untrusted certificate with no way to click through.
+
+**A browser without it, or one that has not yet seen the header, is not
+protected on that visit.** That is the first visit to the host, a visit after
+the year has run out or the browser's data was cleared, and every visit from
+a browser that does not implement HSTS, unless the host is on the preload
+list the browser ships with. An `http://` request then leaves in the clear,
+and someone on the network can answer it in the service's place (RFC 6797
+section 14.6, the bootstrap problem). What the service itself does with that
+request:
+
+* **It does not redirect.** In product mode the main port speaks TLS only (a
+  process with `global.https` off does not start), so a plain-HTTP request to
+  it gets no page and no redirect: the TLS handshake fails, the connection
+  closes, the browser shows its own connection error, and the service logs
+  the failed handshake. A person reaches the service by opening its
+  `https://` address.
+* **The plain-HTTP listener serves no pages.** It answers the revocation
+  endpoints (CRLs, OCSP) and SCEP only, whose messages are signed.
+* **A redirect from port 80 is the operator's.** If a load balancer or a CDN
+  in front of the service redirects `http://` to `https://`, that first
+  request still crosses the network in the clear; only HSTS, or preloading,
+  removes it.
+
+So tell people to use the `https://` address, not to type the host name
+alone, and consider [preloading](tls.md#preloading) if the whole registrable
+domain can commit to HTTPS.
 
 ## Content Security Policy
 
@@ -123,9 +230,10 @@ enabled for anyone to sign in.
 
 Every page loads its content with `fetch`, and uses Promises, `async` and
 `await`, `TextEncoder` and `TextDecoder`, `URL` and `URLSearchParams`, and
-`history.pushState` and `replaceState`. None of these is detected; a browser
-without one cannot draw the page. `AbortController` is used where present and
-skipped where not.
+`history.pushState` and `replaceState`. The browser check detects each of
+these before the page's script runs
+([A browser too old for the scripts](#a-browser-too-old-for-the-scripts)).
+`AbortController` is used where present and skipped where not.
 
 Downloads (CSV and file exports) use `Blob` and `URL.createObjectURL`. The
 portal's profile photo upload uses `FileReader`. QR codes are drawn in the
@@ -140,9 +248,19 @@ of hiding the ones that do not apply.
 
 At sign-in the console, the portal and the reports application keep the PKCE
 verifier, the `state` and the return address in `sessionStorage` until the
-browser comes back from `/oauth2/authorize`. Sign-in needs it. A browser that
-blocks it (some private-browsing modes and site-data settings) cannot complete
-sign-in, and no message says why ([Known gaps](#known-gaps)).
+browser comes back from `/oauth2/authorize`. Sign-in needs it. A browser can
+block it, for example in some private-browsing modes or with site data
+refused. So before anything else, beside the WebCrypto check, each
+application writes a test value to `sessionStorage` and reads it back
+(`common/web_spa_client.ts`, `sessionStorageMissing()`). If that fails, no
+sign-in starts, and the page shows, in the person's language:
+
+> **This browser cannot sign you in here**
+> This browser does not let this page use session storage, which signing in
+> needs. Private browsing and some privacy settings block it: allow site data
+> for this site, then reload the page.
+
+The message links to [For people using this service](#for-people-using-this-service).
 
 Other uses (the tab's account hint, the console's unsaved form, sign-out
 clean-up) are wrapped so that a missing `sessionStorage` is ignored.
@@ -164,14 +282,14 @@ What a person sees:
 | The browser blocked the window | A bar says "This change needs your permission. Open the window to give it.", with **Continue** (opens it again) and **Cancel** |
 | The window was refused | "Permission to make this change was not given: " and the reason |
 | A different account signed in | "That sign-in was another account, so nothing was sent." |
-| `window.open` or `BroadcastChannel` does not exist | The page leaves for the authorization page and comes back. The change that asked for permission is not sent and has to be made again. The console saves the page's state first; the portal and reports application do not |
+| `window.open` or `BroadcastChannel` does not exist | The page leaves for the authorization page and comes back. The change that asked for permission is not sent and has to be made again. First, each application saves the choices on the page: checkboxes, radio buttons and lists, never typed text or secrets (`common/web_page_state.ts`). When the page comes back for the same person, they are put back, with "You are signed in again. The choices on this page were put back, and nothing was sent: make the change again to send it." |
 
 The console also uses a window when a session needs signing in again:
 
 * With no `BroadcastChannel`: "This browser cannot hand a sign-in back from
   another window, so sign in on this page."
 * With the window blocked: "The sign-in window was blocked. Allow pop-ups for
-  this site, or sign in on this page." (English only.)
+  this site, or sign in on this page."
 * With no `window.open`, the page signs in by leaving and coming back.
 
 Two other channels, one keeping several tabs' account lists in step and one
@@ -211,9 +329,14 @@ origin only.
 * The WebAuthn Signal API, used to tell a credential manager about removed or
   renamed passkeys, is used where present and skipped where not.
 * **Console.** Enrolling a passkey for a person with no WebAuthn shows "This
-  browser cannot create a WebAuthn credential."
-* **Portal.** What the portal shows when WebAuthn is missing is not handled
-  explicitly ([Known gaps](#known-gaps)).
+  browser cannot create a WebAuthn credential." Upgrading a person's passkey
+  checks for WebAuthn before it starts, and shows "This browser cannot use
+  passkeys: WebAuthn is unavailable. Use a current browser, or another
+  device."
+* **Portal.** Before a passkey ceremony the portal checks for
+  `PublicKeyCredential` and `navigator.credentials`
+  (`common/web_webauthn.ts`, `missing()`). Without them it shows the same
+  sentence beside the ceremony, hides its button, and sends nothing.
 
 ## Device Bound Session Credentials (optional)
 
@@ -262,17 +385,11 @@ pending change adds `window.open` and `BroadcastChannel`.
 
 ## Known gaps
 
-| Gap | Where | What would close it |
-|---|---|---|
-| A blocked or missing `sessionStorage` breaks sign-in with no message | `admin-ui/web_runtime.ts:297`, `portal/web_portal_runtime.ts:309`, `report/web_report_pages.ts:1454` | Detect it before sign-in and show a message like the WebCrypto one |
-| The portal does not detect a missing WebAuthn before a passkey ceremony; what the person sees is not defined | `portal/web_portal_webauthn.ts:83`, `portal/web_portal_webauthn.ts:102` | Check `navigator.credentials` and say the browser cannot use passkeys |
-| The console's passkey upgrade ceremony (`navigator.credentials.get`) is not guarded | `admin-ui/web_runtime.ts:2753` | The same check as for `create` |
-| The `<noscript>` notices are English only | `admin-ui/admin.ts:4954`, `portal/portal.ts:294`, `report/report_app.ts:334`, `authn/authn.ts:16023` | Draw them from the page's language on the server |
-| The console's "sign-in window was blocked" message is English only | `admin-ui/web_runtime.ts:715` | A catalog key, as `reauth.noPopup` has |
-| Without `window.open` or `BroadcastChannel`, the portal and reports application lose the page state as well as the pending change | `portal/web_portal_runtime.ts:681`, `report/web_report_pages.ts:1654` | Save the state first, as the console does |
-| The portal's **Copy** does nothing, silently, without `navigator.clipboard` | `portal/web_portal_runtime.ts:1707` | The console's `execCommand('copy')` fallback, or a message |
-| `fetch`, `TextEncoder`, `URL` and ES2022 support are not detected; a browser without them shows a blank or partial page | `common/web_spa_client.ts:680`, `build-typescript.sh:186` | A first check, before the bundle runs, that names what is missing |
-| No browser-support statement is published to people (only this page, for operators) | `common/shell_document.ts` | A link from the WebCrypto and `<noscript>` notices to a support page |
+None are open. The gaps this page listed until #2220 are closed: the
+session-storage, WebAuthn, browser-too-old and pop-up messages, the
+translated `<noscript>` notices, the portal's and the reports application's
+page state, the portal's **Copy**, and the
+[statement for people](#for-people-using-this-service).
 
 ## Related
 
