@@ -20,5 +20,14 @@
   "accounts.refused.text": "L’API de gestion a répondu {status} pour le compte avec lequel cet onglet est connecté.",
   "policyName.required": "Un nom est obligatoire.",
   "noWebCrypto.title": "Ce navigateur ne peut pas ouvrir cette page",
-  "noWebCrypto.text": "Ce navigateur ne peut pas exécuter cette page en toute sécurité : WebCrypto n'est pas disponible, généralement parce que la page n'a pas été ouverte en HTTPS ou que le navigateur est trop ancien."
+  "noWebCrypto.text": "Ce navigateur ne peut pas exécuter cette page en toute sécurité : WebCrypto n'est pas disponible, généralement parce que la page n'a pas été ouverte en HTTPS ou que le navigateur est trop ancien.",
+  "step.pending": "Obtention de l’autorisation d’effectuer cette modification…",
+  "step.blocked": "Cette modification nécessite votre autorisation. Ouvrez la fenêtre pour la donner.",
+  "step.signIn": "Connectez-vous pour effectuer cette modification.",
+  "step.fresh": "Cette modification exige que vous vous reconnectiez.",
+  "step.open": "Continuer",
+  "step.cancel": "Annuler",
+  "step.refused": "L’autorisation d’effectuer cette modification n’a pas été accordée : ",
+  "step.other": "Cette connexion concernait un autre compte, donc rien n’a été envoyé.",
+  "step.failed": "L’autorisation d’effectuer cette modification n’a pas pu être obtenue."
 }

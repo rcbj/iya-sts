@@ -600,5 +600,14 @@
 "apps.reauthenticateNote": "每個登入連結都會要求您重新登入，以便您選擇要在該應用程式中使用的角色。",
 "apps.reauthenticateApply": "套用",
 "noWebCrypto.title": "此瀏覽器無法開啟此頁面",
-"noWebCrypto.text": "此瀏覽器無法安全地執行此頁面：WebCrypto 無法使用，通常是因為頁面未透過 HTTPS 開啟，或瀏覽器版本過舊。"
+"noWebCrypto.text": "此瀏覽器無法安全地執行此頁面：WebCrypto 無法使用，通常是因為頁面未透過 HTTPS 開啟，或瀏覽器版本過舊。",
+"step.pending": "正在取得進行此變更的權限…",
+"step.blocked": "此變更需要您的許可。請開啟視窗進行授權。",
+"step.signIn": "請登入以進行此變更。",
+"step.fresh": "此變更需要您重新登入。",
+"step.open": "繼續",
+"step.cancel": "取消",
+"step.refused": "未獲得進行此變更的權限：",
+"step.other": "該登入屬於另一個帳戶，因此未傳送任何內容。",
+"step.failed": "無法取得進行此變更的權限。"
 }

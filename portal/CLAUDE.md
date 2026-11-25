@@ -6,7 +6,10 @@
 (#446). `/portal` and every path under it answer one document
 (`portal.ts`), which loads `/portal/portal.js` — the runtime and every page's
 renderer — and `/portal/portal.css`. The runtime signs in as the PUBLIC client
-`sts-user-portal` (PKCE, `account:manage`, every token DPoP-bound to a key the
+`sts-user-portal` (PKCE, `account:read owner:read` since #2168 — the first
+write asks `account:manage` or `owner:write` by a second authorization,
+`common/CLAUDE.md` 3cl, and an owner's edit controls are drawn on
+`owner:read`, OWNER_WRITE being held on OWNER_READ's condition — every token DPoP-bound to a key the
 browser cannot export, held in memory), draws every page from an
 `/account-api` operation and sends every form to the operation that mirrors
 it. `account-api/CLAUDE.md` argues the API, its gate and its answer
