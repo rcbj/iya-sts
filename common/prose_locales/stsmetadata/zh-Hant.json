@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial：每張票證都攜帶已簽署的 PAC——登入資訊（KERB_VALIDATION_INFO，NDR）、用戶端資訊、UPN/DNS 資訊、屬性與請求者 SID。依第 2.8.2／2.8.3 節，TGT 有兩個簽章，服務票證有四個。krb5.pacClaims 開啟時（#493）會產生「用戶端宣告」（PAC_CLIENT_CLAIMS_INFO，2.11），從不壓縮；在其他領域的 PAC 中抵達的宣告緩衝區會被解碼（包括 XPRESS Huffman）並攜帶。不產生裝置資訊與「裝置」宣告。跨信任抵達的 PAC 在重新簽署前依第 4.1.2.2 節針對該信任邊界的規定進行 SID 篩選——捨棄裝置資訊，除非信任允許，否則捨棄宣告集——轉介的 PAC 以領域間金鑰簽署。"
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial：情境建立。InitialContextToken 封裝（Kerberos 機制 OID 與兩位元組權杖 ID）可讀可寫；AP-REQ 的 0x8003 驗證器總和檢查碼由接受端讀取（其旗標、相互驗證與委派），並由用戶端寫入；在要求相互驗證時回傳 AP-REP。MIC 權杖（第 4.2.6.1 節）對 SPNEGO 的 mechListMIC 進行簽章與驗證，存在接受端子金鑰時使用該子金鑰。缺少：通道繫結僅被回報，不與 TLS 通道比對；情境建立後，沒有任何介面交換 Wrap 權杖。"
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full——就單一機制而言：NegTokenInit（附樂觀的 mechToken）與 NegTokenResp 的全部四種 negState、雙向的 mechListMIC 及第 5 節關於何時必須使用它的規則，並能解碼 [MS-SPNG] 的 NegTokenInit2。實際上只提供 Kerberos——NTLM 能在用戶端的 mechTypes 清單中被辨識但從不被選擇，因為提供本服務無法執行的機制是一種用戶端會據以行動的謊言。無法驗證的 mechListMIC 會被「拒絕」，而不是警告：它就是防範降級的全部。"
@@ -122,6 +126,10 @@
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full——就請求與回應而言：簡寫類別名稱、簡短資料類型名稱、從 JSON 類型推斷資料類型（包括整數／雙精度的區別，這是從原始文字讀取的，因為 JSON.parse 已經把它丟棄了）、以陣列表示 bag、義務、建議與 PolicyIdentifierList。此設定檔未定義原則語法，因此原則仍為 XML。"
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial：原則集、原則與規則，連同其目標、條件、義務與建議，以與 XACML XML 相同的模型讀寫，因此無論原則以何種形式傳入，其決策結果皆相同。其他資料型別的常值寫為型別轉換（cast），屬性在使用前宣告，mustbepresent 與 issuer 依每次使用分別指定，高階函式以簡短名稱接收函式。可於 /admin/xacml 匯入，亦可透過 /admin-api/xacml 上的 import-alfa 匯入，且每個原則皆可以 ALFA 形式顯示。產生器寫出的內容，剖析器皆可讀取並作出相同的決策。缺少：巨集、命名空間範圍的建議以及跨檔案匯入會依名稱拒絕。ALFA 沒有一致性測試套件。"
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -543,6 +551,10 @@
     "en": "4cc6ee6c2a81e46e",
     "text": "minimal：兩個延伸中信賴方的那一半，因為本服務既不是用戶端也不是驗證器：credProtect（第 12.1 節）——通行金鑰原則的 credProtect 以 credentialProtectionPolicy 請求一個等級，enforceCredProtect 傳送 enforceCredentialProtectionPolicy，並拒絕驗證器資料回報較低等級的註冊（未回報即等級 1），該等級記錄在通行金鑰上；以及 minPinLength（第 12.4 節），在通行金鑰原則強制 PIN 長度時請求，並在註冊與登入時以其最小值約束。CTAP 的其餘部分一概不涉及：驗證器 API、PIN 協定、大型 blob 與憑證管理都屬於平台。"
   },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial，透過 WebAuthn 實作，而非作為獨立協定：於註冊時驗證 fido-u2f 證明格式（WebAuthn 第 8.6 節）；由管理員匯入至某人項目中的舊版 U2F 認證資訊（其金鑰控制代碼、P-256 公開金鑰與計數器），在 webauthn.u2fAppIds 指定該 AppID 之後，透過 appid 擴充功能於其 AppID 下使用，且僅用於第二因素步驟。缺少：U2F JavaScript API 以及原始 U2F 註冊與驗證訊息（這些由瀏覽器與金鑰互動，而非本服務），以及 AppID 與 Facet 的受信任 facet 清單。"
+  },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial，每次登入一個限定於來源的工作階段的伺服器端：Secure-Session-Registration 提供 ES256 與 RS256，註冊時的 dbsc+jwt 證明（檢查其 jwk、typ、alg 與 jti 並驗證簽章）與重新整理時的證明（以綁定金鑰驗證），帶有一個綁定 cookie 的 JSON 工作階段指示，403 與 Secure-Session-Challenge 的交換，以及 Sec-Secure-Session-Id。每個挑戰在整個叢集中只消耗一次。缺少：聯合工作階段（provider_key、well-known 文件）、限定於網站的工作階段與範圍規則、authorization 參數，以及讀取 Secure-Session-Skipped。預設關閉（authn.deviceBoundSessions）。"
@@ -787,6 +799,10 @@
     "en": "a2930bdb8ffe747d",
     "text": "partial：讀取 v6 與（RFC 4880）v4 可傳輸公開金鑰，驗證由其簽署金鑰作出的明文簽章，並將訊息加密至其加密金鑰，經典演算法透過 openpgp.js 完成。RFC 9980 複合金鑰在此讀取（見 rfc9980）。接受 Ed25519、Ed448、NIST 曲線上的 ECDSA 與 ECDH、X25519、X448 以及長度為 openpgp.minRsaBits 的 RSA；拒絕 DSA、ElGamal 與 Brainpool。缺少：簽署、解密、金鑰環、金鑰伺服器。"
   },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial，適用於 v4 金鑰（RFC 9580 已將其廢止，v6 金鑰遵循 rfc9580）：透過 openpgp.js 讀取附帶自我簽章的可傳輸公開金鑰，驗證由其簽章金鑰產生的明文簽章，並將訊息加密給其加密金鑰。簽章金鑰可為 Ed25519 上的 EdDSA，P-256、P-384 與 P-521 上的 ECDSA，或位元數達 openpgp.minRsaBits 的 RSA；加密金鑰可為 Curve25519 與 NIST 曲線上的 ECDH，或 RSA。DSA、ElGamal 與 Brainpool 會被拒絕。缺少：簽章、解密、金鑰環、金鑰伺服器。"
+  },
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial：登記時以及使用已儲存金鑰時的 ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 簽章，以及 ML-KEM-768+X25519 與 ML-KEM-1024+X448 加密。複合演算法計為後量子。openpgp.pqcOnly 只收窄登記。簽章的兩個部分由 common/crypto_impl/openpgp_pqc.js 核驗。缺少：SLH-DSA（演算法識別碼 32-34），且本服務不產生 RFC 9980 金鑰。openpgp.js 不解析這些金鑰。"
@@ -799,9 +815,33 @@
     "en": "5c1b77d839bd8cc2",
     "text": "partial：application/pkcs7-mime enveloped-data，即採 AES-256-CBC 內容加密的 CMS EnvelopedData。經典憑證使用 RSAES-OAEP（SHA-256）或 ECDH。ML-KEM 憑證（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：HKDF-SHA-256 與 AES-Wrap。無法封裝的執行環境不會改用經典演算法送出該訊息。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
   },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial，僅限傳送：寄往 ML-KEM 憑證（rfc9935）的 S/MIME 訊息在 KEMRecipientInfo（id-ori-kem 其他收件者資訊）中攜帶其內容加密金鑰：ML-KEM-512、ML-KEM-768 或 ML-KEM-1024，以 CMSORIforKEMOtherInfo 為輸入、使用 SHA-256 且不加鹽的 HKDF，以及 AES-128 或 AES-256 金鑰包裝，置於 AuthEnvelopedData（預設）或 EnvelopedData 中。缺少：解密 KEMRecipientInfo（本服務從不接收加密郵件）、ukm，以及任何其他 KEM 或金鑰衍生函式。"
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial：透過 id-alg-ml-kem 識別碼從 SubjectPublicKeyInfo 或憑證中讀取 ML-KEM-512、ML-KEM-768 或 ML-KEM-1024 公開金鑰，並要求參數省略、金鑰長度符合 FIPS 203 的規定。個人的金鑰由領域（realm）的 EST Issuing CA 簽發憑證，keyEncipherment 為其唯一的金鑰用途，簽發前須透過封裝完成只有私密金鑰才能回應的持有證明；該憑證作為 S/MIME 收件者憑證（rfc9629）。缺少：私密金鑰格式（本服務從不持有 ML-KEM 私密金鑰），以及用於本服務自身金鑰的 ML-KEM 憑證。"
+  },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
     "text": "partial：進階與直接兩種查詢方式（對轉為小寫的本機部分計算 SHA-1 並以 z-base-32 編碼，l 參數）以及政策檔案，僅為選擇發布者回應，依領域設定且預設關閉。缺少：Web Key Service（submission-address、提交協定）；CORS 採用本服務的允許清單，而非草案的 *。"
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial，作為呼叫模組的應用程式（任何 PKCS #11 v2.40 或更新版本；已試用 YubiHSM 2 與 SoftHSM2）：一把不可匯出的 AES-256 金鑰加密金鑰，在權杖內部包裝與解除包裝每把資料金鑰（CKM_AES_GCM、CKM_AES_KEY_WRAP_PAD 或 CKM_YUBICO_AES_CCM_WRAP）；以及在權杖中產生並使用的領域簽章金鑰：RSA PKCS #1 v1.5 與 PSS，P-256、P-384、P-521 與 secp256k1 上的 ECDSA，以及 EdDSA，同一組金鑰亦用於 RSA-OAEP 解密與 ECDH 衍生。3.2 版的 CKM_ML_DSA 與 CKM_SLH_DSA 僅在權杖列出它們時使用；否則這些簽章仍在軟體中完成。工作階段依執行緒劃分，模組在中斷後會重新初始化一次。缺少：本服務本身並非模組，不會將任何金鑰匯入權杖，也不會從權杖匯出任何金鑰。"
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial：URI 指定權杖與金鑰加密金鑰，或簽章金鑰所在的權杖。支援 token、object、id（百分比編碼的位元組）、serial 與 slot-id 路徑屬性，第 2.3 節的其他屬性會被接受但忽略，module-path 查詢屬性僅為該金鑰選擇模組。pin-value 與 pin-source 會被拒絕：PIN 由 keys.pkcs11PinProvider 提供，絕不放在 URI 中。缺少：type、manufacturer、model 與程式庫屬性不會縮小比對範圍，且不讀取 module-name。"
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial：每個領域的使用者 CA 為 ssh-ed25519、ECDSA、RSA 以及兩種 sk- 安全金鑰類型簽發 -cert-v01@openssh.com 使用者憑證，依 pki.sshUserCaAlgorithms 指定的順序使用 ssh-ed25519、ecdsa-sha2-nistp256/384/521 或 rsa-sha2-256/512 簽章，主體名稱（principals）取自個人自己的項目，附帶領域的擴充且不含關鍵選項，僅在硬體證據經過驗證時才給予較長的有效期限。CA 金鑰發布於 /pki/ssh-user-ca/{scope}。主機憑證僅被讀取與檢查，不予簽發。ssh-mldsa-65 是本服務定義的金鑰類型，因為 OpenSSH 沒有此類類型，標準 OpenSSH 無法驗證它。缺少：主機憑證，以及 DSA 金鑰的憑證。"
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial：每個領域位於 /pki/ssh-user-krl/{scope} 的 KRL 在憑證遭撤銷或硬體權杖被回報遺失時由排程工作重建，其中為每把 CA 金鑰包含一個附序號清單的憑證區段，以及已撤銷金鑰的 SHA-256 指紋。它既會被寫入，也會被讀回。缺少：簽章區段（KRL 未經簽章，因此僅在主要連接埠上提供），以及 key-id 清單、序號範圍與點陣圖、明確金鑰與 SHA-1 指紋。"
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",

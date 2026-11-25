@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial : chaque ticket porte un PAC signé — informations d’ouverture de session (KERB_VALIDATION_INFO, NDR), informations client, informations UPN/DNS, attributs et SID du demandeur. Un TGT reçoit deux signatures et un ticket de service quatre, selon les sections 2.8.2/2.8.3. Les REVENDICATIONS CLIENT (PAC_CLIENT_CLAIMS_INFO, 2.11) sont produites tant que krb5.pacClaims est activé (#493), jamais compressées ; les tampons de revendications arrivant dans le PAC d’un autre royaume sont décodés (XPRESS Huffman compris) et transportés. Les informations d’appareil et les revendications d’APPAREIL ne sont pas produites. Un PAC arrivant à travers une approbation est FILTRÉ PAR SID comme le dit la section 4.1.2.2 pour la frontière de l’approbation avant d’être re-signé — informations d’appareil supprimées, ensemble de revendications supprimé sauf si l’approbation l’autorise — et le PAC d’un renvoi est signé avec la clé inter-royaumes."
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial : établissement du contexte. Le cadrage InitialContextToken (l'OID du mécanisme Kerberos et les identifiants de jeton sur deux octets) est lu et écrit, la somme de contrôle d'authentificateur 0x8003 de l'AP-REQ est lue par l'accepteur (ses indicateurs, l'authentification mutuelle et la délégation) et écrite côté client, et un AP-REP est renvoyé lorsque l'authentification mutuelle est demandée. Les jetons MIC (section 4.2.6.1) signent et vérifient le mechListMIC de SPNEGO, sous la sous-clé de l'accepteur lorsqu'il y en a une. Manquant : les liaisons de canal sont signalées, mais pas comparées au canal TLS, et aucune interface n'échange de jetons Wrap une fois le contexte établi."
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full pour un seul mécanisme : NegTokenInit (avec le mechToken optimiste) et NegTokenResp dans les quatre negState, le mechListMIC dans les deux sens avec la règle de la section 5 sur le moment où il est obligatoire, et le NegTokenInit2 de [MS-SPNG] décodé. Seul Kerberos est effectivement proposé — NTLM est reconnu dans la liste mechTypes d’un client et jamais sélectionné, car proposer un mécanisme que ce service ne peut pas exécuter serait un mensonge sur lequel un client agirait. Un mechListMIC qui ne se vérifie pas entraîne un REJET, pas un avertissement : c’est toute la défense contre la rétrogradation."
@@ -122,6 +126,10 @@
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full pour la requête et la réponse : les noms abrégés des catégories, les noms courts des types de données, l’inférence du type de données à partir du type JSON (y compris la distinction entier/double, lue dans le texte source parce que JSON.parse l’a déjà perdue), les tableaux comme sacs (bags), les obligations, les conseils et la PolicyIdentifierList. Le profil ne définit aucune syntaxe de politique ; les politiques restent donc en XML."
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial : ensembles de politiques, politiques et règles avec leurs cibles, conditions, obligations et conseils (advice), lus et écrits sur le même modèle que le XML XACML, de sorte qu'une politique décide de la même façon quelle que soit la forme sous laquelle elle est arrivée. Les littéraux des autres types de données sont écrits sous forme de conversions (casts), un attribut est déclaré avant d'être utilisé, mustbepresent et issuer sont indiqués à chaque utilisation, et une fonction d'ordre supérieur prend une fonction par son nom court. Importé via /admin/xacml et par import-alfa sur /admin-api/xacml, et toute politique peut être affichée en ALFA. Ce que l'émetteur écrit, l'analyseur le lit et décide à l'identique. Manquant : les macros, les conseils (advice) au niveau de l'espace de noms et les imports entre fichiers sont refusés nommément. ALFA n'a pas de suite de conformité."
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -543,6 +551,10 @@
     "en": "4cc6ee6c2a81e46e",
     "text": "minimal : la moitié partie de confiance de deux extensions, puisque ce service n’est ni un client ni un authentificateur : credProtect (section 12.1) — le credProtect de la politique des clés d’accès demande un niveau en tant que credentialProtectionPolicy, enforceCredProtect envoie enforceCredentialProtectionPolicy et refuse un enregistrement dont les données d’authentificateur signalent un niveau inférieur (aucun signalement vaut le niveau 1), et le niveau est enregistré sur la clé d’accès ; et minPinLength (section 12.4), demandé tant que la politique des clés d’accès impose une longueur de PIN et tenu à son minimum à l’enregistrement et à la connexion. Rien d’autre de CTAP : l’API de l’authentificateur, les protocoles PIN, les grands blobs et la gestion des identifiants relèvent de la plateforme."
   },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial, via WebAuthn plutôt que comme protocole à part entière : le format d'attestation fido-u2f est vérifié à l'enregistrement (WebAuthn section 8.6), et un identifiant U2F hérité (son key handle, sa clé publique P-256 et son compteur) importé par un administrateur dans l'entrée d'une personne est utilisé sous son AppID via l'extension appid, uniquement lors d'une étape de second facteur, dès que webauthn.u2fAppIds nomme cet AppID. Manquant : l'API JavaScript U2F et les messages bruts d'enregistrement et d'authentification U2F (c'est un navigateur qui les échange avec la clé, pas ce service), ainsi que la liste des facettes de confiance AppID et Facet."
+  },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial, le côté serveur d’une session limitée à l’origine par authentification unique : Secure-Session-Registration proposant ES256 et RS256, la preuve dbsc+jwt à l’enregistrement (son jwk, son typ, son alg et son jti vérifiés et la signature contrôlée) et au renouvellement (vérifiée avec la clé liée), les instructions de session JSON avec un seul cookie lié, l’échange 403 et Secure-Session-Challenge, et Sec-Secure-Session-Id. Chaque défi n’est consommé qu’une fois pour le cluster. Manquent : les sessions fédérées (provider_key, le document well-known), les sessions limitées au site et les règles de portée, le paramètre authorization, et la lecture de Secure-Session-Skipped. Désactivé par défaut (authn.deviceBoundSessions)."
@@ -787,6 +799,10 @@
     "en": "a2930bdb8ffe747d",
     "text": "partial : lecture d'une clé publique transférable, v6 et (RFC 4880) v4, vérification d'une signature en clair par l'une de ses clés de signature et chiffrement d'un message pour sa clé de chiffrement, Les algorithmes classiques passent par openpgp.js. Les composites RFC 9980 sont lus ici (voir rfc9980). Ed25519, Ed448, ECDSA et ECDH sur les courbes NIST, X25519, X448 et RSA d'au moins openpgp.minRsaBits sont acceptés ; DSA, ElGamal et Brainpool sont refusés. Manquent : la signature, le déchiffrement, un trousseau, un serveur de clés."
   },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial, pour les clés v4 (la RFC 9580 la rend obsolète, et une clé v6 suit rfc9580) : une clé publique transférable lue avec ses auto-signatures, une signature en clair vérifiée par sa clé de signature, et un message chiffré vers sa clé de chiffrement, au moyen d'openpgp.js. Les clés de signature peuvent être EdDSA sur Ed25519, ECDSA sur P-256, P-384 et P-521, ou RSA de openpgp.minRsaBits ; les clés de chiffrement ECDH sur Curve25519 et les courbes NIST, ou RSA. DSA, ElGamal et Brainpool sont refusés. Manquant : la signature, le déchiffrement, un trousseau de clés, un serveur de clés."
+  },
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial : signatures ML-DSA-65+Ed25519 et ML-DSA-87+Ed448, et chiffrement ML-KEM-768+X25519 et ML-KEM-1024+X448, à l’enregistrement et lorsqu’une clé déjà enregistrée est utilisée. Un composite compte comme post-quantique. openpgp.pqcOnly ne restreint que l’enregistrement. Les deux moitiés d’une signature sont vérifiées par common/crypto_impl/openpgp_pqc.js. Manquent : SLH-DSA (identifiants d’algorithme 32-34), et ce service ne génère pas de clé RFC 9980. openpgp.js n’analyse pas ces clés."
@@ -799,9 +815,33 @@
     "en": "5c1b77d839bd8cc2",
     "text": "partial : application/pkcs7-mime enveloped-data, un CMS EnvelopedData avec chiffrement du contenu en AES-256-CBC. Un certificat classique utilise RSAES-OAEP (SHA-256) ou ECDH. Un certificat ML-KEM (RFC 9935) utilise KEMRecipientInfo (RFC 9629) : HKDF-SHA-256 et AES-Wrap. Un moteur qui ne peut pas encapsuler n’envoie pas le message sous un algorithme classique. Manquent : signed-data, AuthEnvelopedData (AES-GCM), le déchiffrement."
   },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial, en émission uniquement : un message S/MIME destiné à un certificat ML-KEM (rfc9935) transporte sa clé de chiffrement de contenu dans un KEMRecipientInfo (l'other recipient info id-ori-kem) : ML-KEM-512, ML-KEM-768 ou ML-KEM-1024, HKDF avec SHA-256 sur CMSORIforKEMOtherInfo et sans sel, et enveloppement de clé AES-128 ou AES-256, dans AuthEnvelopedData (par défaut) ou EnvelopedData. Manquant : le déchiffrement d'un KEMRecipientInfo (ce service ne reçoit jamais de courrier chiffré), l'ukm, et toute autre fonction KEM ou de dérivation de clé."
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial : une clé publique ML-KEM-512, ML-KEM-768 ou ML-KEM-1024 est lue à partir d'un SubjectPublicKeyInfo ou d'un certificat par son identifiant id-alg-ml-kem, et contrainte à des paramètres absents et à la longueur de clé fixée par FIPS 203. La clé d'une personne est certifiée par l'EST Issuing CA du royaume avec keyEncipherment comme seul usage de clé, après une preuve de possession par encapsulation à laquelle seule la clé privée peut répondre, et le certificat est un destinataire S/MIME (rfc9629). Manquant : les formats de clé privée (ce service ne détient jamais de clé privée ML-KEM) et les certificats ML-KEM pour les propres clés de ce service."
+  },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
     "text": "partial : les méthodes de recherche avancée et directe (le SHA-1 en z-base-32 de la partie locale en minuscules, le paramètre l) et le fichier de politique, avec réponse pour les personnes ayant accepté, par domaine de confiance et désactivé par défaut. Manque : le Web Key Service (submission-address, le protocole de soumission) ; CORS suit la liste d'autorisation de ce service plutôt que le * du projet de spécification."
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial, en tant qu'application appelant un module (tout PKCS #11 v2.40 ou ultérieur ; YubiHSM 2 et SoftHSM2 sont ceux qui ont été essayés) : une clé de chiffrement de clés AES-256 non extractible qui enveloppe et désenveloppe chaque clé de données à l'intérieur du jeton (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD ou CKM_YUBICO_AES_CCM_WRAP), et les clés de signature d'un royaume générées et utilisées sur place : RSA PKCS #1 v1.5 et PSS, ECDSA sur P-256, P-384, P-521 et secp256k1, et EdDSA, avec déchiffrement RSA-OAEP et dérivation ECDH par ces mêmes clés. Les mécanismes CKM_ML_DSA et CKM_SLH_DSA de la version 3.2 ne sont utilisés que lorsque le jeton les répertorie ; sinon, ces signatures restent logicielles. Les sessions sont propres à chaque thread, et un module est réinitialisé une fois après une panne. Manquant : ce service n'est pas lui-même un module, n'importe aucune clé dans un jeton et n'en exporte aucune."
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial : un URI désigne le jeton et la clé de chiffrement de clés, ou le jeton des clés de signature. Les attributs de chemin token, object, id (octets encodés en pourcentage), serial et slot-id sont pris en compte, les autres attributs de la section 2.3 sont acceptés et ignorés, et l'attribut de requête module-path choisit le module pour cette clé seule. pin-value et pin-source sont refusés : un PIN est fourni par keys.pkcs11PinProvider, jamais dans un URI. Manquant : type, manufacturer, model et les attributs library ne restreignent pas la correspondance, et module-name n'est pas lu."
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial : la CA utilisateur de chaque royaume émet des certificats utilisateur -cert-v01@openssh.com pour ssh-ed25519, ECDSA, RSA et les deux types de clés de sécurité sk-, signés avec ssh-ed25519, ecdsa-sha2-nistp256/384/521 ou rsa-sha2-256/512 dans l'ordre indiqué par pki.sshUserCaAlgorithms, avec des principals issus de l'entrée propre de la personne, les extensions du royaume et aucune option critique, et une durée de vie plus longue uniquement en cas de preuve matérielle vérifiée. La clé de la CA est publiée à /pki/ssh-user-ca/{scope}. Un certificat d'hôte est lu et vérifié, mais pas émis. ssh-mldsa-65 est un type de clé défini par ce service, car OpenSSH n'en a pas, et OpenSSH standard ne peut pas le vérifier. Manquant : les certificats d'hôte et les certificats pour les clés DSA."
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial : la KRL de chaque royaume à /pki/ssh-user-krl/{scope}, reconstruite par une tâche planifiée lorsqu'un certificat est révoqué ou qu'un jeton matériel est déclaré perdu, contient une section de certificats par clé de CA avec une liste de numéros de série, ainsi que les empreintes SHA-256 des clés révoquées. Elle est relue aussi bien qu'écrite. Manquant : une section de signature (la KRL n'est pas signée, c'est pourquoi elle n'est servie que sur le port principal), ainsi que les listes de key-id, les plages et bitmaps de numéros de série, les clés explicites et les empreintes SHA-1."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",

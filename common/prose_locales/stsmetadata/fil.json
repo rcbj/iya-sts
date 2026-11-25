@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial: bawat ticket ay may dalang signed PAC — logon information (KERB_VALIDATION_INFO, NDR), client info, UPN/DNS info, mga attribute at ang requestor SID. Dalawang signature ang nakukuha ng TGT at apat ang service ticket, ayon sa section 2.8.2/2.8.3. Ginagawa ang mga CLIENT CLAIM (PAC_CLIENT_CLAIMS_INFO, 2.11) habang naka-on ang krb5.pacClaims (#493), hindi kailanman naka-compress; dine-decode (kasama ang XPRESS Huffman) at dinadala ang mga claims buffer na dumarating sa PAC ng ibang realm. Hindi ginagawa ang device info at mga DEVICE claim. Ang PAC na dumarating sa kabila ng isang trust ay SID-FILTERED ayon sa sinasabi ng seksyon 4.1.2.2 para sa boundary ng trust bago ito muling i-sign — inaalis ang device info, inaalis ang claims set maliban kung pinapayagan ito ng trust — at sina-sign ang PAC ng isang referral gamit ang inter-realm key."
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial: pagtatatag ng context. Ang framing ng InitialContextToken (ang OID ng Kerberos mechanism at ang dalawang-byte na token id) ay binabasa at isinusulat, ang 0x8003 authenticator checksum ng AP-REQ ay binabasa ng acceptor (ang mga flag nito, mutual authentication at delegation) at isinusulat ng client side, at ibinabalik ang isang AP-REP kapag hinihingi ang mutual authentication. Ang mga MIC token (seksiyon 4.2.6.1) ay pumipirma at nagbe-verify ng mechListMIC ng SPNEGO, sa ilalim ng subkey ng acceptor kapag mayroon nito. Kulang: ang mga channel binding ay iniuulat, hindi inihahambing sa TLS channel, at walang surface na nagpapalitan ng mga Wrap token kapag naitatag na ang context."
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full para sa iisang mechanism: NegTokenInit (kasama ang optimistic mechToken) at NegTokenResp sa lahat ng apat na negState, ang mechListMIC sa magkabilang direksyon kasama ang patakaran ng section 5 kung kailan ito mandatoryo, at dine-decode ang NegTokenInit2 ng [MS-SPNG]. Kerberos lang ang talagang inaalok — kinikilala ang NTLM sa listahan ng mechTypes ng client at hindi kailanman pinipili, dahil ang pag-aalok ng mechanism na hindi kayang gawin ng serbisyong ito ay kasinungalingang pagbabatayan ng client. Ang mechListMIC na hindi nagve-verify ay REJECT, hindi babala: ito ang buong depensa laban sa downgrade."
@@ -122,6 +126,10 @@
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full para sa request at response: ang mga shorthand na pangalan ng category, ang maiikling pangalan ng datatype, datatype inference mula sa JSON type (kasama ang pagkakaiba ng integer/double, na binabasa mula sa source text dahil itinapon na ito ng JSON.parse), mga array bilang bag, mga obligation, advice at ang PolicyIdentifierList. Walang policy syntax na itinatakda ang profile, kaya nananatiling XML ang mga policy."
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial: mga policy set, policy at rule kasama ang kanilang mga target, condition, obligation at advice, binabasa at isinusulat sa parehong modelo ng XACML XML, kaya pareho ang pasya ng isang policy anuman ang anyong pinanggalingan nito. Ang mga literal ng ibang datatype ay isinusulat bilang cast, idinedeklara ang isang attribute bago ito gamitin, ibinibigay ang mustbepresent at issuer sa bawat paggamit, at ang isang higher-order function ay tumatanggap ng function ayon sa maikling pangalan nito. Ini-import sa /admin/xacml at ng import-alfa sa /admin-api/xacml, at bawat policy ay maaaring ipakita bilang ALFA. Ang isinusulat ng emitter ay binabasa ng parser at pareho ang pasya. Kulang: ang mga macro, advice sa saklaw ng namespace at mga import sa pagitan ng mga file ay tinatanggihan ayon sa pangalan. Walang conformance suite ang ALFA."
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -543,6 +551,10 @@
     "en": "4cc6ee6c2a81e46e",
     "text": "minimal: ang kalahati ng relying party sa dalawang extension, dahil hindi client o authenticator ang serbisyong ito: credProtect (section 12.1) — humihingi ng antas ang credProtect ng passkey policy bilang credentialProtectionPolicy, nagpapadala ang enforceCredProtect ng enforceCredentialProtectionPolicy at tinatanggihan ang pagrehistro na ang authenticator data ay nag-uulat ng mas mababang antas (ang walang ulat ay antas 1), at itinatala ang antas sa passkey; at minPinLength (section 12.4), hinihingi habang nagpapatupad ang passkey policy ng haba ng PIN at hinahawakan sa minimum nito sa pagrehistro at sa pag-sign in. Wala nang iba pa sa CTAP: ang authenticator API, ang mga PIN protocol, ang malalaking blob at ang pamamahala ng kredensyal ay sa platform."
   },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial, sa pamamagitan ng WebAuthn sa halip na bilang sariling protocol: ang fido-u2f attestation format ay vine-verify sa registration (WebAuthn seksiyon 8.6), at ang isang legacy U2F credential (ang key handle nito, P-256 public key at counter) na in-import ng isang administrator sa entry ng isang tao ay ginagamit sa ilalim ng AppID nito sa pamamagitan ng appid extension, sa second-factor step lamang, sa sandaling pangalanan ng webauthn.u2fAppIds ang AppID na iyon. Kulang: ang U2F JavaScript API at ang mga raw na U2F registration at authentication message (ang browser ang gumagamit ng mga ito sa pakikipag-usap sa key, hindi ang serbisyong ito), at ang trusted-facets list ng AppID and Facet."
+  },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial, ang panig ng server ng isang origin-scoped na session bawat sign-on: Secure-Session-Registration na nag-aalok ng ES256 at RS256, ang dbsc+jwt na proof sa registration (sinuri ang jwk, typ, alg at jti nito at vine-verify ang signature) at sa refresh (vine-verify gamit ang bound key), ang JSON na session instructions na may iisang bound cookie, ang palitan ng 403 at Secure-Session-Challenge, at Sec-Secure-Session-Id. Bawat challenge ay ginagastos nang isang beses para sa buong cluster. Kulang: mga federated session (provider_key, ang well-known na dokumento), mga site-scoped na session at scope rule, ang authorization na parameter, at ang pagbasa ng Secure-Session-Skipped. Naka-off bilang default (authn.deviceBoundSessions)."
@@ -787,6 +799,10 @@
     "en": "a2930bdb8ffe747d",
     "text": "partial: pagbasa ng transferable public key, v6 at (RFC 4880) v4, pag-verify ng cleartext signature ng isang signing key nito, at pag-encrypt ng mensahe sa encryption key nito, Ang mga classical na algorithm ay dumadaan sa openpgp.js. Ang mga composite ng RFC 9980 ay binabasa rito (tingnan ang rfc9980). Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa mga NIST curve, X25519, X448 at RSA na openpgp.minRsaBits; tinatanggihan ang DSA, ElGamal at Brainpool. Kulang: pagpirma, decryption, keyring, keyserver."
   },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial, para sa mga v4 key (pinalitan ito ng RFC 9580, at ang v6 key ay sumusunod sa rfc9580): isang transferable public key na binabasa kasama ang mga self-signature nito, isang cleartext signature ng signing key nito na vine-verify, at isang mensaheng ine-encrypt sa encryption key nito, sa pamamagitan ng openpgp.js. Ang mga signing key ay maaaring EdDSA sa Ed25519, ECDSA sa P-256, P-384 at P-521, o RSA na openpgp.minRsaBits; ang mga encryption key ay ECDH sa Curve25519 at sa mga NIST curve, o RSA. Tinatanggihan ang DSA, ElGamal at Brainpool. Kulang: pag-sign, decryption, keyring, keyserver."
+  },
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial: mga pirma ng ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, at pag-encrypt ng ML-KEM-768+X25519 at ML-KEM-1024+X448, sa pagrehistro at kapag ginamit ang isang nakaimbak na key. Ang composite ay post-quantum. Nililimitahan ng openpgp.pqcOnly ang pagrehistro lamang. Ang parehong hati ng isang pirma ay sine-verify ng common/crypto_impl/openpgp_pqc.js. Kulang: SLH-DSA (mga algorithm id 32-34), at hindi bumubuo ang serbisyong ito ng key na RFC 9980. Hindi binibigyang-kahulugan ng openpgp.js ang mga key na ito."
@@ -799,9 +815,33 @@
     "en": "5c1b77d839bd8cc2",
     "text": "partial: application/pkcs7-mime enveloped-data, isang CMS EnvelopedData na may AES-256-CBC na content encryption. Ang classical na sertipiko ay gumagamit ng RSAES-OAEP (SHA-256) o ECDH. Ang sertipiko ng ML-KEM (RFC 9935) ay gumagamit ng KEMRecipientInfo (RFC 9629): HKDF-SHA-256 at AES-Wrap. Ang runtime na hindi makapag-encapsulate ay hindi nagpapadala ng mensahe sa ilalim ng classical na algorithm. Kulang: signed-data, AuthEnvelopedData (AES-GCM), decryption."
   },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial, pagpapadala lamang: ang isang S/MIME message sa isang ML-KEM certificate (rfc9935) ay nagdadala ng content-encryption key nito sa isang KEMRecipientInfo (ang id-ori-kem na other recipient info): ML-KEM-512, ML-KEM-768 o ML-KEM-1024, HKDF na may SHA-256 sa CMSORIforKEMOtherInfo at walang salt, at AES-128 o AES-256 key wrap, sa AuthEnvelopedData (ang default) o EnvelopedData. Kulang: pag-decrypt ng isang KEMRecipientInfo (hindi kailanman tumatanggap ang serbisyong ito ng naka-encrypt na mail), ang ukm, at anumang ibang KEM o key-derivation function."
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial: ang isang ML-KEM-512, ML-KEM-768 o ML-KEM-1024 public key ay binabasa mula sa isang SubjectPublicKeyInfo o isang certificate ayon sa id-alg-ml-kem identifier nito at kinakailangang walang parameter at may haba ng key na itinakda ng FIPS 203. Ang key ng isang tao ay sine-certify ng EST Issuing CA ng realm na may keyEncipherment bilang tanging key usage nito, matapos ang isang proof of possession sa pamamagitan ng encapsulation na tanging ang private key ang makasasagot, at ang certificate ay isang S/MIME recipient (rfc9629). Kulang: ang mga format ng private key (hindi kailanman humahawak ang serbisyong ito ng ML-KEM private key) at mga ML-KEM certificate para sa sariling mga key ng serbisyong ito."
+  },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
     "text": "partial: ang advanced at ang direct lookup method (ang z-base-32 ng SHA-1 ng local part na naka-lowercase, ang l parameter) at ang policy file, sinasagot para sa mga taong pumayag, bawat realm at naka-off bilang default. Kulang: ang Web Key Service (submission-address, ang submission protocol); ang CORS ay ang allowlist ng serbisyong ito sa halip na ang * ng draft."
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial, bilang isang application na tumatawag sa isang module (anumang PKCS #11 v2.40 o mas bago; ang YubiHSM 2 at SoftHSM2 ang mga nasubukan): isang non-extractable na AES-256 key-encryption key na nagwa-wrap at nag-a-unwrap ng bawat data key sa loob ng token (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD o CKM_YUBICO_AES_CCM_WRAP), at ang mga signing key ng isang realm na ginagawa at ginagamit doon: RSA PKCS #1 v1.5 at PSS, ECDSA sa P-256, P-384, P-521 at secp256k1, at EdDSA, na may RSA-OAEP decryption at ECDH derivation gamit ang parehong mga key. Ang CKM_ML_DSA at CKM_SLH_DSA ng 3.2 ay ginagamit lamang kapag inililista ng token ang mga ito; kung hindi, nananatili sa software ang mga signature na iyon. Ang mga session ay bawat thread, at ang isang module ay muling ini-initialize nang isang beses pagkatapos ng outage. Kulang: hindi module mismo ang serbisyong ito, walang ini-import na key sa isang token at walang ine-export mula rito."
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial: pinapangalanan ng isang URI ang token at ang key-encryption key, o ang token ng mga signing key. Iginagalang ang mga path attribute na token, object, id (percent-encoded na mga byte), serial at slot-id, tinatanggap at binabalewala ang ibang attribute ng seksiyon 2.3, at pinipili ng query attribute na module-path ang module para sa key na iyon lamang. Tinatanggihan ang pin-value at pin-source: ang PIN ay ibinibigay ng keys.pkcs11PinProvider, hindi kailanman sa isang URI. Kulang: ang type, manufacturer, model at ang mga library attribute ay hindi nagpapakitid sa match, at hindi binabasa ang module-name."
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial: ang user CA ng bawat realm ay nag-iisyu ng mga -cert-v01@openssh.com user certificate para sa ssh-ed25519, ECDSA, RSA at sa dalawang uri ng security key na sk-, na pinirmahan gamit ang ssh-ed25519, ecdsa-sha2-nistp256/384/521 o rsa-sha2-256/512 ayon sa pagkakasunod na ibinibigay ng pki.sshUserCaAlgorithms, na may mga principal mula sa sariling entry ng tao, ang mga extension ng realm at walang critical option, at mas mahabang lifetime para lamang sa beripikadong hardware evidence. Ang CA key ay inilalathala sa /pki/ssh-user-ca/{scope}. Ang host certificate ay binabasa at sinusuri, hindi iniisyu. Ang ssh-mldsa-65 ay isang uri ng key na itinatakda ng serbisyong ito, dahil wala nito ang OpenSSH, at hindi ito ma-verify ng karaniwang OpenSSH. Kulang: mga host certificate, at mga certificate para sa mga DSA key."
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial: ang KRL ng bawat realm sa /pki/ssh-user-krl/{scope}, na muling binubuo ng isang scheduler job kapag may binawing certificate o iniulat na nawala ang isang hardware token, ay naglalaman ng isang certificates section bawat CA key na may serial list, at ng mga SHA-256 fingerprint ng mga binawing key. Binabasa rin ito pabalik bukod sa isinusulat. Kulang: isang signature section (walang pirma ang KRL, kaya ito inihahain sa main port lamang), at mga key-id list, serial range at bitmap, mga explicit key at mga SHA-1 fingerprint."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",

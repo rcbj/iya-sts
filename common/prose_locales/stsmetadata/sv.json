@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial: varje biljett bär en signerad PAC — inloggningsinformation (KERB_VALIDATION_INFO, NDR), klientinformation, UPN/DNS-information, attribut och den begärandes SID. En TGT får två signaturer och en tjänstebiljett fyra, enligt avsnitt 2.8.2/2.8.3. KLIENTANSPRÅK (PAC_CLIENT_CLAIMS_INFO, 2.11) produceras medan krb5.pacClaims är på (#493), aldrig komprimerade; anspråksbuffertar som anländer i en annan sfärs PAC avkodas (XPRESS Huffman inräknat) och bärs vidare. Enhetsinformation och ENHETSanspråk produceras inte. En PAC som anländer över ett förtroende SID-FILTRERAS som avsnitt 4.1.2.2 säger för förtroendets gräns innan den omsigneras — enhetsinformation tas bort, en anspråksmängd tas bort om inte förtroendet tillåter den — och en hänvisnings PAC signeras med nyckeln mellan sfärerna."
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial: kontextetablering. Inramningen av InitialContextToken (Kerberos-mekanismens OID och de två byte långa token-id:na) läses och skrivs, autentiseringskontrollsumman 0x8003 i AP-REQ läses av acceptorn (dess flaggor, ömsesidig autentisering och delegering) och skrivs av klientsidan, och en AP-REP returneras när ömsesidig autentisering begärs. MIC-token (avsnitt 4.2.6.1) signerar och verifierar SPNEGO:s mechListMIC, under acceptorns undernyckel när en sådan finns. Saknas: kanalbindningar rapporteras men jämförs inte med TLS-kanalen, och inget gränssnitt utbyter Wrap-token när kontexten väl har etablerats."
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full för en mekanism: NegTokenInit (med den optimistiska mechToken) och NegTokenResp i alla fyra negStates, mechListMIC i båda riktningarna med avsnitt 5:s regel för när den är obligatorisk, och [MS-SPNG]:s NegTokenInit2 avkodad. Endast Kerberos erbjuds faktiskt — NTLM känns igen i en klients mechTypes-lista och väljs aldrig, eftersom att erbjuda en mekanism som den här tjänsten inte kan utföra vore en lögn som en klient skulle agera på. En mechListMIC som inte verifieras är en REJECT, inte en varning: den är hela försvaret mot nedgradering."
@@ -122,6 +126,10 @@
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full för förfrågan och svaret: förkortade kategorinamn, korta datatypnamn, härledning av datatyp från JSON-typen (inklusive skillnaden mellan heltal och flyttal, som läses från källtexten eftersom JSON.parse redan har kastat bort den), arrayer som bags, obligations, advice och PolicyIdentifierList. Profilen definierar ingen policysyntax, så policyer förblir XML."
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial: policyuppsättningar, policyer och regler med deras mål, villkor, skyldigheter och råd, lästa och skrivna över samma modell som XACML XML, så att en policy beslutar likadant oavsett vilken form den kom i. Literaler av de övriga datatyperna skrivs som typomvandlingar, ett attribut deklareras innan det används, mustbepresent och issuer anges per användning, och en högre ordningens funktion tar en funktion via dess korta namn. Importeras vid /admin/xacml och genom import-alfa på /admin-api/xacml, och varje policy kan visas som ALFA. Det som emittern skriver läser parsern och beslutar identiskt. Saknas: makron, advice på namnrymdsnivå och importer mellan filer avvisas med namn. ALFA har ingen konformitetssvit."
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -543,6 +551,10 @@
     "en": "4cc6ee6c2a81e46e",
     "text": "minimal: den förlitande partens halva av två tillägg, eftersom den här tjänsten varken är klient eller autentiserare: credProtect (avsnitt 12.1) — passkey-policyns credProtect begär en nivå som credentialProtectionPolicy, enforceCredProtect skickar enforceCredentialProtectionPolicy och avvisar en registrering vars autentiserardata rapporterar en lägre nivå (ingen rapport är nivå 1), och nivån registreras på nyckeln; och minPinLength (avsnitt 12.4), begärd medan passkey-policyn genomdriver en PIN-längd och hållen till dess minimum vid registrering och inloggning. Inget annat av CTAP: autentiserar-API:t, PIN-protokollen, stora blobbar och hantering av autentiseringsuppgifter är plattformens."
   },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial, via WebAuthn snarare än som ett eget protokoll: attesteringsformatet fido-u2f verifieras vid registrering (WebAuthn avsnitt 8.6), och en äldre U2F-autentiseringsuppgift (dess nyckelhandtag, publika P-256-nyckel och räknare) som en administratör har importerat till en persons post används under sitt AppID via appid-tillägget, endast i ett andrafaktorsteg, så snart webauthn.u2fAppIds anger detta AppID. Saknas: U2F JavaScript-API:t och råa U2F-registrerings- och autentiseringsmeddelanden (en webbläsare talar dem med nyckeln, inte denna tjänst), samt listan över betrodda facetter (trusted-facets) enligt AppID and Facet."
+  },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial, serversidan av en ursprungsavgränsad session per inloggning: Secure-Session-Registration som erbjuder ES256 och RS256, dbsc+jwt-beviset vid registrering (dess jwk, typ, alg och jti kontrollerade och signaturen verifierad) och vid förnyelse (verifierat med den bundna nyckeln), JSON-sessionsinstruktionerna med en enda bunden cookie, utbytet med 403 och Secure-Session-Challenge, samt Sec-Secure-Session-Id. Varje utmaning förbrukas en gång för hela klustret. Saknas: federerade sessioner (provider_key, well-known-dokumentet), platsavgränsade sessioner och omfångsregler, parametern authorization, samt läsning av Secure-Session-Skipped. Av som standard (authn.deviceBoundSessions)."
@@ -787,6 +799,10 @@
     "en": "a2930bdb8ffe747d",
     "text": "partial: läsning av en överförbar publik nyckel, v6 och (RFC 4880) v4, verifiering av en klartextsignatur gjord av en av dess signeringsnycklar och kryptering av ett meddelande till dess krypteringsnyckel, Klassiska algoritmer går genom openpgp.js. RFC 9980-kompositer läses här (se rfc9980). Ed25519, Ed448, ECDSA och ECDH på NIST-kurvorna, X25519, X448 och RSA med openpgp.minRsaBits accepteras; DSA, ElGamal och Brainpool avvisas. Saknas: signering, dekryptering, nyckelring, nyckelserver."
   },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial, för v4-nycklar (RFC 9580 ersätter den, och en v6-nyckel följer rfc9580): en överförbar publik nyckel läses med sina självsignaturer, en klartextsignatur av dess signeringsnyckel verifieras och ett meddelande krypteras till dess krypteringsnyckel, via openpgp.js. Signeringsnycklar kan vara EdDSA på Ed25519, ECDSA på P-256, P-384 och P-521, eller RSA med openpgp.minRsaBits; krypteringsnycklar ECDH på Curve25519 och NIST-kurvorna, eller RSA. DSA, ElGamal och Brainpool avvisas. Saknas: signering, dekryptering, en nyckelring, en nyckelserver."
+  },
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial: signaturer ML-DSA-65+Ed25519 och ML-DSA-87+Ed448, och kryptering ML-KEM-768+X25519 och ML-KEM-1024+X448, vid registrering och när en lagrad nyckel används. En komposit räknas som postkvant. openpgp.pqcOnly begränsar bara registreringen. Båda halvorna av en signatur verifieras av common/crypto_impl/openpgp_pqc.js. Saknas: SLH-DSA (algoritm-id 32-34), och den här tjänsten genererar ingen RFC 9980-nyckel. openpgp.js tolkar inte dessa nycklar."
@@ -799,9 +815,33 @@
     "en": "5c1b77d839bd8cc2",
     "text": "partial: application/pkcs7-mime enveloped-data, en CMS EnvelopedData med AES-256-CBC för innehållskryptering. Ett klassiskt certifikat använder RSAES-OAEP (SHA-256) eller ECDH. Ett ML-KEM-certifikat (RFC 9935) använder KEMRecipientInfo (RFC 9629): HKDF-SHA-256 och AES-Wrap. En körning som inte kan kapsla in skickar inte meddelandet under en klassisk algoritm. Saknas: signed-data, AuthEnvelopedData (AES-GCM), dekryptering."
   },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial, endast sändning: ett S/MIME-meddelande till ett ML-KEM-certifikat (rfc9935) bär sin innehållskrypteringsnyckel i en KEMRecipientInfo (den andra mottagarinformationen id-ori-kem): ML-KEM-512, ML-KEM-768 eller ML-KEM-1024, HKDF med SHA-256 över CMSORIforKEMOtherInfo och inget salt, samt AES-128- eller AES-256-nyckelinpackning, i AuthEnvelopedData (standard) eller EnvelopedData. Saknas: dekryptering av en KEMRecipientInfo (denna tjänst tar aldrig emot krypterad e-post), ukm och alla andra KEM- eller nyckelhärledningsfunktioner."
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial: en publik ML-KEM-512-, ML-KEM-768- eller ML-KEM-1024-nyckel läses från en SubjectPublicKeyInfo eller ett certifikat via sin identifierare id-alg-ml-kem och kontrolleras mot frånvarande parametrar och den nyckellängd som FIPS 203 anger. En persons nyckel certifieras av realmens EST Issuing CA med keyEncipherment som enda nyckelanvändning, efter ett innehavsbevis genom inkapsling som endast den privata nyckeln kan besvara, och certifikatet är en S/MIME-mottagare (rfc9629). Saknas: formaten för privata nycklar (denna tjänst innehar aldrig en privat ML-KEM-nyckel) och ML-KEM-certifikat för tjänstens egna nycklar."
+  },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
     "text": "partial: den avancerade och den direkta uppslagsmetoden (z-base-32 av SHA-1 av den lokala delen i gemener, parametern l) och policyfilen, besvarade för personer som har valt att delta, per sfär och avstängt som standard. Saknas: Web Key Service (submission-address, inlämningsprotokollet); CORS följer tjänstens tillåtelselista snarare än utkastets *."
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial, som en applikation som anropar en modul (valfri PKCS #11 v2.40 eller senare; YubiHSM 2 och SoftHSM2 är de som har provats): en icke-extraherbar AES-256-nyckelkrypteringsnyckel som packar in och packar upp varje datanyckel inuti token (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD eller CKM_YUBICO_AES_CCM_WRAP), samt en realms signeringsnycklar som genereras och används där: RSA PKCS #1 v1.5 och PSS, ECDSA på P-256, P-384, P-521 och secp256k1 samt EdDSA, med RSA-OAEP-dekryptering och ECDH-härledning med samma nycklar. CKM_ML_DSA och CKM_SLH_DSA från 3.2 används endast när token listar dem; annars förblir dessa signaturer i mjukvara. Sessioner är per tråd, och en modul initieras på nytt en gång efter ett avbrott. Saknas: denna tjänst är inte själv en modul, importerar ingen nyckel till en token och exporterar ingen från den."
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial: en URI namnger token och nyckelkrypteringsnyckeln, eller signeringsnycklarnas token. Sökvägsattributen token, object, id (procentkodade byte), serial och slot-id respekteras, de övriga attributen i avsnitt 2.3 accepteras och ignoreras, och frågeattributet module-path väljer modulen enbart för den nyckeln. pin-value och pin-source avvisas: en PIN levereras av keys.pkcs11PinProvider, aldrig i en URI. Saknas: type, manufacturer, model och library-attributen begränsar inte matchningen, och module-name läses inte."
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial: varje realms användar-CA utfärdar användarcertifikat av typen -cert-v01@openssh.com för ssh-ed25519, ECDSA, RSA och de två säkerhetsnyckeltyperna sk-, signerade med ssh-ed25519, ecdsa-sha2-nistp256/384/521 eller rsa-sha2-256/512 i den ordning som pki.sshUserCaAlgorithms anger, med principals från personens egen post, realmens tillägg och inga kritiska alternativ, och en längre livslängd endast vid verifierade hårdvarubevis. CA-nyckeln publiceras på /pki/ssh-user-ca/{scope}. Ett värdcertifikat läses och kontrolleras, men utfärdas inte. ssh-mldsa-65 är en nyckeltyp som denna tjänst definierar, eftersom OpenSSH saknar en sådan, och standard-OpenSSH kan inte verifiera den. Saknas: värdcertifikat och certifikat för DSA-nycklar."
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial: varje realms KRL på /pki/ssh-user-krl/{scope}, som byggs om av ett schemalagt jobb när ett certifikat återkallas eller en hårdvarutoken rapporteras förlorad, innehåller en certifikatsektion per CA-nyckel med en serienummerlista samt SHA-256-fingeravtrycken för återkallade nycklar. Den läses tillbaka såväl som skrivs. Saknas: en signatursektion (KRL:en är osignerad, vilket är anledningen till att den endast serveras på huvudporten), samt key-id-listor, serienummerintervall och bitmappar, explicita nycklar och SHA-1-fingeravtryck."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
