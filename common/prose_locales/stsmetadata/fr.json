@@ -3587,6 +3587,14 @@
     "en": "20eeca53c18916c1",
     "text": "répond 401 avec un défi WWW-Authenticate lorsqu’il est suivi sans paramètres — c’est une ressource protégée qui requiert le jeton d’accès d’un flux OIDC"
   },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "LA SOURCE DISTRIBUÉE D’UNE REVENDICATION DE GROUPES AU-DELÀ DE SA LIMITE (#2247). Un jeton d’accès ou un ID Token dont la revendication de groupes dépasserait groups.claimMaxBytes porte à la place les _claim_names et _claim_sources de la section 5.6.2 d’OpenID Connect Core, pointant ici, et ce point de terminaison renvoie la liste pour le sujet du jeton d’accès présenté sous forme d’application/jwt signé (iss, sub, aud, iat, exp et la revendication), comme la section l’exige d’une source distribuée. Le jeton est vérifié comme UserInfo en vérifie un — signature, émetteur, contrainte d’expéditeur, typ, révocation — sauf son audience et la portée openid, car le jeton d’un serveur de ressources est celui dont la revendication pointait ici. Seul un jeton qui porte lui-même la référence peut la racheter, et il reçoit ce qu’il aurait porté sous la limite, à travers les paramètres de groupes et le filtre de diffusion de son propre client, et rien de plus. Un jeton client_credentials n’a pas de personne et est refusé."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "répond 401 avec un défi WWW-Authenticate lorsqu’on le suit sans rien — il faut un jeton d’accès émis par ce service"
+  },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
     "text": "Un actif/inactif honnête avec les revendications du jeton présenté — dont acr et auth_time (RFC 9470 section 6.2) — en JSON RFC 7662 ou, lorsque l’en-tête Accept nomme application/token-introspection+jwt, sous forme de JWT RFC 9701 signé (et éventuellement chiffré) pour le serveur de ressources qui l’a demandé, avec les algorithmes qu’il a enregistrés. Une requête JWT doit s’authentifier en tant que client dans tous les modes, faute de quoi elle est refusée par 400 invalid_client ; une requête JSON doit s’authentifier en mode produit (401) et n’y est pas tenue en mode développement."

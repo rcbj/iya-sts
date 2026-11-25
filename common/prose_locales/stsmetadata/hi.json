@@ -3587,6 +3587,14 @@
     "en": "20eeca53c18916c1",
     "text": "खाली अनुसरण पर WWW-Authenticate challenge के साथ 401 का उत्तर देता है — यह संरक्षित संसाधन है और OIDC प्रवाह से access token चाहिए"
   },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "सीमा से आगे के groups claim का DISTRIBUTED SOURCE (#2247)। जिस access token या ID Token का groups claim groups.claimMaxBytes से अधिक होता, वह उसकी जगह OpenID Connect Core section 5.6.2 के _claim_names और _claim_sources रखता है, जो यहाँ इशारा करते हैं, और यह प्रस्तुत access token के subject के लिए सूची एक हस्ताक्षरित application/jwt (iss, sub, aud, iat, exp और claim) के रूप में लौटाता है, जैसा section किसी distributed source से माँगता है। token की जाँच वैसे ही होती है जैसे UserInfo करता है — signature, issuer, sender constraint, typ, revocation — सिवाय उसके audience और openid scope के, क्योंकि किसी resource server का token वही है जिसका claim यहाँ इशारा करता था। केवल वही token इसे भुना सकता है जो स्वयं reference रखता है, और उसे वही मिलता है जो वह सीमा से नीचे रखता, उसके अपने client की group सेटिंग्स और release filter के माध्यम से, इससे अधिक कुछ नहीं। client_credentials token के पीछे कोई व्यक्ति नहीं होता और उसे अस्वीकार किया जाता है।"
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "बिना कुछ लिए खोलने पर WWW-Authenticate challenge के साथ 401 देता है — इसे इस सेवा द्वारा जारी access token चाहिए"
+  },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
     "text": "प्रस्तुत token के claim के साथ ईमानदार active/inactive — उनमें acr और auth_time (RFC 9470 अनुभाग 6.2) — RFC 7662 JSON के रूप में, या, जब Accept हेडर application/token-introspection+jwt नाम लेता है, माँगने वाले resource server के लिए हस्ताक्षरित (और वैकल्पिक रूप से एन्क्रिप्टेड) RFC 9701 JWT के रूप में, उन एल्गोरिथ्म के साथ जो उसने पंजीकृत किए। JWT अनुरोध को हर मोड में client के रूप में प्रमाणित होना चाहिए और अन्यथा 400 invalid_client से अस्वीकार किया जाता है; JSON अनुरोध को product मोड में प्रमाणित होना चाहिए (401) और development में आवश्यक नहीं।"

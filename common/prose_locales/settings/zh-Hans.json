@@ -10323,6 +10323,14 @@
     "en": "5f61809aa07c4db6",
     "text": "当组条目没有反向列出该人员时，由该人员自身的 `memberOf` 所指明的组是否算作成员关系。此目录中没有任何东西维护 memberOf——它甚至不是标准属性——因此写入它的客户端恰恰会制造这种不一致，而 /admin/groups 的部分存在目的就是展示它。此设置决定令牌信任哪一方。默认开启，因为写入了 memberOf 却没有得到声明的客户端完全不知道原因；关闭则使组条目保持为唯一的权威。无论哪种情况，组都必须在此处存在——指向不存在之物的 memberOf 不会凭空造出一个组放进令牌。"
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "令牌中最大的 groups 声明（字节）"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "groups 声明在访问令牌或 ID Token 中最多可占的大小，按其值的 JSON 计算，在 base64url 之前。超过后声明不会被截断：它会成为 OpenID Connect Core 第 5.6.2 节的分布式声明 —— `_claim_names` 指名它，`_claim_sources` 指向本领域的 /oauth2/groups，后者针对所出示的访问令牌以签名 JWT 返回完整列表。访问令牌通过请求头传递，超过 8 KiB 的令牌会被大多数服务器拒绝（Node.js 为 16 KiB），返回的 431 不指向任何原因。默认值 4096 约合 150 个组名或 60 个 DN，因此人们今天得到的令牌不变。UserInfo 和 SAML 断言始终携带完整列表。0 关闭此上限。"
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "携带角色声明"

@@ -36,6 +36,9 @@ model OAuthClient {
   @fromAttr(#{attr: "oauthResponseType"})
   responseTypes?: string[];
 
+  @fromAttr(#{attr: "oauthResponseMode"})
+  `responseModes`?: string[];
+
   @fromAttr(#{attr: "oauthTokenEndpointAuthMethod"})
   tokenEndpointAuthMethods?: string[];
 

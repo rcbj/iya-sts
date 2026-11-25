@@ -3147,6 +3147,64 @@ names every claim a request may ask for.
 
 ---
 
+## `/oauth2/groups`, A CLIENT'S RESPONSE MODES, AND THE PKCE COMPARISON (#2247)
+
+Three ASVS 5.0.0 Level 3 items, each small, each argued where it sits.
+
+* **`/oauth2/groups` is the distributed source of a groups claim past
+  `groups.claimMaxBytes` (4.2.5).** `common/CLAUDE.md` 3d-ii argues the cap
+  and why the claim is referenced rather than cut. The endpoint
+  (`groupsResponse()`) checks the access token through
+  `dpop.presentedAccessToken()` as UserInfo does — signature, issuer, sender
+  constraint, then `typ` and revocation (STS-OAUTH-1017, -1018) — with ONE
+  difference: its `audience` option names every audience. The token whose
+  claim pointed here is as often a resource server's as this service's.
+  **That is safe only because the presented token must ITSELF carry the
+  reference** — `_claim_names` mapping a claim to `sts-groups` whose
+  `_claim_sources` endpoint is this realm's `/oauth2/groups` — or it is
+  refused (STS-OAUTH-1021): a token for a client never given the claim (off
+  for it, or released away) has no reference and learns nothing. **The
+  answer is recomputed, not read off the directory**: `stats.jwtClaims(
+  'access_token', …)` over the token's own client, audience and subject,
+  with `groups_uncapped` (which only `overage()` reads) and the token's
+  scope gate, so it is exactly what the token would have carried below the
+  cap, now — a client filtered or turned off since gets what the filter
+  gives. **No `groups_ref` or jti is bound into the reference**: it lives in
+  the signed token presented, and another token for the same person redeems
+  only with a reference of its own and only for what IT would have
+  carried; an RP holding an over-cap ID Token presents its access token,
+  whose view is never wider than its own. No `openid` scope is asked for the same
+  reason. A token with no `username` (client_credentials) has no person and
+  is refused (STS-OAUTH-1019). The answer is `application/jwt`, because
+  Core section 5.6.2 says a distributed source MUST return a JWT: `iss`,
+  `sub` (the client's, `subjectFor()`, as UserInfo's), `aud` (the token's
+  client), `iat`, `exp` five minutes on, and the claim under the client's
+  name and value form, signed with the client's ID Token algorithm or the
+  realm's default (STS-OAUTH-1020 if that fails). The ID Token's Claims
+  Provider references are MERGED with this one (`mergeClaimSources()`), not
+  assigned over it. `customClaimContext()` carries `base_url`, which is where
+  `group_claims.ts` points; a context without one is never capped.
+* **`oauthResponseMode` holds a client to the response modes it needs
+  (10.4.12).** RFC 7591 has no such member and the IANA client-metadata
+  registry holds none (`response_modes_supported` is the server's), so it is
+  this service's attribute, written by an administrator and never by a
+  registration, a closed set of every mode `response_modes_supported`
+  advertises with JARM on (`applications.js`'s `FLOW_RESPONSE_MODES`, held to
+  `jarm.MODES` by `tests/oauth2_response_modes.js`). Checked in
+  `vetAuthorizationRequest()` just after the server-wide check, in every
+  mode: the mode judged is the one asked for or, with none, the response
+  type's default (`query` for `code` and `none`, `fragment` otherwise), so a
+  client listed for `form_post` cannot be answered in a query string by
+  leaving the parameter out. Refused `unauthorized_client` at the redirect
+  (STS-OAUTH-1016), the word the per-client `response_type` check uses.
+  **Empty restricts nothing**, `oauthResponseType`'s rule, so no existing
+  client changes.
+* **The PKCE verifier is compared with `stsCrypto.constantTimeEquals()`
+  (11.2.4).** The challenge is no secret once it has crossed the front
+  channel, but the comparison is the one place a verifier is judged, and
+  `crypto.js` is where every such comparison lives. `plain` is still refused
+  wherever RFC 9700 mode is in force.
+
 ## `/oauth2/autopost.js` IS ONE OF THE SCRIPTED PAGES
 
 `response_mode=form_post` is answered with a self-submitting form whose script

@@ -10323,6 +10323,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Si un grupo nombrado por el propio `memberOf` de la PERSONA cuenta como pertenencia cuando la entrada del grupo no la incluye a su vez. Nada en este directorio mantiene memberOf — ni siquiera es un atributo estándar —, así que un cliente que lo escribe crea exactamente esa discrepancia, y /admin/groups existe en parte para MOSTRARLA. Este ajuste es de qué lado de ella se pone un token. Activado por defecto, porque a un cliente que escribió memberOf y no obtuvo ningún claim no se le ha dicho nada sobre por qué; desactivado es como la entrada del grupo sigue siendo la única autoridad. En cualquier caso el grupo tiene que EXISTIR aquí — un memberOf que no nombra nada no inventa un grupo para ponerlo en un token."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Reclamación de grupos más grande en un token (bytes)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Lo máximo que puede ocupar la reclamación de grupos en un token de acceso o un ID Token, medido como el JSON de sus valores, antes de base64url. Por encima, la reclamación no se recorta: se convierte en una reclamación distribuida de la sección 5.6.2 de OpenID Connect Core — `_claim_names` la nombra y `_claim_sources` apunta a /oauth2/groups de este reino, que responde con la lista completa como un JWT firmado para el token de acceso presentado. Un token de acceso viaja en una cabecera, y la mayoría de los servidores rechazan un token de más de 8 KiB (16 KiB Node.js) con un 431 que no señala a nada. El valor predeterminado, 4096, equivale a unos 150 nombres de grupo o 60 DN, así que los tokens que las personas reciben hoy no cambian. UserInfo y las aserciones SAML siempre llevan la lista completa. 0 desactiva el límite."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Incluir un claim de roles"

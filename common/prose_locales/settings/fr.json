@@ -10323,6 +10323,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Indique si un groupe nommé par le `memberOf` propre de la PERSONNE compte comme appartenance lorsque l’entrée du groupe ne la liste pas en retour. Rien dans cet annuaire ne maintient memberOf — ce n’est même pas un attribut standard — si bien qu’un client qui l’écrit crée exactement ce désaccord, et /admin/groups existe en partie pour le MONTRER. Ce paramètre détermine quel côté un jeton croit. Activé par défaut, car un client qui a écrit memberOf et n’a obtenu aucune revendication n’a reçu aucune explication ; désactivé, l’entrée du groupe reste la seule autorité. Dans les deux cas, le groupe doit EXISTER ici — un memberOf qui ne nomme rien n’invente pas de groupe à placer dans un jeton."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Plus grande revendication de groupes dans un jeton (octets)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Le maximum que la revendication de groupes peut occuper dans un jeton d’accès ou un ID Token, mesuré comme le JSON de ses valeurs, avant base64url. Au-delà, la revendication n’est pas tronquée : elle devient une revendication distribuée de la section 5.6.2 d’OpenID Connect Core — `_claim_names` la nomme et `_claim_sources` pointe vers /oauth2/groups de ce domaine, qui renvoie la liste complète sous forme de JWT signé pour le jeton d’accès présenté. Un jeton d’accès voyage dans un en-tête, et un jeton de plus de 8 Kio est refusé par la plupart des serveurs (16 Kio par Node.js) avec un 431 qui ne renvoie à rien. La valeur par défaut, 4096, correspond à environ 150 noms de groupes ou 60 DN, de sorte que les jetons que les personnes reçoivent aujourd’hui ne changent pas. UserInfo et les assertions SAML portent toujours la liste complète. 0 désactive la limite."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Porter une revendication de rôles"

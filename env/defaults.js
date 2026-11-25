@@ -1556,7 +1556,8 @@ var config = {
     claim: true,             // Carry a groups claim
     claimName: "groups",     // Claim name
     claimValue: "cn",        // What names a group
-    claimFromMemberOf: true  // Believe an entry's own memberOf
+    claimFromMemberOf: true, // Believe an entry's own memberOf
+    claimMaxBytes: 4096      // Largest groups claim in a token (bytes)
   },
 
   // --- Roles -----------------------------------------------------------

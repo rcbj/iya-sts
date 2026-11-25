@@ -1779,6 +1779,13 @@ const FLOW_RESPONSE_TYPES = ['code', 'token', 'id_token', 'code token',
 // `oauth2.dynamicRegistrationTokenResponseTypes` (#1296).
 const TOKEN_RESPONSE_TYPES = ['token', 'code token', 'id_token token',
   'code id_token token'];
+// WHAT A CLIENT MAY LIST IN `oauthResponseMode` (#2247): every response mode
+// the authorization endpoint performs — the three plain ones and JARM's four,
+// `response_modes_supported` with JARM on, which `tests/response_modes.js`
+// holds this to. Written out here because `oauth-oidc/jarm.ts` is not a
+// module this library may require.
+const FLOW_RESPONSE_MODES = ['query', 'fragment', 'form_post', 'jwt',
+  'query.jwt', 'fragment.jwt', 'form_post.jwt'];
 const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
   'client_credentials', 'password',
   'urn:ietf:params:oauth:grant-type:token-exchange',
@@ -1851,6 +1858,10 @@ const ATTRIBUTE_CHOICES = {
   },
   oauthResponseType: function () {
     return FLOW_RESPONSE_TYPES.slice(0);
+  },
+  // #2247: the response modes the authorization endpoint performs.
+  oauthResponseMode: function () {
+    return FLOW_RESPONSE_MODES.slice(0);
   },
   // #1296: the four token response types.
   oauthAllowedTokenResponseTypes: function () {
@@ -2102,6 +2113,9 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   // #706: a grant or response type this service does not implement is one
   // no request could ever be allowed by.
   'oauthGrantType', 'oauthResponseType',
+  // #2247: a response mode the endpoint does not perform restricts nothing
+  // a request could be allowed by.
+  'oauthResponseMode',
   // #1296: only the four token response types.
   'oauthAllowedTokenResponseTypes',
   // #430: a misspelt word would be `inherit`, which widens.
@@ -2852,6 +2866,7 @@ const FIELD_EXAMPLES = {
   oauthTosUri: 'https://app.example.com/terms',
   oauthGrantType: 'authorization_code',
   oauthResponseType: 'code',
+  oauthResponseMode: 'form_post',
   oauthAllowedTokenResponseTypes: 'id_token token',
   oauthAllowedScope: 'profile',
   oauthPermissionBaseUri: 'https://api.example.com/',
@@ -15336,6 +15351,37 @@ function fieldsWithDescription(fields, record) {
 // that grows with use is no restriction. An EMPTY list restricts nothing
 // (rcbj's answer), as for a client_id nobody declared anything about.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE RESPONSE MODES A CLIENT MAY ASK FOR (#2247, ASVS 5.0.0 10.4.12), held
+// by the authorization endpoint in every mode beside the server's own
+// `response_modes_supported`. An EMPTY list restricts nothing, the rule of
+// `oauthResponseType`, so no client that exists today is changed by it.
+// Read by stored name: this module is the application register's codec.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the response modes a client may ask for (`oauthResponseMode`).
+ *
+ * @param clientId - the client id
+ * @returns the list, or null when the client lists none (or is unknown)
+ */
+function allowedResponseModesOf(clientId) {
+  log.debug("Entering allowedResponseModesOf().");
+  const loaded = load(String(clientId || ''));
+  if (!loaded.known) {
+    log.debug("Leaving allowedResponseModesOf(). Not known.");
+    return null;
+  }
+  const modes = valuesOf((loaded.record.fields || {}).oauthResponseMode)
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one, index, all) {
+      return one !== '' && all.indexOf(one) === index;
+    });
+  log.debug("Leaving allowedResponseModesOf(). " + modes.length + ".");
+  return modes.length ? modes : null;
+}
+
 /**
  * Returns the grant and response types a client declares, which the endpoints
  * hold it to in every mode.
@@ -19507,6 +19553,8 @@ module.exports = {
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
   declaredFlowsOf: declaredFlowsOf,
+  allowedResponseModesOf: allowedResponseModesOf,
+  FLOW_RESPONSE_MODES: FLOW_RESPONSE_MODES,
   // #1296: the token response types a client is allowed, and the four.
   allowedTokenResponseTypesOf: allowedTokenResponseTypesOf,
   TOKEN_RESPONSE_TYPES: TOKEN_RESPONSE_TYPES,

@@ -2287,6 +2287,10 @@
     "en": "aebc2aa96e6b1b70",
     "text": "نقطة نهاية UserInfo"
   },
+  "endpoints.route./oauth2/groups.name": {
+    "en": "fc727eb9da0b20fe",
+    "text": "مصدر مطالبة المجموعات"
+  },
   "endpoints.route./oauth2/introspect.name": {
     "en": "328dfd36fb81f446",
     "text": "نقطة نهاية الاستبطان"

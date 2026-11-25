@@ -1269,6 +1269,16 @@ next identity provider will send DNs — has never run that code.
   is not stored still counts from the group's side.
 * **`groups.claimValue` chooses `cn` or the whole DN**, because an OIDC
   provider usually sends names and Active Directory sends DNs.
+* **A large claim is referenced, not cut** (`groups.claimMaxBytes`, 4096
+  bytes by default). An access token travels in a header, and most servers
+  refuse one over 8 KiB with a `431`. Past the cap an access token or ID Token
+  carries OpenID Connect Core section 5.6.2's `_claim_names` and
+  `_claim_sources` instead of the list. They point at the realm's
+  `/oauth2/groups`, which answers the list as a signed JWT for the access
+  token presented. Only a token carrying that reference may ask, and it gets
+  exactly what it would have carried below the cap, after the client's own
+  settings and release filter. UserInfo and SAML assertions always carry the
+  whole list.
 
 A typed custom claim and a ticked directory attribute of the same name both
 **win over** it. `groups.claimName` naming something this service sets itself

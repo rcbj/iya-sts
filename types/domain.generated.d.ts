@@ -548,6 +548,7 @@ declare namespace IyaDomain {
     postLogoutRedirectUris?: string[];
     grantTypes?: string[];
     responseTypes?: string[];
+    responseModes?: string[];
     tokenEndpointAuthMethods?: string[];
     idTokenSigningAlgorithm?: string;
     audience?: string[];
