@@ -399,8 +399,9 @@ under `/opt/sts-sdk`, the Vault client every image carries and whatever
 `STS_CLOUD_SDKS` adds: each is pinned in the repository's `sdk/` directory and
 installed from `sdk/package-lock.json` with install scripts off (only `pkcs11js`,
 a native module, is built after). A build that names an SDK the lockfile does not
-pin, or a version it does not hold, fails. The base images are named by version
-tag, not by digest.
+pin, or a version it does not hold, fails. The advisory check that runs on every
+CI run audits `sdk/package-lock.json` under the same windows as the root
+lockfile. The base images are named by version tag, not by digest.
 
 The image holds a CycloneDX inventory of its npm dependencies at
 `/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at

@@ -288,6 +288,12 @@ RUN npm ci --omit=dev && npm cache clean --force \
 # and run `npm install --package-lock-only --ignore-scripts` in `sdk/`. A new
 # optional SDK is a new workspace directory and the same command;
 # tests/sdk_lockfile.js holds every optional peer of package.json to one.
+# `sdk/package.json`'s `overrides` (#2159) lift what an SDK pulls in past its
+# advisories: usocket 1.1.0 (node-gyp 13 instead of node-gyp 7's `request`
+# and old `tar`) and xml2js 0.6.2, both under dbus-next. An override is taken
+# into the lockfile by `npm update <name> --package-lock-only
+# --ignore-scripts`; `npm install --package-lock-only` keeps an existing
+# entry as it was. tests/tools/dependency-windows.js audits this lockfile.
 COPY sdk/ /opt/sts-sdk/
 # ---------------------------------------------------------------------------
 # A CLOUD SDK AND A DATABASE CA, FOR AN IMAGE THAT RUNS IN A CLOUD (2026-09-15).
