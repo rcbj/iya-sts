@@ -60,6 +60,7 @@ const assert = require("assert");
 const { usernameFor } = require("./random_username.js");
 const nodeCrypto = require("crypto");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 // ---------------------------------------------------------------------------
 // THIRTY LINES OF RFC 4226 OVER RFC 6238, carried rather than required from
@@ -235,14 +236,18 @@ async function ensurePerson(who) {
     log.debug("Leaving ensurePerson(). Already created by this run.");
     return;
   }
+  // Temporary, then the person's own (#2160, `own_password.js`).
   const r = await apiPost("/users/create", {
     username: who, invent: false, attributes: personAttributes(who),
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   });
   assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
     "POST /admin-api/users/create should create " + who + " with a password " +
     "before they sign in; it answered " + r.status + " " +
     String(r.raw).slice(0, 300));
+  await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+    return apiPost("/users/set-password", { user: one, password: value });
+  });
   createdPeople[who] = true;
   log.debug("Leaving ensurePerson(). Created " + who + ".");
 }
@@ -503,12 +508,19 @@ async function theRefusalsHold(b) {
 
   // A PASSWORD, through the management API, so there is something in
   // `userPassword` to refuse to print.
-  const set = await fetch(api + "/users/set-password", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user: OWNER, password: PROBE_PASSWORD })
-  });
-  assert.ok(set.status === 200,
-    "setting a password answered " + set.status);
+  // The person's OWN (#2160): a typed one is temporary in product, so a
+  // temporary one is set and the owner chooses PROBE_PASSWORD at the change
+  // step (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, OWNER, PROBE_PASSWORD,
+    async function (who, value) {
+      const r = await fetch(api + "/users/set-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value })
+      });
+      return { status: r.status, json: await r.json().catch(function () {
+        return null;
+      }) };
+    });
 
   // AN ADMINISTRATOR'S PASSWORD CHANGE ENDS THE PERSON'S PORTAL SESSIONS in
   // product (#62's signal-response), and it arrives ASYNCHRONOUSLY — so the

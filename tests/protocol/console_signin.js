@@ -65,6 +65,7 @@
 const assert = require("assert");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -145,6 +146,9 @@ function jar() {
 // new random one per process means an account a previous run left behind has
 // a password nobody holds.
 const consolePasswords = {};
+// The accounts this process has already given their password (#2160), by
+// realm base and name.
+const consoleSettled = {};
 
 function consolePasswordFor(user) {
   log.debug("Entering consolePasswordFor().");
@@ -179,30 +183,39 @@ async function ensureConsoleAccount(base, user, say) {
     log.debug("Leaving apiPost().");
     return { status: r.status, body: body };
   }
+  // THE PASSWORD IS MADE THE PERSON'S OWN (#2160): an administrator's typed
+  // password is temporary in product, so the account is created with a
+  // temporary one and `own_password.js` has the person choose `password` at
+  // the change step (in development, it sets it). Once per account per
+  // process: a job signs the same account in twice, and the second time
+  // the password history would refuse the same value.
+  const setPassword = function (who, value) {
+    log.debug("Entering setPassword().");
+    log.debug("Leaving setPassword().");
+    return apiPost("/users/set-password", { user: who, password: value });
+  };
+  const settledKey = base + " " + user;
   const created = await apiPost("/users/create", {
     username: user, invent: false,
     attributes: { cn: "Console " + user, givenName: "Console", sn: String(user),
                   displayName: "Console " + user,
                   mail: String(user) + "@" + domain },
-    credential: "password", password: password
+    credential: "password", password: ownPassword.temporaryFor(password)
   });
   if (created.status === 200 && created.body && created.body.ok) {
-    say("[console] created " + user + " with a password and its attributes " +
-        "before signing in.");
+    await ownPassword.ownPassword(base, user, password, setPassword);
+    consoleSettled[settledKey] = true;
+    say("[console] created " + user + " with a password of its own and its " +
+        "attributes before signing in.");
     log.debug("Leaving ensureConsoleAccount().");
     return password;
   }
   if (created.body && created.body.existing) {
-    const set = await apiPost("/users/set-password",
-                              { user: user, password: password });
-    if (!(set.status === 200 && set.body && set.body.ok)) {
-      // NOT A FAILURE HERE, though the sign-in below will be one: the
-      // password is new to this process, so a refusal is a policy this helper
-      // does not satisfy, and the sign-in names it. The same process asking
-      // twice is the one ordinary refusal — the history holds the same value.
-      say("[console] " + user + " already exists and setting its password " +
-          "again answered " + set.status + " " +
-          JSON.stringify(set.body).slice(0, 200) + ".");
+    if (!consoleSettled[settledKey]) {
+      await ownPassword.ownPassword(base, user, password, setPassword);
+      consoleSettled[settledKey] = true;
+      say("[console] " + user + " already existed and now holds a password " +
+          "of its own from this process.");
     }
     log.debug("Leaving ensureConsoleAccount().");
     return password;

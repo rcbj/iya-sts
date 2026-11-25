@@ -63,6 +63,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 const { declineToRun } = require("./expectation.js");
 
 var appconfig;
@@ -599,13 +600,20 @@ async function spnego() {
                                                    : "development" } },
            "created the realm " + SRID + " whose acceptor is " + spn);
   const sapi = base + "/realm/" + SRID + "/admin-api";
+  // Temporary, then the person's own (#2160, `own_password.js`): kinit
+  // with a password that must be changed is refused (STS-KRB-0257).
   await ok(sapi + "/users/create",
            { username: who, invent: false, credential: "password",
-             password: PASSWORD,
+             password: ownPassword.temporaryFor(PASSWORD),
              attributes: { cn: "Heimdal " + who, givenName: "Heimdal",
                            sn: who, displayName: "Heimdal " + who,
                            mail: who + "@" + SDOMAIN } },
            "created " + who + " in " + SRID);
+  await ownPassword.ownPassword(base + "/realm/" + SRID, who, PASSWORD,
+    function (one, value) {
+      return call("POST", sapi + "/users/set-password",
+                  { user: one, password: value });
+    });
   if (K.product) {
     await ok(sapi + "/kerberos/principals/create-service", { spn: spn },
              "keyed " + spn + " in " + SRID + " for its acceptor");

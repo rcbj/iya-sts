@@ -124,6 +124,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
+const ownPassword = require("./own_password");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
 // The redirect URI the token-minting client registers: tokens come from the
@@ -4497,8 +4498,15 @@ async function theKerberosPrincipalsRoundTrip() {
       attributes: { cn: "Kerberos " + keyPerson, givenName: "Kerberos",
                     sn: keyPerson, displayName: "Kerberos " + keyPerson,
                     mail: keyPerson + "@admin-api-operations.test" },
-      credential: "password", password: MINT_PASSWORD
+      // Temporary, then the person's own (#2160, `own_password.js`): the
+      // keytab reset below is refused while a change is owed, in product.
+      credential: "password", password: ownPassword.temporaryFor(MINT_PASSWORD)
     }, "created " + keyPerson + " to hold (or not hold) Kerberos keys", true);
+    await ownPassword.ownPassword(base, keyPerson, MINT_PASSWORD,
+      function (one, value) {
+        return post("/users/set-password", { user: one, password: value },
+                    true);
+      });
     // READ BACK in the scope it was written in — the root — the way
     // ensureTokenParties() reads its people back (2026-09-21). This create
     // arrived on 2026-09-19 without one, and the ledger's last check

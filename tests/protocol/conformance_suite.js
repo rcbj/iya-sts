@@ -34,6 +34,7 @@ const https = require("https");
 const nodeCrypto = require("crypto");
 const os = require("os");
 const bunyan = require("bunyan");
+const ownPassword = require("./own_password");
 
 const log = bunyan.createLogger({ name: "conformance_suite",
                                   level: process.env.LOG_LEVEL || "info" });
@@ -445,13 +446,21 @@ async function makeRealm(root, id, label, settings) {
 
 async function makePerson(api, username, password, extra) {
   log.debug("Entering makePerson(). " + username);
+  // Temporary, then the person's own (#2160, `own_password.js`): the
+  // scripted browser signs in with `password`, so it must be theirs.
   await ok(api + "/users/create", { username: username, invent: false,
-    credential: "password", password: password,
+    credential: "password", password: ownPassword.temporaryFor(password),
     attributes: Object.assign({ cn: "Conformance " + username,
                                 givenName: "Conformance", sn: username,
                                 mail: username + "@conformance.test" },
                               extra || {}) },
     "created " + username);
+  await ownPassword.ownPassword(api.replace(/\/admin-api$/, ""), username,
+    password, function (who, value) {
+      return send(api + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
   log.debug("Leaving makePerson().");
 }
 

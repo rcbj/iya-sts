@@ -33,6 +33,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
@@ -192,10 +193,16 @@ function create(name) {
         cn: "Peer " + username, givenName: "Peer", sn: username,
         displayName: "Peer " + username,
         mail: username + "@" + realm + ".example.net" }, attrs || {}),
-      credential: "password", password: password });
+      // Temporary, then the person's own (#2160, `own_password.js`).
+      credential: "password", password: ownPassword.temporaryFor(password) });
     kit.must(r.status === 200 && r.body && r.body.ok,
              "creating " + username + " in " + realm + " answered " +
              r.status + " " + r.text.slice(0, 300));
+    await ownPassword.ownPassword(realm ? kit.realmBase(realm) : base,
+      username, password, function (who, value) {
+        return kit.api(realm, "POST", "/users/set-password",
+                       { user: who, password: value });
+      });
     log.debug("Leaving createPerson().");
   };
   kit.createApplication = async function (realm, identifier, protocols,
