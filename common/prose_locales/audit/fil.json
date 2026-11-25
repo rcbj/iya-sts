@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "Binago ang signer truststore o isang paranoid na PKI setting"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Binago ang isang pinangalanang truststore o ang pagtatalaga ng truststore ng isang use case"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Kinuha mula sa password ng isang tao ang kanyang mga Kerberos key"

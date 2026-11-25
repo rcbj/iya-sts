@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "हस्ताक्षरकर्ता ट्रस्टस्टोर या एक पैरानॉयड PKI सेटिंग बदली गई"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "एक नामित ट्रस्टस्टोर या किसी उपयोग मामले का ट्रस्टस्टोर असाइनमेंट बदला गया"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "एक व्यक्ति की Kerberos कुंजियाँ उनके पासवर्ड से व्युत्पन्न की गईं"

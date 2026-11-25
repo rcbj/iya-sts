@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "簽署者信任存放區或某個偏執 PKI 設定已變更"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "已變更某個具名信任庫或某個使用案例的信任庫指派"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "某人的 Kerberos 金鑰由其密碼衍生"
