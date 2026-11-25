@@ -2345,7 +2345,7 @@ Scope: `admin:read`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
-| `template` | query | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `authzen-access-revoked`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `post-login-reminder-mail-encryption`, `post-login-reminder-piv-reissue`, `reset-refused-attempt`, `layout`, `test-message` |  | A message id, to answer its wording. |
+| `template` | query | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `credential-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `authzen-access-revoked`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `post-login-reminder-mail-encryption`, `post-login-reminder-piv-reissue`, `reset-refused-attempt`, `layout`, `test-message` |  | A message id, to answer its wording. |
 | `lang` | query | string |  | The language of `template`; `en` by default. |
 | `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
 | `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
@@ -2733,7 +2733,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `lang` | string | yes | A BCP 47 tag. |
-| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `authzen-access-revoked`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `post-login-reminder-mail-encryption`, `post-login-reminder-piv-reissue`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
+| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `credential-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `authzen-access-revoked`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `post-login-reminder-mail-encryption`, `post-login-reminder-piv-reissue`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
 
 **200**: Whether it was reset.
 
@@ -2843,7 +2843,7 @@ Scope: `admin:write`.
 | `html` | string | yes | The HTML part. |
 | `lang` | string | yes | A BCP 47 tag. |
 | `subject` | string | yes | One line. |
-| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `authzen-access-revoked`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `post-login-reminder-mail-encryption`, `post-login-reminder-piv-reissue`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
+| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `credential-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `authzen-access-revoked`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `post-login-reminder-mail-encryption`, `post-login-reminder-piv-reissue`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
 | `text` | string | yes | The text part. |
 
 **200**: Whether it was saved.
