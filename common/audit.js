@@ -1067,6 +1067,12 @@ const ACTIONS = [
   // paranoid row decides what it asks of a certificate, so both are recorded.
   { action: 'admin.pki.trust.change', category: 'admin',
     label: 'The signer truststore or a paranoid PKI setting was changed' },
+  // #2118. A named truststore decides whose certificates every use case that
+  // names it believes, and an assignment decides which stores a use case
+  // trusts; the row carries the names and fingerprints, never a certificate.
+  { action: 'admin.pki.truststore.change', category: 'admin',
+    label: 'A named truststore or a use case\'s truststore assignment was ' +
+      'changed' },
 
   // STORED KERBEROS KEYS (2026-09-12). A person's keys DERIVED from a password
   // that was just set or verified is an `authentication` row, for the portal

@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "Se cambió el almacén de confianza de firmantes o un ajuste de PKI paranoico"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Se cambió un almacén de confianza con nombre o la asignación de almacenes de confianza de un caso de uso"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Se derivaron las claves Kerberos de una persona a partir de su contraseña"

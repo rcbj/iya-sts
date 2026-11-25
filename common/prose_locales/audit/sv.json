@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "Signerarnas förtroendelager eller en inställning för paranoid PKI ändrades"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Ett namngivet förtroendelager eller ett användningsfalls tilldelning av förtroendelager ändrades"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "En persons Kerberos-nycklar härleddes från deras lösenord"

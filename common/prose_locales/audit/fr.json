@@ -987,6 +987,10 @@
     "en": "ab34b1a9778d5c8e",
     "text": "Le magasin de confiance des signataires ou un réglage de PKI paranoïaque a été modifié"
   },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Un magasin de confiance nommé ou l'affectation de magasins de confiance d'un cas d'usage a été modifié"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Les clés Kerberos d’une personne ont été dérivées de son mot de passe"
