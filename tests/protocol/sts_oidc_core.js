@@ -63,6 +63,7 @@
 const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -446,13 +447,22 @@ async function setUp() {
   for (const who of [ALICE, BOB]) {
     await ok(realmApi + "/users/create", {
       username: who, invent: false, credential: "password",
-      password: PASSWORD,
+      password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "OIDC " + who, givenName: "OIDC", sn: who,
                     mail: who + "@oidccore.test",
                     telephoneNumber: "+12065550100",
                     street: "1 Test Street", l: "Testville",
                     postalCode: "98101", c: "US" } },
       "created " + who);
+    // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary
+    // in product, so they choose PASSWORD at the sign-in screen
+    // (`own_password.js`; in development it is simply set).
+    await ownPassword.ownPassword(base + R, who, PASSWORD,
+      function (one, value) {
+        return send(realmApi + "/users/set-password",
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user: one, password: value }) });
+      });
   }
   log.debug("Leaving setUp().");
 }
