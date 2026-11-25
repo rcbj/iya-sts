@@ -161,12 +161,20 @@ async function outbound(t) {
       /** @type {any} */ (request).destroy = function () {
         destroyed = true;
       };
+      // THE GUARD'S TIMERS ARE UNREF'D, on purpose: a real connecting
+      // socket is what keeps the event loop alive while it waits, and the
+      // timer must not keep a process up that has nothing else to do. A
+      // fake socket holds no handle, so the test holds one of its own for
+      // the wait; without it the loop drained before the timer fired
+      // whenever nothing else in the run was open.
+      const hold = setTimeout(function () {}, 5000);
       const why = await new Promise(function (resolve) {
         OutboundLimits.guard(request, { deadlineMs: 0, onTimeout: resolve });
         const socket = new EventEmitter();
         /** @type {any} */ (socket).connecting = true;
         request.emit('socket', socket);
       });
+      clearTimeout(hold);
       t.check(/did not connect within 100ms/.test(String(why)) && destroyed,
               'A7. a new connection that does not connect within ' +
               'federation.outboundConnectTimeoutMs is ended', String(why));
@@ -252,6 +260,19 @@ async function malware(t) {
 async function hsm(t) {
   log.debug('Entering hsm().');
   t.log.info('=== C. the HSM\'s queue and timeout ===');
+  // The token's timers are unref'd (an HSM wait must not hold a process
+  // up); nothing else here holds the loop, so the test does (see A7).
+  const hold = setInterval(function () {}, 1000);
+  try {
+    await hsmCases(t);
+  } finally {
+    clearInterval(hold);
+  }
+  log.debug('Leaving hsm().');
+}
+
+async function hsmCases(t) {
+  log.debug('Entering hsmCases().');
   const pk = require(ROOT + '/common/crypto_impl/pkcs11');
   const token = new pk.Pkcs11Token(null, { tokenLabel: 'limits',
     maxSessions: 1, timeoutMs: 150, queueLimit: 1 });
@@ -308,7 +329,7 @@ async function hsm(t) {
   t.check(discarded === session,
           'C4. and its session is discarded when the module answers, not ' +
           'lent again');
-  log.debug('Leaving hsm().');
+  log.debug('Leaving hsmCases().');
 }
 
 async function stores(t) {

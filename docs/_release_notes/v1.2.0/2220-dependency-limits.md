@@ -22,4 +22,4 @@ size cap (`cells.maxAnswerBytes`). The mail outbox's first attempt is held to
 `mail.concurrency`, and a message that would take the pending rows past
 `mail.maxRows` is refused (`STS-MAIL-0244`) instead of growing the outbox
 without bound. Every default is above what normal traffic uses. See
-[Dependencies, limits and timeouts](../../v1.2.0/dependencies.md).
+[Dependencies, limits and timeouts](dependencies.md).
