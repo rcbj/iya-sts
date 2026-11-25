@@ -21426,6 +21426,18 @@ const CODES = [
       'passed and DNS does not answer the next selector with its key. ' +
       'Messages are signed with the current selector until it does.',
     spec: 'RFC 6376 section 3.6.1 (log only)' },
+  { code: 'STS-MAIL-0246',
+    summary: 'A credential expiry reminder could not be queued, or the ' +
+      'mail.credential-expiry job could not read the realm\'s expiry ' +
+      'index or record what it told; the next run tries again (#2247).',
+    spec: 'none — logged' },
+  { code: 'STS-MAIL-0247',
+    summary: 'The credential expiry index was not kept in step with a ' +
+      'write of a person\'s entry: its watcher was refused or threw, a ' +
+      'certificate on the entry could not be read, or the index row ' +
+      'could not be written. That person is not reminded of what changed ' +
+      'until their entry is next written (#2247).',
+    spec: 'none — logged' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -30102,6 +30114,14 @@ const CODES = [
       'at another operation (#1827). Refused at the gate itself, so that ' +
       'the separation does not depend on xacml.enforceAccess.',
     spec: 'HTTP 403, an error message' },
+  { code: 'STS-API-0148',
+    summary: 'A management API caller made more changes than its write ' +
+      'budget allows in an adminApi.writeWindowS window, counted by the ' +
+      'token\'s subject: adminApi.writesPerSubject for a person\'s token, ' +
+      'adminApi.programWritesPerSubject for a client_credentials or ' +
+      'service account\'s. Further changes are refused until the window ' +
+      'passes; reads go on (#2247, ASVS 5.0.0 2.4.2).',
+    spec: 'HTTP 429 {ok:false, errors} with Retry-After' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

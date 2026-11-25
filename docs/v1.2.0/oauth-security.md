@@ -1316,7 +1316,8 @@ blocks something on a page of this service tells the service. In a realm the
 path is the realm's (`/realm/acme/web/csp-report`). The directives are added
 when the response is sent, the same way `frame-ancestors` is checked, so a
 page that relaxes the policy carries them too. A response that is not a page
-(JSON, XML, plain text) does not.
+(JSON, XML, plain text, and since #2236 a certificate or CMS body — what EST,
+SCEP, ACME, the CRLs and OCSP answer) does not.
 
 `POST /web/csp-report` takes a CSP Level 2 report
 (`application/csp-report`) or a Reporting API batch

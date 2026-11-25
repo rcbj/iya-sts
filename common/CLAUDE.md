@@ -11501,6 +11501,31 @@ SSF and XACML not requiring the federation module for their transport).
   `…CaFile` is read on EVERY request (no cache — a handshake costs more, and a
   rotated file is in force at once) and added BESIDE `tls.rootCertificates`;
   a file that cannot be used refuses the request, `STS-CORE-0104`.
+* **`readNamedFile(file, seams?)` (#2247, ASVS 5.0.0 15.4.2) — EVERY READER
+  OF A FILE A SETTING OR AN ADMINISTRATOR NAMES GOES THROUGH IT.** In product
+  `namedFileAllowed()` (#1481) checks the PATH against `security.fileRoots`,
+  and until #2247 each caller then opened the path again, so a link swapped
+  in between was followed out of the roots. The helper checks the path, opens
+  it ONCE (`O_NONBLOCK`, so a FIFO cannot hold the open), and checks the
+  DESCRIPTOR: `fstat` a regular file, and its real path as the kernel holds
+  it (`readlink /proc/self/fd/<fd>`; without /proc, the path resolved again
+  and accepted only when its device and inode are the descriptor's) inside a
+  root; then reads through it and closes it. **No `O_NOFOLLOW`**: a link
+  inside the roots to a file inside them is what `/etc/ssl/certs` and a
+  Kubernetes secret volume (`..data`) are, and was always followed. A
+  refusal is `namedFileRefusal()`, the one sentence, marked
+  `namedFileRefused` so a caller tells it from an fs error and keeps its own
+  code and sentence (`caFilePems()`, the SCIM client, attribute sources,
+  AuthZEN's external PDP). Readers: `caFilePems()`, the truststores' setting
+  files (`readNamedFile` dep), the mail DKIM key, the revocation CA files,
+  the SCIM client's CA file, an attribute source's CA file, AuthZEN's PDP
+  PEMs, and SPIFFE's sigstore registry auth, PSAT CA and token, kubelet
+  files and Azure token file. **`assertNamedFile()` stays only for a path
+  handed to a library that opens it**: the GCP IIT key file is now read here
+  and handed over as `credentials` when it is JSON, and by name, after the
+  path check, only when it is not (a legacy P12). The seams (`fs`,
+  `beforeOpen`, `descriptorLink`) are what `tests/named_file_descriptor.js`
+  swaps a path through; a caller with an injected `fs` passes it.
 * **`describe(family)`** — the three as they are IN FORCE, for the console and
   `/admin-api` views, where a skip stored in a product realm reads false.
 * **`checkServerIdentity(host, cert)` (#201)** — returned on every verifying
@@ -14493,6 +14518,49 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   the recipient's language (`Intl.ListFormat`). The doors this ticket added
   a CAEP call to: `/admin-api`'s `assign-oath` and `assign-yubiotp`, and the
   OATH and YubiKey OTP lost-token retirers. `tests/credential_change_mail.js`.
+- **A certificate that expires soon (#2247, ASVS 5.0.0 6.4.5)** is the
+  `credential-expiring` notice, `mail.expiryReminders` (on), sent by
+  `credentialsExpiring()` for `credential_expiry.ts`'s job — see
+  *Credential expiry reminders* below.
+
+### Credential expiry reminders: `credential_expiry.ts` (#2247, 2026-11-25)
+
+Nothing reminded a person before a certificate they hold expired. The
+module's header argues the design; what a maintainer needs beside it:
+
+- **The index is `credential_expiry.due`**, one row per certificate a
+  person holds, on demand with `indexBy` in the existing
+  `sts_minted_index` — no schema version, no upgrade script. A row is filed
+  under the DAY ITS NEXT REMINDER IS DUE (`n:`) and its person (`p:`), so
+  the hourly job (`mail.credential-expiry`) makes at most 31 equality
+  lookups a run whatever the realm holds, and a row told at its step moves
+  on. It expires with its certificate.
+- **It is kept by the entries' writes, through `entry_observer.ts`'s
+  `watch()`**, a second kind of registration beside `register()`: a
+  watcher owns nothing, may share an attribute, and is told the whole
+  entry once. `ldap_server.js`'s two in-place certificate writers (the
+  enrollment slot's `write()`, `changeStoredCertificate()`) do not go
+  through `noteAccountChange()`, so they call `tellCredentialWatchers()`.
+  A new writer of `stsEnrolledCertificate`, `userSMIMECertificate` or
+  `userCertificate` that bypasses both is a certificate nobody is reminded
+  of. A person's TLS client certificate is not on the entry at all (the
+  realm's PKI register), so `tls_client_certificates.js`'s `issue()` and
+  `revoke()` tell the module themselves (`noteHeld()`, `noteGone()`), and a
+  deleted person's rows all go (`forget()`).
+- **Once per step is the row's `told`**, which outlives the outbox; the
+  outbox (`queuedWithin()`, `dedupKey`/`dedupAlso` per item and step) is
+  the cluster's record for a race. A refusal that will be the same next run
+  is told; a ceiling, a full outbox or the realm's own problem (no
+  transport, no link base) is not, and the last stops the run.
+- **The backfill** is the one walk: `passkeyScanAsync()` over every person,
+  5,000 a run after a cursor on the `$backfill$` row, until done; then the
+  realm's TLS client register once (`personCertificatesOf()`).
+- **SSH user certificates are not followed** (an hour at most), nor
+  anything that does not expire here. The PIV `piv-reissue` activity is
+  unchanged and off by default: it renews at a sign-in, and the reminder
+  names the Security keys page for every holder whether or not it is on.
+
+`tests/credential_expiry_mail.js` holds it in process.
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
 `smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it
@@ -17643,7 +17711,9 @@ the decisions (D1–D5) are on the issue; what a maintainer needs:
   `trustMaterial()`) and `tuf-root` (ONE root: TUF bootstraps from the
   first). `documentsFor()` reads a setting view's files through
   `readNamedFile()`, which asks `security.fileRoots`
-  (`tests/asvs_product_limits.js` looks for the rule there). TUF's state
+  (`tests/asvs_product_limits.js` looks for the rule there) and, since
+  #2247, is `OutboundTls.readNamedFile()`: checked and read through one
+  descriptor. TUF's state
   stays keyed on the repository and the root's BYTES, so a deployment that
   keeps the setting keeps its refreshed state.
 * **THE KIND CHECK** (`assignmentProblem()`, STS-PKI-0309) compares what a

@@ -97,6 +97,10 @@ interface CredentialChange {
   changeType?: string;
   friendlyName?: string;
   initiatingEntity?: string;
+  // CAEP's `event_timestamp`, in epoch seconds, where the change happened
+  // before it was reported (#2236: Kerberos keys derived after the password
+  // act they follow); now when absent.
+  eventTimestamp?: number;
   reasonAdmin?: string;
   reasonUser?: string;
   via?: string;

@@ -212,9 +212,9 @@ class Truststores {
       readCaFile: function (file: string): string[] | string {
         return require('./outbound_tls').caFilePems(file);
       },
+      // Checked and read through one descriptor (#2247).
       readNamedFile: function (file: string): string {
-        require('./outbound_tls').assertNamedFile(file);
-        return fs.readFileSync(file, 'utf8');
+        return require('./outbound_tls').readNamedFile(file);
       }
     };
   }

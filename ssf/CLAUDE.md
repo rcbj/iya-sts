@@ -2993,6 +2993,21 @@ is sent from the one function that writes the credential (#145's rule):
 | a person's Kerberos keys | `urn:iya:sts:credential-type:kerberos-key` | `krb5_person_keys` `derive()`, `clearPersonKeys()`, `dropPreviousPersonKeys()` | create (first key); update (a new password's kvno); revoke (previous versions dropped); delete (cleared) |
 | a device's JWK key, a Native SSO secret (#164) | `...:device-key`, `...:device-secret` | `devices.ts` | above |
 
+**A person's Kerberos keys carry their password act's initiating entity and
+instant (#2236).** `derive()` runs after the password is written, on a
+queue, so its own `system` and its own clock said "somebody else changed
+this person's credential, after the sign-in" — and the console, the portal
+and the reports application, which act on every `credential-change` not the
+person's own (`ssf_receivers.ts`, `actOn()`), revoked the token issued on
+the sign-in at which the person had just chosen that password (STS-API-0122,
+then STS-OAUTH-0214, in every product mode). `credentials.notifyPassword()`
+now hands the observer `initiatingEntity` (`user` for a verification, the
+caller's `setPassword(…, { initiatingEntity })` for a set, nothing
+otherwise) and `atMs`, and the event carries both (`eventTimestamp` on
+`credentialChanged()`). The doors that set a password the person chose say
+`user`: the forced change at the sign-in screen, and the portal's change,
+reset and activation. A set that names nobody is still `system`.
+
 A SCEP challenge IS a password; the friendly name keeps it apart from the
 account's own, for a receiver and for the person's "password changed" mail
 (which is sent only for an unnamed `password`). Binding an EAB key and

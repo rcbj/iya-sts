@@ -272,8 +272,8 @@
     "text": "Wie aktuell eine Anmeldung für eine sensible Änderung sein muss (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "Wie kurz zuvor sich jemand angemeldet haben muss, in Minuten, um zu ändern, wie sich eine Person anmeldet. Im Portal: ihre zweiten Faktoren, Wiederherstellungscodes, Passkeys, App-Passwörter, Zertifikate, Signierschlüssel, selbst ausgestellte Kennungen, die E-Mail-Adresse oder ein Angebot von Wallet-Anmeldedaten sowie das Beenden ihrer anderen Sitzungen; sie werden zuerst erneut zur Anmeldung geschickt. Für einen Administrator: das Ändern von Passwort, zweitem Faktor, Passkey, Wiederherstellungscodes, E-Mail-Adresse oder App-Passwörtern einer Person über die Konsole oder /admin-api, was mit insufficient_user_authentication nach RFC 9470 antwortet. Dasselbe gilt, wenn ein Administrator eine Rolle vergibt oder entzieht, einen Vertrauensbereich anlegt, ändert oder entfernt, an der PKI, den Signierschlüsseln, dem Schlüsselverschlüsselungsschlüssel oder den Zielen für die Weitergabe von Geheimnissen handelt oder irgendeine Einstellung ändert (#2161). 0 bedeutet, dass es nicht verlangt wird, das ist der Standard der Entwicklung. Der Produktmodus verwendet standardmäßig 15."
+    "en": "b20d406d9605d06f",
+    "text": "Wie kurz zuvor sich jemand angemeldet haben muss, in Minuten, um zu ändern, wie sich eine Person anmeldet. Im Portal: ihre zweiten Faktoren, Wiederherstellungscodes, Passkeys, App-Passwörter, Zertifikate, Signierschlüssel, selbst ausgestellte Kennungen, die E-Mail-Adresse oder ein Angebot von Wallet-Anmeldedaten sowie das Beenden ihrer anderen Sitzungen; sie werden zuerst erneut zur Anmeldung geschickt. Für einen Administrator: das Ändern von Passwort, zweitem Faktor, Passkey, Wiederherstellungscodes, E-Mail-Adresse oder App-Passwörtern einer Person über die Konsole oder /admin-api, was mit insufficient_user_authentication nach RFC 9470 antwortet. Dasselbe gilt, wenn ein Administrator eine Rolle vergibt oder entzieht, einen Vertrauensbereich anlegt, ändert oder entfernt, an der PKI, den Signierschlüsseln, dem Schlüsselverschlüsselungsschlüssel oder den Zielen für die Weitergabe von Geheimnissen handelt oder irgendeine Einstellung ändert (#2161). Ebenso beim Ändern einer Anwendung, einer Föderationsbeziehung, eines SAML-Dienstanbieters, einer Zugriffsrichtlinie, einer Gruppe, einer benannten Richtlinie, der Claims eines Tokens oder von allem anderen, was entscheidet, wer sich anmelden kann, was ausgestellt wird oder wohin es geht (#2247). 0 bedeutet, dass es nicht verlangt wird, das ist der Standard der Entwicklung. Der Produktmodus verwendet standardmäßig 15."
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -5606,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Was der Claim `aud` nennen muss, damit ein Token hier akzeptiert wird. Vorgabe ist die Basis-URL der Verwaltungs-API — global.publicBaseUrl, gefolgt von /admin-api, wo das gesetzt ist, und sonst Schema, Host und Port dieses Prozesses selbst. Solange sie auf dieser Vorgabe steht, wird auch ein Token akzeptiert, dessen Zielgruppe /admin-api unter dem Host ist, auf dem die Anfrage ankam, und genau das erhält ein Client, wenn er am Token-Endpunkt `resource=<base>/admin-api` verlangt (RFC 8707), unter welchem Namen er diesen Dienst auch erreicht hat. Setzen Sie es, um einen einzelnen Wert festzulegen, wo eine Bereitstellung unter mehreren Namen erreicht wird."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Verwaltungs-API-Änderungen pro Person je Zeitfenster"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Wie viele Änderungen ein angemeldeter Administrator in einem Zeitfenster von adminApi.writeWindowS über /admin-api (einschließlich der Admin-Konsole) vornehmen darf. Gezählt wird nach dem Subjekt des Tokens, nicht nach der Adresse. Jeder POST, der etwas schreibt, zählt; Lesezugriffe nicht. Darüber hinaus wird eine Änderung mit 429 und Retry-After abgelehnt, bis das Zeitfenster vorüber ist, und das Lesen geht weiter. Das Token eines Programms wird stattdessen von adminApi.programWritesPerSubject gezählt. 0 bedeutet keine Grenze, die Vorgabe im Entwicklungsmodus. Im Produktmodus ist die Vorgabe 1200."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Verwaltungs-API-Änderungen pro Programm je Zeitfenster"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Wie viele Änderungen ein Programm in einem Zeitfenster von adminApi.writeWindowS über /admin-api vornehmen darf: ein client_credentials-Token, gezählt nach seinem Client, oder das eines Dienstkontos, gezählt nach seinem Subjekt. Darüber hinaus wird eine Änderung mit 429 und Retry-After abgelehnt, bis das Zeitfenster vorüber ist. 0, die Vorgabe in jedem Modus, bedeutet keine Grenze, weil ein Provisionierungslauf oder eine Migration berechtigterweise Tausende Änderungen in Minuten vornimmt; setzen Sie es auf das, was Ihre Programme brauchen."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Zeitfenster für Änderungen über die Verwaltungs-API (Sekunden)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "Das Zeitfenster, in dem adminApi.writesPerSubject und adminApi.programWritesPerSubject gezählt werden, in Sekunden. Ein festes Zeitfenster, wie bei jeder Ratenbegrenzung hier."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
@@ -12882,6 +12906,30 @@
   "mail.signInAlertWindowS|description": {
     "en": "29547122992cacaf",
     "text": "Wie lange eine Art von Anmeldewarnung – ein neues Gerät, ein neues Land, ein Anonymisierungsnetz, abgelehnte Passwörter – einer Person höchstens einmal gemeldet wird. Der Postausgang ist der Nachweis, daher wirkt ein Fenster, das länger als mail.retentionS ist, nur so lange."
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Erinnerungen an ablaufende Anmeldedaten"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Eine Person unter der Adresse in ihrem Eintrag erinnern, bevor ein Zertifikat abläuft, das sie besitzt: ein Zertifikat, das dieser Realm ihr über ACME, EST oder SCEP ausgestellt hat, ein PIV-Smartcard-Zertifikat, ein S/MIME-Zertifikat, ein TLS-Client-Zertifikat oder ein für die Zertifikatsanmeldung gespeichertes Zertifikat. Jedes wird an jedem Tag aus mail.expiryReminderDays einmal genannt, alle fälligen Zertifikate in einer Nachricht, mit dem Ablaufdatum und der Art der Erneuerung. Solange Sicherheitshinweise ausgeschaltet sind oder kein Transport konfiguriert ist, wird nichts gesendet."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Tage für Erinnerungen an ablaufende Anmeldedaten"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Wie viele Tage vor dem Ablauf eines Zertifikats sein Inhaber erinnert wird, je eine Erinnerung. Ein Zertifikat, das erst innerhalb eines dieser Zeiträume bekannt wird, wird beim nächstgelegenen genannt und nie bei einem Schritt, der bereits vorbei ist. Eine Änderung gilt für jedes Zertifikat ab seiner nächsten Erinnerung."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Anmeldedaten, die eine Ablauferinnerung nennt"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Welche Arten von Zertifikaten eine Ablauferinnerung nennt: certificate (über ACME, EST oder SCEP ausgestellt), piv (ein PIV-Slot-Zertifikat), smime (ein S/MIME-Zertifikat, an das Mails verschlüsselt werden), tls-client (ein TLS-Client-Zertifikat, auf der Portalseite „Signaturschlüssel“ oder von einem Administrator ausgestellt) und signin-certificate (ein im Eintrag für die Zertifikatsanmeldung gespeichertes Zertifikat). Eine weggelassene Art wird weiter verfolgt, sodass sie nach dem Wiederaufnehmen bei ihrem nächsten Schritt erinnert."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

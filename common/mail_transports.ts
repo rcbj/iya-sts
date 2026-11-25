@@ -49,7 +49,6 @@
 // final (0008, 0021, 0014). The outbox decides what to do with it.
 // ===========================================================================
 
-import fs = require('fs');
 import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import secrets = require('./secrets');
@@ -218,9 +217,9 @@ class MailTransports {
         return secrets.readSecretText(spec);
       },
       secrets: secrets,
+      // Checked and read through one descriptor (#2247).
       readFile: function (path: string): string {
-        require('./outbound_tls').assertNamedFile(path);
-        return fs.readFileSync(path, 'utf8');
+        return require('./outbound_tls').readNamedFile(path);
       },
       dkimSign: crypto.dkimSign,
       dkimDnsRecord: crypto.dkimDnsRecord,

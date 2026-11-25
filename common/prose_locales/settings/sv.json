@@ -272,8 +272,8 @@
     "text": "Hur nyligen inloggningen måste ha skett för en känslig ändring (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. Detsamma gäller när en administratör tilldelar eller tar bort en roll, skapar, ändrar eller tar bort en förtroendesfär, agerar på PKI:n, signeringsnycklarna, nyckelkrypteringsnyckeln eller målen för utskick av hemligheter, eller ändrar någon inställning (#2161). 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+    "en": "b20d406d9605d06f",
+    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. Detsamma gäller när en administratör tilldelar eller tar bort en roll, skapar, ändrar eller tar bort en förtroendesfär, agerar på PKI:n, signeringsnycklarna, nyckelkrypteringsnyckeln eller målen för utskick av hemligheter, eller ändrar någon inställning (#2161). Detsamma gäller när en applikation, en federationsrelation, en SAML-tjänsteleverantör, en åtkomstpolicy, en grupp, en namngiven policy, de claims en token bär eller något annat som avgör vem som kan logga in, vad de utfärdas eller vart det går ändras (#2247). 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -5606,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Det som anspråket `aud` måste ange för att en token ska godtas här. Standard är hanterings-API:ets bas-URL — global.publicBaseUrl följd av /admin-api där den är angiven, och annars den här processens eget schema, värd och port. Medan den har det standardvärdet godtas även en token med /admin-api som målgrupp under den värd som begäran kom in på, vilket är vad en klient får genom att begära `resource=<base>/admin-api` vid tokenslutpunkten (RFC 8707) under vilket namn den än nådde den här tjänsten. Ange den för att fästa ett enda värde där en driftsättning nås under flera namn."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Ändringar per person och fönster i hanterings-API:t"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Hur många ändringar en inloggad administratör får göra via /admin-api (administrationskonsolen inräknad) inom ett fönster på adminApi.writeWindowS. Räknas per tokenens subjekt, inte per adress. Varje POST som skriver räknas; läsningar gör det inte. Därefter avvisas en ändring med 429 och Retry-After tills fönstret har passerat, och läsning fortsätter. Ett programs token räknas i stället av adminApi.programWritesPerSubject. 0 betyder ingen gräns, standardvärdet i utveckling. Produktläget använder 1200 som standard."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Ändringar per program och fönster i hanterings-API:t"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Hur många ändringar ett program får göra via /admin-api inom ett fönster på adminApi.writeWindowS: en client_credentials-token, räknad per klient, eller ett tjänstekontos, räknad per subjekt. Därefter avvisas en ändring med 429 och Retry-After tills fönstret har passerat. 0, standardvärdet i alla lägen, betyder ingen gräns, eftersom en provisionering eller en migrering legitimt gör tusentals ändringar på några minuter; sätt det till vad dina program behöver."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Fönster för ändringar i hanterings-API:t (sekunder)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "Fönstret som adminApi.writesPerSubject och adminApi.programWritesPerSubject räknas inom, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
@@ -12882,6 +12906,30 @@
   "mail.signInAlertWindowS|description": {
     "en": "29547122992cacaf",
     "text": "Hur länge en typ av inloggningsvarning – en ny enhet, ett nytt land, ett anonymiseringsnätverk, nekade lösenord – meddelas en person högst en gång. Utkorgen är registret, så ett fönster längre än mail.retentionS varar bara så länge."
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Påminnelser om utgående inloggningsuppgifter"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Påminn en person, på adressen i deras post, innan ett certifikat de har upphör att gälla: ett certifikat som den här sfären utfärdade till dem via ACME, EST eller SCEP, ett PIV-smartkortscertifikat, ett S/MIME-certifikat, ett TLS-klientcertifikat eller ett certifikat lagrat för certifikatinloggning. Vart och ett nämns en gång vid var och en av mail.expiryReminderDays, alla certifikat som är aktuella i ett meddelande, med när det upphör att gälla och hur det förnyas. Inget skickas medan säkerhetsmeddelanden är avstängda eller ingen transport är konfigurerad."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Dagar för påminnelser om utgående inloggningsuppgifter"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Hur många dagar innan ett certifikat upphör att gälla dess innehavare påminns, en påminnelse vid varje. Ett certifikat som först syns inom en av dem nämns vid den närmaste, och aldrig vid ett steg som redan har passerats. En ändring gäller varje certifikat vid dess nästa påminnelse."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Inloggningsuppgifter som en utgångspåminnelse nämner"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Vilka slags certifikat en utgångspåminnelse nämner: certificate (utfärdat via ACME, EST eller SCEP), piv (ett PIV-platscertifikat), smime (ett S/MIME-certifikat som e-post krypteras till), tls-client (ett TLS-klientcertifikat utfärdat från portalens sida Signeringsnycklar eller av en administratör) och signin-certificate (ett certifikat lagrat i posten för certifikatinloggning). Ett slag som utelämnas följs fortfarande, så att det påminns vid sitt nästa steg när det läggs tillbaka."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

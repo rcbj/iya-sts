@@ -9,17 +9,19 @@ first or the rest of this file will read as though it contradicts itself:
 | | What it is | Where it is authored |
 |---|---|---|
 | `tests/*.js` | the IN-PROCESS half — this repository's own module contracts, no fixed port, no container, no stack | here |
-| `tests/protocol/` | the PROTOCOL half — jobs driven over HTTP against a CONTAINER built from this tree, plus the wallet modules several of them verify against. A few are byte-identical copies of the parent's mock-only jobs; **most are this repository's own** (`local: true`), and `MANIFEST.js` is the count of each | the copies: **the parent project**, not edited here. the `local` ones: **here**, and only here |
+| `tests/protocol/` | the PROTOCOL half — jobs driven over HTTP against a CONTAINER built from this tree, plus the wallet modules several of them verify against. A few began as copies of the parent's mock-only jobs; **most were written here** (`local: true`), and `MANIFEST.js` is the count of each | **here**, all of them, since 2026-10-23 (#430) |
 
-Everything this file says about what belongs HERE is about the first row. The
-COPIES in the second row are argued in `tests/protocol/MANIFEST.js`, and the
-rule that governs them is the one `common/crypto_impl/` followed until #1280: **edit the parent's copy, then
-`node tests/tools/vendor-check.js --sync`.** A fix made in `tests/protocol/` is
-overwritten by the next sync and never reaches the stack that gates that
-project.
+Everything this file says about what belongs HERE is about the first row.
+**The jobs that began as the parent's copies are maintained here too, since
+2026-10-23 (#430)**: there is no sync any more (`tools/vendor-check.js` is
+gone), nothing overwrites them, and a fix to one is made here like any other
+change. They keep the parent's MIT licence (`REUSE.toml`) and the parent's
+style. Port a change back to the parent only when a parent test or wire
+compatibility calls for it; `tests/protocol/MANIFEST.js`'s header is the
+authority. ~~Edit the parent's copy, then sync~~ was the rule until then.
 
 **THE JOBS MARKED `local: true` IN THAT MANIFEST ARE THE EXCEPTION, AND
-THE RULE IS EXACTLY INVERTED FOR THEM.** `sts_metadata.js`, `admin_api.js`,
+THEY WERE WRITTEN HERE FROM THE START.** `sts_metadata.js`, `admin_api.js`,
 `sts_admin_api_operations.js`, `sts_admin_console.js`,
 `sts_delegated_permissions_example.js`, `sts_consent.js`,
 `sts_xacml_endpoints.js`, `sts_xacml_editor.js`, `sts_xacml_remote_pep.js` and
@@ -36,11 +38,9 @@ exists to stop. The first four ran from the parent's
 suite until 2026-08-28 and were deleted there that day, on the argument that a
 test asserting something about this console belongs in the tree where a control
 is ADDED to that console — the tree that should go red when the control loses
-its operation. **There is no copy of them over there to sync from**, which is
-what the flag is for: `allFiles()` leaves them out, so
-`tools/vendor-check.js` cannot report them GONE UPSTREAM and its `--sync`
-cannot overwrite them. They are
-edited HERE, and only here.
+its operation. **There is no copy of them over there**, which is what the flag
+records; it once also kept the sync (`tools/vendor-check.js`, gone since
+#430) from reporting them gone upstream or overwriting them.
 
 **THE FIFTH WAS NEVER OVER THERE AND IT BREAKS ONE RULE ON PURPOSE.**
 `sts_delegated_permissions_example.js` (2026-09-01) builds
@@ -584,14 +584,11 @@ because a typo in a filter must never read as "everything passed".
                                      # container and the service its child,
                                      # because V8 collects from inside the
                                      # process it measures
-node tests/tools/vendor-check.js         # is tests/protocol/ still in sync?
-node tests/tools/vendor-check.js --sync  # re-copy the parent's files over it
 ```
 
-`vendor-check.js` needs the parent project checked out beside this one (or
-`--parent=<dir>`) and this repository's `npm install`; it reads files and runs
-nothing of the parent's. `./local-run-tests.sh`, which carried all of these as
-options, was removed on 2026-09-16.
+`./local-run-tests.sh`, which carried all of these as options, was removed on
+2026-09-16; `tools/vendor-check.js`, the sync with the parent, on 2026-10-23
+(#430).
 
 **`./run-tests.sh` IS THE WHOLE SUITE**, and the two files in this
 directory that serve it are not tests: `Dockerfile`
@@ -2346,9 +2343,8 @@ finished and can be worth nothing.
 
 `tools/` is not in that table because nothing in it is a test:
 `run-report.js` (the report generator), `coverage-report.js` (the V8 coverage
-renderer), `vendor-check.js` (the drift check over `vendored/`, and a TOOL
-rather than a job on purpose — its own header argues why a check that needs the
-other checkout must not be what decides whether this repository is green),
+renderer), ~~`vendor-check.js`~~ (the drift check with the parent, removed
+by #430: the jobs are maintained here),
 the compose-stack helpers (`compose.sh`, shared by `./run-tests.sh`
 and `./run-coverage.sh`), `host-platform.sh` and the shims in `windows/`
 (the machine a host script runs on, Linux or Windows under Cygwin — #512;

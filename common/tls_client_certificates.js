@@ -505,6 +505,66 @@ function listFor(realmId, username, kind, purpose) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// A PERSON'S TLS CLIENT CERTIFICATE TOLD TO THE EXPIRY REMINDER (#2247),
+// `common/credential_expiry.ts`, which keeps the index its reminders read.
+// Required at the moment of use: it is built after this module, and it never
+// requires this one at load. A failure is the reminder's, never the issue's
+// or the revocation's, which have already happened.
+// ---------------------------------------------------------------------------
+function noteCredentialExpiry(what, scope, username, pem) {
+  log.debug("Entering noteCredentialExpiry(). " + what);
+  try {
+    const expiry = require('./credential_expiry');
+    realms.run(scope, function () {
+      return what === 'held'
+        ? expiry.noteHeld(username, pem, 'tls-client')
+        : expiry.noteGone(username, pem);
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-MAIL-0247') + 'tls: the TLS client ' +
+              'certificate of ' + username + ' was not told to the expiry ' +
+              'reminder: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving noteCredentialExpiry().");
+}
+
+/**
+ * The people's valid TLS client certificates of a realm, for the expiry
+ * reminder's one-time backfill (#2247): one walk of the realm's register.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @returns `[{ username, certificatePem }]`
+ */
+function personCertificatesOf(realmId) {
+  log.debug("Entering personCertificatesOf().");
+  const scope = scopeOf(realmId);
+  const useCase = PURPOSES['tls-client'].useCase;
+  const now = Date.now();
+  const out = [];
+  pki.certificatesFor(scope, useCase).forEach(function (one) {
+    const holder = slotHolder(one.slot);
+    if (!holder || holder.kind !== 'person' || !one.certificatePem ||
+        !(new Date(one.notAfter).getTime() > now)) {
+      return;
+    }
+    let revoked = null;
+    try {
+      revoked = revocation().isRevoked(scope, useCase, one.serialHex);
+    } catch (e) {
+      // No revocation register here: listed on its validity, as listFor().
+      log.debug("Caught in personCertificatesOf(): " +
+                ((e && e.message) || e));
+      revoked = null;
+    }
+    if (!revoked) {
+      out.push({ username: holder.id, certificatePem: one.certificatePem });
+    }
+  });
+  log.debug("Leaving personCertificatesOf(). " + out.length);
+  return out;
+}
+
 /**
  * Lists the holder's certificates that are still valid.
  *
@@ -1059,6 +1119,13 @@ async function issue(realmId, spec) {
       reasonUser: kind === 'application'
         ? 'A ' + purpose.noun + ' was issued to this application.'
         : 'You were issued a ' + purpose.noun + '.' }));
+  // THE EXPIRY REMINDER'S INDEX (#2247): a person's TLS client certificate
+  // is what certificate sign-in presents, and it is kept here, not on the
+  // entry, so its row is filed here. Lazily: the module is built later.
+  if (kind === 'person' && purposeId === 'tls-client') {
+    noteCredentialExpiry('held', scope, username,
+                         made.record.certificatePem);
+  }
   log.debug("Leaving issue().");
   return {
     ok: true,
@@ -1312,6 +1379,9 @@ function revoke(realmId, username, serialHex, reasonId, kind, purpose) {
           : 'A ' + what.noun + ' of yours was revoked because somebody ' +
             'else may have its key.' }));
     }
+  }
+  if (done.ok && holderKind === 'person' && purposeId === 'tls-client') {
+    noteCredentialExpiry('gone', scope, username, mine.certificatePem);
   }
   log.debug("Leaving revoke(). ok=" + !!done.ok);
   return Object.assign({ certificate: mine, reason: reason }, done);
@@ -2534,6 +2604,7 @@ module.exports = {
   storedIdentityOf: storedIdentityOf,
   listFor: listFor,
   activeFor: activeFor,
+  personCertificatesOf: personCertificatesOf,
   labelProblem: labelProblem,
   personDirectorySubject: personDirectorySubject,
   plannedPersonSubject: plannedPersonSubject,

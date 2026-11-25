@@ -1611,8 +1611,13 @@ const SETTINGS = [
                  'role, creating, changing or removing a trust realm, ' +
                  'acting on the PKI, the signing keys, the key-encryption ' +
                  'key or the secret push destinations, and changing any ' +
-                 'setting (#2161). 0 means it is not asked, which is the ' +
-                 'development default. Product mode defaults to 15.' },
+                 'setting (#2161); and to changing an application, a ' +
+                 'federation relationship, a SAML service provider, an ' +
+                 'access policy, a group, a named policy, the claims a ' +
+                 'token carries, or anything else that decides who can ' +
+                 'sign in, what they are issued or where it goes (#2247). ' +
+                 '0 means it is not asked, which is the development ' +
+                 'default. Product mode defaults to 15.' },
 
   // #2167 (ASVS 5.0.0 2.4.2): a signed-in person's own budget of writes,
   // keyed by the token's subject. 300 in ten minutes is one write every two
@@ -11369,6 +11374,60 @@ const SETTINGS = [
                  '8707) under whatever name it reached this service by. Set ' +
                  'it to pin a single value where a deployment is reached ' +
                  'under several names.' },
+
+  // #2247 (ASVS 5.0.0 2.4.2): the management API's write budgets, keyed by
+  // the token's subject, as #2167's are on /account-api. A person's: 1200
+  // in ten minutes, two writes a second sustained, four times what the
+  // busiest console session — a policy built rule by rule, a group's
+  // members added one at a time — sends; off in development. A program's
+  // (client_credentials, a service account): no limit by default in every
+  // mode, because a provisioning run's burst is legitimate and its size is
+  // the operator's to know. PROCESS-WIDE, as the rows above are: a realm
+  // administrator may not lift the budget their own token is counted in.
+  // mgmt-api/admin_api.ts's `overWriteBudget()` argues the rest.
+  { key: 'adminApi.writesPerSubject', group: 'Management API',
+    label: 'Management API writes per person per window',
+    env: 'ADMIN_API_WRITES_PER_SUBJECT', type: 'int',
+    dflt: strongerInProduct(1200, 0), derived: true,
+    min: 0, max: 1000000,
+    perProcess: true,
+    runtime: true,
+    description: 'How many changes one signed-in administrator may make ' +
+                 'through /admin-api (the admin console included) in an ' +
+                 'adminApi.writeWindowS window. Counted by the token\'s ' +
+                 'subject, not by address. Every POST that writes counts; ' +
+                 'reads do not. Past it a change is refused with 429 and ' +
+                 'Retry-After until the window passes, and reading goes ' +
+                 'on. A program\'s token is counted by ' +
+                 'adminApi.programWritesPerSubject instead. 0 means no ' +
+                 'limit, which is the development default. Product mode ' +
+                 'defaults to 1200.' },
+
+  { key: 'adminApi.programWritesPerSubject', group: 'Management API',
+    label: 'Management API writes per program per window',
+    env: 'ADMIN_API_PROGRAM_WRITES_PER_SUBJECT', type: 'int', dflt: 0,
+    min: 0, max: 1000000,
+    perProcess: true,
+    runtime: true,
+    description: 'How many changes one program may make through /admin-api ' +
+                 'in an adminApi.writeWindowS window: a client_credentials ' +
+                 'token, counted by its client, or a service account\'s, ' +
+                 'counted by its subject. Past it a change is refused with ' +
+                 '429 and Retry-After until the window passes. 0, the ' +
+                 'default in every mode, means no limit, because a ' +
+                 'provisioning run or a migration legitimately makes ' +
+                 'thousands of changes in minutes; set it to what your ' +
+                 'programs need.' },
+
+  { key: 'adminApi.writeWindowS', group: 'Management API',
+    label: 'Management API write window (seconds)',
+    env: 'ADMIN_API_WRITE_WINDOW_S', type: 'int', dflt: 600,
+    min: 1, max: 86400,
+    perProcess: true,
+    runtime: true,
+    description: 'The window adminApi.writesPerSubject and ' +
+                 'adminApi.programWritesPerSubject are counted in, in ' +
+                 'seconds. A fixed window, as every rate limit here is.' },
 
   { key: 'admin.openWhenEmpty', group: 'Admin console',
     label: 'Open until the bootstrap administrator signs in',
@@ -23110,6 +23169,49 @@ const SETTINGS = [
                  'country, an anonymising network, refused passwords — is ' +
                  'told at most once to a person. The outbox is the record, ' +
                  'so a window longer than mail.retentionS is that long.' },
+  // #2247 (ASVS 5.0.0 6.4.5): `common/credential_expiry.ts`'s reminder job,
+  // through `common/mail_uses.ts`'s credentialsExpiring().
+  { key: 'mail.expiryReminders', group: 'Mail',
+    label: 'Credential expiry reminders',
+    env: 'STS_MAIL_EXPIRY_REMINDERS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Remind a person, at the address on their entry, before ' +
+                 'a certificate they hold expires: a certificate this ' +
+                 'realm issued them over ACME, EST or SCEP, a PIV smart ' +
+                 'card certificate, an S/MIME certificate, a TLS client ' +
+                 'certificate, or a ' +
+                 'certificate stored for certificate sign-in. Each is ' +
+                 'told once at each of mail.expiryReminderDays, every ' +
+                 'certificate due in one message, with when it expires ' +
+                 'and how to renew it. Nothing is sent while security ' +
+                 'notices are off or no transport is configured.' },
+  { key: 'mail.expiryReminderDays', group: 'Mail',
+    label: 'Credential expiry reminder days',
+    env: 'STS_MAIL_EXPIRY_REMINDER_DAYS', type: 'csv', dflt: '30,7,1',
+    csvValues: ['90', '60', '45', '30', '21', '14', '10', '7', '5', '3',
+                '2', '1'],
+    runtime: true,
+    description: 'How many days before a certificate expires its holder ' +
+                 'is reminded, one reminder at each. A certificate first ' +
+                 'seen inside one of them is told at the nearest, and ' +
+                 'never at a step it has already passed. A change applies ' +
+                 'to each certificate at its next reminder.' },
+  { key: 'mail.expiryReminderKinds', group: 'Mail',
+    label: 'Credentials an expiry reminder names',
+    env: 'STS_MAIL_EXPIRY_REMINDER_KINDS', type: 'csv',
+    dflt: 'certificate,piv,smime,tls-client,signin-certificate',
+    csvValues: ['certificate', 'piv', 'smime', 'tls-client',
+                'signin-certificate'],
+    runtime: true,
+    description: 'Which kinds of certificate an expiry reminder names: ' +
+                 'certificate (issued over ACME, EST or SCEP), piv (a PIV ' +
+                 'slot certificate), smime (an S/MIME certificate mail is ' +
+                 'encrypted to), tls-client (a TLS client certificate ' +
+                 'issued from the portal\'s Signing keys page or by an ' +
+                 'administrator) and signin-certificate (a certificate ' +
+                 'stored on the entry for certificate sign-in). A kind ' +
+                 'left out is still followed, so putting it back reminds ' +
+                 'at its next step.' },
   // -------------------------------------------------------------------------
   // REPORTING (#956). Realm-overridable because none of these set
   // perProcess. Read where the question is asked; zero is not a legal

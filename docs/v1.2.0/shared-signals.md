@@ -88,6 +88,18 @@ not know one still learns that a credential of the person changed:
 A SCEP challenge password is sent as `password`, with `friendly_name` naming
 it. A CIBA user code is `pin`.
 
+**A person's Kerberos keys follow the password they are derived from**
+([#2236](https://github.com/rcbj/iya-sts/issues/2236)). The keys are derived
+just after the password is set, and their `credential-change` carries the
+password act's `initiating_entity` and `event_timestamp`: `user` when the
+person chose the password (the forced change at the sign-in screen, the
+portal's change, reset and activation) or proved it at a sign-in, and the
+instant of that act rather than of the derivation. A password set by a door
+that does not say who set it is `system`, as before. The console, the portal
+and the reports application skip a `credential-change` that is the person's
+own, so the token a person is issued just after choosing a password is no
+longer revoked by the keys derived from it.
+
 **A credential cannot be written over LDAP**
 ([#237](https://github.com/rcbj/iya-sts/issues/237)). An add or modify of a
 security key, an authenticator app, recovery codes, an app password, a

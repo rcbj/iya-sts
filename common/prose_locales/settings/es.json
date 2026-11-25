@@ -272,8 +272,8 @@
     "text": "Antigüedad máxima del inicio de sesión para un cambio sensible (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "Hace cuánto, como máximo, en minutos, debe haber iniciado sesión alguien para cambiar cómo inicia sesión una persona. En el portal: sus segundos factores, códigos de recuperación, llaves de acceso, contraseñas de aplicación, certificados, claves de firma, identificadores autoemitidos, dirección de correo o una oferta de credencial para la cartera, y cerrar sus otras sesiones; primero se la envía a iniciar sesión de nuevo. Para un administrador: cambiar la contraseña, el segundo factor, la llave de acceso, los códigos de recuperación, la dirección de correo o las contraseñas de aplicación de una persona a través de la consola o de /admin-api, que responde con insufficient_user_authentication de RFC 9470. Lo mismo se aplica cuando un administrador concede o retira un rol, crea, cambia o elimina un dominio de confianza, actúa sobre la PKI, las claves de firma, la clave de cifrado de claves o los destinos de envío de secretos, o cambia cualquier ajuste (#2161). 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
+    "en": "b20d406d9605d06f",
+    "text": "Hace cuánto, como máximo, en minutos, debe haber iniciado sesión alguien para cambiar cómo inicia sesión una persona. En el portal: sus segundos factores, códigos de recuperación, llaves de acceso, contraseñas de aplicación, certificados, claves de firma, identificadores autoemitidos, dirección de correo o una oferta de credencial para la cartera, y cerrar sus otras sesiones; primero se la envía a iniciar sesión de nuevo. Para un administrador: cambiar la contraseña, el segundo factor, la llave de acceso, los códigos de recuperación, la dirección de correo o las contraseñas de aplicación de una persona a través de la consola o de /admin-api, que responde con insufficient_user_authentication de RFC 9470. Lo mismo se aplica cuando un administrador concede o retira un rol, crea, cambia o elimina un dominio de confianza, actúa sobre la PKI, las claves de firma, la clave de cifrado de claves o los destinos de envío de secretos, o cambia cualquier ajuste (#2161). Lo mismo ocurre al cambiar una aplicación, una relación de federación, un proveedor de servicios SAML, una política de acceso, un grupo, una política con nombre, las claims que lleva un token o cualquier otra cosa que decida quién puede iniciar sesión, qué se le emite o adónde va (#2247). 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -5606,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Lo que debe nombrar el claim `aud` para que un token se acepte aquí. De forma predeterminada es la URL base de la API de gestión — global.publicBaseUrl seguido de /admin-api donde esté definido, y en otro caso el esquema, host y puerto propios de este proceso. Mientras esté en ese predeterminado, también se acepta un token con audiencia /admin-api bajo el host por el que llegó la solicitud, que es lo que obtiene un cliente al pedir `resource=<base>/admin-api` en el endpoint de token (RFC 8707) bajo el nombre con el que llegó a este servicio. Defínalo para fijar un único valor donde a una implementación se llega por varios nombres."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Cambios por persona y ventana en la API de administración"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Cuántos cambios puede hacer un administrador con sesión iniciada a través de /admin-api (incluida la consola de administración) en una ventana de adminApi.writeWindowS. Se cuenta por el sujeto del token, no por la dirección. Cuenta cada POST que escribe; las lecturas no. Pasado ese número, un cambio se rechaza con 429 y Retry-After hasta que pase la ventana, y la lectura continúa. El token de un programa se cuenta en cambio por adminApi.programWritesPerSubject. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 1200 por defecto."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Cambios por programa y ventana en la API de administración"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Cuántos cambios puede hacer un programa a través de /admin-api en una ventana de adminApi.writeWindowS: un token client_credentials, contado por su cliente, o el de una cuenta de servicio, contado por su sujeto. Pasado ese número, un cambio se rechaza con 429 y Retry-After hasta que pase la ventana. 0, el valor predeterminado en todos los modos, significa sin límite, porque un aprovisionamiento o una migración hace legítimamente miles de cambios en minutos; ajústelo a lo que necesiten sus programas."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Ventana de cambios de la API de administración (segundos)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "La ventana en la que se cuentan adminApi.writesPerSubject y adminApi.programWritesPerSubject, en segundos. Una ventana fija, como toda limitación de tasa aquí."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
@@ -12882,6 +12906,30 @@
   "mail.signInAlertWindowS|description": {
     "en": "29547122992cacaf",
     "text": "Durante cuánto tiempo un tipo de alerta de inicio de sesión —un dispositivo nuevo, un país nuevo, una red de anonimización, contraseñas rechazadas— se avisa como máximo una vez a una persona. La bandeja de salida es el registro, así que una ventana más larga que mail.retentionS dura solo eso."
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Recordatorios de caducidad de credenciales"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Avisar a una persona, en la dirección de su entrada, antes de que caduque un certificado que tiene: un certificado que este dominio le emitió por ACME, EST o SCEP, un certificado de tarjeta inteligente PIV, un certificado S/MIME, un certificado de cliente TLS o un certificado guardado para el inicio de sesión con certificado. Cada uno se avisa una vez en cada uno de los días de mail.expiryReminderDays, todos los certificados pendientes en un solo mensaje, con cuándo caducan y cómo renovarlos. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Días de los recordatorios de caducidad de credenciales"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Cuántos días antes de que caduque un certificado se avisa a su titular, un recordatorio en cada uno. Un certificado que aparece por primera vez dentro de uno de ellos se avisa en el más cercano, y nunca en un paso que ya pasó. Un cambio se aplica a cada certificado en su siguiente recordatorio."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Credenciales que nombra un recordatorio de caducidad"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Qué tipos de certificado nombra un recordatorio de caducidad: certificate (emitido por ACME, EST o SCEP), piv (un certificado de ranura PIV), smime (un certificado S/MIME al que se cifra el correo), tls-client (un certificado de cliente TLS emitido desde la página Claves de firma del portal o por un administrador) y signin-certificate (un certificado guardado en la entrada para el inicio de sesión con certificado). Un tipo omitido se sigue vigilando, así que volver a incluirlo avisa en su siguiente paso."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

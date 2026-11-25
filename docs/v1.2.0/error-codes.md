@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6165** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6168** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 144
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 46
+* [Mail (`STS-MAIL`)](#sts-mail) — 48
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
 * [Device register (`STS-DEVICE`)](#sts-device) — 54
@@ -98,7 +98,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 320
-* [Management API (`STS-API`)](#sts-api) — 97
+* [Management API (`STS-API`)](#sts-api) — 98
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 24
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
@@ -4605,6 +4605,8 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
 | `STS-MAIL-0244` | A message was not queued because the realm's outbox already holds mail.maxRows unsent messages; nothing already queued is dropped to make room (#2220). | none — the sender is told the message was refused |
 | `STS-MAIL-0245` | A DKIM selector switch is held back (#2220): mail.dkimNextSelector's key cannot sign, or mail.dkimSwitchAt has passed and DNS does not answer the next selector with its key. Messages are signed with the current selector until it does. | RFC 6376 section 3.6.1 (log only) |
+| `STS-MAIL-0246` | A credential expiry reminder could not be queued, or the mail.credential-expiry job could not read the realm's expiry index or record what it told; the next run tries again (#2247). | none — logged |
+| `STS-MAIL-0247` | The credential expiry index was not kept in step with a write of a person's entry: its watcher was refused or threw, a certificate on the entry could not be read, or the index row could not be written. That person is not reminded of what changed until their entry is next written (#2247). | none — logged |
 
 ## STS-I18N
 
@@ -6463,6 +6465,7 @@ Raised from: mgmt-api/.
 | `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
 | `STS-API-0146` | An answer was refused by its response model (STS-API-0139) in a process where every plain object or array inherits an enumerable member: something wrote to Object.prototype or Array.prototype, so every closed model refuses every answer. The log line names the members, once per set of names; the process needs a restart and the write that polluted it a fix. | — |
 | `STS-API-0147` | A remote PEP's decision-record push (POST /admin-api/pep-audit) arrived on a token that does not carry xacml:pep-audit or whose subject is not in the remote PEPs' group (REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented at another operation (#1827). Refused at the gate itself, so that the separation does not depend on xacml.enforceAccess. | HTTP 403, an error message |
+| `STS-API-0148` | A management API caller made more changes than its write budget allows in an adminApi.writeWindowS window, counted by the token's subject: adminApi.writesPerSubject for a person's token, adminApi.programWritesPerSubject for a client_credentials or service account's. Further changes are refused until the window passes; reads go on (#2247, ASVS 5.0.0 2.4.2). | HTTP 429 {ok:false, errors} with Retry-After |
 
 ## STS-PORTAL
 

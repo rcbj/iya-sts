@@ -458,8 +458,10 @@ function childMain() {
       'spiffe/spiffe_attestor_azure_imds.ts',
       'spiffe/spiffe_attestor_gcp_iit.ts', 'common/mail_transports.ts',
       'common/revocation_status.js'].forEach(function (file) {
-      note(fs.readFileSync(ROOT_DIR + '/' + file, 'utf8')
-        .indexOf('assertNamedFile') >= 0, file + ' asks the rule');
+      // Since #2247 a reader asks it through readNamedFile(), which checks
+      // the descriptor it reads through.
+      note(/assertNamedFile|readNamedFile/.test(fs.readFileSync(ROOT_DIR +
+        '/' + file, 'utf8')), file + ' asks the rule');
     });
 
     // --- 17. L2: the push dialer, the issuance gate, PKCE, LDAP (#1492-#1496) -

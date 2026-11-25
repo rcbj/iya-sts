@@ -174,8 +174,8 @@ surfaces below are the exceptions, each argued where it lives.
 it MUST NOT authenticate, and what it lacks is attestation (`spiffe/CLAUDE.md`).
 
 Extracted from the [OAuth2/OIDC Debugger](https://idptools.com). **The protocol
-suite is still WRITTEN in that project and a copy of it RUNS here** — see
-*Tests* below.
+suite began as a copy of that project's and is maintained HERE since
+2026-10-23 (#430)** — see *Tests* below.
 
 ## Running it
 
@@ -562,6 +562,7 @@ preference; this table says what the constraint is and the named file says why.
 | 18j-vi | `common/post_login_activities` | Beside the passkey report, after the scheduler (#1111): a library that registers its job when built, and no route. Reaches `ldap/ldap_server` (21), the mail uses and the post-login module LAZILY. | `common/CLAUDE.md` (3ct) |
 | 18j-vi-b | `common/post_login_mail` | After 18j-vi (#2009 P2): a library that registers its job (kept classical OpenPGP keys removed) when built, and no route. Requires `openpgp_keys`, built long before; `post_login.ts` reaches it lazily from the activities' table. | `common/CLAUDE.md` (3ct) |
 | 18j-vi-c | `common/post_login_piv` | After 18j-vi-b (#2009 P3): a library, no route or job, whose `piv.supersedes` store is declared before the minted rows are restored. Reads the certificate records, the PKI and the PIV form lazily; `post_login.ts` and `authn.ts` reach it lazily. | `common/CLAUDE.md` (3ct) |
+| 18j-vi-d | `common/credential_expiry` | After 18j-vi-c, with the scheduler in hand, before `ldap/ldap_server` (21) (#2247): a library that registers its job and its entry-observer watcher when built, and no route. Reaches the directory and the mail uses lazily. | `common/CLAUDE.md` (*Credential expiry reminders*) |
 | 18j-vii | `common/audit_export` | After the scheduler, before the directory (21): a library, no route, per-process job `audit.export`. Its own `AuditExport.defaultDeps`; `realms`, `audit`, `config`, `error_codes`, `version`, `keystore`, `mode`, `outbound_tls`. | `common/CLAUDE.md` (3da) |
 | 18j-viii | `common/signer_truststore`, then `common/certificate_trust` | After the scheduler, whose one job the door registers, and before `ldap/ldap_server` (21), whose require fills the store's slot through its facades (#1360). Libraries, no route; a site that calls the door requires it wherever it stands, which moves nothing. | `common/CLAUDE.md` (3dd) |
 | 18j-ix | `common/certificate_pins` | Just after the door (#1360), which it hands its pin sources; a library, and every owner it reads is reached lazily, at the audit. | `common/CLAUDE.md` (3dd) |
@@ -1027,8 +1028,10 @@ design.
 
 **THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
 `CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
-They bind every `.js` file except the `node-ldapjs` submodule and the
-non-`local` copies in `tests/protocol/`, neither of which may be edited here.
+They bind every `.js` file except the `node-ldapjs` submodule, which may not
+be edited here, and the non-`local` jobs in `tests/protocol/`, which began as
+the parent's copies and keep the parent's style (they are edited here since
+2026-10-23; see *Tests*).
 `common/crypto_impl/` and the eight Kerberos codec modules were on that list
 as the parent's copies until #1280, and are bound like the rest since.
 
@@ -1077,9 +1080,10 @@ as the parent's copies until #1280, and are bound like the rest since.
   and the licence identifier BUSL-1.1 (the Business Source License 1.1 since
   2026-09-30; MIT until then), in the form `LICENSE.md` shows, after a `#!`
   line or `// @ts-check`, in the file's own comment syntax. A file that cannot carry a
-  comment, a vendored copy (the non-`local` jobs in `tests/protocol/`) and
-  third-party material are declared in `REUSE.toml` instead, and never given
-  a header — the parent project's copies stay MIT there. `tests/copyright_notices.js` fails on a missing
+  comment, a job that began as a copy of the parent's (the non-`local` jobs
+  in `tests/protocol/`) and third-party material are declared in
+  `REUSE.toml` instead, and never given a header — the parent's copies stay
+  MIT there, edited here or not. `tests/copyright_notices.js` fails on a missing
   one; `LICENSE.md` says what is not under the BSL, and `reuse lint` is the
   whole-repository check.
 * **The log level is `info` in every appconfig file in `env/`** (2026-09-12),
@@ -1212,8 +1216,9 @@ run was cancelled by the next merge.
 
 ## Tests
 
-**The protocol suite is WRITTEN in the parent project and a COPY of it RUNS here.**
-Those are two claims and keeping them apart is the whole of this section.
+**The protocol suite is maintained HERE.** Some of its jobs began as copies of
+the parent project's and keep that project's MIT licence; since 2026-10-23
+(#430) nothing syncs them, and every job is edited here.
 
 ```bash
 ./docker-npm-test.sh                    # the in-process half, in the tests image (#50)
@@ -1236,10 +1241,14 @@ Where a new test goes, asked in this order:
 2. **Can it be asserted over HTTP against a running service?** Then **`tests/protocol/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
 3. **Otherwise here**: it chooses how the process starts, needs a second container on the service's network, or needs a socket no stack publishes.
 
-**Never edit a vendored copy** — the next
-`node tests/tools/vendor-check.js --sync` overwrites it and the
-fix never reaches the parent. The `local: true` jobs are the inversion, edited
-here only. `tests/protocol/MANIFEST.js` says which is which.
+**The protocol jobs are maintained HERE, every one of them, since 2026-10-23
+(#430).** The non-`local` jobs began as MIT copies of the parent project's
+and keep that licence and the parent's style, but there is no longer a sync:
+`tests/tools/vendor-check.js` is gone, nothing overwrites them, and a fix to
+one is made here like any other change. Port a change back to the parent only
+when a parent test or wire compatibility calls for it.
+`tests/protocol/MANIFEST.js`'s header is the authority, and its `local: true`
+marks the jobs written here from the start.
 
 `tests/CLAUDE.md` carries the job table, the launchers, the modes, the image
 mirror, the coverage run and the rules that are not optional there. **What

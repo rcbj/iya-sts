@@ -272,8 +272,8 @@
     "text": "Gaano kabago dapat ang sign-in para sa sensitibong pagbabago (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ganoon din kapag ang isang administrator ay nagbibigay o nag-aalis ng role, gumagawa, nagbabago o nag-aalis ng trust realm, kumikilos sa PKI, sa mga signing key, sa key-encryption key o sa mga destinasyon ng pagpapadala ng sikreto, o nagbabago ng anumang setting (#2161). Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
+    "en": "b20d406d9605d06f",
+    "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ganoon din kapag ang isang administrator ay nagbibigay o nag-aalis ng role, gumagawa, nagbabago o nag-aalis ng trust realm, kumikilos sa PKI, sa mga signing key, sa key-encryption key o sa mga destinasyon ng pagpapadala ng sikreto, o nagbabago ng anumang setting (#2161). Ganoon din kapag binabago ang isang application, isang federation relationship, isang SAML service provider, isang access policy, isang group, isang named policy, ang mga claim na dala ng isang token, o anumang iba pang nagpapasya kung sino ang makakapag-sign in, ano ang iniisyu sa kanila o saan ito napupunta (#2247). Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -5606,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Ang dapat pangalanan ng `aud` claim para matanggap dito ang token. Default ito sa base URL ng management API — global.publicBaseUrl na sinusundan ng /admin-api kung saan iyon nakatakda, at kung hindi, ang sariling scheme, host at port ng process na ito. Habang nasa default na iyon, tinatanggap din ang token na naka-audience sa /admin-api sa ilalim ng host na dinatnan ng request, na siyang nakukuha ng client sa paghingi ng `resource=<base>/admin-api` sa token endpoint (RFC 8707) sa ilalim ng anumang pangalang ginamit nito para maabot ang serbisyong ito. Itakda ito para i-pin ang iisang value kung saan naaabot ang deployment sa ilalim ng ilang pangalan."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Mga pagbabago sa management API bawat tao bawat window"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Ilang pagbabago ang puwedeng gawin ng isang naka-sign in na administrator sa /admin-api (kasama ang admin console) sa loob ng isang adminApi.writeWindowS na window. Binibilang ayon sa subject ng token, hindi ayon sa address. Bawat POST na nagsusulat ay binibilang; ang pagbasa ay hindi. Lampas dito, tinatanggihan ang pagbabago nang may 429 at Retry-After hanggang lumipas ang window, at tuloy ang pagbasa. Ang token ng isang program ay binibilang ng adminApi.programWritesPerSubject sa halip. Ang 0 ay walang limitasyon, ang default sa development. 1200 ang default ng product mode."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Mga pagbabago sa management API bawat program bawat window"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Ilang pagbabago ang puwedeng gawin ng isang program sa /admin-api sa loob ng isang adminApi.writeWindowS na window: isang client_credentials token, binibilang ayon sa client nito, o ang sa isang service account, binibilang ayon sa subject nito. Lampas dito, tinatanggihan ang pagbabago nang may 429 at Retry-After hanggang lumipas ang window. Ang 0, ang default sa bawat mode, ay walang limitasyon, dahil ang isang provisioning run o migration ay lehitimong gumagawa ng libu-libong pagbabago sa loob ng ilang minuto; itakda ito sa kailangan ng iyong mga program."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Window ng mga pagbabago sa management API (segundo)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "Ang window kung saan binibilang ang adminApi.writesPerSubject at adminApi.programWritesPerSubject, sa segundo. Isang nakapirming window, gaya ng bawat rate limit dito."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
@@ -12882,6 +12906,30 @@
   "mail.signInAlertWindowS|description": {
     "en": "29547122992cacaf",
     "text": "Gaano katagal inaabiso nang hindi hihigit sa isang beses sa isang tao ang isang uri ng alerto sa pag-sign in — bagong device, bagong bansa, network na nagtatago ng pagkakakilanlan, mga tinanggihang password. Ang outbox ang talaan, kaya ang window na mas mahaba sa mail.retentionS ay tumatagal lamang nang ganoon."
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Mga paalala sa pag-expire ng credential"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Paalalahanan ang isang tao, sa address sa kanilang entry, bago mag-expire ang isang certificate na hawak nila: isang certificate na inisyu sa kanila ng realm na ito sa ACME, EST o SCEP, isang PIV smart card certificate, isang S/MIME certificate, isang TLS client certificate, o isang certificate na naka-store para sa certificate sign-in. Ang bawat isa ay sinasabi nang isang beses sa bawat isa sa mail.expiryReminderDays, lahat ng certificate na dapat na sa iisang mensahe, kasama kung kailan ito mag-e-expire at kung paano ito i-renew. Walang ipinapadala habang naka-off ang mga security notice o walang naka-configure na transport."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Mga araw ng paalala sa pag-expire ng credential"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Ilang araw bago mag-expire ang isang certificate pinaaalalahanan ang may-hawak nito, isang paalala sa bawat isa. Ang certificate na unang nakita sa loob ng isa sa mga ito ay sinasabi sa pinakamalapit, at hindi kailanman sa hakbang na lumipas na. Ang pagbabago ay nalalapat sa bawat certificate sa susunod nitong paalala."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Mga credential na binabanggit ng paalala sa pag-expire"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Aling mga uri ng certificate ang binabanggit ng paalala sa pag-expire: certificate (inisyu sa ACME, EST o SCEP), piv (isang PIV slot certificate), smime (isang S/MIME certificate na pinag-e-encrypt-an ng mail), tls-client (isang TLS client certificate na inisyu mula sa pahinang Mga Signing Key ng portal o ng isang administrator) at signin-certificate (isang certificate na naka-store sa entry para sa certificate sign-in). Ang uring hindi isinama ay sinusubaybayan pa rin, kaya kapag ibinalik ito ay magpapaalala ito sa susunod nitong hakbang."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

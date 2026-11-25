@@ -272,8 +272,8 @@
     "text": "進行敏感變更所需的登入近期程度（分鐘）"
   },
   "account.recentAuthMinutes|description": {
-    "en": "99c8adf052996759",
-    "text": "要變更某人的登入方式，必須在多少分鐘內登入過。在入口網站上：本人的第二因素、復原代碼、通行金鑰、應用程式密碼、憑證、簽署金鑰、自行簽發的 ID、電子郵件地址或錢包憑證提供，以及結束本人的其他工作階段；須先重新登入。對管理員而言：透過主控台或 /admin-api 變更某人的密碼、第二因素、通行金鑰、復原代碼、電子郵件地址或應用程式密碼，/admin-api 會以 RFC 9470 的 insufficient_user_authentication 回應。管理員授予或移除角色，建立、變更或刪除信任領域，操作 PKI、簽章金鑰、金鑰加密金鑰或機密推送目的地，或變更任何設定時，同樣如此（#2161）。0 表示不要求，為開發模式預設值。產品模式預設 15。"
+    "en": "b20d406d9605d06f",
+    "text": "要變更某人的登入方式，必須在多少分鐘內登入過。在入口網站上：本人的第二因素、復原代碼、通行金鑰、應用程式密碼、憑證、簽署金鑰、自行簽發的 ID、電子郵件地址或錢包憑證提供，以及結束本人的其他工作階段；須先重新登入。對管理員而言：透過主控台或 /admin-api 變更某人的密碼、第二因素、通行金鑰、復原代碼、電子郵件地址或應用程式密碼，/admin-api 會以 RFC 9470 的 insufficient_user_authentication 回應。管理員授予或移除角色，建立、變更或刪除信任領域，操作 PKI、簽章金鑰、金鑰加密金鑰或機密推送目的地，或變更任何設定時，同樣如此（#2161）。變更應用程式、聯合關係、SAML 服務提供者、存取原則、群組、具名原則、權杖所帶的宣告，或其他任何決定誰能登入、簽發給其什麼或送往何處的內容時，同樣如此（#2247）。0 表示不要求，為開發模式預設值。產品模式預設 15。"
   },
   "account.writesPerSubject|label": {
     "en": "90cb891002b3f2f1",
@@ -5606,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "權杖在此被接受時，`aud` 聲明必須指出的值。預設為管理 API 的基底 URL——若已設定 global.publicBaseUrl，則為其後接 /admin-api，否則為此程序自己的協定、主機與連接埠。維持該預設值時，以要求所抵達之主機下的 /admin-api 為對象的權杖也會被接受，這正是用戶端在權杖端點以其存取此服務時使用的任何名稱要求 `resource=<base>/admin-api` 時所得到的（RFC 8707）。在部署可透過多個名稱存取時，設定它以固定單一值。"
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "管理 API 每人每時段的變更次數"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "一位已登入的管理員在 adminApi.writeWindowS 時段內可透過 /admin-api（包括管理主控台）進行多少次變更。依權杖的主體計數，而非依位址。每個寫入的 POST 都計數；讀取不計。超過後，變更會以 429 和 Retry-After 被拒絕，直到時段過去，讀取不受影響。程式的權杖改由 adminApi.programWritesPerSubject 計數。0 表示不限制，為開發模式預設值。產品模式預設 1200。"
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "管理 API 每個程式每時段的變更次數"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "一個程式在 adminApi.writeWindowS 時段內可透過 /admin-api 進行多少次變更：client_credentials 權杖依其用戶端計數，服務帳戶的權杖依其主體計數。超過後，變更會以 429 和 Retry-After 被拒絕，直到時段過去。0 是所有模式下的預設值，表示不限制，因為一次佈建或移轉會在幾分鐘內合理地進行數千次變更；請依程式的需要設定。"
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "管理 API 變更時段（秒）"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "adminApi.writesPerSubject 與 adminApi.programWritesPerSubject 計數所用的時段，以秒為單位。固定時段，與這裡的每個速率限制一樣。"
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
@@ -12882,6 +12906,30 @@
   "mail.signInAlertWindowS|description": {
     "en": "29547122992cacaf",
     "text": "同一類登入提醒——新裝置、新國家、匿名網路、被拒絕的密碼——在多長時間內最多通知此人一次。寄件匣即為紀錄，因此長於 mail.retentionS 的窗口實際只持續那麼久。"
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "認證資料到期提醒"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "在某人持有的憑證到期前，依其項目上的地址提醒對方：本領域透過 ACME、EST 或 SCEP 為其簽發的憑證、PIV 智慧卡憑證、S/MIME 憑證、TLS 用戶端憑證，或為憑證登入而儲存的憑證。每個憑證在 mail.expiryReminderDays 的每一天各提醒一次，所有到期的憑證合併為一封郵件，並說明到期時間與續約方式。安全通知關閉或未設定傳輸時不會傳送任何內容。"
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "認證資料到期提醒天數"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "憑證到期前多少天提醒其持有人，每個天數各提醒一次。首次出現時已在其中某個天數之內的憑證，會在最近的那一個提醒，絕不會在已經過去的步驟提醒。變更會在每個憑證的下一次提醒時生效。"
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "到期提醒列出的認證資料"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "到期提醒列出哪些類型的憑證：certificate（透過 ACME、EST 或 SCEP 簽發）、piv（PIV 插槽憑證）、smime（郵件加密所用的 S/MIME 憑證）、tls-client（在入口網站的「簽章金鑰」頁面或由管理員簽發的 TLS 用戶端憑證）及 signin-certificate（為憑證登入儲存在項目上的憑證）。未列出的類型仍會被追蹤，因此重新加入後會在其下一個步驟提醒。"
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",

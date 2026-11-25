@@ -144,6 +144,11 @@
       "subject": "Renueve su certificado PIV para {{service}}",
       "text": "{{service}} pide a {{username}} que inscriba un nuevo certificado para la tarjeta inteligente PIV o la llave de seguridad con la que inicia sesión: el que contiene se firmó con un algoritmo clásico o vence pronto. Tenga la tarjeta con usted y una herramienta que genere una solicitud de certificado desde ella, como ykman.\n\nInicie sesión aquí y se le pedirá que lo inscriba justo después de iniciar sesión:\n\n{{signin}}\n\nEl enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.\n",
       "html": "<p>{{service}} pide a <strong>{{username}}</strong> que inscriba un nuevo certificado para la tarjeta inteligente PIV o la llave de seguridad con la que inicia sesión: el que contiene se firmó con un algoritmo clásico o vence pronto. Tenga la tarjeta con usted y una herramienta que genere una solicitud de certificado desde ella, como ykman.</p><p><a href=\"{{signin}}\">Inicie sesión</a> y se le pedirá que lo inscriba justo después de iniciar sesión.</p><p>El enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.</p>"
+    },
+    "credential-expiring": {
+      "subject": "Una credencial de su cuenta de {{service}} caduca pronto",
+      "text": "Estas credenciales de la cuenta {{username}} caducan pronto: {{what}}.\n\nRenueve cada una antes de que caduque, o dejará de funcionar. Cuando una línea nombre una página de su portal, inicie sesión aquí:\n\n{{link}}\n\nCuando diga que pregunte a su administrador, póngase en contacto con quien gestiona su cuenta. Si ya no usa alguna de ellas, puede ignorar su línea.\n",
+      "html": "<p>Estas credenciales de la cuenta <strong>{{username}}</strong> caducan pronto: {{what}}.</p><p>Renueve cada una antes de que caduque, o dejará de funcionar. Cuando una línea nombre una página de su portal, <a href=\"{{link}}\">inicie sesión en su portal</a>.</p><p>Cuando diga que pregunte a su administrador, póngase en contacto con quien gestiona su cuenta. Si ya no usa alguna de ellas, puede ignorar su línea.</p>"
     }
   },
   "layout": {

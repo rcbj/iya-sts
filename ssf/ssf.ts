@@ -5525,6 +5525,9 @@ class SharedSignals {
         fido2_aaguid: String(options.fido2Aaguid || '')
       }, {
         initiatingEntity: String(options.initiatingEntity || 'admin'),
+        // #2236: when the change happened, where the door says.
+        eventTimestamp: typeof options.eventTimestamp === 'number' &&
+          options.eventTimestamp > 0 ? options.eventTimestamp : undefined,
         reasonAdmin: String(options.reasonAdmin || ''),
         reasonUser: String(options.reasonUser || '')
       });

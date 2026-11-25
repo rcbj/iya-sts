@@ -416,7 +416,9 @@ class AccountReset {
     this.holdLinkClaim(res, spent.handle);
     // Screened against Pwned Passwords first (#62 P6).
     await this.deps.breachedPasswords().screen(password);
-    const set = credentials.setPassword(username, password);
+    // The person's own choice (#2236): what is derived from it says so.
+    const set = credentials.setPassword(username, password,
+                                        { initiatingEntity: 'user' });
     if (!set.ok) {
       log.debug("Leaving AccountReset.spend(). The password was refused.");
       return ctx.refuse(res, 400, errorCodes.codeOf(set) || 'STS-PORTAL-0073',

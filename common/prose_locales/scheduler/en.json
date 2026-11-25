@@ -67,6 +67,8 @@
   "sched.jobs.krb5.service-key-rotate.describe": "Replaces the key this service made for its own acceptor with a new random one at the next kvno once it is krb5.serviceKeyRotationIntervalDays old, keeping the one it replaces for the longest a ticket under it can live, and never while that window is open. A key whose keytab was handed out is reported as due rather than rotated: its service needs the new keytab installed.",
   "sched.jobs.ldap.connection-mirror-maintenance.title": "LDAP connection mirror maintenance",
   "sched.jobs.ldap.connection-mirror-maintenance.describe": "Deletes the mirrored LDAP connections of nodes that are no longer members, and sign-out instructions past their lifetime.",
+  "sched.jobs.mail.credential-expiry.title": "Credential expiry reminders",
+  "sched.jobs.mail.credential-expiry.describe": "Mails each person whose certificate expires within one of mail.expiryReminderDays a reminder naming every one due: what it is, the day it expires and how to renew it, one message per person, each certificate once per step. Reads only the expiry index's rows due today or in the last thirty days, never the directory, except for a slice of people a run until certificates held before the index existed have been filed.",
   "sched.jobs.mail.deliver.title": "Mail outbox delivery",
   "sched.jobs.mail.deliver.describe": "Sends every queued message that is due — a retry whose backoff has passed, a lease that lapsed, a row restored after a restart — dead-letters any still pending past mail.retentionS, and removes finished rows past it.",
   "sched.jobs.oauth2.backchannel-logout-sweep.title": "Back-channel logout sweep",

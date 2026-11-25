@@ -467,6 +467,9 @@ const CELL_MINTED = [
   // What a PIV re-issue replaces, until the new certificate is first used
   // (#2009 P3, D5): somebody's certificates, beside their entry.
   'piv.supersedes',
+  // When each certificate a person holds expires, and which reminder steps
+  // they were told at (#2247): somebody's, beside their entry in this cell.
+  'credential_expiry.due',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
