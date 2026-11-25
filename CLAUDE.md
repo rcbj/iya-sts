@@ -1178,6 +1178,14 @@ string it renders. **A version may never be the thing that stops this service
 starting.** `common/CLAUDE.md` argues it; `xacml-pep/CLAUDE.md` carries the
 remote PEP's copy.
 
+## A release note is a file of its own (#2218, 2026-11-25)
+
+**A change's release note is one new file,
+`docs/_release_notes/v1.2.0/<issue>-<slug>.md` (front matter `title`,
+`kind`, `issue`), and nobody edits `docs/v1.2.0/release-notes.md` for
+1.2.0**: the page gathers the files when the site is built.
+`docs/CLAUDE.md`, *Release notes*, has the format and the fold at release.
+
 ## Who merges, and how agents share this repository (2026-11-23)
 
 **One session is THE MERGER, and only it merges into `develop`** (rcbj,

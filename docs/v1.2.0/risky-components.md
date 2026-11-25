@@ -116,10 +116,14 @@ clients. They speak only to infrastructure an operator configures.
   scans the iya-sts image with Trivy, which covers the operating system's
   packages and the Node.js runtime as well as the npm trees, and holds the
   findings to the same windows.
-* **The 90-day review.** The same daily run fails on a direct dependency whose
-  first newer release is more than 90 days old, unless
-  `.github/dependency-reviews.json` records a review of the pinned version in
-  the last 90 days and the reason it stays.
+* **The 90-day review.** The daily run checks security advisories only. The
+  update review runs when asked for: the daily workflow dispatched with
+  `updates`, or `node tests/tools/dependency-windows.js --updates`. It fails on
+  a direct dependency of the root lockfile whose first newer release is more
+  than 90 days old, unless `.github/dependency-reviews.json` records a review
+  of the pinned version in the last 90 days and the reason it stays. The
+  optional SDKs in `sdk/` are held to the advisory windows, not to this
+  review.
 * **The inventory.** The image carries a CycloneDX SBOM of its npm
   dependencies at `/usr/src/sts/sbom.cdx.json`, one of its optional SDKs at
   `/usr/src/sts/sbom-sdks.cdx.json`, and its operating-system packages in
@@ -133,8 +137,8 @@ clients. They speak only to infrastructure an operator configures.
 | Gap | Where | What would close it |
 |---|---|---|
 | xml-crypto is installed in the product image though no service module requires it | `package.json:59`; used by `tests/crypto_module.js` and others | Move it to `tests/package.json`, which the image does not install |
-| The 90-day review only fires when a newer release exists, so a package that has stopped releasing (dbus-next, macaroon, busboy, dtrace-provider) is never flagged | `tests/tools/dependency-windows.js:125-128` | Also fail on a direct dependency whose last release is older than a set age, unless a review is recorded |
-| The 90-day review skips linked and non-registry packages, so the `node-ldapjs` fork and its packages are never reviewed | `tests/tools/dependency-windows.js:209` | Review the submodule's pin against the fork's own history, with a recorded review |
+| The 90-day review only fires when a newer release exists, so a package that has stopped releasing (macaroon, busboy, dtrace-provider) is never flagged | `tests/tools/dependency-windows.js:139-142` | Also fail on a direct dependency whose last release is older than a set age, unless a review is recorded |
+| The 90-day review skips linked and non-registry packages, so the `node-ldapjs` fork and its packages are never reviewed | `tests/tools/dependency-windows.js:223` | Review the submodule's pin against the fork's own history, with a recorded review |
 | The remote PEP has no advisory audit, no SBOM, and its image is not scanned. Its built-in OpenSSL is not an operating-system package, so an OS scan would not see it | `.github/workflows/tests.yml:686`; `.github/workflows/dependency-windows.yml` | Run a Rust advisory audit of `rust/Cargo.lock` under the same windows, and write an SBOM into the PEP image |
 | The malware-scanning adapter installs c-icap without a pinned version, and neither it nor the ClamAV image is scanned | `icap-clamav/Dockerfile:8` | Pin the packages and add both images to the daily scan |
 | The root `npm ci` in the image build runs install scripts, where the SDK install does not | `Dockerfile:233` | Pass `--ignore-scripts` and build only what needs it, as the SDK stage does |
