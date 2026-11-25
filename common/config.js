@@ -1737,6 +1737,21 @@ const SETTINGS = [
     description: 'How long to wait for the service. A large file is allowed a ' +
                  'second more per mebibyte.' },
 
+
+  { key: 'malwareScan.concurrency', group: 'Malware scanning',
+    label: 'Scans at once',
+    env: 'STS_MALWARE_SCAN_CONCURRENCY', type: 'int', dflt: 8, min: 1,
+    max: 256, runtime: true, perProcess: true,
+    description: 'How many files one process sends to the scanner at once, ' +
+                 'each on its own connection. Others wait their turn.' },
+
+  { key: 'malwareScan.queueLimit', group: 'Malware scanning',
+    label: 'Scans waiting',
+    env: 'STS_MALWARE_SCAN_QUEUE_LIMIT', type: 'int', dflt: 64, min: 0,
+    max: 10000, runtime: true, perProcess: true,
+    description: 'How many files may wait for a scan beyond those running. ' +
+                 'A file past it is refused 503 (STS-CORE-0182), as when ' +
+                 'the scanner does not answer.' },
   { key: 'malwareScan.caFile', group: 'Malware scanning',
     label: 'CA file for an icaps service',
     env: 'STS_MALWARE_SCAN_CA_FILE', type: 'string', dflt: '',
@@ -4891,6 +4906,28 @@ const SETTINGS = [
                  'probe that runs out is drawn as a row saying so, exactly ' +
                  'like one that was refused.' },
 
+
+  // A TIMEOUT AND A BOUNDED RETRY FOR EVERY SECRET STORE (#2220): passed to
+  // each SDK as its own options (`common/secrets.js`, `awsLimits()` and its
+  // siblings). Read at each call.
+  { key: 'keys.storeTimeoutMs', group: 'Key material',
+    label: 'Secret store call timeout (ms)',
+    env: 'STS_KEYS_STORE_TIMEOUT_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 300000, runtime: true, perProcess: true,
+    description: 'How long one attempt of a call to OpenBao or Vault, AWS ' +
+                 'KMS or Secrets Manager, Google Cloud KMS or Secret ' +
+                 'Manager, or Azure Key Vault may wait, given to each ' +
+                 'SDK as its own timeout option.' },
+
+  { key: 'keys.storeAttempts', group: 'Key material',
+    label: 'Secret store attempts per call',
+    env: 'STS_KEYS_STORE_ATTEMPTS', type: 'int', dflt: 3, min: 1, max: 10,
+    runtime: true, perProcess: true,
+    description: 'How many times a call to a secret store or key service is ' +
+                 'attempted in all: the cloud SDKs\' own retry bound, and ' +
+                 'for OpenBao or Vault a call that got no answer, a 5xx or ' +
+                 'a 429 made again after a short pause (STS-KEYS-0214 when ' +
+                 'every attempt failed). A 4xx is never repeated.' },
   { key: 'keys.kekRegion', group: 'Key material', label: 'AWS region',
     path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
     dflt: '', runtime: false,
@@ -4960,6 +4997,25 @@ const SETTINGS = [
                  'every process of every node: keep the product of this, ' +
                  'the processes and the nodes under that.' },
 
+
+  { key: 'keys.pkcs11TimeoutMs', group: 'Key material',
+    label: 'HSM operation timeout (ms)',
+    env: 'STS_KEYS_PKCS11_TIMEOUT_MS', type: 'int', dflt: 60000, min: 0,
+    max: 600000, runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup',
+    description: 'How long an HSM operation, and the wait for a session to ' +
+                 'run it on, may take before it is refused (STS-KEYS-0216). ' +
+                 'A session whose operation outlived it is discarded when ' +
+                 'the module answers. 0 for no limit.' },
+
+  { key: 'keys.pkcs11QueueLimit', group: 'Key material',
+    label: 'HSM operations waiting per token',
+    env: 'STS_KEYS_PKCS11_QUEUE_LIMIT', type: 'int', dflt: 1000, min: 1,
+    max: 100000, runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup',
+    description: 'How many HSM operations may wait for a session of one ' +
+                 'token in one process or worker. One past it is refused at ' +
+                 'once (STS-KEYS-0215).' },
   { key: 'keys.pkcs11PinProvider', group: 'Key material',
     label: 'Where the PKCS#11 PIN is read from',
     env: 'STS_KEYS_PKCS11_PIN_PROVIDER', type: 'enum',
@@ -11515,6 +11571,51 @@ const SETTINGS = [
                  'milliseconds — this is the budget for the one that arrives ' +
                  'while a realm is still being born.' },
 
+
+  // THE LIMITS EVERY OUTBOUND HTTP CALL SHARES (#2220): the shared agent's
+  // two connection caps, the overall deadline and the connect timeout,
+  // applied by `common/outbound_limits.ts` to federation_http.ts and every
+  // other dialer. Per process, because the agent is.
+  { key: 'federation.outboundMaxSockets', group: 'Federation',
+    label: 'Outbound connections per destination',
+    env: 'STS_FEDERATION_OUTBOUND_MAX_SOCKETS', type: 'int', dflt: 64,
+    min: 1, max: 4096, runtime: true, perProcess: true,
+    description: 'How many connections one process holds open to one ' +
+                 'destination (a partner, a receiver, a client\'s URL) at ' +
+                 'once, for every outbound HTTP call. A request past it ' +
+                 'waits for a connection, within its overall deadline, and ' +
+                 'a warning is logged when requests first wait ' +
+                 '(STS-HTTP-0032). Connections are kept alive and reused.' },
+
+  { key: 'federation.outboundMaxTotalSockets', group: 'Federation',
+    label: 'Outbound connections in all',
+    env: 'STS_FEDERATION_OUTBOUND_MAX_TOTAL_SOCKETS', type: 'int',
+    dflt: 1024, min: 1, max: 65536, runtime: true, perProcess: true,
+    description: 'How many outbound HTTP connections one process holds ' +
+                 'open in all. A request past it waits for a connection, ' +
+                 'within its overall deadline (STS-HTTP-0032). Never less ' +
+                 'than federation.outboundMaxSockets.' },
+
+  { key: 'federation.outboundDeadlineMs', group: 'Federation',
+    label: 'Outbound overall deadline (ms)',
+    env: 'STS_FEDERATION_OUTBOUND_DEADLINE_MS', type: 'int', dflt: 120000,
+    min: 1000, max: 3600000, runtime: true, perProcess: true,
+    description: 'The longest any outbound HTTP call may take in all: the ' +
+                 'wait for a connection, the connect, the handshake and the ' +
+                 'whole answer. The other timeouts are of inactivity, so a ' +
+                 'peer that answers slowly would otherwise keep a call ' +
+                 'open. A call whose own timeout is longer gets that ' +
+                 'instead. At the deadline the call ends as a timeout ' +
+                 '(STS-HTTP-0033).' },
+
+  { key: 'federation.outboundConnectTimeoutMs', group: 'Federation',
+    label: 'Outbound connect timeout (ms)',
+    env: 'STS_FEDERATION_OUTBOUND_CONNECT_TIMEOUT_MS', type: 'int',
+    dflt: 10000, min: 100, max: 120000, runtime: true, perProcess: true,
+    description: 'How long a new outbound connection may take to connect, ' +
+                 'with its TLS handshake. A connection reused from the pool ' +
+                 'is not timed. At the limit the call ends as a timeout ' +
+                 '(STS-HTTP-0034).' },
   // THE THREE OUTBOUND TRANSPORT SETTINGS (#171), which were ONE —
   // `federation.outboundAllowInsecure` — honoured in product mode. They cover
   // every request federation_http.ts makes and every requester that borrows
@@ -21021,6 +21122,58 @@ const SETTINGS = [
                  'server rather than as a timer here, because a timer would ' +
                  'abandon the promise and leave both the statement and the ' +
                  'connection exactly where they were.' },
+
+  // THE POOL AND ITS WAITS, AND A STATEMENT TIMEOUT (#2220): fixed numbers
+  // in the driver until then, which are these rows' defaults. Read when the
+  // store is opened; `persistence_postgres.js` and `knex_store.js` argue
+  // them, and `knex_store.js`'s `boundStatements()` says which statements
+  // the timeout does not cover and why.
+  { key: 'persistence.poolSize', group: 'Persistence',
+    label: 'Database connections per process',
+    env: 'STS_PERSISTENCE_POOL_SIZE', type: 'int', dflt: 0, min: 0,
+    max: 1000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How many connections each process keeps in its pool to ' +
+                 'the database. 0, the default, is twice the node\'s ' +
+                 'request workers and never fewer than four. A caller past ' +
+                 'it waits for a free connection for up to ' +
+                 'persistence.poolWaitMs.' },
+
+  { key: 'persistence.poolWaitMs', group: 'Persistence',
+    label: 'Wait for a database connection (ms)',
+    env: 'STS_PERSISTENCE_POOL_WAIT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 120000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How long a caller waits for a free connection in the ' +
+                 'pool before it fails. A write that fails so is answered ' +
+                 '503 (STS-STORE-0066) and its flush is tried again.' },
+
+  { key: 'persistence.connectTimeoutMs', group: 'Persistence',
+    label: 'Database connect timeout (ms)',
+    env: 'STS_PERSISTENCE_CONNECT_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 120000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How long a new database connection may take to be made.' },
+
+  { key: 'persistence.idleTimeoutMs', group: 'Persistence',
+    label: 'Idle database connection kept for (ms)',
+    env: 'STS_PERSISTENCE_IDLE_TIMEOUT_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 3600000, runtime: false, perProcess: true,
+    restartReason: 'the store is opened when the process starts',
+    description: 'How long an idle connection stays in the pool before it ' +
+                 'is closed.' },
+
+  { key: 'persistence.statementTimeoutMs', group: 'Persistence',
+    label: 'Database statement timeout (ms)',
+    env: 'STS_PERSISTENCE_STATEMENT_TIMEOUT_MS', type: 'int', dflt: 300000,
+    min: 0, max: 86400000, runtime: false, perProcess: true,
+    restartReason: 'it is set on the pool once the store is open and read',
+    description: 'The longest an ordinary database statement may run before ' +
+                 'the server cancels it (PostgreSQL\'s statement_timeout, ' +
+                 'MariaDB\'s max_statement_time), logged as ' +
+                 'STS-STORE-0178. 0 for none. Opening the store, its ' +
+                 'migrations, the restore at start and the online index ' +
+                 'builds are not under it; backfills run in small batches.' },
   { key: 'persistence.dataDir', group: 'Persistence', label: 'Data directory',
     env: 'STS_PERSISTENCE_DATA_DIR', type: 'string', dflt: './data',
     runtime: false,
@@ -21767,6 +21920,14 @@ const SETTINGS = [
                  'as the other cell being unreachable (and handled as ' +
                  '`cells.homeUnreachable` says).' },
 
+
+  { key: 'cells.maxAnswerBytes', group: 'Cells',
+    label: 'Largest inter-cell answer (bytes)',
+    env: 'STS_CELL_MAX_ANSWER_BYTES', type: 'int', dflt: 16777216,
+    min: 65536, max: 1073741824, runtime: true, perProcess: true,
+    description: 'The most a synchronous call to another cell may answer. ' +
+                 'Past it the connection is closed and the call fails ' +
+                 '(STS-CELL-0212).' },
   // THE DURABLE DELIVERIES BETWEEN CELLS (`common/cell_deliveries.ts`):
   // the shared outbound queue's numbers, for its inter-cell kind.
   { key: 'cells.deliveryAttempts', group: 'Cells',
@@ -22123,6 +22284,15 @@ const SETTINGS = [
                  'the scheduled refresh (attribute-sources.refresh, every ' +
                  'minute), picking up after the last one next time. Larger ' +
                  'finishes a pass sooner and holds a node longer per run.' },
+
+  { key: 'attributeSources.poolSize', group: 'Attribute sources',
+    label: 'Connections per source',
+    env: 'STS_ATTRIBUTE_SOURCES_POOL_SIZE', type: 'int', dflt: 4, min: 1,
+    max: 64, runtime: true, perProcess: true,
+    description: 'How many connections each process keeps to one attribute ' +
+                 'source. A lookup past it waits for a connection within ' +
+                 'the source\'s own timeout. A change takes effect at each ' +
+                 'source\'s next lookup.' },
   // -------------------------------------------------------------------------
   // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.
   //
@@ -22421,7 +22591,10 @@ const SETTINGS = [
   { key: 'mail.concurrency', group: 'Mail', label: 'Sends in flight',
     env: 'STS_MAIL_CONCURRENCY', type: 'int', dflt: 4, min: 1, max: 64,
     runtime: true,
-    description: 'How many messages one process sends at once from a sweep.' },
+    description: 'How many messages one process sends at once, from a ' +
+                 'sweep and on the first attempt after a message is ' +
+                 'queued. A message that finds none free waits for the ' +
+                 'next sweep.' },
   { key: 'mail.retentionS', group: 'Mail', label: 'Outbox retention (seconds)',
     env: 'STS_MAIL_RETENTION_S', type: 'int', dflt: 604800, min: 3600,
     max: 31536000, runtime: true,
@@ -22435,7 +22608,9 @@ const SETTINGS = [
     env: 'STS_MAIL_MAX_ROWS', type: 'int', dflt: 10000, min: 10,
     max: 1000000, runtime: true,
     description: 'The cap on the outbox, per realm: the oldest FINISHED row ' +
-                 'is dropped first, and a pending one never.' },
+                 'is dropped first, and a pending one never. A message that ' +
+                 'would take the PENDING rows past it is refused ' +
+                 '(STS-MAIL-0244).' },
   { key: 'mail.ratePerRecipient', group: 'Mail',
     label: 'Messages per recipient per window',
     env: 'STS_MAIL_RATE_PER_RECIPIENT', type: 'int', dflt: 20, min: 1,

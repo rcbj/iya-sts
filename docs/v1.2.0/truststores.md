@@ -54,6 +54,69 @@ A named truststore holds at most 32 anchors (self-signed CAs) and 64
 intermediates, and a realm holds at most 64 named truststores. A leaf
 certificate is never admitted; pin a leaf on the entry that uses it.
 
+## What every realm starts with
+
+A new realm, and the default realm of a new installation, holds no named
+truststores: every truststore it can name at first is built in, a view of
+an older store, or a view of a setting. Each one is read-only on the
+**Truststores** tab. The names are the same in every realm; what a
+realm-scoped one holds can differ, because it reads that realm's own store
+or setting. All 50 are listed below.
+
+**Built in** (service-wide: the same contents in every realm):
+
+| Truststore | What it holds |
+|---|---|
+| `system` | Node's default store: the Mozilla roots bundled with the image's Node.js (about 120) and anything in `NODE_EXTRA_CA_CERTS` |
+| `service-root` | This service's own Root CA |
+| `fido-mds` | The attestation roots the FIDO Metadata Service lists for the authenticator being checked; empty until one is checked |
+| `fido-mds-signer` | GlobalSign Root CA - R3, the anchor of the FIDO Metadata Service BLOB |
+| `yubico-piv` | Yubico's PIV attestation roots and intermediates (2 and 5), shipped and pinned |
+| `device-vendors` | Google's Android Key Attestation and Apple's App Attest roots (3), shipped and pinned |
+| `cloud-attestation` | The Azure roots SPIRE embeds for its IMDS attestor (3, and 1 intermediate), shipped and pinned |
+| `k8s-in-cluster` | The Kubernetes service account CA, only when the service runs in a cluster; empty otherwise |
+| `mdoc-own-iaca` | This realm's own mdoc Issuing Authority CA, once one exists |
+
+**Views of the older stores:**
+
+| Truststore | Scope | What it holds |
+|---|---|---|
+| `signers` | each realm | The realm's [signer truststore](signer-truststore.md); empty until you add to it |
+| `client-certificates` | service-wide | The [client-certificate truststore](tls.md#the-client-truststore) |
+| `registered-keys` | each realm | Each party's own registered keys (see [Key sets](#key-sets)) |
+
+**Views of settings**, one per setting that used to name trusted
+certificates, keys or files, each read in the realm. Each is empty while
+its setting is empty, which is the default for all of them except
+`tls.trustIssuedClientCertificates`, which holds `service-root` while that
+setting is on:
+
+| Area | Truststores |
+|---|---|
+| TLS client certificates | `setting:tls.trustIssuedClientCertificates` |
+| SAML | `setting:saml2.metadataTrustAnchors` |
+| OAuth client attestation | `setting:oauth2.clientAttestationTrustAnchors` |
+| WebAuthn and passkeys | `setting:webauthn.attestationTrustAnchors`, `setting:webauthn.attestationEvidenceTsaTrustAnchors`, `setting:risk.mdsTrustAnchors` |
+| Devices | `setting:devices.androidAttestationTrustAnchors`, `setting:devices.appleAppAttestTrustAnchors`, `setting:devices.tpmTrustAnchors` |
+| PIV | `setting:piv.attestationAnchors`, `setting:piv.externalIssuers` |
+| Verifiable credentials | `setting:oid4vp.trustedIssuerCertificates`, `setting:oid4vp.mdocTrustAnchors`, `setting:oid4vci.keyAttestationTrustedCertificates` |
+| SPIFFE attestation | `setting:spiffe.x509popCaBundle`, `setting:spiffe.tpmDevidCaBundle`, `setting:spiffe.tpmEndorsementCaBundle`, `setting:spiffe.azureImdsTrustBundle`, `setting:spiffe.k8sKubeletCaFile`, `setting:spiffe.sshpopCertAuthorities` (SSH CA keys) |
+| SPIFFE Sigstore | `setting:spiffe.dockerSigstorePublicKeyFiles` (cosign keys), `setting:spiffe.dockerSigstoreTrustedRootFile` (a trusted root), `setting:spiffe.dockerSigstoreTufRootFile` (a TUF root) |
+| Revocation | `setting:pki.revocationCrlIssuersFile`, `setting:pki.revocationHttpsCaFile`, `setting:pki.revocationLdapCaFile` |
+| Outbound connections | `setting:federation.outboundCaFile`, `setting:ssf.pushCaFile`, `setting:gnap.pushCaFile`, `setting:xacml.pepNotifyCaFile`, `setting:auditExport.caFile`, `setting:authzen.externalPdpCaFile`, `setting:scimClient.caFile`, `setting:mail.smtpCaFile`, `setting:malwareScan.caFile` |
+| Infrastructure (not assignable) | `setting:persistence.databaseTlsCaFile`, `setting:keys.vaultCaCert` |
+
+**SPIFFE:** `spiffe:<trust domain>` for the realm's own trust domain, and
+one more for each trust domain the realm federates with. In the default
+realm the trust domain is `spiffe.trustDomain` (`example.org` until you set
+it); in any other realm it is the realm's DNS domain.
+
+**In a realm other than the default**, the default realm's named
+truststores also appear, read-only: they are service-wide.
+
+Which of these each use case trusts before you assign anything is its
+**Default** in [The use cases](#the-use-cases).
+
 ## Key sets
 
 A **key-set truststore** holds the public keys that may verify a JSON Web

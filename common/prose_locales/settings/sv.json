@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Hur länge tjänsten väntas på. En stor fil får en sekund mer per mebibyte."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Samtidiga skanningar"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Hur många filer en process skickar till skannern samtidigt, var och en över en egen anslutning. Övriga väntar på sin tur."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Väntande skanningar"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Hur många filer som får vänta på en skanning utöver dem som pågår. En fil därutöver avvisas med 503 (STS-CORE-0182), som när skannern inte svarar."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "CA-fil för en icaps-tjänst"
@@ -2147,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Hur länge en enskild avsökning bakom /admin/secrets får vänta på att ett hemlighetslager svarar. Var och en av dem är en LÄSNING av metadata — en stat av nyckelfilen, en sys-slutpunkt, en KV-versionshistorik, en DescribeSecret — och ingen av dem hämtar någonsin ett hemligt värde. Gränsen finns så att öppnandet av en konsolsida aldrig kan hänga på någon annans lager; en avsökning som tar slut visas som en rad som säger det, precis som en som vägrades."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Tidsgräns för anrop till hemlighetslagret (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Hur länge ett försök till ett anrop till OpenBao eller Vault, AWS KMS eller Secrets Manager, Google Cloud KMS eller Secret Manager, eller Azure Key Vault får vänta; ges till varje SDK som dess egen tidsgränsinställning."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Försök per anrop till hemlighetslagret"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Hur många gånger totalt ett anrop till ett hemlighetslager eller en nyckeltjänst görs: molnens SDK:ers egen gräns för omförsök, och för OpenBao eller Vault görs ett anrop som inte fick något svar, ett 5xx eller ett 429 om efter en kort paus (STS-KEYS-0214 när varje försök misslyckades). Ett 4xx upprepas aldrig."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS-region"
@@ -2204,6 +2236,30 @@
     "text": "Hur många sessioner varje process och varje förfrågningsarbetare högst håller öppna mot ett token, där var och en kör en HSM-operation åt gången. En YubiHSM 2 har 16 sessioner totalt, delade av varje process på varje nod: håll produkten av detta värde, processerna och noderna under det."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Tidsgräns för HSM-operation (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Hur länge en HSM-operation, och väntan på en session att köra den i, får ta innan den avvisas (STS-KEYS-0216). En session vars operation överskred den kasseras när modulen svarar. 0 för ingen gräns."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Väntande HSM-operationer per token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Hur många HSM-operationer som får vänta på en session i ett token i en process eller arbetare. En därutöver avvisas genast (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "tokenet öppnas en gång, vid start"
   },
@@ -5686,6 +5742,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "Hur länge man väntar på att en partner ska svara innan man ger upp. Den spelar större roll än en tidsgräns brukar eftersom webbläsaren VÄNTAR på den — en federerad inloggning är en person som tittar på en tom flik medan den här tjänsten löser in en kod — så den är kort nog för att en död partner ska ge en felsida i stället för att hänga, och felet anger tidsgränsen. Den var 5000 fram till 2026-08-30, och det som ändrades är att partnern här OFTAST ÄR DEN HÄR PROCESSEN: en förtroendesfär är en logisk kopia av den här tjänsten, och det första någon begär av en helt ny sfär är dess JWKS — vilket är det som skapar sfärens elva postkvantnycklar, varav en är en SLH-DSA-SHAKE-128s-nyckelgenerering på ungefär fem sekunder. 5000 var en budget som bara fungerade eftersom den här tjänsten FÖRR BLOCKERADE medan den svarade: med händelseloopen stoppad kunde timern som upprätthöll budgeten inte utlösas förrän svaret redan var klart. Nycklarna genereras nu på libuvs trådpool (common/pq_native.js) och förvärms när en sfär skapas, så den vanliga hämtningen tar millisekunder — detta är budgeten för den som kommer medan en sfär fortfarande håller på att födas."
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Utgående anslutningar per mål"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Hur många anslutningar en process håller öppna samtidigt mot ett mål (en partner, en mottagare, en klients URL), för varje utgående HTTP-anrop. En förfrågan därutöver väntar på en anslutning, inom sin totala tidsfrist, och en varning loggas när förfrågningar först börjar vänta (STS-HTTP-0032). Anslutningar hålls vid liv och återanvänds."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Utgående anslutningar totalt"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Hur många utgående HTTP-anslutningar en process håller öppna totalt. En förfrågan därutöver väntar på en anslutning, inom sin totala tidsfrist (STS-HTTP-0032). Aldrig mindre än federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Total tidsfrist för utgående anrop (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Det längsta ett utgående HTTP-anrop får ta totalt: väntan på en anslutning, uppkopplingen, handskakningen och hela svaret. De andra tidsgränserna gäller inaktivitet, så en motpart som svarar långsamt skulle annars hålla ett anrop öppet. Ett anrop vars egen tidsgräns är längre får den i stället. Vid tidsfristen avslutas anropet som en tidsgränsöverskridning (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Tidsgräns för utgående uppkoppling (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Hur länge en ny utgående anslutning får ta att koppla upp, med sin TLS-handskakning. En anslutning som återanvänds från poolen tidmäts inte. Vid gränsen avslutas anropet som en tidsgränsöverskridning (STS-HTTP-0034)."
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -11463,6 +11551,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Hur länge en enskild sats bakom /admin/database får köras, som PostgreSQL:s egen statement_timeout på den enda anslutning som sidan lånar. Var och en av dem är en läsning av en katalogvy; gränsen finns så att öppnandet av en konsolsida aldrig kan låsa fast en anslutning ur en pool som den här tjänsten besvarar protokolltrafik från. Den sätts på servern snarare än som en timer här, eftersom en timer skulle överge promise-objektet och lämna både satsen och anslutningen precis där de var."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Databasanslutningar per process"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Hur många anslutningar till databasen varje process håller i sin pool. 0, standardvärdet, är dubbla antalet förfrågningsarbetare på noden och aldrig färre än fyra. En anropare därutöver väntar på en ledig anslutning i upp till persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Väntan på en databasanslutning (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Hur länge en anropare väntar på en ledig anslutning i poolen innan den misslyckas. En skrivning som misslyckas så besvaras med 503 (STS-STORE-0066) och dess tömning görs om."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Tidsgräns för databasuppkoppling (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Hur länge det får ta att upprätta en ny databasanslutning."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Hur länge en ledig databasanslutning behålls (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Hur länge en oanvänd anslutning stannar i poolen innan den stängs."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Tidsgräns för databassatser (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Det längsta en vanlig databassats får köra innan servern avbryter den (PostgreSQL:s statement_timeout, MariaDB:s max_statement_time), loggat som STS-STORE-0178. 0 för ingen. Att öppna lagret, dess migreringar, återställningen vid start och indexbyggen online omfattas inte; efterfyllnader körs i små omgångar."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "den sätts på poolen när lagret är öppnat och läst"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Datakatalog"
@@ -11883,6 +12031,14 @@
     "en": "839a4a009d203829",
     "text": "Hur lång tid en begäran som vidarebefordrats till en annan cell, eller ett anrop på kanalen mellan celler, får ta innan den besvaras som att den andra cellen är onåbar (och hanteras som `cells.homeUnreachable` anger)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Största svar mellan celler (byte)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Det mesta ett synkront anrop till en annan cell får svara. Därutöver stängs anslutningen och anropet misslyckas (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Leveransförsök mellan celler"
@@ -12114,6 +12270,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Hur många personer varje attributkälla läser per körning av den schemalagda uppdateringen (attribute-sources.refresh, varje minut), och fortsätter efter den senaste nästa gång. Ett större värde gör ett varv klart snabbare och håller en nod längre per körning."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Anslutningar per källa"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Hur många anslutningar varje process håller mot en attributkälla. En uppslagning därutöver väntar på en anslutning inom källans egen tidsgräns. En ändring gäller från varje källas nästa uppslagning."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12424,8 +12588,8 @@
     "text": "Pågående sändningar"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Hur många meddelanden en process skickar samtidigt från en genomsökning."
+    "en": "d6de0478b866cf8b",
+    "text": "Hur många meddelanden en process skickar samtidigt, från en genomsökning och vid första försöket efter att ett meddelande köats. Ett meddelande som inte hittar någon ledig plats väntar på nästa genomsökning."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12440,8 +12604,8 @@
     "text": "Rader i utkorgen per sfär"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Taket för utkorgen, per sfär: den äldsta AVSLUTADE raden tas bort först, och en väntande aldrig."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Taket för utkorgen, per sfär: den äldsta AVSLUTADE raden tas bort först, och en väntande aldrig. Ett meddelande som skulle ta de VÄNTANDE raderna över taket avvisas (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

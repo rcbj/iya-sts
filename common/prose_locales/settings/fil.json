@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Gaano katagal maghihintay sa service. May dagdag na isang segundo bawat mebibyte ang malaking file."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Mga sabay-sabay na scan"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Ilang file ang sabay-sabay na ipinapadala ng isang process sa scanner, bawat isa sa sarili nitong connection. Naghihintay ng kanilang turno ang iba."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Mga naghihintay na scan"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Ilang file ang maaaring maghintay ng scan bukod sa mga tumatakbo. Tinatanggihan ng 503 (STS-CORE-0182) ang file na lampas dito, gaya ng kapag hindi sumasagot ang scanner."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "CA file para sa icaps service"
@@ -2147,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Gaano katagal puwedeng maghintay ang alinmang probe sa likod ng /admin/secrets para sumagot ang isang secret store. Bawat isa sa mga ito ay PAGBASA ng metadata — isang stat ng key file, isang sys endpoint, isang KV version history, isang DescribeSecret — at wala sa mga ito ang kumukuha kailanman ng secret value. Narito ang limit para hindi kailanman ma-hang ang pagbukas ng isang console page sa store ng ibang tao; ang probe na naubusan ng oras ay ipinapakita bilang row na nagsasabi nito, eksakto gaya ng tinanggihan."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Timeout ng tawag sa secret store (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Gaano katagal maaaring maghintay ang isang pagtatangka ng tawag sa OpenBao o Vault, AWS KMS o Secrets Manager, Google Cloud KMS o Secret Manager, o Azure Key Vault; ibinibigay sa bawat SDK bilang sarili nitong timeout option."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Mga pagtatangka bawat tawag sa secret store"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Ilang beses sa kabuuan sinusubukan ang isang tawag sa secret store o key service: ang sariling retry bound ng mga cloud SDK, at para sa OpenBao o Vault, inuulit pagkatapos ng maikling pahinga ang tawag na walang natanggap na sagot, 5xx o 429 (STS-KEYS-0214 kapag nabigo ang bawat pagtatangka). Hindi kailanman inuulit ang 4xx."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS region"
@@ -2204,6 +2236,30 @@
     "text": "Ilang session ang pinakamaraming pinananatiling bukas ng bawat process at request worker sa isang token, na bawat isa ay nagpapatakbo ng isang HSM operation sa isang pagkakataon. May 16 na session sa kabuuan ang YubiHSM 2, na pinaghahatian ng bawat process ng bawat node: panatilihing mas mababa roon ang product nito, ng mga process at ng mga node."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "isang beses binubuksan ang token, sa pag-start"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Timeout ng HSM operation (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Gaano katagal maaaring tumagal ang isang HSM operation, at ang paghihintay ng session na pagpapatakbuhan nito, bago ito tanggihan (STS-KEYS-0216). Itinatapon ang session na ang operation ay lumampas dito kapag sumagot ang module. 0 para walang limit."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "isang beses binubuksan ang token, sa pag-start"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Mga naghihintay na HSM operation bawat token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Ilang HSM operation ang maaaring maghintay ng session ng isang token sa isang process o worker. Agad na tinatanggihan ang isang lampas dito (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "isang beses binubuksan ang token, sa pag-start"
   },
@@ -5686,6 +5742,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "Gaano katagal maghihintay na sumagot ang isang partner bago sumuko. Mas mahalaga ito kaysa sa karaniwang timeout dahil NAGHIHINTAY dito ang browser — ang federated sign-in ay isang taong nakatingin sa blangkong tab habang nire-redeem ng serbisyong ito ang isang code — kaya sapat itong maikli para ang patay na partner ay magbunga ng error page sa halip na pagkabitin, at pinapangalanan ng error ang timeout. 5000 ito hanggang 2026-08-30, at ang nagbago ay ang partner dito ay KARANIWANG ANG PROCESS NA ITO: ang trust realm ay lohikal na kopya ng serbisyong ito, at ang unang hinihingi ng sinuman sa bagong-bagong realm ay ang JWKS nito — na siyang nagpapasilang sa labing-isang post-quantum key ng realm na iyon, isa rito ay SLH-DSA-SHAKE-128s key generation na mga limang segundo. Ang 5000 ay budget na gumana lang dahil DATING NAGBA-BLOCK ang serbisyong ito habang sumasagot: nakahinto ang event loop, kaya hindi makapag-fire ang timer na nagpapatupad ng budget na iyon hanggang nagawa na ang response. Binubuo na ngayon ang mga key sa thread pool ng libuv (common/pq_native.js) at pinapainit kapag ginawa ang isang realm, kaya millisecond na lang ang ordinaryong fetch — ito ang budget para sa dumarating habang isinisilang pa ang isang realm."
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Mga outbound connection bawat destinasyon"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Ilang connection ang sabay-sabay na pinananatiling bukas ng isang process sa isang destinasyon (isang partner, isang receiver, URL ng isang client), para sa bawat outbound na HTTP call. Naghihintay ng connection ang request na lampas dito, sa loob ng kabuuang deadline nito, at nagla-log ng babala kapag unang naghintay ang mga request (STS-HTTP-0032). Pinananatiling buhay at muling ginagamit ang mga connection."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Mga outbound connection sa kabuuan"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Ilang outbound na HTTP connection ang pinananatiling bukas ng isang process sa kabuuan. Naghihintay ng connection ang request na lampas dito, sa loob ng kabuuang deadline nito (STS-HTTP-0032). Hindi kailanman mas mababa sa federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Kabuuang deadline ng outbound (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Ang pinakamatagal na maaaring itagal ng anumang outbound na HTTP call sa kabuuan: ang paghihintay ng connection, ang pag-connect, ang handshake at ang buong sagot. Inactivity ang sinusukat ng ibang timeout, kaya ang peer na mabagal sumagot ay kung hindi ay mapapanatiling bukas ang call. Ang call na mas mahaba ang sariling timeout ay iyon ang makukuha. Sa deadline, nagtatapos ang call bilang timeout (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Timeout ng outbound connect (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Gaano katagal maaaring tumagal ang pag-connect ng bagong outbound connection, kasama ang TLS handshake nito. Hindi tinitiyempuhan ang connection na muling ginamit mula sa pool. Sa limit, nagtatapos ang call bilang timeout (STS-HTTP-0034)."
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -11463,6 +11551,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Gaano katagal maaaring tumakbo ang alinmang statement sa likod ng /admin/database, bilang sariling statement_timeout ng PostgreSQL sa nag-iisang connection na hinihiram ng pahinang iyon. Bawat isa ay pagbasa ng isang catalog view; nariyan ang limit para hindi kailanman ma-pin ng pagbubukas ng console page ang isang connection mula sa pool na pinagsasagutan ng serbisyong ito ng protocol traffic. Itinatakda ito sa server sa halip na bilang timer dito, dahil iiwan ng timer ang promise at iiwan ang statement at ang connection kung nasaan sila mismo."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Mga database connection bawat process"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Ilang connection sa database ang pinananatili ng bawat process sa pool nito. Ang 0, ang default, ay doble ng mga request worker ng node at hindi kailanman mas mababa sa apat. Naghihintay ng bakanteng connection ang caller na lampas dito nang hanggang persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Paghihintay ng database connection (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Gaano katagal maghihintay ang isang caller ng bakanteng connection sa pool bago ito mabigo. Sinasagot ng 503 (STS-STORE-0066) ang write na nabigo nang ganito at sinusubukang muli ang flush nito."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Timeout ng database connect (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Gaano katagal maaaring tumagal ang paggawa ng bagong database connection."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Tagal ng pagpapanatili ng idle na database connection (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Gaano katagal nananatili sa pool ang idle na connection bago ito isara."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "binubuksan ang store kapag nag-start ang process"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Statement timeout ng database (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Ang pinakamatagal na maaaring tumakbo ang isang ordinaryong database statement bago ito kanselahin ng server (statement_timeout ng PostgreSQL, max_statement_time ng MariaDB), na nila-log bilang STS-STORE-0178. 0 para wala. Hindi saklaw nito ang pagbubukas ng store, ang mga migration nito, ang restore sa pag-start at ang mga online index build; tumatakbo ang mga backfill sa maliliit na batch."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "itinatakda ito sa pool kapag nabuksan at nabasa na ang store"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Data directory"
@@ -11883,6 +12031,14 @@
     "en": "839a4a009d203829",
     "text": "Gaano katagal maaaring tumagal ang request na ni-relay sa ibang cell, o isang call sa inter-cell channel, bago ito sagutin bilang hindi maabot ang ibang cell (at hawakan ayon sa sinasabi ng `cells.homeUnreachable`)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Pinakamalaking inter-cell na sagot (bytes)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Ang pinakamalaking maaaring isagot ng isang synchronous na call sa ibang cell. Kapag lumampas, isinasara ang connection at nabibigo ang call (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Mga pagtatangka ng inter-cell delivery"
@@ -12114,6 +12270,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Ilang tao ang binabasa ng bawat attribute source kada pagtakbo ng naka-iskedyul na refresh (attribute-sources.refresh, bawat minuto), at itinutuloy mula sa huli sa susunod. Ang mas malaki ay mas maagang natatapos ang isang pass at mas matagal na hinahawakan ang isang node kada pagtakbo."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Mga connection bawat source"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Ilang connection ang pinananatili ng bawat process sa isang attribute source. Naghihintay ng connection ang lookup na lampas dito sa loob ng sariling timeout ng source. Nagkakabisa ang pagbabago sa susunod na lookup ng bawat source."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12424,8 +12588,8 @@
     "text": "Mga sabay-sabay na pagpapadala"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Ilang mensahe ang sabay-sabay na ipinapadala ng isang process mula sa isang sweep."
+    "en": "d6de0478b866cf8b",
+    "text": "Ilang mensahe ang sabay-sabay na ipinapadala ng isang process, mula sa isang sweep at sa unang pagtatangka pagkatapos ma-queue ang isang mensahe. Naghihintay ng susunod na sweep ang mensaheng walang makitang bakante."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12440,8 +12604,8 @@
     "text": "Mga row ng outbox kada realm"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Ang limit sa outbox, kada realm: unang inaalis ang pinakalumang TAPOS na row, at hindi kailanman ang nakabinbin."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Ang limit sa outbox, kada realm: unang inaalis ang pinakalumang TAPOS na row, at hindi kailanman ang nakabinbin. Tinatanggihan ang mensaheng magpapalampas sa mga NAKABINBING row dito (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

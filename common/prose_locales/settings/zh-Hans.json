@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "等待服务的时长。大文件每 MiB 额外增加一秒。"
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "同时扫描数"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "一个进程同时向扫描器发送多少个文件，每个文件使用各自的连接。其余文件排队等候。"
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "等待扫描数"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "除正在扫描的文件外，最多可有多少个文件等待扫描。超出的文件以 503 拒绝（STS-CORE-0182），与扫描器无响应时相同。"
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "icaps 服务的 CA 文件"
@@ -2147,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "/admin/secrets 背后的任何一次探测等待密钥存储应答的最长时间。每次探测都只是读取元数据——对密钥文件执行 stat、访问 sys 端点、读取 KV 版本历史、DescribeSecret——从不获取秘密值。设置这个上限是为了让打开控制台页面绝不会因为别人的存储而挂起；超时的探测会显示为一行说明，与被拒绝的探测完全一样。"
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "机密存储调用超时（毫秒）"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "对 OpenBao 或 Vault、AWS KMS 或 Secrets Manager、Google Cloud KMS 或 Secret Manager、或 Azure Key Vault 的一次调用尝试最多可等待多久；作为各 SDK 自身的超时选项传入。"
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "每次机密存储调用的尝试次数"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "对机密存储或密钥服务的一次调用总共尝试多少次：即各云 SDK 自身的重试上限；对于 OpenBao 或 Vault，未获响应、或收到 5xx 或 429 的调用会在短暂停顿后重发（所有尝试均失败时记为 STS-KEYS-0214）。4xx 从不重试。"
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS 区域"
@@ -2204,6 +2236,30 @@
     "text": "每个进程和请求工作进程在一个令牌上最多保持打开的会话数，每个会话一次执行一个 HSM 操作。YubiHSM 2 总共有 16 个会话，由每个节点的每个进程共享：请让此值、进程数与节点数的乘积低于该数。"
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "令牌只在启动时打开一次"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "HSM 操作超时（毫秒）"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "一次 HSM 操作及等待执行它的会话最多可用多久，超时即被拒绝（STS-KEYS-0216）。操作超时的会话会在模块响应时被丢弃。0 表示不限制。"
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "令牌只在启动时打开一次"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "每个令牌等待中的 HSM 操作数"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "在一个进程或工作进程中，最多可有多少个 HSM 操作等待同一令牌的会话。超出的操作立即被拒绝（STS-KEYS-0215）。"
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "令牌只在启动时打开一次"
   },
@@ -5686,6 +5742,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "在放弃之前等待合作方答复的时长。它比一般的超时更重要，因为浏览器正在等待它——联合登录意味着有人盯着一个空白标签页，而本服务正在兑换代码——因此它足够短，使失效的合作方产生的是错误页面而不是挂起，并且错误会指明该超时。在 2026-08-30 之前它是 5000，变化在于这里的合作方通常就是本进程：信任领域是本服务的逻辑副本，而任何人向全新领域请求的第一样东西就是它的 JWKS——正是这一请求使该领域的十一个后量子密钥得以生成，其中一个是 SLH-DSA-SHAKE-128s 密钥，生成大约需要五秒。5000 这个预算之所以曾经可行，只是因为本服务过去在响应时会阻塞：事件循环停止时，执行该预算的计时器在响应完成之前无法触发。现在密钥在 libuv 的线程池上生成（common/pq_native.js），并在创建领域时预热，因此普通的获取只需几毫秒——此值是为领域仍在创建过程中时到达的那次获取准备的预算。"
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "每个目标的出站连接数"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "对于每次出站 HTTP 调用，一个进程同时向一个目标（合作方、接收方、客户端的 URL）保持打开的连接数。超出的请求在其总体期限内等待连接，请求首次开始等待时记录一条警告（STS-HTTP-0032）。连接会保持活动并被复用。"
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "出站连接总数"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "一个进程总共保持打开的出站 HTTP 连接数。超出的请求在其总体期限内等待连接（STS-HTTP-0032）。不得少于 federation.outboundMaxSockets。"
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "出站总体期限（毫秒）"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "任何出站 HTTP 调用总共最多可用的时间：包括等待连接、建立连接、握手以及接收完整响应。其他超时针对的是无活动时间，因此响应缓慢的对端否则会让调用一直保持打开。自身超时更长的调用改用其自身超时。到达期限时，调用以超时结束（STS-HTTP-0033）。"
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "出站连接超时（毫秒）"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "新建出站连接（含 TLS 握手）最多可用多久。从连接池复用的连接不计时。到达上限时，调用以超时结束（STS-HTTP-0034）。"
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -11463,6 +11551,66 @@
     "en": "fe511fad2e40a74b",
     "text": "/admin/database 背后任一语句可运行多长时间，作为 PostgreSQL 自己的 statement_timeout 设置在该页面借用的那一个连接上。其中每条语句都是对目录视图的读取；设定此界限是为了让打开控制台页面永远不会占住本服务用于应答协议流量的连接池中的连接。它在服务器上设置，而不是在此处作为计时器，因为计时器会放弃 promise，使语句和连接都原样留在那里。"
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "每个进程的数据库连接数"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "每个进程在其连接池中保持的数据库连接数。默认值 0 表示节点请求工作进程数的两倍，且不少于四个。超出的调用方最多等待 persistence.poolWaitMs 以获取空闲连接。"
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "等待数据库连接（毫秒）"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "调用方在连接池中等待空闲连接多久后失败。因此失败的写入以 503 响应（STS-STORE-0066），其刷新会重试。"
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "数据库连接超时（毫秒）"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "建立一个新的数据库连接最多可用多久。"
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "空闲数据库连接保留时长（毫秒）"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "空闲连接在连接池中保留多久后被关闭。"
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "存储在进程启动时打开"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "数据库语句超时（毫秒）"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "普通数据库语句在被服务器取消前最多可运行多久（PostgreSQL 的 statement_timeout、MariaDB 的 max_statement_time），记为 STS-STORE-0178。0 表示不限制。打开存储、其迁移、启动时的恢复以及在线索引构建不受此限制；回填以小批量运行。"
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "它在存储打开并读取后设置到连接池上"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "数据目录"
@@ -11883,6 +12031,14 @@
     "en": "839a4a009d203829",
     "text": "转发到另一个单元的请求，或单元间通道上的调用，在被视为另一个单元不可达而作答之前（并按 `cells.homeUnreachable` 的规定处理）可以花费的时长。"
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "单元间最大响应（字节）"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "对另一个单元的同步调用最多可返回的响应大小。超过后连接将被关闭，调用失败（STS-CELL-0212）。"
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "单元间投递尝试次数"
@@ -12114,6 +12270,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "定时刷新（attribute-sources.refresh，每分钟一次）每次运行时，每个属性源读取多少人，下次从上次结束处继续。较大的值会更快完成一轮，但每次运行占用节点的时间更长。"
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "每个来源的连接数"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "每个进程对一个属性源保持的连接数。超出的查询在该来源自身的超时内等待连接。更改在每个来源的下一次查询时生效。"
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12424,8 +12588,8 @@
     "text": "进行中的发送数"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "一个进程在一次清理中同时发送多少封消息。"
+    "en": "d6de0478b866cf8b",
+    "text": "一个进程同时发送多少封消息，包括一次清理中以及消息入队后的首次尝试。找不到空闲名额的消息等待下一次清理。"
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12440,8 +12604,8 @@
     "text": "每个领域的发件箱行数"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "每个领域的发件箱上限：最旧的已完成行最先被删除，待处理的行则从不删除。"
+    "en": "3b7f698ec30a6ed1",
+    "text": "每个领域的发件箱上限：最旧的已完成行最先被删除，待处理的行则从不删除。会使待处理行超过该上限的消息将被拒绝（STS-MAIL-0244）。"
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",

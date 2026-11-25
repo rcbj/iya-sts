@@ -419,6 +419,22 @@
     "en": "59a643baa5f14b91",
     "text": "Wie lange auf den Dienst gewartet wird. Eine große Datei erhält je Mebibyte eine Sekunde mehr."
   },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Gleichzeitige Prüfungen"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Wie viele Dateien ein Prozess gleichzeitig an den Scanner sendet, jede über eine eigene Verbindung. Weitere warten, bis sie an der Reihe sind."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Wartende Prüfungen"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Wie viele Dateien über die laufenden hinaus auf eine Prüfung warten dürfen. Eine Datei darüber hinaus wird mit 503 abgelehnt (STS-CORE-0182), wie wenn der Scanner nicht antwortet."
+  },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
     "text": "CA-Datei für einen icaps-Dienst"
@@ -2147,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Wie lange eine einzelne Prüfung hinter /admin/secrets auf eine Antwort eines Geheimnisspeichers warten darf. Jede davon ist ein LESEN von Metadaten — ein stat der Schlüsseldatei, ein sys-Endpunkt, eine KV-Versionshistorie, ein DescribeSecret — und keine holt jemals einen Geheimniswert. Die Grenze ist da, damit das Öffnen einer Konsolenseite niemals an dem Speicher eines anderen hängen kann; eine Prüfung, der die Zeit ausgeht, wird als Zeile gezeichnet, die das sagt, genau wie eine, die abgelehnt wurde."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Zeitlimit für Aufrufe des Geheimnisspeichers (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Wie lange ein Versuch eines Aufrufs an OpenBao oder Vault, AWS KMS oder Secrets Manager, Google Cloud KMS oder Secret Manager oder Azure Key Vault warten darf; jedem SDK als dessen eigene Timeout-Option übergeben."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Versuche je Aufruf des Geheimnisspeichers"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Wie oft ein Aufruf an einen Geheimnisspeicher oder Schlüsseldienst insgesamt versucht wird: die eigene Wiederholungsgrenze der Cloud-SDKs, und für OpenBao oder Vault wird ein Aufruf, der keine Antwort, ein 5xx oder ein 429 erhielt, nach einer kurzen Pause erneut gestellt (STS-KEYS-0214, wenn jeder Versuch fehlschlug). Ein 4xx wird nie wiederholt."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS-Region"
@@ -2204,6 +2236,30 @@
     "text": "Wie viele Sitzungen jeder Prozess und jeder Anfrage-Worker höchstens auf einem Token offen hält, von denen jede eine HSM-Operation zur Zeit ausführt. Ein YubiHSM 2 hat insgesamt 16 Sitzungen, geteilt von jedem Prozess jedes Knotens: Halten Sie das Produkt aus diesem Wert, den Prozessen und den Knoten darunter."
   },
   "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "das Token wird einmal geöffnet, beim Start"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Zeitlimit für HSM-Operationen (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Wie lange eine HSM-Operation und das Warten auf eine Sitzung, in der sie läuft, dauern dürfen, bevor sie abgelehnt wird (STS-KEYS-0216). Eine Sitzung, deren Operation das Limit überdauert hat, wird verworfen, sobald das Modul antwortet. 0 für kein Limit."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "das Token wird einmal geöffnet, beim Start"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Wartende HSM-Operationen je Token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Wie viele HSM-Operationen in einem Prozess oder Worker auf eine Sitzung eines Tokens warten dürfen. Eine darüber hinaus wird sofort abgelehnt (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
     "en": "191cc9621b9dbdd3",
     "text": "das Token wird einmal geöffnet, beim Start"
   },
@@ -5686,6 +5742,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "Wie lange auf die Antwort eines Partners gewartet wird, bevor aufgegeben wird. Das wiegt schwerer als eine Zeitüberschreitung sonst, weil der Browser DARAUF WARTET — eine föderierte Anmeldung ist eine Person, die auf einen leeren Tab blickt, während dieser Dienst einen Code einlöst —, daher ist sie kurz genug, dass ein toter Partner eine Fehlerseite erzeugt statt hängen zu bleiben, und der Fehler die Zeitüberschreitung nennt. Bis 2026-08-30 waren es 5000, und geändert hat sich, dass der Partner hier MEIST DIESER PROZESS ist: Ein Vertrauensbereich ist eine logische Kopie dieses Dienstes, und das Erste, was irgendjemand von einem nagelneuen Vertrauensbereich verlangt, ist seine JWKS — genau das ruft die elf Post-Quantum-Schlüssel dieses Vertrauensbereichs ins Leben, und einer davon ist eine Schlüsselerzeugung SLH-DSA-SHAKE-128s von etwa fünf Sekunden. 5000 war ein Budget, das überhaupt nur funktioniert hat, weil dieser Dienst beim Antworten BLOCKIERTE: Bei gestopptem Event-Loop konnte der Timer, der dieses Budget erzwingt, nicht auslösen, bevor die Antwort schon fertig war. Die Schlüssel werden jetzt auf dem Thread-Pool von libuv erzeugt (common/pq_native.js) und vorgewärmt, wenn ein Vertrauensbereich angelegt wird, sodass der gewöhnliche Abruf Millisekunden dauert — dies ist das Budget für den, der eintrifft, während ein Vertrauensbereich noch im Entstehen ist."
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Ausgehende Verbindungen je Ziel"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Wie viele Verbindungen ein Prozess gleichzeitig zu einem Ziel (einem Partner, einem Empfänger, der URL eines Clients) offen hält, für jeden ausgehenden HTTP-Aufruf. Eine Anfrage darüber hinaus wartet innerhalb ihrer Gesamtfrist auf eine Verbindung, und eine Warnung wird protokolliert, sobald Anfragen erstmals warten (STS-HTTP-0032). Verbindungen werden offen gehalten und wiederverwendet."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Ausgehende Verbindungen insgesamt"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Wie viele ausgehende HTTP-Verbindungen ein Prozess insgesamt offen hält. Eine Anfrage darüber hinaus wartet innerhalb ihrer Gesamtfrist auf eine Verbindung (STS-HTTP-0032). Nie weniger als federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Gesamtfrist für ausgehende Aufrufe (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Die längste Zeit, die ein ausgehender HTTP-Aufruf insgesamt dauern darf: das Warten auf eine Verbindung, der Verbindungsaufbau, der Handshake und die ganze Antwort. Die anderen Zeitlimits gelten für Inaktivität, sodass ein langsam antwortender Gegenüber einen Aufruf sonst offen halten würde. Ein Aufruf mit einem längeren eigenen Zeitlimit erhält stattdessen dieses. Bei Ablauf der Frist endet der Aufruf als Zeitüberschreitung (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Zeitlimit für ausgehenden Verbindungsaufbau (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Wie lange der Aufbau einer neuen ausgehenden Verbindung samt TLS-Handshake dauern darf. Eine aus dem Pool wiederverwendete Verbindung wird nicht gemessen. Beim Limit endet der Aufruf als Zeitüberschreitung (STS-HTTP-0034)."
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -11463,6 +11551,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Wie lange eine einzelne Anweisung hinter /admin/database laufen darf, als das eigene statement_timeout von PostgreSQL auf der einen Verbindung, die diese Seite ausleiht. Jede davon ist das Lesen einer Katalogansicht; die Grenze sorgt dafür, dass das Öffnen einer Seite der Konsole niemals eine Verbindung aus einem Pool festhalten kann, aus dem dieser Dienst den Protokollverkehr beantwortet. Sie wird auf dem Server gesetzt, nicht als Zeitgeber hier, weil ein Zeitgeber das Promise aufgäbe und sowohl die Anweisung als auch die Verbindung genau dort ließe, wo sie waren."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Datenbankverbindungen je Prozess"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Wie viele Verbindungen zur Datenbank jeder Prozess in seinem Pool hält. 0, der Standard, ist das Doppelte der Anfrage-Worker des Knotens und nie weniger als vier. Ein Aufrufer darüber hinaus wartet bis zu persistence.poolWaitMs auf eine freie Verbindung."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Warten auf eine Datenbankverbindung (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Wie lange ein Aufrufer auf eine freie Verbindung im Pool wartet, bevor er fehlschlägt. Ein Schreibvorgang, der so fehlschlägt, wird mit 503 beantwortet (STS-STORE-0066), und sein Flush wird erneut versucht."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Zeitlimit für den Datenbank-Verbindungsaufbau (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Wie lange der Aufbau einer neuen Datenbankverbindung dauern darf."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Haltedauer einer ungenutzten Datenbankverbindung (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Wie lange eine ungenutzte Verbindung im Pool bleibt, bevor sie geschlossen wird."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "der Speicher wird beim Start des Prozesses geöffnet"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Zeitlimit für Datenbankanweisungen (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Die längste Zeit, die eine gewöhnliche Datenbankanweisung laufen darf, bevor der Server sie abbricht (statement_timeout von PostgreSQL, max_statement_time von MariaDB), protokolliert als STS-STORE-0178. 0 für keines. Das Öffnen des Speichers, seine Migrationen, die Wiederherstellung beim Start und die Online-Indexaufbauten fallen nicht darunter; Nachbefüllungen laufen in kleinen Stapeln."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "es wird am Pool gesetzt, sobald der Speicher geöffnet und gelesen ist"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Datenverzeichnis"
@@ -11883,6 +12031,14 @@
     "en": "839a4a009d203829",
     "text": "Wie lange eine an eine andere Zelle weitergeleitete Anfrage oder ein Aufruf auf dem Kanal zwischen den Zellen dauern darf, bevor als Antwort gilt, die andere Zelle sei unerreichbar (und so behandelt wird, wie es `cells.homeUnreachable` sagt)."
   },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Größte Antwort zwischen Zellen (Bytes)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Das Höchste, was ein synchroner Aufruf an eine andere Zelle als Antwort liefern darf. Darüber hinaus wird die Verbindung geschlossen und der Aufruf schlägt fehl (STS-CELL-0212)."
+  },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
     "text": "Zustellversuche zwischen Zellen"
@@ -12114,6 +12270,14 @@
   "attributeSources.refreshBatch|description": {
     "en": "de6b9c78cb258e07",
     "text": "Wie viele Personen jede Attributquelle je Lauf der geplanten Aktualisierung liest (attribute-sources.refresh, jede Minute) und das nächste Mal nach der letzten weiterliest. Ein größerer Wert beendet einen Durchgang früher und hält einen Knoten je Lauf länger."
+  },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Verbindungen je Quelle"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Wie viele Verbindungen jeder Prozess zu einer Attributquelle hält. Eine Abfrage darüber hinaus wartet innerhalb des eigenen Zeitlimits der Quelle auf eine Verbindung. Eine Änderung wirkt bei der nächsten Abfrage jeder Quelle."
   },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
@@ -12424,8 +12588,8 @@
     "text": "Sendungen in Bearbeitung"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Wie viele Nachrichten ein Prozess aus einem Durchlauf auf einmal sendet."
+    "en": "d6de0478b866cf8b",
+    "text": "Wie viele Nachrichten ein Prozess auf einmal sendet, aus einem Durchlauf und beim ersten Versuch, nachdem eine Nachricht eingereiht wurde. Eine Nachricht, die keinen freien Platz findet, wartet auf den nächsten Durchlauf."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -12440,8 +12604,8 @@
     "text": "Postausgangszeilen je Vertrauensbereich"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Die Obergrenze des Postausgangs je Vertrauensbereich: die älteste ABGESCHLOSSENE Zeile wird zuerst verworfen, eine ausstehende nie."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Die Obergrenze des Postausgangs je Vertrauensbereich: die älteste ABGESCHLOSSENE Zeile wird zuerst verworfen, eine ausstehende nie. Eine Nachricht, welche die AUSSTEHENDEN Zeilen darüber hinaus bringen würde, wird abgelehnt (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",
