@@ -500,7 +500,11 @@ async function setUp() {
     fields: { oauthClientId: [CLIENT], oauthRedirectUri: [acs],
               oauthTokenEndpointAuthMethod: "none",
               oauthGrantType: ["implicit"],
-              oauthResponseType: ["id_token"] } });
+              oauthResponseType: ["id_token"],
+              // The relationship's `fedScope`, declared (#2169): in
+              // product a client that declares none is issued `openid`
+              // alone (#1589).
+              oauthAllowedScope: ["openid", "profile", "email"] } });
   must(app.status === 200 && app.body && app.body.ok,
        "creating the partner's application answered " + app.status + " " +
        app.text.slice(0, 300));

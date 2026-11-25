@@ -190,9 +190,7 @@ class K8sWorkloadAttestor {
       answer = await outbound.requestConfigured('https://' +
         (nodeName || '127.0.0.1') + ':' + port + '/pods', {
           headers: headers, skipVerify: skip, chainOnly: !skip && !nodeName,
-          ca: skip ? undefined : this.readOptional(String(
-            config.value('spiffe.k8sKubeletCaFile') || IN_CLUSTER +
-            '/ca.crt')) || undefined,
+          ca: skip ? undefined : this.kubeletCa(),
           cert: certFile ? this.readOptional(certFile) : undefined,
           key: certFile ? this.readOptional(String(
             config.value('spiffe.k8sPrivateKeyFile') || '')) : undefined });
@@ -206,6 +204,35 @@ class K8sWorkloadAttestor {
     const parsed = JSON.parse(answer.body.toString('utf8'));
     log.debug("Leaving K8sWorkloadAttestor.podList().");
     return (parsed && parsed.items) || [];
+  }
+
+  // The API server's CA: `outbound-k8s-api`'s truststores where it is
+  // assigned (#2118), otherwise the in-cluster CA as before.
+  private apiServerCa(): string | undefined {
+    const { log } = this.deps;
+    log.debug("Entering K8sWorkloadAttestor.apiServerCa().");
+    const assigned = OutboundTls.assignedCa('outbound-k8s-api');
+    if (assigned && !assigned.problem) {
+      log.debug("Leaving K8sWorkloadAttestor.apiServerCa(). Assigned.");
+      return assigned.ca;
+    }
+    log.debug("Leaving K8sWorkloadAttestor.apiServerCa().");
+    return this.readOptional(IN_CLUSTER + '/ca.crt') || undefined;
+  }
+
+  // The kubelet's CA: `outbound-kubelet`'s truststores where it is assigned
+  // (#2118), otherwise spiffe.k8sKubeletCaFile or the in-cluster CA as before.
+  private kubeletCa(): string | undefined {
+    const { log, config } = this.deps;
+    log.debug("Entering K8sWorkloadAttestor.kubeletCa().");
+    const assigned = OutboundTls.assignedCa('outbound-kubelet');
+    if (assigned && !assigned.problem) {
+      log.debug("Leaving K8sWorkloadAttestor.kubeletCa(). Assigned.");
+      return assigned.ca;
+    }
+    log.debug("Leaving K8sWorkloadAttestor.kubeletCa().");
+    return this.readOptional(String(config.value('spiffe.k8sKubeletCaFile') ||
+      IN_CLUSTER + '/ca.crt')) || undefined;
   }
 
   // A namespace's labels, from the API server in-cluster.
@@ -231,7 +258,7 @@ class K8sWorkloadAttestor {
       (host.indexOf(':') >= 0 ? '[' + host + ']' : host) + ':' +
       String(env.KUBERNETES_SERVICE_PORT || '443') + '/api/v1/namespaces/' +
       encodeURIComponent(namespace), {
-        ca: this.readOptional(IN_CLUSTER + '/ca.crt') || undefined,
+        ca: this.apiServerCa(),
         headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
     if (!answer.ok) {
       log.debug("Leaving K8sWorkloadAttestor.namespaceLabels(). Failed.");

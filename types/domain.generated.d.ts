@@ -1095,6 +1095,24 @@ declare namespace IyaDomain {
   }
 
   /**
+   * A named truststore: certificate authorities a use case is assigned to trust
+   * (#2118).
+   */
+  interface Truststore {
+    kind?: string;
+    addedBy?: string;
+    realm?: string;
+  }
+
+  /**
+   * Which truststores each use case of a realm trusts (#2118).
+   */
+  interface TruststoreAssignments {
+    assignments?: string[];
+    realm?: string;
+  }
+
+  /**
    * A person this service authenticates, as every protocol projects them.
    */
   interface User {
@@ -1295,6 +1313,8 @@ declare namespace IyaDomain {
     SignerTrustAnchor: SignerTrustAnchor;
     SpiffeRegistration: SpiffeRegistration;
     TrustAnchor: TrustAnchor;
+    Truststore: Truststore;
+    TruststoreAssignments: TruststoreAssignments;
     User: User;
     VerifiableCredentialPartner: VerifiableCredentialPartner;
     WsFederationRelyingParty: WsFederationRelyingParty;

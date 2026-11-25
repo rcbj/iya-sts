@@ -10,8 +10,10 @@
 //
 // JSON keeps the catalog types and names the fields by their catalog ids.
 // CSV is UTF-8, quotes the way RFC 4180 quotes, and uses the same ids as
-// its header. A null is an empty field. An empty result is the header and
-// nothing else. PDF is a real PDF 1.4 file in Helvetica with WinAnsi, a
+// its header. A string a spreadsheet would read as a formula gets a single
+// quote in front (#2138, `common/csv_cell.ts`); a number never does. A null
+// is an empty field. An empty result is the header and nothing else.
+// PDF is a real PDF 1.4 file in Helvetica with WinAnsi, a
 // table of the same ids, and a header that names the report, the realm, the
 // language and the time. The chrome words exist in English, Spanish,
 // French, German, Filipino and Swedish, which are the languages Helvetica
@@ -40,6 +42,7 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
+import CsvCell = require('../common/csv_cell');
 
 const log = bunyan.createLogger({ name: 'sts-report-formats' });
 
@@ -113,15 +116,15 @@ function cellText(value: unknown): string {
   return text;
 }
 
+// A CSV cell: the shared helper (#2138), which puts a single quote in front
+// of a string a spreadsheet would read as a formula and then quotes per
+// RFC 4180. A JavaScript number is left alone, so a negative count is
+// still a number in the spreadsheet; the string "-5" is not.
 function csvCell(value: unknown): string {
   log.debug("Entering csvCell().");
-  const text = cellText(value);
-  let quoted = text;
-  if (/[",\r\n]/.test(text)) {
-    quoted = '"' + text.replace(/"/g, '""') + '"';
-  }
+  const cell = CsvCell.of(value);
   log.debug("Leaving csvCell().");
-  return quoted;
+  return cell;
 }
 
 function primary(locale: string | null): string {

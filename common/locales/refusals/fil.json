@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "Hindi nakumpleto ang request.",
   "gnap.tooManyCodes": "Masyadong maraming code na ang sinubukan mula rito. {detail}",
   "gnap.wrongOrigin": "Ipinapadala ang operasyong ito ng isang pahina ng serbisyong ito: ang request ay may dalang {carried, select, none {walang Origin} other {ibang origin}}.",
+  "limits.tooManyActs": "Masyadong maraming beses mo nang ginawa iyan sa maikling panahon. Maghintay ng {seconds} segundo at subukang muli.",
   "logout.accountNotSignedIn": "Hindi na naka-sign in ang account na iyon sa browser na ito. Pumili ulit.",
   "logout.accountsOff": "Hindi nag-iingat ang trust realm na ito ng maraming naka-sign in na account bawat browser (naka-off ang authn.multipleAccounts), kaya walang account na mapipili.",
   "logout.chooseAccount": "Pumili ng account, o lahat ng account.",

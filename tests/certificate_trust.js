@@ -794,13 +794,17 @@ async function run(t, double, crls) {
           nViaStore.reason);
   t.check(!(await nPath('pkinit', nStoreLeaf, [])).ok,
           'N. and one that does not, does not', '');
+  // `piv-card`'s truststore is its own setting, empty here; PKINIT's is this
+  // service's Root since #2118, so it is not the case that reaches nothing.
   t.check(trust.anchorsAvailable('webauthn-attestation', []) &&
-          !trust.anchorsAvailable('pkinit', []),
+          !trust.anchorsAvailable('piv-card', []),
           'N. so with no configured anchors the store is still something to ' +
           'reach, for the use case that may', '');
   await withSettings({ 'pki.paranoid': 'off' }, async () => {
-    t.check(!trust.anchorsAvailable('webauthn-attestation', []),
-            'N. and out of force it is not', '');
+    // #2118, D4: a use case's truststores are consulted in every mode;
+    // paranoid PKI mode decides what is checked, never what is reached.
+    t.check(trust.anchorsAvailable('webauthn-attestation', []),
+            'N. and out of force it still is (#2118, D4)', '');
   });
   const listedLeaf = await kit.mint({ cn: 'n listed', issuer: nRoot,
                                       crls: [crls.base + '/n.crl'] });

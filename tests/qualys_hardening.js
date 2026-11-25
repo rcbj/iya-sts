@@ -147,17 +147,43 @@ function childMain() {
            r.headers['cross-origin-opener-policy'] + ' ' +
            r.headers['cross-origin-resource-policy']);
     }
-    // A static surface that is not one of the three: the front door, served
-    // through the same shell writer without `isolated`, as the sign-in
-    // screens are.
+    // EVERY OTHER RESPONSE (#2181, ASVS 5.0.0 3.4.8, 3.5.8): CORP same-site
+    // everywhere, and COOP same-origin on every document a relying party
+    // does not open in a popup of its own.
     const front = await get('/');
     note(front.status === 200 &&
          /^text\/html/.test(String(front.headers['content-type'])) &&
-         !front.headers['cross-origin-opener-policy'] &&
-         !front.headers['cross-origin-resource-policy'],
+         front.headers['cross-origin-opener-policy'] === 'same-origin' &&
+         front.headers['cross-origin-resource-policy'] === 'same-site',
          'C4. a surface not asked to be isolated (the front door) answers ' +
-         'neither', front.status + ' ' +
-         front.headers['cross-origin-opener-policy']);
+         'COOP same-origin and CORP same-site (#2181)', front.status + ' ' +
+         front.headers['cross-origin-opener-policy'] + ' ' +
+         front.headers['cross-origin-resource-policy']);
+    note(missing.headers['cross-origin-opener-policy'] === 'same-origin' &&
+         missing.headers['cross-origin-resource-policy'] === 'same-site',
+         'C5. so does an unrouted path (Express\'s 404 page)',
+         missing.headers['cross-origin-opener-policy'] + ' ' +
+         missing.headers['cross-origin-resource-policy']);
+    note(!discovery.headers['cross-origin-opener-policy'] &&
+         discovery.headers['cross-origin-resource-policy'] === 'same-site',
+         'C6. a JSON answer is no document: CORP same-site, no COOP',
+         discovery.headers['cross-origin-opener-policy'] + ' ' +
+         discovery.headers['cross-origin-resource-policy']);
+    const signIn = await get('/authn/login');
+    note(!signIn.headers['cross-origin-opener-policy'] &&
+         signIn.headers['cross-origin-resource-policy'] === 'same-site',
+         'C7. the sign-in screen, which a relying party may open in a popup, ' +
+         'carries no COOP (it would sever the popup from its opener)',
+         signIn.status + ' ' + signIn.headers['cross-origin-opener-policy']);
+    note(['/oauth2/authorize', '/authn/webauthn', '/saml2/sso',
+          '/wsfed', '/gnap/interact/x', '/federation/acs/x', '/logout',
+          '/oauth2/check_session', '/launch/x'].every(function (one) {
+      return app.opensInRelyingPartyPopup(one);
+    }) && !['/', '/admin', '/oauth2/jwks', '/oauth2/authorizex',
+            '/authnx'].some(function (one) {
+      return app.opensInRelyingPartyPopup(one);
+    }), 'C8. the popup path is the authorization and sign-in path, by ' +
+         'whole segments', '');
 
     // D. The branding preview.
     const preview = await get('/web/branding/preview');

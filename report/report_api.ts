@@ -121,8 +121,9 @@ function reportHttpStatus(code: string): number {
   return status;
 }
 
+// `extra` rides beside the two members: a refusal's `messages` (#2167).
 function reportSend(res: any, status: number, code: string, error: string,
-    description: string): void {
+    description: string, extra?: any): void {
   log.debug("Entering reportSend().");
   if (res.headersSent) {
     log.debug("Leaving reportSend(). Already sent.");
@@ -133,10 +134,10 @@ function reportSend(res: any, status: number, code: string, error: string,
   res.set('Cache-Control', 'no-store');
   res.status(status);
   res.type('application/json');
-  const body = {
+  const body = Object.assign({
     error: error,
     error_description: description
-  };
+  }, extra || {});
   res.send(JSON.stringify(body));
   log.debug("Leaving reportSend().");
 }
@@ -1091,14 +1092,17 @@ function reportStoredHolds(row: any): boolean {
 
 function reportServeIndex(res: ReportAnswering<'getIndex'>): void {
   log.debug("Entering reportServeIndex().");
+  // Empty where the build may not be shown (#2142): a reader of reports is
+  // not necessarily an administrator.
+  const shown = require('../common/mode').publishesBuildDetail();
   reportJson(res, 200, {
     service: 'report',
     catalog: BASE + '/catalog',
     realms: BASE + '/realms',
     version: {
-      version: APP_VERSION.version,
+      version: shown ? APP_VERSION.version : '',
       stamped: APP_VERSION.stamped === true,
-      buildInfo: APP_BUILD_INFO
+      buildInfo: shown ? APP_BUILD_INFO : ''
     }
   });
   log.debug("Leaving reportServeIndex().");
@@ -2127,6 +2131,57 @@ function reportShapeRefused(req: any, res: any, method: string,
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// THE EXPENSIVE ACTS AND THEIR BUDGET (#2167, ASVS 5.0.0 2.4.2). An ad hoc
+// query or preview (`POST /queries`), a job queued (`POST /jobs`), a saved
+// definition run and a result downloaded each read sources or move a file,
+// and until this they were bounded only by the ceiling on one ADDRESS and,
+// for a job, by how many may RUN at once (`report.maxConcurrentPerSubject`,
+// which a run that finishes quickly never meets). So each counts in a bucket
+// keyed by the token's subject (`websecurity.subjectActShared()`), of
+// `report.actsPerSubject` in `report.actWindowS`. The lists, a definition
+// read, a job's status and every write that is not one of the four stay
+// under the address ceiling only: polling a job's status is what the page
+// does while it waits, and it must not spend the budget the download needs.
+// The subject is the token's in the realm that issued it, so a service
+// administrator reaching another realm's reports spends one budget.
+// ---------------------------------------------------------------------------
+function reportExpensive(method: string, a: string, b: string,
+    c: string): boolean {
+  log.debug("Entering reportExpensive().");
+  const expensive = (a === 'queries' && !b && method === 'POST') ||
+    (a === 'jobs' && !b && method === 'POST') ||
+    (a === 'definitions' && !!b && c === 'run' && method === 'POST') ||
+    (a === 'jobs' && !!b && c === 'result' && method === 'GET');
+  log.debug("Leaving reportExpensive(). " + expensive);
+  return expensive;
+}
+
+async function reportOverActBudget(req: any, res: any,
+    who: any): Promise<boolean> {
+  log.debug("Entering reportOverActBudget().");
+  const config = require('../common/config');
+  const realms = require('../common/realms');
+  const websecurity = require('../common/websecurity');
+  const Sentence = require('../common/sentence');
+  const counted = await websecurity.subjectActShared('report-act', req,
+    String(who.realm || realms.currentId()) + '|' + String(who.subject || ''),
+    Number(config.value('report.actsPerSubject')),
+    Number(config.value('report.actWindowS')), 'STS-REPORT-0062');
+  if (counted.ok) {
+    log.debug("Leaving reportOverActBudget(). Within it.");
+    return false;
+  }
+  const seconds = counted.retryAfterS || 1;
+  const said = counted.said ||
+    Sentence.say('refusals.limits.tooManyActs', { seconds: seconds });
+  res.set('Retry-After', String(seconds));
+  reportSend(res, 429, 'STS-REPORT-0062', 'too_many_requests', String(said),
+    { messages: Sentence.messagesOf([said]) });
+  log.debug("Leaving reportOverActBudget(). Refused.");
+  return true;
+}
+
 async function reportRoute(req: any, res: any, who: any): Promise<void> {
   log.debug("Entering reportRoute().");
   const method = reportMethod(req);
@@ -2138,6 +2193,11 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
   const a = parts[0] || '';
   const b = parts[1] || '';
   const c = parts[2] || '';
+  if (reportExpensive(method, a, b, c) &&
+      await reportOverActBudget(req, res, who)) {
+    log.debug("Leaving reportRoute(). Over the act budget.");
+    return;
+  }
   if (!a && method === 'GET') {
     reportServeIndex(res);
   } else if (a === 'openapi.json' && !b && method === 'GET') {
@@ -2377,6 +2437,9 @@ export = {
   jobsView: reportJobsView,
   // What a request may name and hold (#1483), for its test.
   shapeRefused: reportShapeRefused,
+  // The expensive acts and their per-subject budget (#2167), for its test.
+  expensive: reportExpensive,
+  overActBudget: reportOverActBudget,
   ReportApi: ReportApi,
   streamPieces: reportStreamPieces
 };

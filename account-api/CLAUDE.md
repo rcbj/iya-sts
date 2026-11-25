@@ -78,8 +78,24 @@ and DN only, and says `more` instead of paging. It is audited
 (`portal.delegation.search`) and has a rate limit of its own:
 `websecurity.attemptShared()`, thirty a person and 120 an address in each
 `security.rateLimitWindowS` window, across the cluster (`STS-PORTAL-0621`).
-This API has no limit of its own apart from that. The other limits are
-per door: the reset, the TOTP code, an app password. It answers nothing a
+The other limits are per door: the reset, the TOTP code, an app password.
+
+**EVERY WRITE COUNTS AGAINST ITS PERSON'S BUDGET (#2167, ASVS 5.0.0
+2.4.2).** `run()` counts each `person` operation that is not a `GET`, after
+the gate and the recent-sign-in step-up and before the request's shape is
+checked, in `websecurity.subjectActShared('account-write', …)`, keyed by
+the realm and the token's `sub` — never the address, so an office behind
+one NAT shares nothing — at `account.writesPerSubject` in
+`account.writeWindowS` (300 in 600 s in product, 0 = off, the development
+default, as the per-address ceiling is). Past it: 429, `Retry-After`,
+`STS-ACCOUNT-0024`, `{ ok: false, errors, messages }` with
+`refusals.limits.tooManyActs`, which the portal draws in its own language:
+`localeData()` ships the `refusals.limits.*` keys beside the portal's
+catalogs (not the whole namespace), and the runtime's generic refusal flash
+reads `messages` through `WebSaid`. Reads are not counted. Every write
+counts, refused or not, because what is bounded is work, not guesses. A
+door with its own tighter limit (the delegate search, the signing key)
+keeps it; this budget is beside it. `tests/subject_act_budgets.js`. It answers nothing a
 person could not already name by typing a DN. `portal/CLAUDE.md` has the
 rest.
 

@@ -358,6 +358,20 @@ function accessTokenMtlsRequired() {
   return answer;
 }
 
+/**
+ * Tells whether every access token must be issued sender-constrained, by DPoP
+ * or a client certificate (`oauth2.accessTokenRequireSenderConstraint`,
+ * #2183).
+ *
+ * @returns true when it must
+ */
+function issuanceConstraintRequired() {
+  log.debug("Entering issuanceConstraintRequired().");
+  const answer = !!config.value('oauth2.accessTokenRequireSenderConstraint');
+  log.debug("Leaving issuanceConstraintRequired(). " + answer);
+  return answer;
+}
+
 // Is any of the four refusals on? The console page and the two reports ask
 // this to decide whether to draw the warning block at all.
 /**
@@ -368,7 +382,8 @@ function accessTokenMtlsRequired() {
 function anythingRequired() {
   log.debug("Entering anythingRequired().");
   const answer = refreshDpopRequired() || refreshMtlsRequired() ||
-                 accessTokenDpopRequired() || accessTokenMtlsRequired();
+                 accessTokenDpopRequired() || accessTokenMtlsRequired() ||
+                 issuanceConstraintRequired();
   log.debug("Leaving anythingRequired(). " + answer);
   return answer;
 }
@@ -445,6 +460,59 @@ function refreshIssuanceRefusal(opts) {
   }
   log.debug("Leaving refreshIssuanceRefusal(). Nothing refused.");
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// AN ACCESS TOKEN NOBODY CAN BIND IS NOT MINTED (#2183, ASVS 5.0.0 10.3.5,
+// 10.4.14), where `oauth2.accessTokenRequireSenderConstraint` says so: either
+// binding is enough, because the resources hold a token to whichever it
+// carries. Asked by the token endpoint for every grant, and by the
+// authorization endpoint for a token it would mint in the browser.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses to mint an access token that would not be sender-constrained.
+ *
+ * @param opts - `grant`, `dpopJkt` (the proof's key, '' with none) and
+ *   `certificateBound` (the connection carries a client certificate the
+ *   token would be bound to)
+ * @returns null, or `{ ok: false, errorCode, error, setting, description }`
+ */
+function accessTokenIssuanceRefusal(opts) {
+  log.debug("Entering accessTokenIssuanceRefusal().");
+  const o = opts || {};
+  if (!issuanceConstraintRequired() || o.dpopJkt || o.certificateBound) {
+    log.debug("Leaving accessTokenIssuanceRefusal(). Nothing refused.");
+    return null;
+  }
+  log.debug("Leaving accessTokenIssuanceRefusal(). Unbound.");
+  return refusal('STS-OAUTH-1013', 'invalid_dpop_proof',
+    'oauth2.accessTokenRequireSenderConstraint',
+    'this authorization server issues only sender-constrained access ' +
+    'tokens, and the ' + (String(o.grant || '') || 'token') + ' request ' +
+    'could bind its token to nothing: send a DPoP header (RFC 9449), or ' +
+    'make the request over mutual TLS with the client\'s certificate ' +
+    '(RFC 8705).');
+}
+
+/**
+ * Refuses an access token the authorization endpoint would mint in the
+ * browser (implicit or hybrid `token`), which could never be bound.
+ *
+ * @returns null, or `{ ok: false, errorCode, error, setting, description }`
+ */
+function browserAccessTokenRefusal() {
+  log.debug("Entering browserAccessTokenRefusal().");
+  if (!issuanceConstraintRequired()) {
+    log.debug("Leaving browserAccessTokenRefusal(). Nothing refused.");
+    return null;
+  }
+  log.debug("Leaving browserAccessTokenRefusal(). Refused.");
+  return refusal('STS-OAUTH-1014', 'unsupported_response_type',
+    'oauth2.accessTokenRequireSenderConstraint',
+    'this authorization server issues only sender-constrained access ' +
+    'tokens, and a token returned from the authorization endpoint cannot ' +
+    'be bound; use response_type=code and redeem the code with a DPoP ' +
+    'proof or over mutual TLS.');
 }
 
 // ---------------------------------------------------------------------------
@@ -711,6 +779,9 @@ module.exports = {
   refreshMtlsRequired,
   accessTokenDpopRequired,
   accessTokenMtlsRequired,
+  issuanceConstraintRequired,
+  accessTokenIssuanceRefusal,
+  browserAccessTokenRefusal,
   anythingRequired,
   refreshIssuanceRefusal,
   refreshRedemptionRefusal,

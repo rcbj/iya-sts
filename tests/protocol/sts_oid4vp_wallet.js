@@ -781,7 +781,11 @@ async function test() {
               oauthConfidential: "FALSE",
               oauthRedirectUri: [REDIRECT_URI],
               oauthResponseType: ["code"],
-              oauthScope: credentialScopes },
+              oauthScope: credentialScopes,
+              // Declared (#2169): in product a client that declares nothing
+              // is issued `openid` alone (#1589), not the realm's credential
+              // scopes.
+              oauthAllowedScope: credentialScopes },
     why: "the wallet sts_oid4vp_wallet.js collects credentials with and " +
          "signs its holder in through"
   });
@@ -794,7 +798,8 @@ async function test() {
               oauthConfidential: "FALSE",
               oauthRedirectUri: [RP_REDIRECT_URI],
               oauthResponseType: ["code"],
-              oauthScope: ["openid"] },
+              oauthScope: ["openid"],
+              oauthAllowedScope: ["openid"] },
     why: "the relying party sts_oid4vp_wallet.js signs its holder in to " +
          "with the wallet"
   });

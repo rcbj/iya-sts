@@ -64,6 +64,7 @@
 
 import helpers = require('../common/helpers');
 import exchange = require('./authzen_exchange');
+import OutboundTls = require('../common/outbound_tls');
 
 const { log } = helpers;
 
@@ -264,7 +265,17 @@ class AuthzenExternalPdp {
     }
     const caFile = String(config.value('authzen.externalPdpCaFile') || '');
     let ca = '';
-    if (caFile) {
+    // `outbound-authzen-pdp`'s truststores where it is assigned (#2118);
+    // unassigned, the CA file exactly as before.
+    const assigned = OutboundTls.assignedCa('outbound-authzen-pdp');
+    if (assigned && assigned.problem) {
+      logger.error(self.deps.errorCodes.tag('STS-AUTHZEN-0127') +
+                   assigned.problem.why);
+      logger.debug("Leaving AuthzenExternalPdp.asked(). No CA.");
+      return AuthzenExternalPdp.fault('STS-AUTHZEN-0127');
+    } else if (assigned) {
+      ca = assigned.ca || '';
+    } else if (caFile) {
       const read = self.readPem('authzen.externalPdpCaFile', 'CERTIFICATE');
       if (read.code) {
         logger.debug("Leaving AuthzenExternalPdp.asked(). No CA.");

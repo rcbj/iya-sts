@@ -879,6 +879,14 @@
     "en": "49eac4924ef09867",
     "text": "Ändra signerarnas förtroendelager, en paranoid-rad eller kontrollera de fästa certifikaten igen"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "Namngivna förtroendelager och de användningsfall som litar på dem"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "Ändra ett namngivet förtroendelager eller vad ett användningsfall litar på"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Bygg en hierarki, utfärda ett nyckelpar, skapa ett certifikat"

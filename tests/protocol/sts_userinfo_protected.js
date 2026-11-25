@@ -266,6 +266,11 @@ async function stsFetch(url, options) {
     "but not for this long, which usually means it is not running.");
 }
 
+// THE SCOPES EVERY CLIENT HERE ASKS FOR (`accessTokenFor()`), declared in
+// its registration's RFC 7591 `scope` member (#2169): in product a client
+// that declares none is issued `openid` alone (#1589).
+var SCOPE = "openid profile email";
+
 // The software statement every registration here carries (set in test()).
 var STATEMENT = "";
 
@@ -278,6 +283,7 @@ async function tryRegisterClient(metadata) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(Object.assign({ redirect_uris: [REDIRECT_URI],
+                                         scope: SCOPE,
                                          software_statement: STATEMENT },
                                        metadata))
   });
@@ -302,6 +308,7 @@ async function registerClient(metadata) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(Object.assign({ redirect_uris: [REDIRECT_URI],
+                                         scope: SCOPE,
                                          software_statement: STATEMENT },
                                        metadata))
   });
@@ -328,7 +335,7 @@ async function accessTokenFor(client) {
   var granted = await registry.authorizationCode(registry.baseOf(stsBase), {
     clientId: client.client_id, redirectUri: REDIRECT_URI,
     username: PERSON, password: PERSON_PASSWORD,
-    scope: "openid profile email", cookie: session });
+    scope: SCOPE, cookie: session });
   session = granted.cookie;
   // HTTP Basic, which is what RFC 7591 section 2 makes a registration that
   // names no token_endpoint_auth_method, and a product-mode service holds a

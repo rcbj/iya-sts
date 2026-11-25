@@ -587,6 +587,18 @@
     "en": "0a4ee080bb81a76f",
     "text": "Se pregunta a una persona una vez por aplicación antes de que SAML 2.0, SAML 1.1 o WS-Federation inicie su sesión en ella, y la respuesta se conserva. saml2.ssoConsent, saml11.ssoConsent y wsfed.ssoConsent lo desactivan por protocolo, y el valor propio de una aplicación los reemplaza."
   },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "La compilación exacta solo se muestra a los administradores"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "Cada pie de página, las API de inicio de sesión, del portal y de informes y sus documentos OpenAPI llevan la versión, el número de compilación, la hora de compilación y el commit, y el User-Agent de cada solicitud de este servicio nombra la versión."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "Ninguno lleva la compilación: el pie de página no tiene línea de versión, un documento OpenAPI indica la versión propia de la API y el User-Agent es solo el nombre del producto. La consola y la API de administración siguen mostrando la compilación. security.publishBuildInfo en on la vuelve a mostrar."
+  },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
     "text": "Los secretos del servicio provienen de un almacén de secretos"

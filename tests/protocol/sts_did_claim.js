@@ -461,7 +461,11 @@ async function test() {
               oauthConfidential: "FALSE",
               oauthRedirectUri: [WALLET_REDIRECT],
               oauthResponseType: ["code"],
-              oauthScope: walletScopes },
+              oauthScope: walletScopes,
+              // Declared (#2169): in product a client that declares nothing
+              // is issued `openid` alone (#1589), not the realm's credential
+              // scopes.
+              oauthAllowedScope: walletScopes },
     why: "the wallet sts_did_claim.js collects DID-bound credentials with"
   });
   await registry.ensurePerson(base, HOLDER, PASSWORD);

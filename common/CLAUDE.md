@@ -10,6 +10,7 @@ more than one family needs it, not because it felt general.
 | `xml_model.ts` | **AN XML FAMILY'S MODEL, AS THE CODE READS IT (#1579).** The one reader of the facts `models/lib/saml_lib.mjs` writes — a vocabulary's terms, a message's attributes and children in their order, a parameter set — over one or more generated files merged (`saml.json`; `ws.json` with `saml.json`, so an RSTR's assertion is held to SAML's own model). `term()`, `terms()`, `read()`, the writers' order (`attributes()`, `children()`, which throw on a part the model does not name) and `hold()`, which logs a gap under the family's code and answers the document unchanged; a fragment whose prefixes its document declares is held with them (`declarations`). `saml/saml_model.ts` and `ws-trust/ws_model.ts` are its instances. A leaf. |
 | `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
 | `subject_urn.ts` | **THE NAMES A LEAF GIVES ITS HOLDER, DEFINED ONCE (#1827, 2026-11-16).** `SubjectUrn`: the one table of `urn:sts:<form>:` prefixes (person, sa, application, federation, cell, device), `forPerson()`, `forHolder()`, `parse()` (bare or `URI:`), `namesIn()`, `namesPerson()`, `isServiceAccountForm()`, `sameHolder()`. A static utility class and a leaf (`bunyan`, `config`). See *3df*. |
+| `csv_cell.ts` | **`CsvCell.of()`, EVERY CSV CELL THIS SERVICE WRITES (#2138).** A string whose first character is `=`, `+`, `-`, `@`, tab, CR or NUL gets a single quote in front (OWASP's CSV injection guidance, ASVS 5.0.0 1.2.10), then RFC 4180 quoting. A JavaScript number or bigint is never prefixed, so a negative count stays a number; the string `-5` is prefixed. Used by `report/formats.ts` and `passkey_report.ts`'s export; a new CSV writer uses it too. A static utility class. |
 | `image_metadata.ts` | **`ImageMetadata.stripped()`, A PUBLISHED IMAGE WITHOUT ITS METADATA (#2140).** The JPEG and PNG writers `profile_photo.ts` had (#719), moved here so the sign-in logo (`branding.ts`) uses them too, and a WebP writer for the logo. Each walks the container and keeps the listed segments or chunks; one it cannot walk answers null and the caller refuses. A JPEG ends at its FIRST end marker since #2140 (the last kept an appended MPF image and its EXIF), and an APP2 is kept only as an ICC profile. A library with no route, requiring only `helpers`, so 6a-brand and 6a-photo each require it without moving anything. A static utility class. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
 | `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
@@ -57,6 +58,8 @@ more than one family needs it, not because it felt general.
 | `connect_refusal.ts` | **CONNECT IS ANSWERED 501 ON EVERY HTTP LISTENER (#1304, 2026-11-04).** This service is an origin server, never a proxy, so it implements no CONNECT (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the application — its target is an authority, not a path. With no `connect` listener node answered on its own, wrongly over both protocols: a bare 405 with no `Allow` over HTTP/2 (RFC 9110 section 15.5.6 says a 405 MUST carry one), and over HTTP/1.1 nothing at all — the connection was destroyed. `install(server, label)` answers 501 over either, `no-store`, with `frame-ancestors 'none'`, marked `STS-HTTP-0025`; `server.js` installs it on the main port (TLS and plain) and every custom listener, `debugger_server.ts` on its own. **Logged sparingly** — the first, then a count at most once a minute, with no timer — because a CONNECT is what a scanner sends. `tests/main_port_http2.js` 13. |
 | `security_operations.ts` | **WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645, 2026-11-02).** One answer for the management API's gate, the LDAP socket and SCIM: a Directory → Policies save, reset or act (read off `admin-core/policy_kinds.ts`, so a new kind is covered), a policy REFERENCE that changes (each kind's `REFERENCES` and `PolicySelection`'s declarations; a grid posting it unchanged is not a change, `''` and `default` are one value), a grant of the role by any door (the roster, `SECURITY_ADMIN`, `cn=security-admin`, `admin.securityGroup`), and an act on a holder's account. XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay Admin Write's (rcbj's decision). It reads nothing itself: the caller hands it `SecurityHooks` (`admin_rbac.ts`'s `holdsSecurity()`, `personValues()`, `groupValues()`, `applications.get()`). A static utility class, `policy_kinds` required lazily. `tests/security_admin.js`. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
+| `truststores.ts` | **NAMED TRUSTSTORES, AND WHICH ONES EACH USE CASE TRUSTS (#2118).** Built-ins (`system`, `service-root`, the shipped vendor roots), views of the two older stores (`signers`, `client-certificates`), `setting:<key>` views of every legacy anchor or CA setting, SPIFFE bundle truststores (`spiffe:<trust domain>`) and named truststores under `ou=truststores`; `resolve()`, `caFor()`, `configuredPems()`, `assign()`. A library with a rule 3e slot. See *Named truststores*, below. |
+| `truststore_use_cases.ts` | **EVERY USE CASE THAT TRUSTS A CERTIFICATE OR A KEY SET (#2118)**: id, scope (service or realm), kind (`x509`, `spiffe`, `pins`, `fixed`, `admission`), direction, the sites, the default list (which reproduces what the use case trusted before) and a fallback. A leaf. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `model_ir.ts` | **THE JSON THE MODEL'S IMPORTERS AND EMITTERS SHARE (#1390).** `stable()` sorts keys for the directory and persistence catalogues. An OpenAPI document is never passed through it. A library, no route. |
 | `directory_spellings.ts` | **`STANDARD_NAMES` AND `OWN_NAMES`, READ AS TEXT (#1390).** The directory server registers routes when it is required, so the lists are taken from the source. |
@@ -1492,7 +1495,15 @@ value written through either door verifies through either door. In
 **everything decidable without computing scrypt is decided in the first** — the
 reserved refusal, development mode, a missing name, a missing store, a store
 that threw, nobody by that name, a stored form this service did not write — and
-those are the overwhelming majority of refusals, none of which costs 68ms. An
+those are the overwhelming majority of refusals, none of which NEEDS 68ms. **But
+since #2136 the ones that would name an account by their speed pay for a
+derivation anyway** (ASVS 5.0.0 6.3.8): nobody by that name, an unreadable
+stored form, a disabled account and a service account at a closed door are
+marked `decoy` in product, and both doors verify the presented password against
+`crypto.decoyPasswordHash()` — one hash per spec per process, at the policy's
+current parameters, matching no password — and discard the result, on the
+thread each door uses for a real comparison. The refusal and its code do not
+change. `tests/password_unknown_name_cost.js` counts the calls. An
 async door with its own copy of those seven refusals is exactly the shape that
 file exists to prevent: `verify()` is the one place a presented password is
 checked, and two copies of "when do we say no" would eventually say it in two
@@ -12047,6 +12058,27 @@ the product token. Each of those reaches somebody else's server, and their
 access log is where an integration with a mock they did not install gets
 diagnosed.
 
+**IN PRODUCT, NOBODY BUT AN ADMINISTRATOR IS TOLD WHICH BUILD THIS IS (#2142,
+ASVS 5.0.0 13.4.6).** `mode.publishesBuildDetail()` — `security.publishBuildInfo`,
+`auto` following the mode — is asked where a build would reach anybody else,
+and false leaves it out: the page footer's facts (`page_footer.ts`, so every
+shell and the error page, the console's shell DOCUMENT included, since anybody
+can fetch it), the shell's `data-sts-version`, `/web/locales/catalogs.json`, the
+front page's view, `/account-api`'s `version` members and document, the reports
+index, `/authn-api/openapi.json` (OpenAPI requires `info.version`, so it is the
+API's own `1`, as the reports document's always was), and every outbound
+User-Agent, which becomes `sts (<component>)`. `userAgent(component,
+showBuild)` takes the answer from its caller because this module may not ask the
+mode; the requesters that built the header once at require time ask per request
+now (a `defaultDeps()` getter), since the mode is per realm and runtime-settable.
+The console keeps the build through its shell ANSWER, which only a token holder
+reads: `WebFooter.drawnIn()` draws the footer with it. `/admin-api` and
+`/admin/sts-metadata` never ask. The audit export's `source` and User-Agent stay
+whole: they go to the operator's own destination. A page's cached files are
+keyed by `buildKey()`, a random key the Dockerfile draws per build
+(`STS_BUILD_KEY`), where `buildId()` named the commit and the instant to every
+visitor; with no key (a checkout, the tests image) it is `buildId()`.
+
 **`package.json` carries VERSION's M.N.O exactly** since #1298 (it was `M.N.0`,
 semver's three parts with the build number not one of them), and never the
 build number (#1317). `node
@@ -13845,6 +13877,16 @@ provided by `websecurity.ts` at require time. What a maintainer needs:
   (`cert_enrollment.ts`'s `throttledShared()`), GNAP's user code, `POST
   /xacml/pip` and the LDAP bind. Same buckets, window, limits, refusals and
   codes as the synchronous three, which stay for the tests that drive them.
+* **`subjectActShared()` is a SIGNED-IN subject's budget (#2167)**, not a
+  guess limiter: `/account-api`'s writes and `/report-api`'s four expensive
+  acts, keyed by realm and token `sub`, the address bucket out of reach
+  (`IDENTITY_ONLY`'s rule). The object form of a limit may name its own
+  `windowS` (the caller's setting instead of `security.rateLimitWindowS`)
+  and the `code` and catalog `sentence` its identity refusal carries
+  (`refusalTerms()`), so an operator searching `STS-HTTP-0017` for a
+  sign-in lockout never finds somebody who saved their profile too often.
+  Every act counts, success or not. With no shared store each node counts
+  its own: up to N - 1 over across N nodes, accepted for a bound on work.
 * **On a shared store (postgres) the count is a row of
   `sts_cluster_windows`**, one conditional upsert per bucket that resets a
   passed window and increments a live one, returning the count THIS attempt
@@ -14366,6 +14408,30 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   An app password (a `friendlyName`) is not "your password was changed". A
   recovery whose link was itself mailed (`mailed: true`) sends no second
   message.
+- **Every other credential added or removed (#2163, ASVS 5.0.0 6.3.7)** is
+  the `credential-changed` notice, `mail.credentialChangeNotices` (on). Two
+  funnels feed `MailUses.credentialChanged()`, and between them every door:
+  - `AccountSignals.credentialChanged()` (a passkey, an authenticator app,
+    an app password, an HOTP or YubiKey OTP token, a certificate), mapped by
+    `credentialChangeOf()` from the CAEP type; and
+    `recoveryInformationChanged()` with a `changeType` (a set generated or
+    removed; a code SPENT names none and is not mailed).
+  - `ldap_server.js`'s `noteCredentialAttributes()`, on every UPDATE of an
+    entry, for what lives only as an attribute: `stsCertificateBinding`,
+    `stsPivCardUuid`, `userSMIMECertificate`, `stsOpenPgpFingerprint`. No
+    CAEP event for those: none of them is a credential a receiver names.
+
+  A change with no `changeType`, or initiated by `system` or `policy`, is
+  not mailed: no person did it. **One act, one mail**: `MailUses.batch()`
+  (also `AccountSignals.batch()`) holds every change told inside it — an
+  `AsyncLocalStorage` slot, so awaits and nested doors join — and sends one
+  notice per person when it ends, a line each, repeats dropped. The
+  administrator's disable-mfa, remove-primary-keys and import-ldif, and
+  `hardware_tokens.markLost()`, run in one. The lines are `mailValues`
+  messages inside a `{ list }` value, which `Mail.resolveValues()` joins in
+  the recipient's language (`Intl.ListFormat`). The doors this ticket added
+  a CAEP call to: `/admin-api`'s `assign-oath` and `assign-yubiotp`, and the
+  OATH and YubiKey OTP lost-token retirers. `tests/credential_change_mail.js`.
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
 `smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it
@@ -15695,7 +15761,10 @@ reasons for the shape:
   as a parameter. **Still English**: operator-written text (a policy's
   advice, an application's configuration problem), technical detail
   passed as a parameter, a validation shape refusal, the portal's and the
-  console's refusals, and every specification endpoint's answer.
+  console's refusals — except the per-subject budget's (#2167,
+  `refusals.limits.tooManyActs`), which `/account-api` and `/report-api`
+  carry as `messages` and the portal and `/report` draw — and every
+  specification endpoint's answer.
   `tests/refusal_sentences.js` holds the design and that no sign-in door is
   handed an English literal; `tests/i18n_catalogs.js` test E scans
   `Sentence.say('` and `.refusal('` as it scans `t.text('`.
@@ -16578,7 +16647,8 @@ what a maintainer must not undo:
   `paging.nextFrom`), at most `LIST_SCAN` entries a request, `complete:
   false` when that stopped a page short; `page` without `from` reads from the
   start. The export reads on to `EXPORT_LIMIT` rows and quotes a CSV cell a
-  spreadsheet would read as a formula.
+  spreadsheet would read as a formula (`csv_cell.ts` since #2138, which
+  added a leading NUL to the leads this export's own escape knew).
 * **#941's attestation certificate is counted** by `attestationFacetOf()`:
   the leaf of `attestation.algorithms` (a compound statement's members, and
   the anchor only when the statement carried no certificate), as
@@ -17329,6 +17399,16 @@ the wire, in product over TLS, it is `__Host-` or `__Secure-`. So a new cookie
 needs nothing, and a cookie whose NAME a document must state asks
 `CookieWire.wireName()` (DBSC does). HSTS is there for the same reason.
 
+**`preload` is withheld, never refused at write (#2165).** `security.hstsPreload`
+(off by default) adds it only while `includeSubDomains` is in force, because the
+preload list rejects a header without it and `security.hstsIncludeSubDomains`
+takes its default from the realm's mode — an env variable, an appconfig file or
+a mode switch can break the pair where no write is checked. So
+`strictTransportSecurity()` decides per response, logs STS-CORE-0181 when the
+pair breaks, and `mode.js`'s `hstsPreloadWaivers()` puts it on the
+`strict-transport-security` row. `max-age` is a constant year, so the list's
+other condition always holds.
+
 **A request a worker answers is named by THE WORKER'S view of the realm's mode**
 (2026-11-16, GitHub Actions run 43884417831). The names follow the realm's mode,
 a worker answers `config/set global.mode`, and the front learns of it from the
@@ -17374,3 +17454,51 @@ accepts an id in the path, for a program.
 `scep.allowInProduct`, `oauth2.allowUndeclaredGrants`,
 `admin.allowDefaultUsername`, `crypto.allowLegacyHashes`. So those defaults are held by in-process tests
 (`tests/asvs_product_limits.js`), not by a product run of the protocol half.
+
+
+## Named truststores (#2118)
+
+rcbj's design on #2118 combined the signer truststore and the client-certificate
+truststore into one concept: a truststore has a NAME, and every place this
+service validates a signature or dials a TLS server trusts the truststores its
+USE CASE is assigned (`truststore_use_cases.ts`), or `system`. The design and
+the decisions (D1–D5) are on the issue; what a maintainer needs:
+
+* **NOTHING WAS COPIED.** The older stores and every legacy anchor or CA
+  setting are read-only VIEWS (`signers`, `client-certificates`,
+  `setting:<key>`), and each use case's default list names the views of what
+  it read before. An upgrade changes nothing a deployment trusts and needs no
+  script; the legacy keys, pages and APIs keep working because they write what
+  the views read. **A new anchor or CA setting is not added**: a new use case
+  gets a row whose default names `system` or a built-in, and an administrator
+  assigns it a truststore.
+* **A SITE ASKS `configuredPems(useCase)`** where it used to read its setting:
+  unassigned that is exactly the setting (so a page or metadata document that
+  asked "is it set?" keeps its answer), assigned it is the assignment. The
+  validation door (`certificate_trust.ts`) adds the use case's resolution
+  itself — `assignedAnchors()`, in the `caller` source and every baseline, and
+  `pki.namedAnchors()` for the `signer-truststore` source — so a site passes
+  only DYNAMIC anchors (an authenticator's MDS roots, this realm's IACA).
+* **EVERY MODE (D4)**: the door consults a use case's truststores whether or
+  not paranoid PKI mode applies; paranoid decides what is CHECKED.
+  `tests/certificate_trust.js` N holds it.
+* **OUTBOUND**: `outbound_tls.ts`'s `tlsVerdict()` resolves a family through
+  its use case, `optionsFor()` serves any other dialer, and `assignedCa()`
+  serves a dialer whose own CA replaces node's store. The paranoid addition of
+  the ambient realm's signer truststore is kept as it was, and no longer lost
+  when a family names a CA file (the defect the inventory found).
+* **FIXED, AND WHY**: the database and the secret store are dialled before
+  the directory that holds the truststores can be read, and the cloud SDKs
+  build their own TLS; their rows say so and are not assignable.
+  `enrollment-credential`, `cell-peer` and `outbound-loopback` are this
+  service's own hierarchy by definition.
+* **SCOPE (D2)**: a `service` use case resolves in the default realm and may
+  name only its truststores, the built-ins and the views
+  (`assignmentProblem()`, STS-PKI-0302). The listeners re-apply their
+  truststores when `ou=truststores` changes in the default realm, locally or
+  through replication (`ldap/ldap_server.js`'s `isNamedTruststoreKey()`).
+* **SPIFFE (D5)**: a trust domain's bundle is ONE truststore, both halves, read
+  from `spiffe_ca.ts`'s own storage; an assignment narrows which federated
+  domains `spiffe-svid` and `spiffe-jwt-svid` accept (`trustsSpiffeDomain()`).
+* **NOT CHANGED, DELIBERATELY**: a WS-Security certificate stored on exactly one
+  entry is pinned by name (#1061) and asks no path, as before.

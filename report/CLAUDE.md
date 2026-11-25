@@ -91,7 +91,7 @@ and `docs/v1.2.0/configuration.md`.
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. The document's SHAPE is `models/api/report.tsp`'s `QueryDocument` and `Filter*` forms, checked through `ModelZod` (#1579); the catalog, the field types, parameters, the filter's depth and the size caps are checked here, and every refusal keeps its code and sentence. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
-| `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
+| `formats.ts` | JSON, RFC 4180 CSV (each cell through `common/csv_cell.ts`, which puts a single quote before a string a spreadsheet would read as a formula, #2138), and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
 | `passkey_history.ts` | The `passkeyHistory` source's projection (#1109): one stored day of `passkey_report.history` into a row per `scope`. A library; reaches `common/passkey_report` lazily. |
 | `rights.ts` | The caller as held ∩ carried, and every question about the API, a definition or a job put to `common/access_gate.ts`. It decides nothing (#1030). |
@@ -1215,6 +1215,18 @@ reporter still live. `STS_REPORT_NODE=true` is the only opt-in:
 `.here` jobs are what that holder runs, because `reportClusterRuns` is
 false for the holder. The variable stays off `AGREEMENT_SETTINGS` and off
 the default compose service.
+
+**The expensive acts have a per-subject budget (#2167, ASVS 5.0.0
+2.4.2)**: `POST /queries`, `POST /jobs`, `POST /definitions/{id}/run` and
+`GET /jobs/{id}/result` (`reportExpensive()`) each count, after the gate and
+the shape check, in `websecurity.subjectActShared('report-act', …)`, keyed
+by the token's realm and `sub`, at `report.actsPerSubject` in
+`report.actWindowS` (240 in 600 s in product, 0 = off in development). Past
+it: 429 `too_many_requests`, `Retry-After`, `STS-REPORT-0062`, and
+`messages` beside `error_description`, which the page draws through
+`refusalSaid()`. A job's status, the lists and the edits are not counted:
+the page polls status while it waits, and must not spend the download's
+budget doing so. `tests/subject_act_budgets.js`.
 
 An enqueue is refused (`STS-REPORT-0023`, HTTP 429) when the subject
 already has more queued and running jobs than

@@ -119,6 +119,7 @@ import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import usedAssertions = require('../common/used_assertions');
 import cacheRegistry = require('../common/cache_registry');
+import truststores = require('../common/truststores');
 
 // A JSON-shaped value: a JWT header, a claims set, a refusal.
 type Json = any;
@@ -352,12 +353,14 @@ class ClientAttestation {
     return config.value('oauth2.clientAttestationChallengeRequired') === true;
   }
 
-  // The configured trust anchors, as `pki.certificateFromDer()` answers.
+  // The configured trust anchors, as `pki.certificateFromDer()` answers: what
+  // the truststores assigned to `client-attestation` hold, or unassigned what
+  // `oauth2.clientAttestationTrustAnchors` names (#2118).
   private anchors(): Json[] {
-    const { log, config, pki, errorCodes } = this.deps;
+    const { log, pki, errorCodes } = this.deps;
     log.debug("Entering ClientAttestation.anchors().");
-    const bundle = pki.certificateBundle(String(config.value(
-      'oauth2.clientAttestationTrustAnchors') || ''));
+    const bundle = pki.certificateBundle(
+      truststores.configuredPems('client-attestation').join('\n'));
     if (bundle.unreadable) {
       log.error(errorCodes.tag('STS-OAUTH-0750') + 'client attestation: ' +
                 bundle.unreadable + ' certificate(s) in ' +
@@ -677,8 +680,9 @@ class ClientAttestation {
       if (!path.ok) {
         log.debug("Leaving ClientAttestation.attesterKeys(). No path.");
         return this.refuse('STS-OAUTH-0725', 'the Client Attestation\'s x5c ' +
-          'does not chain to a trust anchor in ' +
-          'oauth2.clientAttestationTrustAnchors: ' + path.reason);
+          'does not chain to a trust anchor client-attestation trusts ' +
+          '(oauth2.clientAttestationTrustAnchors unless assigned other ' +
+          'truststores): ' + path.reason);
       }
       let key: Json = null;
       try {

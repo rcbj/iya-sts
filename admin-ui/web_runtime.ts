@@ -1530,8 +1530,11 @@ class ConsoleRuntime extends SpaClient {
     this.env.document.title = title + ' — IYA STS admin';
     // THE PAGE FOOTER the shell drew (`common/web_footer.ts`), below the
     // frame and so below the runtime facts at the foot of the card: one
-    // footer element, in the console's language.
-    const footer = WebFooter.drawnIn(this.env.document, this.t);
+    // footer element, in the console's language. With the version the shell
+    // ANSWER gave (#2142): in product the shell document, which anybody can
+    // fetch, carries none, and an administrator still sees the build.
+    const footer = WebFooter.drawnIn(this.env.document, this.t,
+                                     shell.version);
     // THE TRAIL NAMES THE OPEN TAB (rcbj 2026-11-15): the body's tab tree,
     // read from the string drawn, and the tabs the fragment opens in it.
     this.trailOf = { title: title, active: active, up: up,

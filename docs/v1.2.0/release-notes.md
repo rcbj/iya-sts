@@ -6,6 +6,154 @@ title: Release notes
 
 ## 1.2.0
 
+### New: a realm may override an outbound use case's truststores
+
+A trust realm may now give an outbound service-wide use case (a federation
+partner, a mail relay, a SCIM target, an audit destination and the like) a
+truststore list of its own, used for the connections made from that realm
+(#2148). A realm with no override keeps trusting the default realm's list,
+so nothing changes until an administrator sets one. `GET
+/admin-api/truststores` reports `overridable` and `realmOverride` for every
+use case.
+
+### New: an option to accept `authorization_details` only in a pushed request
+
+`oauth2.authorizationDetailsRequirePar`, **off by default**. On, the
+authorization endpoint refuses a request that carries RFC 9396
+`authorization_details` and did not come through `/oauth2/par`, so a rich
+authorization request never travels in the browser's address (ASVS 5.0.0
+10.4.15). Requests without `authorization_details` are unaffected;
+`oauth2.requirePushedAuthorizationRequests` still makes every request
+pushed (10.4.13). New refusal: `STS-OAUTH-1015`.
+
+### New: an option to issue only sender-constrained access tokens
+
+`oauth2.accessTokenRequireSenderConstraint`, **off by default**. On, the token
+endpoint issues an access token only to a request that binds it, by a DPoP
+proof or the connection's client certificate (ASVS 5.0.0 10.3.5 and
+10.4.14), and the authorization endpoint refuses a `token` response type. It
+is for a realm whose every client can bind its tokens; most cannot. New
+refusals: `STS-OAUTH-1013`, `1014`.
+
+### New: cross-origin isolation headers on every response
+
+Every response now carries `Cross-Origin-Resource-Policy` (`same-site`;
+profile photos and the sign-in logo stay `cross-origin`), and every HTML page
+carries `Cross-Origin-Opener-Policy: same-origin` (ASVS 5.0.0 3.4.8 and
+3.5.8). The pages a relying party may open in a popup (the authorization
+endpoint and the sign-in, consent, SAML, WS-Federation, GNAP, federation and
+sign-out pages) carry no COOP, as before, so popup sign-ins keep working. See
+[The other response headers](oauth-security.md#the-other-response-headers).
+
+### Behaviour change: client secrets expire after a year by default
+
+`oauth2.clientSecretLifetimeDays` now defaults to **365** (it was 0, never),
+for ASVS 5.0.0 13.3.4. Every client secret minted or given from now on,
+including a dynamically registered client's, carries an expiry one year out,
+and RFC 7591's `client_secret_expires_at` says so. **A secret that already
+exists keeps the expiry it has**: the lifetime is stamped on each secret when
+it is made and never recalculated. In product mode an expired secret is
+refused at the token endpoint, so rotate secrets before they expire (an
+application's **Client secrets** list shows each one's expiry). Set the
+setting to `0` to keep secrets that never expire. The secrets this service
+uses for its own clients are unaffected: they hold none.
+
+### Behaviour change: more administrator acts need a recent sign-in
+
+Until now, only changing a person's credentials through the console or
+`/admin-api` asked an administrator to have signed in within
+`account.recentAuthMinutes` (15 minutes in product mode). The same is now
+asked for granting or removing a role, an administrator role included;
+creating, changing or removing a trust realm; every PKI act, including a
+CA, an Intermediate, a certificate, a revocation and the signer truststore;
+the signing keys, the data keys and the key-encryption key; the TLS client
+truststore; the secret push destinations; the krbtgt key and a person's
+keytab; every setting, the mode among them; and every change only a
+Security Administrator may make (ASVS 5.0.0 7.5.3). The console asks for
+the sign-in again and carries on. The API answers 401 with RFC 9470's
+`insufficient_user_authentication` and `max_age` (`STS-API-0145`).
+
+**Upgrading.** Nothing to run. A program calling `/admin-api` with its own
+client credentials is not asked. A script that uses a person's token for
+these acts must sign that person in again when it gets the 401. Development
+mode does not ask, since `account.recentAuthMinutes` is 0 there.
+### HSTS can be preloaded
+
+A new setting, `security.hstsPreload` (off by default), adds `preload` to
+the `Strict-Transport-Security` header product mode sends, so the domain
+can be submitted to the browsers' HSTS preload list (ASVS 5.0.0 3.7.4). It
+is sent only while `security.hstsIncludeSubDomains` is on; with that off
+the header carries no `preload`, `/admin/mode` says so and the log records
+`STS-CORE-0181`. Preloading binds the whole registrable domain and takes
+months to undo: see [Preloading](tls.md#preloading).
+
+**Upgrading.** Nothing changes until the setting is turned on.
+### Behaviour change: a signed-in person's own budgets on the account and report APIs
+
+In product mode a signed-in caller now has a budget of its own, counted by
+the access token's subject rather than by address (ASVS 5.0.0 2.4.2):
+
+- **`/account-api`**: every change to the person's own account (every
+  operation that takes a token and is not a `GET`: profile edits,
+  credentials enrolled or removed, consents withdrawn, device changes)
+  counts against `account.writesPerSubject` in `account.writeWindowS`, 300
+  in ten minutes by default.
+- **`/report-api`**: an ad hoc query or preview, a job queued, a saved
+  definition run and a result downloaded count against
+  `report.actsPerSubject` in `report.actWindowS`, 240 in ten minutes by
+  default.
+
+Past it the act is refused with HTTP 429 and `Retry-After` until the window
+passes (`STS-ACCOUNT-0024`, `STS-REPORT-0062`); reads, other people and
+other callers are not affected. The refusal carries `messages`, and the
+portal and the reports page draw it in their own language. Until 1.2.0 these
+acts were bounded only by the per-address ceiling,
+`security.requestsPerAddressPerMinute`. Both budgets are off (0) in
+development mode, as that ceiling is.
+
+**Upgrading.** Nothing to run. The defaults are far above what a person
+does; a program that writes to a person's account or runs reports for one
+subject faster than that should spread its work out or have the setting
+raised. See [Account API](account-api.md#what-an-answer-looks-like) and
+[Reports](reporting.md#errors).
+
+### Behaviour change: CSV exports neutralise spreadsheet formulas
+
+A report exported as CSV, and the passkey report's CSV export, now put a
+single quote (`'`) in front of any text value whose first character is
+`=`, `+`, `-`, `@`, a tab, a carriage return or NUL, so a value someone
+chose (a username, a display name) cannot run as a formula when the file
+is opened in a spreadsheet (ASVS 5.0.0 1.2.10). The quote is visible in
+the cell. Numbers are not touched: a negative count is still a number.
+Until 1.2.0 a report's CSV quoted only per RFC 4180, and the passkey
+export did not catch a leading NUL. A program that reads these files and
+compared a text cell starting with one of those characters byte for byte
+now sees the quote in front. See [Reporting](reporting.md#formats).
+### Changed: the image's optional SDKs come from a lockfile
+
+The Vault client every image carries, and the SDKs the `STS_CLOUD_SDKS` build
+argument adds, were installed with a bare `npm install`: the newest version the
+registry had that day, with install scripts on. They are now pinned in the
+repository's `sdk/` directory, one npm workspace per SDK, and installed from
+`sdk/package-lock.json` with `npm ci --ignore-scripts` (ASVS 5.0.0 15.2.4).
+`STS_CLOUD_SDKS` takes the same package names as before. A name the lockfile
+does not pin, or a `name@version` whose version it does not hold, now fails the
+build instead of installing something unpinned; to move a pin, change it in
+`sdk/packages/` and run `npm install --package-lock-only --ignore-scripts` in
+`sdk/`.
+### Changed: product mode keeps the build to administrators
+
+In product mode the page footer no longer shows the version and its build
+line, the sign-in (`/authn-api`) and portal (`/account-api`) OpenAPI documents
+give `info.version` as `1`, the front page's, portal's and reports' answers
+carry an empty version, and the User-Agent of the requests this service makes
+to partners is `sts (<component>)` without `/<version>` (ASVS 5.0.0 13.4.6).
+The console and `/admin-api` show the build as before, and development mode is
+unchanged. A page's cached files are now keyed by a random key the image build
+draws rather than by the build instant and commit. The new setting
+`security.publishBuildInfo` (`auto`, `on`, `off`; environment
+`STS_SECURITY_PUBLISH_BUILD_INFO`) puts the build back everywhere with `on`.
+
 ### Behaviour change: an uploaded sign-in logo loses its metadata
 
 A realm's sign-in logo is shown to everybody who opens a sign-in page, so
@@ -26,6 +174,43 @@ is an ICC colour profile.
 **Upgrading.** Nothing to run. A logo uploaded before 1.2.0 is served as it
 was stored, metadata included, until it is uploaded again; upload it again
 to clean it. See [Sign-in appearance](sign-in-appearance.md#the-logo).
+### Fixed: an LDAP substring filter cannot stall the directory
+
+An LDAP search's substring assertion (`(cn=*smith*)`) is matched in one
+linear pass instead of by a regular expression, which a filter such as
+`(cn=*a*a*a*...*b)` against a long value made backtrack for a very long time
+(ASVS 5.0.0 1.3.12, #2137). Ordinary filters match exactly what they matched
+before; a value holding a line break is now matched across it, as RFC 4517
+asks. A search whose substring assertion holds more than 32 components is
+refused with adminLimitExceeded (11), recorded as `STS-LDAP-0226`. See
+[LDAP](ldap.md#how-a-filter-value-is-matched).
+### Fixed: federated sign-ins no longer pile up cookies
+
+In product mode each federated sign-in sets a cookie that binds it to the
+browser that started it (`sts_fed_flow_…`). Until 1.2.0 none was ever
+cleared, so a person who started many sign-ins within ten minutes could fill
+their Cookie header until the service answered 431 (ASVS 5.0.0 4.2.5,
+#2139). The cookie is now cleared by the partner's answer, whether it signs
+the person in or is refused, and one browser holds at most eight: a ninth
+start clears the oldest. Nothing to configure; a cookie set by an earlier
+build still binds its sign-in.
+### New: named truststores
+
+Every place the service checks a signature, a certificate chain or the
+certificate of a server it connects to is now a **use case** that trusts a
+list of named **truststores**: node's default store (`system`), this
+service's Root, the shipped vendor roots, the signer and client-certificate
+truststores, what each older anchor or CA setting names, SPIFFE trust domain
+bundles, and truststores you create. Protocols → PKI trust gains
+**Truststores**, **Use cases** and **System truststore** tabs, and
+`/admin-api/truststores` is the same controls. **Nothing changes on upgrade**:
+each use case's default list names exactly what it trusted before, and every
+older setting and page keeps working. A use case's truststores are consulted
+in development as well as product mode; paranoid PKI mode decides only what
+is checked. Two defects are fixed on the way: a CA file named for an outbound
+family or the SMTP relay no longer drops the signer truststore under paranoid
+PKI mode, and PKINIT can be given an outside smart-card CA. New refusals:
+`STS-PKI-0300` to `0307`. See [Truststores](truststores.md).
 
 ### Behaviour change: S/MIME mail is authenticated encryption
 
@@ -45,6 +230,16 @@ For a recipient whose mail client cannot read AuthEnvelopedData, set
 `STS_MAIL_SMIME_CONTENT_ENCRYPTION`) to send exactly what 1.1 sent. While it
 is `aes256-cbc` in product mode, `/admin/mode` reports ASVS 5.0.0 11.3.3 as
 not met. See [OpenPGP and S/MIME](openpgp.md#encrypted-mail).
+### New: PKINIT checks Microsoft's paChecksum2
+
+The KDC now checks MS-PKCA's `paChecksum2` — the request body's SHA-256,
+SHA-384 or SHA-512 — whenever a PKINIT client sends one, beside RFC 4556's
+SHA-1 `paChecksum`, which stays required. A mismatch is refused
+(`STS-KRB-0261`), and so is one over SHA-1 in product mode or over an
+unlisted digest (`STS-KRB-0260`). The new setting
+`krb5.pkinitRequirePaChecksum2` (off by default, because MIT Kerberos does
+not send one) refuses a request without it (`STS-KRB-0262`). See
+[Kerberos](kerberos.md).
 
 ### New: WS-Trust message integrity, and signed answers
 
@@ -116,6 +311,27 @@ WS-Trust, Kerberos and LDAP) never carry a chosen role, and are refused
 where a role is required (`STS-XACML-0332`). See
 [Dynamic selectable roles](dynamic-roles.md).
 
+### New: a person is mailed when a credential of theirs is added or removed
+
+Until now only a password change was mailed. A person is now also told when
+any of these is added or removed (ASVS 5.0.0 6.3.7):
+
+- a passkey or security key, an authenticator app or an app password
+- a one-time code token or a YubiKey OTP
+- a set of recovery codes, a certificate or a certificate sign-in binding
+- an S/MIME certificate or an OpenPGP key
+
+The message says what changed, when, and whether the person or an
+administrator did it, and what to do if it was not them. Several changes made
+by one act, such as an administrator removing every second factor, are one
+message. Assigning an OATH or YubiKey OTP token through `/admin-api`, and
+retiring a lost token's one-time code credentials, now also send a CAEP
+`credential-change` event, as the other doors already did.
+
+**Upgrading.** Nothing to run. The notices are on wherever a transport is
+configured. To keep the old behaviour, set `mail.credentialChangeNotices` to
+`false`. See [Mail](mail.md#the-uses).
+
 ### Behaviour change: a password reset signs you out everywhere
 
 Setting a new password from a reset link a person asked for at
@@ -159,6 +375,20 @@ them. Tokens carrying `account:manage`, `report:use`, `report:admin` or
 `admin:write` work exactly as before, so programs and the protocol suite's
 clients need no change. See [Admin console](admin-console.md),
 [Account API](account-api.md#getting-a-token) and [Reporting](reporting.md).
+
+### Fixed: a password check takes as long for an account that does not exist
+
+In product mode, a password presented for a name with no stored password, for
+an account holding a stored value this service cannot read, for a disabled
+account, or for a service account at a door its policy closes was refused at
+once, while a wrong password for a real person took one password-hash
+computation. The response time said which accounts exist (ASVS 5.0.0 6.3.8).
+Those refusals now verify the presented password against a hash nobody holds,
+made once per process at the password policy's current parameters, and discard
+the result, so every refusal costs the same. What is refused, and the error
+code recorded for it, are unchanged. This applies at every door that checks a
+person's password: the sign-in screen, the password grant, an LDAP bind, a
+WS-Trust UsernameToken, SCIM, SSF and EST HTTP Basic.
 
 ### Fixed: the console, portal and reports say why they cannot open without WebCrypto
 
@@ -224,6 +454,39 @@ both the directory and the settings, set `oauth2.undeclaredClientScopes` to
 `legacy` yourself. While it is `legacy` or `identity`, `/admin/mode` reports
 ASVS 5.0.0 10.4.11 as not met. Declare in each client's `oauthAllowedScope`
 the scopes it needs, then set the setting to `openid`.
+
+### Behaviour change: an anonymous wallet keeps the scopes its offer named
+
+A Credential Offer's pre-authorized code may be redeemed by a wallet that
+names no client (OpenID4VCI 1.0 section 6.1). Its access token now carries
+the scopes of the configurations the offer named, read from the offer and
+not from the request, and keeps them in product mode, where the change above
+would otherwise have issued that absent client `openid` alone. Without them
+the credential was issued but not recorded for the person: `/portal/wallet`
+did not list it and it could not sign them in. Until 1.2.0 such a token
+always carried `identity_credential`, whichever configuration was offered.
+A wallet that names a client is still issued only what that client
+declares.
+
+### Behaviour change: this service declares the scopes it asks a partner for
+
+Where this service is the relying party and registers itself, it now
+declares the scopes it will ask for, so a partner that issues a client only
+what it declared (this service's own OP, in product mode, since the change
+above) issues them. A relationship with `fedRegister` sends its `fedScope`
+as the RFC 7591 registration's `scope`, and a realm's Entity Configuration
+publishes, as its `openid_relying_party` metadata's `scope`, every scope its
+OpenID Federation relationships (`fedTrustAnchor`) ask for. Until 1.2.0
+neither carried a `scope`, and such a partner refused everything past
+`openid` (`invalid_scope`). A partner that limits the scopes a client may
+register may now refuse or trim the registration; set the relationship's
+`fedScope` to what the partner offers.
+
+**Upgrading.** Nothing to run. A relationship already registered with
+`fedRegister` keeps its registration, which declared nothing; clear its
+`fedClientId` (or press **Register at the partner**) to register again with
+its scopes. An automatic OpenID Federation registration picks the scope up
+when the OP registers the realm again, once the earlier registration ends.
 
 ### New: the audit log is append-only in the database
 

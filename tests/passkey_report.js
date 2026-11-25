@@ -385,9 +385,16 @@ async function exported(t) {
   t.check(file.ok && /^username,dn,kind,passkeys,/.test(file.body),
           'H1. a CSV with its header', String(file.body).slice(0, 80));
   t.check(file.body.indexOf(nameOf('cl')) >= 0, 'H2. carrying the people');
-  const cell = report.PasskeyReport['csvCell'];
+  // The cell is the shared helper's since #2138; its table of cells is
+  // tests/csv_cell.js. Here: the export really goes through it.
+  const cell = require('../common/csv_cell').of;
   t.equal(cell('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"',
           'H3. a formula is quoted with an apostrophe in front');
+  const csvOf = report.PasskeyReport['csvOf'];
+  t.equal(csvOf([{ username: '@evil', dn: 'uid=x', kind: 'none',
+                   passkeys: 0, keys: [] }]).split('\r\n')[1],
+          '\'@evil,uid=x,none,0,,,,',
+          'H3a. the export neutralises a formula in a username');
   const json = await report.exportAsync({ list: 'holding', format: 'json' });
   t.check(json.ok && JSON.parse(json.body).rows.length >= 3,
           'H4. and JSON with every row');

@@ -30,6 +30,11 @@
       "text": "La contraseña de la cuenta {{username}} se cambió el {{when}} ({{how}}).\n\nSi no fue usted, comuníquese ahora con quien administra su cuenta.\n",
       "html": "<p>La contraseña de la cuenta <strong>{{username}}</strong> se cambió el {{when}} ({{how}}).</p><p>Si no fue usted, comuníquese ahora con quien administra su cuenta.</p>"
     },
+    "credential-changed": {
+      "subject": "Las credenciales de su cuenta de {{service}} han cambiado",
+      "text": "Las credenciales de la cuenta {{username}} se modificaron el {{when}}, {{by}}: {{what}}.\n\nSi no fue usted y no lo solicitó, inicie sesión ahora, revise su configuración de seguridad y cierre sus otras sesiones, o comuníquese con quien administra su cuenta.\n",
+      "html": "<p>Las credenciales de la cuenta <strong>{{username}}</strong> se modificaron el {{when}}, {{by}}: {{what}}.</p><p>Si no fue usted y no lo solicitó, inicie sesión ahora, revise su configuración de seguridad y cierre sus otras sesiones, o comuníquese con quien administra su cuenta.</p>"
+    },
     "account-disabled": {
       "subject": "Se deshabilitó su cuenta de {{service}}",
       "text": "La cuenta {{username}} se deshabilitó el {{when}}. {{why}}\n\nNadie puede iniciar sesión en ella hasta que se vuelva a habilitar, y se cerraron todas sus sesiones.\n",

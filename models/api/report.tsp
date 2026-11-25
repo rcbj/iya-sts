@@ -86,7 +86,7 @@ using IyaSts.Api.Common;
 namespace IyaSts.Api.Report {
   
 
-@component model `Error` {`error`?: string; `error_description`?: string}
+@component model `Error` {`error`?: string; `error_description`?: string; `messages`?: RefusalMessages}
 
 @component model `OpenApiDocument` {
     `openapi`?: string;
@@ -952,7 +952,7 @@ op `getCatalogSource`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `429`:#{
-        `description`:"too_many_jobs.",
+        `description`:"too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `default`:#{
@@ -1306,7 +1306,7 @@ op `shareDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `429`:#{
-        `description`:"too_many_jobs.",
+        `description`:"too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `default`:#{
@@ -1428,7 +1428,7 @@ op `getJobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `429`:#{
-        `description`:"too_many_jobs.",
+        `description`:"too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `default`:#{
@@ -1579,6 +1579,10 @@ op `cancelJob`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
         `description`:"result_expired.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
+      `429`:#{
+        `description`:"too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
       `default`:#{
         `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
         `content`:#{`application/json`:#{`schema`:null}}
@@ -1604,6 +1608,7 @@ op `getJobResult`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/404/content/application~1json/schema`: `Error`,
   `responses/409/content/application~1json/schema`: `Error`,
   `responses/410/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
   
 }

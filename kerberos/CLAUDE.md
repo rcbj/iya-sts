@@ -2097,6 +2097,21 @@ decisions a reader needs here:
   * RSA key transport (section 3.2.3.2) is not implemented at all,
     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: no forward secrecy.
   * DH keys are never reused.
+  * **MS-PKCA's paChecksum2 is checked whenever it is sent** (#2125, ASVS
+    5.0.0 11.4.3, rcbj 2026-11-24): `PAChecksum2 ::= SEQUENCE { checksum [0]
+    OCTET STRING, algorithmIdentifier [1] AlgorithmIdentifier }`, MS-PKCA
+    section 2.2.3, at PKAuthenticator tag [5] — the section says only that
+    it "follows the freshness token", and [5] is Heimdal's number and what
+    Windows sends. SHA-256/384/512 over the same KDC-REQ-BODY bytes as the
+    paChecksum; an unlisted OID, or SHA-1 where `mode.allowsLegacyHashes()`
+    is false, is STS-KRB-0260 (79), a mismatch STS-KRB-0261 (41). It is NOT
+    skipped when unacceptable: MS-PKCA says a present one "will always be
+    validated". `krb5.pkinitRequirePaChecksum2` (off: MIT sends none)
+    refuses a request without one, anonymous included (STS-KRB-0262). **The
+    SHA-1 paChecksum stays required and checked** — RFC 4556 makes it a
+    MUST, and refusing it refuses MIT and Heimdal. There is no PKINIT CLIENT
+    in the service; the in-process test's client sends paChecksum2 when
+    asked (`tests/kerberos_pkinit.js`).
   * The ticket ends no later than the certificate, and renews no later
     than it either (the review of #897).
   * The AuthPack is spent once across the cluster

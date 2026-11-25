@@ -145,6 +145,7 @@ import outbound = require('../oauth-oidc/outbound_delivery');
 // The directory's own filter matching (#632): a scope filter on `uid` or
 // `mail` ignores case as an LDAP search of the same entries does. A leaf.
 import LdapMatching = require('../ldap/ldap_matching');
+import truststores = require('../common/truststores');
 
 type Json = any;
 
@@ -1922,7 +1923,18 @@ class ScimClients {
       }
       add(fs.readFileSync(file, 'utf8'));
     }
-    const out: Json = OutboundTls.verifiedOptions(pems.length ? pems : null);
+    // `outbound-scim`'s truststores where it is assigned (#2118), the client's
+    // own CAs beside them; unassigned, as before.
+    const assigned = truststores.namesFor('outbound-scim').assigned ?
+      OutboundTls.optionsFor('outbound-scim', { extraPems: pems.filter(
+        function (pem) {
+          return String(c.caCertificates || '').indexOf(pem) >= 0;
+        }) }) : null;
+    if (assigned && assigned.problem) {
+      throw new Error(assigned.problem.why);
+    }
+    const out: Json = assigned ||
+      OutboundTls.verifiedOptions(pems.length ? pems : null);
     if (config.value('scimClient.skipTlsVerification')) {
       if (mode.skipsOutboundTlsVerification()) {
         log.warn('scim client "' + c.identifier + '": the service ' +

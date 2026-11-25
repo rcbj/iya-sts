@@ -46,6 +46,7 @@ import errorCodes = require('../common/error_codes');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
 import outbound = require('../federation/federation_http');
+import OutboundTls = require('../common/outbound_tls');
 
 type NodeAttestationContext =
   import('../types/spiffe-attestation').NodeAttestationContext;
@@ -216,7 +217,12 @@ class K8sPsatAttestor {
     if (tokenFile) {
       confine(tokenFile);
     }
-    const ca = caFile ? fs.readFileSync(caFile, 'utf8') : '';
+    // A cluster's own caFile is that cluster's, and wins; otherwise
+    // `outbound-k8s-api`'s truststores where it is assigned (#2118).
+    const assigned = cluster.caFile ? null :
+      OutboundTls.assignedCa('outbound-k8s-api');
+    const ca = assigned && !assigned.problem ? String(assigned.ca || '') :
+      caFile ? fs.readFileSync(caFile, 'utf8') : '';
     const token = tokenFile ? fs.readFileSync(tokenFile, 'utf8').trim() : '';
     log.debug("Leaving K8sPsatAttestor.reach().");
     return { base: base, ca: ca, token: token };
