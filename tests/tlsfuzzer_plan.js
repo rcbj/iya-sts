@@ -21,7 +21,9 @@
 // boilerplate ask the adapter to rewrite it hash for hash on an ECDSA
 // listener, which the map also prints. The map is
 // tests/tlsfuzzer/sts_adapter_map.py, which this file runs; the assertions
-// stay here. It does not run tlsfuzzer.
+// stay here. Since #2265 test-ocsp-stapling expects a staple where the
+// listener staples, and the kit's reading of tls.ocspStapling is held to
+// the service's own here. It does not run tlsfuzzer.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -116,6 +118,78 @@ function planGap() {
   });
   log.debug('Leaving planGap(). ' + (gap ? gap.script : 'none'));
   return gap ? gap.script : '';
+}
+
+// #2265: test-ocsp-stapling follows whether the listener staples, and the
+// kit's staplesOcsp() is the service's own OcspStapling.enabled() for every
+// value of tls.ocspStapling in both modes, read through a stubbed
+// config.value (the two read nothing else), restored before returning.
+function stapling(t, target) {
+  log.debug('Entering stapling().');
+  const entry = entryNamed('test-ocsp-stapling.py');
+  const on = kit.argsFor(entry, 'main',
+                         Object.assign({ staples: true }, target));
+  const off = kit.argsFor(entry, 'ldaps',
+                          Object.assign({ staples: false }, target));
+  const omitted = kit.argsFor(entry, 'main', target);
+  t.check(on.indexOf('--no-status') < 0,
+          'a listener that staples runs test-ocsp-stapling expecting the ' +
+          'staple', on.join(' '));
+  t.check(off.indexOf('--no-status') > 0 && omitted.indexOf('--no-status') > 0,
+          'a listener that does not, or one not said to, passes ' +
+          '--no-status');
+  t.check(kit.exceptionsFor(entry, 'main').some(function (one) {
+    return String(one.probe) === '/^renegotiate/' &&
+      one.alert === 'no_renegotiation';
+  }), 'its renegotiating probes are still excused only with ' +
+      'no_renegotiation, stapled or not');
+  const others = kit.PLAN.filter(function (one) {
+    return one !== entry && (one.stapleArgs ||
+      (one.args || []).indexOf('--no-status') >= 0);
+  });
+  t.equal(others.map(function (one) {
+    return one.script;
+  }).join(', '), '', 'no other script carries a stapling argument');
+
+  const config = require('../common/config');
+  const OcspStapling = require('../tls/ocsp_stapling');
+  const value = config.value;
+  const rows = [];
+  try {
+    ['auto', 'on', 'off', ''].forEach(function (setting) {
+      ['product', 'development'].forEach(function (mode) {
+        config.value = function (key) {
+          if (key === 'tls.ocspStapling') {
+            return setting;
+          }
+          if (key === 'global.mode') {
+            return mode;
+          }
+          return value.apply(this, arguments);
+        };
+        const service = OcspStapling.enabled();
+        const modelled = kit.staplesOcsp({ setting: setting,
+                                           product: mode === 'product' });
+        rows.push(setting + '/' + mode + ' service ' + service +
+                  ' kit ' + modelled);
+        t.equal(modelled, service, 'tls.ocspStapling ' +
+                (setting || '(empty)') + ' in ' + mode + ': the kit ' +
+                'expects what the service does');
+      });
+    });
+  } finally {
+    config.value = value;
+  }
+  t.check(rows.indexOf('auto/product service true kit true') >= 0 &&
+          rows.indexOf('auto/development service false kit false') >= 0,
+          'auto staples in product and not in development', rows.join('; '));
+  t.equal(kit.staplesOcsp({ setting: 'on', product: true,
+                            certificateFile: '/etc/sts/tls.crt' }), false,
+          'an outside authority\'s certificate is never expected stapled');
+  t.equal(kit.staplesOcsp({ setting: 'on', product: true,
+                            selfSigned: true }), false,
+          'nor is a self-signed one');
+  log.debug('Leaving stapling().');
 }
 
 function selfSigned(dir, name, args) {
@@ -225,6 +299,31 @@ async function presented(t, dir) {
     t.equal(p384Cert.curve, 'P-384', 'a P-384 listener names P-384');
     t.equal(edCert.type, 'ed25519',
             'an Ed25519 listener is read as Ed25519');
+    t.equal(rsaCert.selfSigned, true, 'a self-signed listener certificate ' +
+            'is read as self-signed, and so is never expected stapled ' +
+            '(#2265)');
+    t.equal(await kit.stapled('127.0.0.1', rsa.port, [rsa.cert]), false,
+            'a listener that answers no OCSPRequest is read as not ' +
+            'stapling');
+    const pair = selfSigned(dir, 'stapling', ['rsa:2048']);
+    const stapler = tls.createServer({ key: pair.key, cert: pair.cert });
+    stapler.on('OCSPRequest', function (certificate, issuer, callback) {
+      // Not an OCSP response: the kit reads only that bytes came back.
+      callback(null, Buffer.from('a staple'));
+    });
+    await new Promise(function (resolve) {
+      stapler.listen(0, '127.0.0.1', resolve);
+    });
+    servers.push({ close: function () {
+      return new Promise(function (done) {
+        stapler.close(function () {
+          done();
+        });
+      });
+    } });
+    t.equal(await kit.stapled('127.0.0.1', stapler.address().port,
+                              [pair.cert]), true,
+            'a listener that staples is read as stapling');
     t.equal(closed.type, '', 'a closed port names no key');
     t.equal(closed.curve, '', 'a closed port names no curve');
     t.equal(kit.declineReason({ main: edCert, ldaps: rsaCert }),
@@ -439,6 +538,8 @@ async function run(t) {
             .indexOf('--server-key') < 0,
           'an omitted server key keeps the RSA command line');
 
+  stapling(t, target);
+
   const verifyEntry = entryNamed('test-certificate-verify.py');
   const retargeted = kit.argsFor(verifyEntry, 'main',
     Object.assign({}, target, { serverKey: 'ec', certificates: {
@@ -538,6 +639,8 @@ module.exports = {
             'the adapter suite that matches the key, and (#1303) three ' +
             'RSA-only scripts, the RSA signature list retargeted hash ' +
             'for hash for forty others, and a TLS 1.2 group excused only ' +
-            'on an ECDSA listener on another curve',
+            'on an ECDSA listener on another curve, and (#2265) ' +
+            'test-ocsp-stapling expecting a staple where the service ' +
+            'staples',
   run: run
 };
