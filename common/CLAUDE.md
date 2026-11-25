@@ -14541,6 +14541,49 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   the recipient's language (`Intl.ListFormat`). The doors this ticket added
   a CAEP call to: `/admin-api`'s `assign-oath` and `assign-yubiotp`, and the
   OATH and YubiKey OTP lost-token retirers. `tests/credential_change_mail.js`.
+- **A certificate that expires soon (#2247, ASVS 5.0.0 6.4.5)** is the
+  `credential-expiring` notice, `mail.expiryReminders` (on), sent by
+  `credentialsExpiring()` for `credential_expiry.ts`'s job — see
+  *Credential expiry reminders* below.
+
+### Credential expiry reminders: `credential_expiry.ts` (#2247, 2026-11-25)
+
+Nothing reminded a person before a certificate they hold expired. The
+module's header argues the design; what a maintainer needs beside it:
+
+- **The index is `credential_expiry.due`**, one row per certificate a
+  person holds, on demand with `indexBy` in the existing
+  `sts_minted_index` — no schema version, no upgrade script. A row is filed
+  under the DAY ITS NEXT REMINDER IS DUE (`n:`) and its person (`p:`), so
+  the hourly job (`mail.credential-expiry`) makes at most 31 equality
+  lookups a run whatever the realm holds, and a row told at its step moves
+  on. It expires with its certificate.
+- **It is kept by the entries' writes, through `entry_observer.ts`'s
+  `watch()`**, a second kind of registration beside `register()`: a
+  watcher owns nothing, may share an attribute, and is told the whole
+  entry once. `ldap_server.js`'s two in-place certificate writers (the
+  enrollment slot's `write()`, `changeStoredCertificate()`) do not go
+  through `noteAccountChange()`, so they call `tellCredentialWatchers()`.
+  A new writer of `stsEnrolledCertificate`, `userSMIMECertificate` or
+  `userCertificate` that bypasses both is a certificate nobody is reminded
+  of. A person's TLS client certificate is not on the entry at all (the
+  realm's PKI register), so `tls_client_certificates.js`'s `issue()` and
+  `revoke()` tell the module themselves (`noteHeld()`, `noteGone()`), and a
+  deleted person's rows all go (`forget()`).
+- **Once per step is the row's `told`**, which outlives the outbox; the
+  outbox (`queuedWithin()`, `dedupKey`/`dedupAlso` per item and step) is
+  the cluster's record for a race. A refusal that will be the same next run
+  is told; a ceiling, a full outbox or the realm's own problem (no
+  transport, no link base) is not, and the last stops the run.
+- **The backfill** is the one walk: `passkeyScanAsync()` over every person,
+  5,000 a run after a cursor on the `$backfill$` row, until done; then the
+  realm's TLS client register once (`personCertificatesOf()`).
+- **SSH user certificates are not followed** (an hour at most), nor
+  anything that does not expire here. The PIV `piv-reissue` activity is
+  unchanged and off by default: it renews at a sign-in, and the reminder
+  names the Security keys page for every holder whether or not it is on.
+
+`tests/credential_expiry_mail.js` holds it in process.
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
 `smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it

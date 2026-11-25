@@ -13924,6 +13924,7 @@ function changeStoredCertificate(kind, id, change) {
     return der ? require('../common/crypto').digest('sha256', der, 'hex') : '';
   };
   let changed = false;
+  const before = kind === 'person' ? attributeSnapshot(stored) : null;
   if (change && change.add) {
     const base64 = Buffer.from(change.add).toString('base64');
     const wanted = digestOf(base64);
@@ -13956,6 +13957,9 @@ function changeStoredCertificate(kind, id, change) {
   }
   if (changed) {
     touchDirectory(stored.dn);
+    if (before) {
+      tellCredentialWatchers(stored, before, 'a stored certificate');
+    }
   }
   log.debug("Leaving changeStoredCertificate(). changed=" + changed);
   return { ok: true, dn: String(stored.dn), changed: changed };
@@ -17515,12 +17519,16 @@ if (typeof certEnrollment.setDirectory === 'function') {
       const list = (values || []).map(function (one) {
         return String(one);
       });
+      const before = kind === 'person' ? attributeSnapshot(stored) : null;
       if (!list.length) {
         delete stored.attributes[attribute];
       } else {
         stored.attributes[attribute] = list;
       }
       touchDirectory(stored.dn);
+      if (before) {
+        tellCredentialWatchers(stored, before, 'certificate enrollment');
+      }
       log.debug('Leaving write(). ' + list.length + ' value(s) on ' +
                 stored.dn + '.');
       return true;
@@ -28925,6 +28933,41 @@ function tellAccountObservers(event) {
 // handler is about to rewrite in place, so every "before" would equal its
 // "after" and nothing would ever look changed — which is a feature that is
 // silently off rather than one that fails.
+// ---------------------------------------------------------------------------
+// THE TWO WRITERS THAT CHANGE A PERSON'S CERTIFICATES IN PLACE (#2247): the
+// enrollment slot's `write()` (`stsEnrolledCertificate`, every certificate
+// ACME, EST and SCEP issue, a PIV slot's among them) and
+// `changeStoredCertificate()` (`userCertificate`, a certificate sign-in's).
+// Neither goes through noteAccountChange() — they are not account changes,
+// and its account observers and credential notices have callers of their
+// own — so the entry observer's WATCHERS (`common/entry_observer.ts`) are
+// told here instead, with the entry before and after: the credential expiry
+// index (`common/credential_expiry.ts`) is the one that reads these two.
+// The owners of the other credential attributes are asked too and find
+// nothing of theirs changed. In the entry's realm; a cache hit.
+// ---------------------------------------------------------------------------
+function tellCredentialWatchers(stored, before, door) {
+  log.debug('Entering tellCredentialWatchers(). ' + door);
+  try {
+    const dn = String(stored.dn);
+    const credentialRealm = realmFor(dn);
+    const uuid = String((stored.attributes.entryuuid || [])[0] || '');
+    const after = attributeSnapshot(stored);
+    realms.run(credentialRealm, function () {
+      require('../common/entry_observer').entryChanged({
+        kind: 'updated', dn: dn, username: canonicalUsernameOfDn(dn),
+        realm: credentialRealm.id,
+        subject: uuid ? 'urn:uuid:' + uuid.replace(/^urn:uuid:/i, '') : '',
+        actor: '', door: door, before: before, after: after });
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-LDAP-0225') + 'ldap: the certificates ' +
+              'of ' + String(stored && stored.dn) + ' could not be handed ' +
+              'to their watchers: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving tellCredentialWatchers().');
+}
+
 function attributeSnapshot(stored) {
   log.debug('Entering attributeSnapshot().');
   const out = {};

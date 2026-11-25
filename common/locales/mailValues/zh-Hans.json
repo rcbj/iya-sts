@@ -20,5 +20,6 @@
   "address.none": "（无）",
   "credentialChange.item": "{kind, select, passkey {通行密钥或安全密钥} totp {身份验证器应用} app-password {应用专用密码} hotp {一次性验证码令牌} yubiotp {YubiKey OTP} recovery-codes {恢复码} certificate {证书} certificate-binding {证书登录绑定} smime {S/MIME 证书} openpgp {OpenPGP 密钥} other {凭据}}：{change, select, added {已添加} generated {已生成} removed {已删除} other {已更改}}",
   "credentialChange.itemNamed": "{kind, select, passkey {通行密钥或安全密钥} totp {身份验证器应用} app-password {应用专用密码} hotp {一次性验证码令牌} yubiotp {YubiKey OTP} recovery-codes {恢复码} certificate {证书} certificate-binding {证书登录绑定} smime {S/MIME 证书} openpgp {OpenPGP 密钥} other {凭据}}「{label}」：{change, select, added {已添加} generated {已生成} removed {已删除} other {已更改}}",
-  "credentialChange.by": "{entity, select, user {由您在门户或登录时完成} other {由管理员完成}}"
+  "credentialChange.by": "{entity, select, user {由您在门户或登录时完成} other {由管理员完成}}",
+  "expiry.item": "{kind, select, certificate {证书} piv {PIV 智能卡证书} smime {S/MIME 证书} tls-client {TLS 客户端证书} signin-certificate {登录证书} other {凭据}}“{label}”将于 {date}（UTC）到期：{renew, select, certificates {请在门户的“证书”页面续订} tokens {请在门户的“安全密钥”页面续订} openpgp {请在门户的“OpenPGP 和邮件加密”页面替换} signing-key {请在门户的“签名密钥”页面续订} other {请联系管理员续订}}"
 }

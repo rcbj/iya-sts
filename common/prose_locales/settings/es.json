@@ -12907,6 +12907,30 @@
     "en": "29547122992cacaf",
     "text": "Durante cuánto tiempo un tipo de alerta de inicio de sesión —un dispositivo nuevo, un país nuevo, una red de anonimización, contraseñas rechazadas— se avisa como máximo una vez a una persona. La bandeja de salida es el registro, así que una ventana más larga que mail.retentionS dura solo eso."
   },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Recordatorios de caducidad de credenciales"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Avisar a una persona, en la dirección de su entrada, antes de que caduque un certificado que tiene: un certificado que este dominio le emitió por ACME, EST o SCEP, un certificado de tarjeta inteligente PIV, un certificado S/MIME, un certificado de cliente TLS o un certificado guardado para el inicio de sesión con certificado. Cada uno se avisa una vez en cada uno de los días de mail.expiryReminderDays, todos los certificados pendientes en un solo mensaje, con cuándo caducan y cómo renovarlos. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Días de los recordatorios de caducidad de credenciales"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Cuántos días antes de que caduque un certificado se avisa a su titular, un recordatorio en cada uno. Un certificado que aparece por primera vez dentro de uno de ellos se avisa en el más cercano, y nunca en un paso que ya pasó. Un cambio se aplica a cada certificado en su siguiente recordatorio."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Credenciales que nombra un recordatorio de caducidad"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Qué tipos de certificado nombra un recordatorio de caducidad: certificate (emitido por ACME, EST o SCEP), piv (un certificado de ranura PIV), smime (un certificado S/MIME al que se cifra el correo), tls-client (un certificado de cliente TLS emitido desde la página Claves de firma del portal o por un administrador) y signin-certificate (un certificado guardado en la entrada para el inicio de sesión con certificado). Un tipo omitido se sigue vigilando, así que volver a incluirlo avisa en su siguiente paso."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Límite de filas de un informe síncrono"

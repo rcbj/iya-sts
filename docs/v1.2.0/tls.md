@@ -478,6 +478,10 @@ certificate is refused at every door; nothing migrates them, because which
 entry a certificate belongs to is the decision the old common-name match made
 on the operator's behalf.
 
+**The holder is reminded before a stored certificate expires** (#2247), and
+told to ask their administrator, since this service did not issue it. See
+[Mail](mail.md#the-uses).
+
 ### The client truststore
 
 The anchors client certificates are verified against. Since 1.2.0 it is the

@@ -313,6 +313,10 @@ answers `revoked`. An administrator can revoke any of them on `/admin/cert-issua
 the certificate's validity, or — for a revoked certificate — a window in the
 past, which tells a client to renew now.
 
+**A person is reminded before a certificate issued to them expires** (#2247):
+30, 7 and 1 days before by default, by mail, pointing at the portal's
+Certificates page, whichever protocol issued it. See [Mail](mail.md#the-uses).
+
 ## Configuration
 
 Every `acme.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → ACME**

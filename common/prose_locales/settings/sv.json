@@ -12907,6 +12907,30 @@
     "en": "29547122992cacaf",
     "text": "Hur länge en typ av inloggningsvarning – en ny enhet, ett nytt land, ett anonymiseringsnätverk, nekade lösenord – meddelas en person högst en gång. Utkorgen är registret, så ett fönster längre än mail.retentionS varar bara så länge."
   },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Påminnelser om utgående inloggningsuppgifter"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Påminn en person, på adressen i deras post, innan ett certifikat de har upphör att gälla: ett certifikat som den här sfären utfärdade till dem via ACME, EST eller SCEP, ett PIV-smartkortscertifikat, ett S/MIME-certifikat, ett TLS-klientcertifikat eller ett certifikat lagrat för certifikatinloggning. Vart och ett nämns en gång vid var och en av mail.expiryReminderDays, alla certifikat som är aktuella i ett meddelande, med när det upphör att gälla och hur det förnyas. Inget skickas medan säkerhetsmeddelanden är avstängda eller ingen transport är konfigurerad."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Dagar för påminnelser om utgående inloggningsuppgifter"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Hur många dagar innan ett certifikat upphör att gälla dess innehavare påminns, en påminnelse vid varje. Ett certifikat som först syns inom en av dem nämns vid den närmaste, och aldrig vid ett steg som redan har passerats. En ändring gäller varje certifikat vid dess nästa påminnelse."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Inloggningsuppgifter som en utgångspåminnelse nämner"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Vilka slags certifikat en utgångspåminnelse nämner: certificate (utfärdat via ACME, EST eller SCEP), piv (ett PIV-platscertifikat), smime (ett S/MIME-certifikat som e-post krypteras till), tls-client (ett TLS-klientcertifikat utfärdat från portalens sida Signeringsnycklar eller av en administratör) och signin-certificate (ett certifikat lagrat i posten för certifikatinloggning). Ett slag som utelämnas följs fortfarande, så att det påminns vid sitt nästa steg när det läggs tillbaka."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Radgräns för synkron rapport"

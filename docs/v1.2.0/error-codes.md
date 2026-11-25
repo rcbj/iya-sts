@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6172** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6174** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 46
+* [Mail (`STS-MAIL`)](#sts-mail) — 48
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
 * [Device register (`STS-DEVICE`)](#sts-device) — 54
@@ -4611,6 +4611,8 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
 | `STS-MAIL-0244` | A message was not queued because the realm's outbox already holds mail.maxRows unsent messages; nothing already queued is dropped to make room (#2220). | none — the sender is told the message was refused |
 | `STS-MAIL-0245` | A DKIM selector switch is held back (#2220): mail.dkimNextSelector's key cannot sign, or mail.dkimSwitchAt has passed and DNS does not answer the next selector with its key. Messages are signed with the current selector until it does. | RFC 6376 section 3.6.1 (log only) |
+| `STS-MAIL-0246` | A credential expiry reminder could not be queued, or the mail.credential-expiry job could not read the realm's expiry index or record what it told; the next run tries again (#2247). | none — logged |
+| `STS-MAIL-0247` | The credential expiry index was not kept in step with a write of a person's entry: its watcher was refused or threw, a certificate on the entry could not be read, or the index row could not be written. That person is not reminded of what changed until their entry is next written (#2247). | none — logged |
 
 ## STS-I18N
 

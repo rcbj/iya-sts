@@ -634,6 +634,27 @@ const BUILT_IN: TemplateSpec[] = [
           'again with an unused recovery code. If it was not, somebody ' +
           'knows your account name and address; contact whoever manages ' +
           'your account.</p>' },
+  // #2247 (ASVS 5.0.0 6.4.5): the certificates a person holds that expire
+  // soon, every one due in one message, each line saying what, when and how
+  // to renew it (`common/credential_expiry.ts`).
+  { id: 'credential-expiring', category: 'security',
+    title: 'A credential of yours expires soon',
+    values: ['username', 'what'],
+    links: ['link'],
+    subject: 'A credential of your {{service}} account expires soon',
+    text: 'These credentials of the account {{username}} expire soon: ' +
+          '{{what}}.\n\nRenew each one before it expires, or it will stop ' +
+          'working. Where a line names a page of your portal, sign in to ' +
+          'it here:\n\n{{link}}\n\nWhere it says to ask your ' +
+          'administrator, contact whoever manages your account. If you no ' +
+          'longer use one of them, you can ignore its line.\n',
+    html: '<p>These credentials of the account <strong>{{username}}' +
+          '</strong> expire soon: {{what}}.</p><p>Renew each one before it ' +
+          'expires, or it will stop working. Where a line names a page of ' +
+          'your portal, <a href="{{link}}">sign in to your portal</a>.</p>' +
+          '<p>Where it says to ask your administrator, contact whoever ' +
+          'manages your account. If you no longer use one of them, you can ' +
+          'ignore its line.</p>' },
   // -------------------------------------------------------------------------
   // #64: THE STANDARD LAYOUT, wrapped round EVERY message's body. Not a
   // message itself — `send()` refuses it by name — and reworded per realm

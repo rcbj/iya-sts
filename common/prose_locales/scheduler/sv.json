@@ -271,6 +271,14 @@
     "en": "76f7213ce5e8a506",
     "text": "Tar bort speglade LDAP-anslutningar från noder som inte längre är medlemmar, och utloggningsinstruktioner vars livslängd har gått ut."
   },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "Påminnelser om utgående inloggningsuppgifter"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "Skickar till varje person vars certifikat upphör att gälla inom en av mail.expiryReminderDays en påminnelse som nämner vart och ett som är aktuellt: vad det är, dagen det upphör att gälla och hur det förnyas, ett meddelande per person, varje certifikat en gång per steg. Läser bara utgångsindexets rader som är aktuella i dag eller under de senaste trettio dagarna, aldrig katalogen, utom en del av personerna per körning tills certifikat som fanns före indexet har registrerats."
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "Leverans från e-postutkorgen"
