@@ -1822,6 +1822,8 @@ Scope: `admin:read`.
 | `page.passkeyPolicies.missing` | boolean |  |  |
 | `page.passkeyPolicies.named` | string |  |  |
 | `page.passkeyPolicies.precedence` | number |  |  |
+| `page.pepEventsExcluded` | list |  | The embedded remote PEPs in local mode bound to this application that will not hear of a policy change over Shared Signals (#2028): its ssfAllowedEvents leaves pep-policies-changed out, or the PEP reported its stream excludes it. The page warns; they converge on their fallback poll. |
+| `page.pepEventsExcluded[]` | string |  |  |
 | `page.pepRoutes` | list |  | The routes of this realm's remote PEPs that front this application (#1760): which PEP, which route, its path and mechanisms — the reference only. |
 | `page.pepRoutes[].mechanisms` | list |  |  |
 | `page.pepRoutes[].mechanisms[]` | string |  |  |
@@ -2095,6 +2097,8 @@ Scope: `admin:read`.
 | `paging.param` | string |  |  |
 | `paging.perPage` | integer |  |  |
 | `paging.total` | integer |  |  |
+| `pepEventsExcluded` | list |  | The embedded remote PEPs in local mode bound to this application that will not hear of a policy change over Shared Signals (#2028): its ssfAllowedEvents leaves pep-policies-changed out, or the PEP reported its stream excludes it. The page warns; they converge on their fallback poll. |
+| `pepEventsExcluded[]` | string |  |  |
 | `pepRoutes` | list |  | The routes of this realm's remote PEPs that front this application (#1760): the reference only. |
 | `pepRoutes[].mechanisms` | list |  |  |
 | `pepRoutes[].mechanisms[]` | string |  |  |

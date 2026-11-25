@@ -425,6 +425,23 @@ const GENERATORS = {
     log.debug("Leaving generate().");
     return payload;
   },
+  // A REMOTE PEP'S POLICIES OR CATALOGUE MOVED (#2028): its name, what
+  // moved — `policies` and/or `catalogue`, in that order, nothing else —
+  // and the new token. No policy, ever: the PEP pulls with its own token.
+  [STS_PREFIX + 'pep-policies-changed']: function (values) {
+    log.debug("Entering generate().");
+    const v = values || {};
+    const asked = Array.isArray(v.changed) ? v.changed.map(String) : [];
+    const payload = {
+      pep: String(v.pep || ''),
+      changed: ['policies', 'catalogue'].filter(function (one) {
+        return asked.indexOf(one) >= 0;
+      }),
+      sync_token: String(v.sync_token || '')
+    };
+    log.debug("Leaving generate().");
+    return payload;
+  },
   [STS_PREFIX + 'announcement']: function (values) {
     log.debug("Entering generate().");
     const v = values || {};
@@ -557,8 +574,8 @@ const CAEP_EVENTS = familyRows('caep');
 const RISC_EVENTS = familyRows('risc');
 
 /**
- * This service's own event types, about its keys and its people; none has a
- * subject.
+ * This service's own event types, about its keys and its people; only
+ * `pep-policies-changed` has a subject (the application, #2028).
  */
 const STS_EVENTS = familyRows('sts');
 
@@ -1428,6 +1445,11 @@ module.exports = {
    * This service's event type for a change of the listener certificate.
    */
   TLS_CERTIFICATE_CHANGED: STS_PREFIX + 'tls-certificate-changed',
+  /**
+   * This service's event type telling a remote PEP embedded in an
+   * application that what it pulls changed (#2028).
+   */
+  PEP_POLICIES_CHANGED: STS_PREFIX + 'pep-policies-changed',
   STATUSES: STATUSES,
   supportedEventUris: supportedEventUris,
   validateEvent: validateEvent,

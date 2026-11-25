@@ -1032,5 +1032,6 @@
   "protection.removeN": "Retirer l'expression {n}",
   "protection.addList": "Ajouter la liste au champ",
   "protection.recipientOne": "{field} contient une seule expression : laissez-en exactement une dans la liste.",
-  "protection.addedN": "{n} expression(s) ajoutée(s) à {field}. Appuyez sur Enregistrer dans le formulaire pour les conserver."
+  "protection.addedN": "{n} expression(s) ajoutée(s) à {field}. Appuyez sur Enregistrer dans le formulaire pour les conserver.",
+  "embeddedPeps.eventsExcluded": "Les flux Shared Signals de cette application ne peuvent pas transporter pep-policies-changed (son ssfAllowedEvents l’exclut, ou le PEP l’a signalé) : ces PEP en mode local n’apprennent donc un changement de politique qu’à leur interrogation de secours : {peps}. Ajoutez urn:iya:sts:secevent:event-type:pep-policies-changed à ssfAllowedEvents."
 }

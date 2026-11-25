@@ -159,6 +159,36 @@ model XacmlPep {
   })
   xacmlPepListenersInUse?: string;
   @attr(#{
+    kind: "single",
+    what: "What kind of remote PEP registered (#2026, part of #1206): container, the xacml-pep image, or embedded, a PEP inside an authentication library through an iya-pep package. A registration that names none is container, so an older PEP is read as it always was. An embedded PEP has no reverse proxy, no listeners and no AuthZEN edge."
+  })
+  xacmlPepKind?: string;
+  @attr(#{
+    kind: "single",
+    what: "The application an embedded remote PEP said it is embedded in when it registered (#2026). Accepted only when it is the application its entry is bound to (stsPepApplication, set by an administrator), so it can differ from the binding only until the PEP's next heartbeat, which is refused once they disagree. Empty for a container."
+  })
+  xacmlPepApplication?: string;
+  @attr(#{
+    kind: "single",
+    what: "An embedded remote PEP's mode (#2026): central, where every decision is asked of this service's AuthZEN evaluation endpoint, or local, where it pulls its application's policies and decides in process. Empty for a container, which may not send one."
+  })
+  xacmlPepMode?: string;
+  @attr(#{
+    kind: "single",
+    what: "The PEP protocol version the remote PEP's package speaks, as it said on its registration or last heartbeat (#2026). This service supports version 1 and refuses any other, so a library that falls behind is visible rather than silently wrong. Empty for a PEP that sends none (the container)."
+  })
+  xacmlPepProtocolVersion?: DirectoryInteger;
+  @attr(#{
+    kind: "single",
+    what: "Whether the stream of the application an embedded remote PEP is embedded in can carry the pep-policies-changed event, as the PEP last reported on a heartbeat (#2026): none (the host has no signal stream, so the PEP polls), requested, excluded (the application's ssfEvents leaves it out) or down. Empty until reported."
+  })
+  xacmlPepPolicyEvents?: string;
+  @attr(#{
+    kind: "single",
+    what: "What the remote PEP last pulled from GET /xacml/pep/policies (#2027): repository, every enabled policy but those withheld (the container's pull), or bound-application, a local embedded PEP's: its application's own policy, or the realm root, and the reference closure. Kept across a registration; a change is audited as xacml.pep.scope. Empty until it pulls."
+  })
+  xacmlPepPullScope?: string;
+  @attr(#{
     what: "Whatever the PEP said about itself when it registered."
   })
   description?: (string)[];

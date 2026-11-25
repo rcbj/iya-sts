@@ -1032,5 +1032,6 @@
   "protection.removeN": "Ausdruck {n} entfernen",
   "protection.addList": "Liste dem Feld hinzufügen",
   "protection.recipientOne": "{field} enthält genau einen Ausdruck: Lassen Sie genau einen in der Liste.",
-  "protection.addedN": "{n} Ausdruck/Ausdrücke zu {field} hinzugefügt. Drücken Sie im Formular Speichern, um sie zu behalten."
+  "protection.addedN": "{n} Ausdruck/Ausdrücke zu {field} hinzugefügt. Drücken Sie im Formular Speichern, um sie zu behalten.",
+  "embeddedPeps.eventsExcluded": "Die Shared-Signals-Streams dieser Anwendung können pep-policies-changed nicht übertragen (ihr ssfAllowedEvents schließt es aus, oder der PEP hat es gemeldet), daher erfahren diese PEPs im Modus local von einer Richtlinienänderung erst bei ihrer Ersatzabfrage: {peps}. Fügen Sie urn:iya:sts:secevent:event-type:pep-policies-changed zu ssfAllowedEvents hinzu."
 }

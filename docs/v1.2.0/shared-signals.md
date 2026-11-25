@@ -158,6 +158,8 @@ person. A receiver that does not know a type ignores it, as SSF says it should.
 | `tls-certificate-changed` | the certificate the main port presents is re-issued, or the service (or one node of it) starts presenting a certificate other than the one it last announced (`reason: restarted`). Sent to every realm's streams | `certificate_uri` |
 | `kerberos-tickets-invalidated` | a krbtgt rotation keeps no previous version, so every TGT in the realm is refused: "rotate and invalidate" (`reason: invalidated`), or an ordinary rotation with `krb5.retainedKeyVersions` 0 (`reason: nothing-retained`) | none |
 
+**One more names a subject: `pep-policies-changed`** ([#2028](https://github.com/rcbj/iya-sts/issues/2028)). It tells a remote PEP embedded in an application that the policies or the AuthZEN catalogue it pulls changed; its subject is the application, its payload `pep`, `changed` and `sync_token`, and it goes only to the streams that application owns. Because it names the application, an entry's `ssfAllowedEvents` withholds it unless the list names it, as for a CAEP or RISC type. [CAEP events](caep-events.md) has its trigger.
+
 The first four share one shape: `realm`, `rotated` as
 `<unit> <previous> -> <new>`, `reason` (`scheduled`, `requested` or `emergency`,
 and for `tls-certificate-changed` also `restarted`), the address above, and

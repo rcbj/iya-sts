@@ -121,7 +121,8 @@ function thePep(t) {
   let resolved = null;
   let decided = null;
   let throwOnDecide = false;
-  const pep = new FgaPep({
+  let lastOptions = null;
+  const deps = {
     log: log,
     errorCodes: errorCodes,
     audit: { audit: function (row) { rows.push(row); return row; } },
@@ -133,7 +134,8 @@ function thePep(t) {
     },
     loadXacml: function () {
       return {
-        decidePolicy: function () {
+        decidePolicy: function (policy, request, options) {
+          lastOptions = options || null;
           if (throwOnDecide) {
             throw new Error('the engine broke');
           }
@@ -153,7 +155,8 @@ function thePep(t) {
         counted.push([id, outcome]);
       } };
     }
-  });
+  };
+  const pep = new FgaPep(deps);
   const ask = function () {
     return pep.decide({ application: 'docs', detail: detail,
       definition: definition, stage: 'token', clientId: 'cli',
@@ -260,6 +263,26 @@ function thePep(t) {
           '2m. at PAR, with no subject, the request has no subject-id and ' +
           'no subject kind (never \'\'), and keeps the client',
           ids.join(', '));
+  // AN AUTHZEN DECISION ABOUT AN ENFORCING APPLICATION RESOLVES ITS
+  // REFERENCES (#1206): against the set a local embedded PEP's scoped pull
+  // draws the closure from, so central and local answer alike.
+  resolved = ok;
+  decided = { decision: 'Permit', obligations: [] };
+  throwOnDecide = false;
+  pep.decideAccess('docs', { categories: [] });
+  t.check(!!lastOptions && lastOptions.repository === null,
+          '2n. with no pepRepository dependency, nothing resolves (as before)',
+          JSON.stringify(lastOptions));
+  const closure = { 'urn:example:referenced': { kind: 'policy' } };
+  const withClosure = new FgaPep(Object.assign({}, deps, {
+    pepRepository: function () { return closure; }
+  }));
+  const answered = withClosure.decideAccess('docs', { categories: [] });
+  t.check(answered.ok === true && !!lastOptions &&
+          lastOptions.repository === closure,
+          '2o. decideAccess() hands the PDP the embedded PEP\'s repository, ' +
+          'so a PolicyIdReference in the application\'s policy resolves',
+          JSON.stringify({ ok: answered.ok }));
   log.debug("Leaving thePep().");
 }
 

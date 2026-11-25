@@ -1283,6 +1283,10 @@
     "en": "a254d6c56c6f82ac",
     "text": "Ang isang naka-embed na remote PEP ay itinali sa application nito, o tinanggal ang pagkakatali"
   },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "Nagsimulang kumuha ang isang remote PEP ng ibang saklaw ng patakaran"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "May remote PEP na nagtanong sa PIP ng mga attribute ng isang subject"

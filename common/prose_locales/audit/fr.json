@@ -1283,6 +1283,10 @@
     "en": "a254d6c56c6f82ac",
     "text": "Un PEP distant intégré a été lié à son application, ou délié"
   },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "Un PEP distant a commencé à récupérer une autre portée de politiques"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "Un PEP distant a demandé au PIP les attributs d’un sujet"

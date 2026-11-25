@@ -731,10 +731,17 @@ class SsfStreams {
       return null;
     }
     const allowed = {};
-    // SSF's own two, and this service's own signing-key event (#42, D4),
-    // which is about the transmitter rather than anybody an entry could be
-    // limiting a stream about.
-    (events.SSF_EVENTS as any[]).concat(events.STS_EVENTS)
+    // SSF's own two, and this service's own events that name NOBODY
+    // (#42, D4): they are about the transmitter rather than anybody an entry
+    // could be limiting a stream about. An event of this service's own that
+    // names a subject — `pep-policies-changed` (#2028), about the
+    // application itself — is the entry's to allow like a CAEP or RISC
+    // type, by its URI: the catalogue row's `subject` decides, so no type is
+    // named here.
+    (events.SSF_EVENTS as any[]).concat((events.STS_EVENTS as any[])
+      .filter((row: any) => {
+        return row.subject === 'none';
+      }))
       .forEach((row: any) => {
         allowed[row.uri] = true;
       });
@@ -778,6 +785,24 @@ class SsfStreams {
     return record.events_delivered.filter((uri) => {
       return this.permits(restriction, uri);
     });
+  }
+
+  // THE APPLICATION A STREAM'S OWNER IS (#2028): the identifier of the
+  // entry its `createdBy` names, by identifier or `ssfReceiverId` — the
+  // lookup `ssfAllowedEvents` is read through — or '' for a stream no
+  // application owns.
+  /**
+   * Returns the identifier of the application entry that owns a stream.
+   *
+   * @param record - the stream
+   * @returns the application's identifier, or '' for none
+   */
+  ownerApplication(record?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.ownerApplication().");
+    const entry = record ? this.applicationFor(record.createdBy) : null;
+    log.debug("Leaving SsfStreams.ownerApplication().");
+    return entry ? String(entry.identifier || '') : '';
   }
 
   // THE question every delivery path asks. A stream takes an event when it
@@ -3214,6 +3239,7 @@ export = {
   isStreamUpdated: slot.forward('isStreamUpdated'),
   allowedEventsFor: slot.forward('allowedEventsFor'),
   deliversEvent: slot.forward('deliversEvent'),
+  ownerApplication: slot.forward('ownerApplication'),
   effectiveDelivered: slot.forward('effectiveDelivered'),
   enqueue: slot.forward('enqueue'),
   queueOf: slot.forward('queueOf'),

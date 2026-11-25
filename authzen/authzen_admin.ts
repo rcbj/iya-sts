@@ -838,9 +838,25 @@ class AuthzenAdmin {
                           parsed.row.property + ' → ' +
                           parsed.row.attributeId + ' (via ' +
                           String(who.via || 'console') + ').' });
+    AuthzenAdmin.notePeps('an AuthZEN catalogue row was set');
     log.debug("Leaving AuthzenAdmin.setAttribute().");
     return { ok: true, changed: true, replaced: replaced.length > 0,
              row: Object.assign({ key: key }, parsed.row) };
+  }
+
+  // AN EMBEDDED PEP IS TOLD (#2028): this change can move what a PEP bound
+  // to an application pulls, so the XACML surface checks, after the commit,
+  // and sends `pep-policies-changed` where it did. Lazily, and never thrown
+  // into the change: the event is a hint.
+  private static notePeps(what: string): void {
+    log.debug("Entering AuthzenAdmin.notePeps().");
+    try {
+      require('../xacml/xacml').notePepPolicies(what);
+    } catch (e) {
+      log.debug("Caught in AuthzenAdmin.notePeps(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AuthzenAdmin.notePeps().");
   }
 
   private removeAttribute(body: any, who: any): any {
@@ -873,6 +889,7 @@ class AuthzenAdmin {
                   detail: 'Removed the catalogue row ' +
                           key.replace(':', '.') + ' (via ' +
                           String(who.via || 'console') + ').' });
+    AuthzenAdmin.notePeps('an AuthZEN catalogue row was removed');
     log.debug("Leaving AuthzenAdmin.removeAttribute().");
     return { ok: true, changed: true, removed: key };
   }

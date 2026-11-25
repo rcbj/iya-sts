@@ -1249,6 +1249,12 @@ declare namespace IyaDomain {
     settingsInUse?: string;
     listeners?: string;
     listenersInUse?: string;
+    kind?: string;
+    application?: string;
+    mode?: string;
+    protocolVersion?: number;
+    policyEvents?: string;
+    pullScope?: string;
     description?: string[];
   }
 

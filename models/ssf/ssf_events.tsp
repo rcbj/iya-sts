@@ -575,6 +575,25 @@ model TlsCertificateChangedEvent {
 }
 
 @event(#{
+  uri: "urn:iya:sts:secevent:event-type:pep-policies-changed",
+  family: "sts",
+  name: "PEP Policies Changed",
+  subject: "required",
+  what: "NON-SPEC, this service's own (#2028, part of #1206). What a remote PEP embedded in the application named by the subject pulls has changed: the policies of its bound-application scope, the realm's AuthZEN attribute catalogue, or both. It carries NO policy: the PEP pulls again with its own credential, and a PEP in central mode clears any Permits it cached. Sent to the streams the application owns, one SET per PEP bound to it, while the application's ssfAllowedEvents allows it. A hint only: a PEP that misses it converges on its fallback poll.",
+  cite: "this service's own (#1206, #2028)"
+})
+model PepPoliciesChangedEvent {
+  @eventMember(#{ what: "The remote PEP the change is for: the username of its service account. A PEP ignores an event naming another PEP." })
+  pep: string;
+
+  @eventMember(#{ what: "What moved: \"policies\" (its bound-application scope's token) and/or \"catalogue\" (the AuthZEN attribute catalogue's token)." })
+  changed: string[];
+
+  @eventMember(#{ what: "The new token of what moved: the scope's, or the catalogue's when only the catalogue moved. Never trusted in place of a pull." })
+  sync_token: string;
+}
+
+@event(#{
   uri: "urn:iya:sts:secevent:event-type:announcement",
   family: "sts",
   name: "Announcement",

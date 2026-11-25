@@ -100,6 +100,30 @@
             ],
             "description": "Sent only when the PEP knows it: a lower-case DNS name of at most 253 characters, not an IP address; anything else is 400 STS-XACML-0261.",
             "maxLength": 253
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "container",
+              "embedded"
+            ],
+            "description": "container (the xacml-pep image) or embedded (a PEP inside an authentication library, #2026). Absent is container, so an older PEP is one. Anything else is 400 STS-XACML-0344."
+          },
+          "application": {
+            "type": "string",
+            "description": "An embedded PEP's application: its identifier in the realm's registry. It must be the application the PEP's entry is bound to (stsPepApplication): bound to none is 403 STS-XACML-0340, another or none named 403 STS-XACML-0341. Ignored for a container."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "central",
+              "local"
+            ],
+            "description": "An embedded PEP's mode: central (every decision asked of POST /access/v1/evaluation) or local (the bound application's policies pulled and decided in process). Required for an embedded PEP (400 STS-XACML-0344 otherwise); with a container it is 400 STS-XACML-0343."
+          },
+          "protocolVersion": {
+            "type": "integer",
+            "description": "The PEP protocol version the PEP's package speaks. The service supports 1; any other, or none from an embedded PEP, is 400 STS-XACML-0342."
           }
         },
         "additionalProperties": false
@@ -815,6 +839,40 @@
                 "type": "null"
               }
             ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "container",
+              "embedded"
+            ],
+            "description": "container (the xacml-pep image) or embedded (a PEP inside an authentication library, #2026). Absent keeps the registered kind. Anything else is 400 STS-XACML-0344."
+          },
+          "application": {
+            "type": "string",
+            "description": "An embedded PEP's application: its identifier in the realm's registry. It must be the application the PEP's entry is bound to (stsPepApplication): bound to none is 403 STS-XACML-0340, another or none named 403 STS-XACML-0341. Ignored for a container."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "central",
+              "local"
+            ],
+            "description": "An embedded PEP's mode: central (every decision asked of POST /access/v1/evaluation) or local (the bound application's policies pulled and decided in process). Required for an embedded PEP (400 STS-XACML-0344 otherwise); with a container it is 400 STS-XACML-0343."
+          },
+          "protocolVersion": {
+            "type": "integer",
+            "description": "The PEP protocol version the PEP's package speaks. The service supports 1; any other, or none from an embedded PEP, is 400 STS-XACML-0342."
+          },
+          "policyEvents": {
+            "type": "string",
+            "enum": [
+              "none",
+              "requested",
+              "excluded",
+              "down"
+            ],
+            "description": "An embedded PEP's report (D4 of #1206): whether the stream of the application it is embedded in can carry pep-policies-changed. none: the host has no signal stream and the PEP polls; requested: the stream asks for it; excluded: the application's ssfEvents leaves it out; down: the stream is not running or not healthy. Anything else is 400 STS-XACML-0344."
           }
         },
         "additionalProperties": false,
@@ -900,7 +958,28 @@
         "type": "object",
         "properties": {
           "syncToken": {
-            "type": "string"
+            "type": "string",
+            "description": "The token of what this answer sends: the repository's, or with scope=bound-application the scope's own, which a change outside the application's policies does not move."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "bound-application"
+            ],
+            "description": "Present with scope=bound-application (#2027): the scope answered."
+          },
+          "application": {
+            "type": "string",
+            "description": "With scope=bound-application: the application the PEP is bound to."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "application",
+              "root",
+              "none"
+            ],
+            "description": "With scope=bound-application: where the root row came from. application: the application's own policy (it enforces fine-grained authorization); root: the realm root; none: neither, so the set is empty."
           },
           "root": {
             "anyOf": [
@@ -922,7 +1001,7 @@
             "items": {
               "$ref": "#/components/schemas/PolicyRow"
             },
-            "description": "Every enabled policy but those withheld."
+            "description": "Every enabled policy but those withheld; with scope=bound-application, the application's own policy (or the realm root) marked isRoot, and its reference closure."
           },
           "withheld": {
             "type": "array",
@@ -2575,7 +2654,7 @@
             }
           },
           "400": {
-            "description": "No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "description": "No usable name (STS-XACML-0019), a bad hostname (0261), an unknown kind or an embedded PEP's mode that is neither central nor local (0342), mode with a container (0341) or an unsupported protocolVersion (0340): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2595,7 +2674,7 @@
             }
           },
           "403": {
-            "description": "The gate.",
+            "description": "The gate; or an embedded registration whose entry is bound to no application (STS-XACML-0340) or to another than it names (0339): access_denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2701,7 +2780,7 @@
             }
           },
           "400": {
-            "description": "No name (STS-XACML-0020), a bad hostname (0261) or a value the service cannot hold (0303; see HeartbeatRequest). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "description": "No name (STS-XACML-0020), a bad hostname (0261), a value the service cannot hold (0303; see HeartbeatRequest), or the identity's refusals as at register (0340, 0341, 0342). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2733,7 +2812,7 @@
             }
           },
           "403": {
-            "description": "The gate.",
+            "description": "The gate; or an embedded PEP whose entry is no longer bound to its application (STS-XACML-0340, 0339): access_denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2847,6 +2926,19 @@
             }
           },
           {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "description": "repository (the default): every enabled policy but those withheld. bound-application (#2027): a registered embedded PEP in local mode, bound to the application it registered for, is sent that application's own policy (when it enforces fine-grained authorization; otherwise the realm root) and the reference closure, with a token of its own; anybody else is 403 STS-XACML-0345. Any other value is 400 STS-XACML-0346.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "bound-application"
+              ]
+            }
+          },
+          {
             "name": "pep",
             "in": "query",
             "required": false,
@@ -2885,7 +2977,7 @@
             }
           },
           "400": {
-            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "description": "An unknown scope (STS-XACML-0346): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2917,7 +3009,7 @@
             }
           },
           "403": {
-            "description": "The gate.",
+            "description": "The gate; or scope=bound-application from a caller that is not a registered, bound, local embedded PEP (STS-XACML-0345): access_denied.",
             "content": {
               "application/json": {
                 "schema": {

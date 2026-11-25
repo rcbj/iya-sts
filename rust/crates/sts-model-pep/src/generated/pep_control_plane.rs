@@ -260,6 +260,46 @@ pub mod components {
         pub action: String,
     }
 
+    /// container (the xacml-pep image) or embedded (a PEP inside an authentication
+    /// library, #2026). Absent keeps the registered kind. Anything else is 400
+    /// STS-XACML-0344.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum HeartbeatRequestKind {
+        #[serde(rename = "container")]
+        Container,
+        #[serde(rename = "embedded")]
+        Embedded,
+    }
+
+    /// An embedded PEP's mode: central (every decision asked of POST
+    /// /access/v1/evaluation) or local (the bound application's policies pulled and
+    /// decided in process). Required for an embedded PEP (400 STS-XACML-0344
+    /// otherwise); with a container it is 400 STS-XACML-0343.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum HeartbeatRequestMode {
+        #[serde(rename = "central")]
+        Central,
+        #[serde(rename = "local")]
+        Local,
+    }
+
+    /// An embedded PEP's report (D4 of #1206): whether the stream of the
+    /// application it is embedded in can carry pep-policies-changed. none: the host
+    /// has no signal stream and the PEP polls; requested: the stream asks for it;
+    /// excluded: the application's ssfEvents leaves it out; down: the stream is not
+    /// running or not healthy. Anything else is 400 STS-XACML-0344.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum HeartbeatRequestPolicyEvents {
+        #[serde(rename = "none")]
+        None,
+        #[serde(rename = "requested")]
+        Requested,
+        #[serde(rename = "excluded")]
+        Excluded,
+        #[serde(rename = "down")]
+        Down,
+    }
+
     /// Absent keeps what the service holds; null clears signals, settings and
     /// listeners; a value replaces it. The counters are set, not added. A member
     /// the PEP's entry stores that carries a value the service cannot hold refuses
@@ -305,6 +345,35 @@ pub mod components {
         pub signals: Option<Option<crate::pep_control_plane::components::PepSignals>>,
         #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::double_option")]
         pub listeners: Option<Option<crate::pep_control_plane::components::ListenersReport>>,
+        /// container (the xacml-pep image) or embedded (a PEP inside an
+        /// authentication library, #2026). Absent keeps the registered kind.
+        /// Anything else is 400 STS-XACML-0344.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub kind: Option<HeartbeatRequestKind>,
+        /// An embedded PEP's application: its identifier in the realm's registry.
+        /// It must be the application the PEP's entry is bound to
+        /// (stsPepApplication): bound to none is 403 STS-XACML-0340, another or
+        /// none named 403 STS-XACML-0341. Ignored for a container.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub application: Option<String>,
+        /// An embedded PEP's mode: central (every decision asked of POST
+        /// /access/v1/evaluation) or local (the bound application's policies pulled
+        /// and decided in process). Required for an embedded PEP (400
+        /// STS-XACML-0344 otherwise); with a container it is 400 STS-XACML-0343.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub mode: Option<HeartbeatRequestMode>,
+        /// The PEP protocol version the PEP's package speaks. The service supports
+        /// 1; any other, or none from an embedded PEP, is 400 STS-XACML-0342.
+        #[serde(rename = "protocolVersion", default, skip_serializing_if = "Option::is_none")]
+        pub protocol_version: Option<i64>,
+        /// An embedded PEP's report (D4 of #1206): whether the stream of the
+        /// application it is embedded in can carry pep-policies-changed. none: the
+        /// host has no signal stream and the PEP polls; requested: the stream asks
+        /// for it; excluded: the application's ssfEvents leaves it out; down: the
+        /// stream is not running or not healthy. Anything else is 400
+        /// STS-XACML-0344.
+        #[serde(rename = "policyEvents", default, skip_serializing_if = "Option::is_none")]
+        pub policy_events: Option<HeartbeatRequestPolicyEvents>,
     }
 
     /// By the route's identity.mode. headers: claims (groups and amr are lists; a
@@ -822,17 +891,46 @@ pub mod components {
         pub document: String,
     }
 
+    /// With scope=bound-application: where the root row came from. application: the
+    /// application's own policy (it enforces fine-grained authorization); root: the
+    /// realm root; none: neither, so the set is empty.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum PolicySetSource {
+        #[serde(rename = "application")]
+        Application,
+        #[serde(rename = "root")]
+        Root,
+        #[serde(rename = "none")]
+        None,
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct PolicySet {
+        /// The token of what this answer sends: the repository's, or with
+        /// scope=bound-application the scope's own, which a change outside the
+        /// application's policies does not move.
         #[serde(rename = "syncToken")]
         pub sync_token: String,
+        /// Present with scope=bound-application (#2027): the scope answered.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub scope: Option<String>,
+        /// With scope=bound-application: the application the PEP is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub application: Option<String>,
+        /// With scope=bound-application: where the root row came from. application:
+        /// the application's own policy (it enforces fine-grained authorization);
+        /// root: the realm root; none: neither, so the set is empty.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub source: Option<PolicySetSource>,
         /// The root policy's name. Not read by the PEP, which uses isRoot.
         pub root: Option<String>,
         /// Only when root is null.
         #[serde(rename = "rootNote", default, skip_serializing_if = "Option::is_none")]
         pub root_note: Option<String>,
-        /// Every enabled policy but those withheld.
+        /// Every enabled policy but those withheld; with scope=bound-application,
+        /// the application's own policy (or the realm root) marked isRoot, and its
+        /// reference closure.
         pub policies: Vec<crate::pep_control_plane::components::PolicyRow>,
         /// Names withheld from PEPs: the access and issuance policies and every
         /// policy an application owns.
@@ -999,6 +1097,29 @@ pub mod components {
         PermitBiased,
     }
 
+    /// container (the xacml-pep image) or embedded (a PEP inside an authentication
+    /// library, #2026). Absent is container, so an older PEP is one. Anything else
+    /// is 400 STS-XACML-0344.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum RegisterRequestKind {
+        #[serde(rename = "container")]
+        Container,
+        #[serde(rename = "embedded")]
+        Embedded,
+    }
+
+    /// An embedded PEP's mode: central (every decision asked of POST
+    /// /access/v1/evaluation) or local (the bound application's policies pulled and
+    /// decided in process). Required for an embedded PEP (400 STS-XACML-0344
+    /// otherwise); with a container it is 400 STS-XACML-0343.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum RegisterRequestMode {
+        #[serde(rename = "central")]
+        Central,
+        #[serde(rename = "local")]
+        Local,
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct RegisterRequest {
@@ -1022,6 +1143,27 @@ pub mod components {
         /// characters, not an IP address; anything else is 400 STS-XACML-0261.
         #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::double_option")]
         pub hostname: Option<Option<String>>,
+        /// container (the xacml-pep image) or embedded (a PEP inside an
+        /// authentication library, #2026). Absent is container, so an older PEP is
+        /// one. Anything else is 400 STS-XACML-0344.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub kind: Option<RegisterRequestKind>,
+        /// An embedded PEP's application: its identifier in the realm's registry.
+        /// It must be the application the PEP's entry is bound to
+        /// (stsPepApplication): bound to none is 403 STS-XACML-0340, another or
+        /// none named 403 STS-XACML-0341. Ignored for a container.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub application: Option<String>,
+        /// An embedded PEP's mode: central (every decision asked of POST
+        /// /access/v1/evaluation) or local (the bound application's policies pulled
+        /// and decided in process). Required for an embedded PEP (400
+        /// STS-XACML-0344 otherwise); with a container it is 400 STS-XACML-0343.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub mode: Option<RegisterRequestMode>,
+        /// The PEP protocol version the PEP's package speaks. The service supports
+        /// 1; any other, or none from an embedded PEP, is 400 STS-XACML-0342.
+        #[serde(rename = "protocolVersion", default, skip_serializing_if = "Option::is_none")]
+        pub protocol_version: Option<i64>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1489,11 +1631,21 @@ pub mod get_policies {
     pub const PATH: &str = "/xacml/pep/policies";
     pub const OPERATION_ID: &str = "getPolicies";
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum QueryScope {
+        #[serde(rename = "repository")]
+        Repository,
+        #[serde(rename = "bound-application")]
+        BoundApplication,
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Query {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub since: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub scope: Option<QueryScope>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub pep: Option<String>,
     }

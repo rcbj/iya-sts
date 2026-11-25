@@ -1433,6 +1433,144 @@ Three decisions on the row that each prevent a specific wrong reading:
   Strings and never meets the refusal. `tests/xacml_pep_heartbeat_values.js`
   holds both halves.
 
+## An embedded PEP registers as one, and only for its bound application (#2026)
+
+**Part of #1206 (work item 3; rcbj's D1-D3).** A PEP embedded in an
+application through an authentication library (the `iya-pep-<lang>`
+packages) registers and sends heartbeats on the 1.1.0 path, its own
+service account's DPoP-bound token from `sts-remote-pep`, and says what it
+is: `kind` (`container` | `embedded`), `application`, `mode` (`central` |
+`local`), `protocolVersion`, and on a heartbeat `policyEvents` (`none` |
+`requested` | `excluded` | `down`, D4: whether its application's stream can
+carry `pep-policies-changed`).
+
+* **ABSENT `kind` IS `container`**, so every PEP built before this keeps
+  registering exactly as it did, and its entry is written exactly as it
+  was: the five attributes (`xacmlPepKind`, `xacmlPepApplication`,
+  `xacmlPepMode`, `xacmlPepProtocolVersion`, `xacmlPepPolicyEvents`, OIDs
+  1100-1104) are written only when they say something.
+* **ONE READING, `PepRegistry.identityOf()`**, asked by `xacml.ts`'s
+  `pepIdentity()` on both doors before anything is written: an unknown kind,
+  an embedded mode that is neither, or a `policyEvents` outside the four
+  (`STS-XACML-0344`); `mode` with a container (`0341`); a `protocolVersion`
+  outside `PROTOCOL_VERSIONS` (`{1}`), or none from an embedded PEP
+  (`0340`); all 400. **And the binding** (`xacml_pep_binding.ts`'s `of()`,
+  read only for a PEP that says or was embedded): bound to nothing (`0338`)
+  or to another application than it names (`0339`), 403 `access_denied`.
+  That is what stops a PEP key copied into another application posing as
+  its PEP.
+* **A HEARTBEAT ASKS THE SAME**, an absent member taking the row's value, so
+  a binding an administrator moves or clears refuses the PEP's next
+  heartbeat (the row keeps what it held). A pull's own `heartbeat(name, {})`
+  is not asked: it says nothing about the identity.
+* **`application` ON THE CONSOLE'S ROW STAYS THE BINDING** (`pepsJson()`,
+  #2025); what the PEP registered for is `registeredApplication`, beside
+  `kind`, `mode`, `protocolVersion` and `policyEvents`. The list draws an
+  embedded PEP's application and mode under its name and "not for an
+  embedded PEP" in the listener and proxy columns; its page is the Overview
+  (kind, mode, protocol version, policy-change events, the binding) and
+  Decisions only, with no cluster part: it pulls no settings (the AuthZEN
+  edge is a setting group), binds no listener and runs no reverse proxy or
+  receivers.
+* **AUTHZEN.** A bound embedded PEP on its own `authzen:evaluate` token is
+  admitted to `/access/v1/evaluation` and `/evaluations` as an AUTHZEN_PEPS
+  holder scoped to its binding alone (`authzen/CLAUDE.md`, *Who is asking*;
+  `authzen_caller.ts`). The registration is not consulted there: the
+  binding is the administrator's fact.
+
+`tests/xacml_pep_embedded.js` holds it in process;
+`tests/protocol/sts_xacml_pep_embedded.js` over the wire.
+
+## A local embedded PEP pulls only its application's policies (#2027)
+
+**Part of #1206 (work item 4; rcbj's D3 (b)).** `GET
+/xacml/pep/policies?scope=bound-application` is a `local` embedded PEP's
+pull; no scope, or `repository`, is the pull as it always was, and any
+other scope is 400 `STS-XACML-0346`.
+
+* **ANSWERED ONLY TO A REGISTERED, BOUND, EMBEDDED PEP IN `local` MODE**
+  (`xacml.ts`'s `scopedPull()`): the caller's own row (`pepNameOf()`, the
+  token's or the certificate's name) says `embedded` and `local`, and the
+  application it registered for is the one its entry is bound to now.
+  Anybody else is 403 `STS-XACML-0345`: a container, a `central` PEP (which
+  holds no policy), a PEP never registered, one whose binding moved since it
+  registered. The answer carries an application's own policy, which every
+  other pull withholds.
+* **WHAT IS SENT is `PepRegistry.boundPull()`**: the application's own
+  policy, as the one row marked `isRoot`, when the application ENFORCES
+  fine-grained authorization and its policy is enabled; otherwise the realm
+  root. **Enforcement, not ownership, decides**, because every application
+  created owns a policy and AuthZEN decides a non-enforcing one by the root
+  (`decideAccess()`, #564 P4): a local PEP holding the policy the service
+  does not use would decide differently from a central one. Then the
+  REFERENCE CLOSURE, transitively, among the enabled policies nobody owns:
+  never another application's or a role's policy, never the access or
+  issuance policy (by name, the repository pull's rule). A reference to
+  anything else is left unresolved, which is Indeterminate at the PEP as
+  here. **`decideAccess()` resolves a reference against the same set**
+  (every enabled policy nobody owns, less the access and issuance policies;
+  `XacmlStore.repository(withhold)`, `FgaPep`'s `pepRepository`), so a
+  reference inside an application's own policy decides the same at the
+  service and at a local PEP holding the closure (#1206; until then it was
+  unresolved here, `STS-AUTHZEN-0028`, and decided there). `source` says
+  which entry was sent (`application`, `root`, `none`).
+* **ITS OWN TOKEN**, a digest of exactly what it sends (the scope, the
+  application, the source, each row's name, document and root mark), with
+  the same ETag, `?since=` and `If-None-Match` 304. A change outside the
+  closure, or to another application's policy, does not move it. **A local
+  embedded PEP's row is CURRENT against this token**, not the repository's
+  (`expectedToken()`, one digest per scope per read), and its heartbeat
+  answers this token.
+* **WHAT IT PULLS IS ON THE ROW**: `xacmlPepPullScope` (OID 1105),
+  `repository` or `bound-application`, written by the pull's own
+  `heartbeat()` when it CHANGES and kept across a registration, with one
+  `xacml.pep.scope` audit row per change, so a PEP polling every few seconds
+  is one row. `pullScope` on `/admin-api/xacml/peps` and the PEP page's
+  *Pulls* line.
+
+`tests/xacml_pep_scope.js` holds `boundPull()` in process;
+`tests/protocol/sts_xacml_pep_scope.js` the door over the wire.
+
+## An embedded PEP hears of a change over Shared Signals (#2028)
+
+**Part of #1206 (work item 5; rcbj's D4).** An embedded PEP has no listener
+for the nudge, so `pep-policies-changed` (this service's own type, a row in
+`models/ssf/ssf_events.tsp` and its payload in `ssf/ssf_events.js`) goes to
+the streams its APPLICATION owns, subject the application.
+
+* **WHEN.** `notePepPolicies()` runs after a change that can move what a
+  bound PEP pulls has committed (`afterCommit()`): the store's change
+  observer (beside the nudge, every door), a catalogue row set or removed
+  (`authzen_admin.ts`) and fine-grained enforcement switched
+  (`fga_policies.ts`). `checkPepPolicies()` then works out, for every binding
+  in the realm (`PepBinding.all()`), the token of the PEP's
+  bound-application scope (`boundPull()`) and the catalogue's, and tells the
+  PEPs for which either MOVED, naming which (`changed`).
+* **MOVED AGAINST WHAT.** `pepTokens`, per realm and per process, records
+  what each bound PEP was last sent (its scoped and catalogue pulls) or
+  last checked against. With nothing recorded yet, a `local` PEP's scope is
+  compared with the token its row says it holds; the catalogue is not, so a
+  restart does not send every PEP an event. A `central` PEP is told too (D4:
+  it clears its cached Permits). In a cluster the node that made the change
+  decides; the event is a hint, and a PEP that misses it converges on its
+  fallback poll.
+* **HOW.** `ssf/service_signals.ts`'s `pepPoliciesChanged()` finds `ssf.ts`
+  in the cache, and `ssf.pepPoliciesChanged()` sends one SET to each stream
+  whose owner (`ssf_streams.ts`'s `ownerApplication()`) is the application
+  and which delivers the type. Nothing throws into the change: a failure is
+  `STS-XACML-0348` or `STS-SSF-0166` in the log.
+* **`ssfAllowedEvents` IS RESPECTED.** This service's own events were always
+  allowed past an entry's list because each named nobody; the rule is now
+  the catalogue row's `subject` (`allowedEventsFor()`): one that names a
+  subject, which this is, is withheld unless the list names it.
+* **THE WARNING.** The application's view carries `pepEventsExcluded`: its
+  bound PEPs in `local` mode that will not hear of a change, because the
+  entry's list leaves the type out or the PEP reported `policyEvents:
+  excluded`; the console draws it on the Embedded PEPs tab.
+
+`tests/pep_policies_changed.js` in process;
+`tests/protocol/sts_pep_policies_changed.js` over the wire.
+
 ## A heartbeat writes the entry only when something durable changed (#1882)
 
 **rcbj: "not every PEP heartbeat needs a directory write".** Until

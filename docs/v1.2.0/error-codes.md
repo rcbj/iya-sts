@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6180** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6190** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 80
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 144
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 145
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 48
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 39
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 260
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 269
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -4498,6 +4498,7 @@ Raised from: ssf/.
 | `STS-SSF-0163` | X-Iya-Pep-Name was sent and is not a PEP name: one token of 1 to 128 letters, digits, ".", "_" or "-". A cluster member sends its registered name so its CAEP/RISC stream is its own; a header that is not one is refused rather than read as no header (#1760 phase 3). | HTTP 400 |
 | `STS-SSF-0164` | An Add Subject request on a stream an APPLICATION owns named a person who has no active session on that application, and ssf.applicationStreamScope is active-sessions (#2234): no live sign-on session the application is a relying party of, and no live GNAP grant the person approved to it. The stream would carry nothing about them, so the add is refused rather than ignored (SSF 1.0 section 8.1.3.2). | HTTP 403 access_denied |
 | `STS-SSF-0165` | Whether a person has an active session on an application could not be decided, because the sessions or the GNAP grants could not be read (#2234). The event is withheld from that application's stream, and an Add Subject is refused, rather than sent to a receiver that may not be entitled to it (SSF 1.0 section 10.1). | none (logged); the event is not delivered to that stream |
+| `STS-SSF-0166` | pep-policies-changed could not be built or sent for a remote PEP embedded in an application (#2028). Logged and nothing else: the event is a hint, the policy change it follows has happened, and the PEP converges on its fallback poll. | none (a log line) |
 
 ## STS-RISK
 
@@ -5622,6 +5623,15 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0337` | An embedded PEP's binding could not be written or removed: the directory is not available or refused the write (#2025). Nothing changed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0338` | A policy document was refused at write: a regexp-match function's literal pattern is longer than 1024 characters, uses a backreference, or applies a quantifier to a group that is itself quantified or an alternation, the shape that makes a match take exponential time (#2220). A policy stored before the rule still loads; the console lists the pattern among its problems. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0339` | A regexp-match was Indeterminate at evaluation: its pattern uses a backreference or a nested quantifier (one stored before STS-XACML-0338, written by ldapmodify, or fetched from an attribute), or the value was longer than 4096 characters (#2220). Logged once per pattern; the remote PEP decides alike. | XACML 3.0 section B.8 processing-error (Indeterminate) |
+| `STS-XACML-0340` | A remote PEP registered (or sent a heartbeat) as kind embedded, and its entry is bound to no application (stsPepApplication, set-pep-application): an embedded PEP is admitted only for the application an administrator bound it to (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 access_denied |
+| `STS-XACML-0341` | A remote PEP registered (or sent a heartbeat) as kind embedded naming no application, or an application other than the one its entry is bound to: a PEP key copied into another application cannot pose as that application's PEP (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 access_denied |
+| `STS-XACML-0342` | A remote PEP sent a protocolVersion this service does not support (the supported set is 1), or an embedded PEP sent none (#2026). Nothing was recorded; the PEP's package must be upgraded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
+| `STS-XACML-0343` | A remote PEP sent mode with kind container (or no kind, which is container): central and local are an embedded PEP's modes (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
+| `STS-XACML-0344` | A remote PEP sent a kind that is neither container nor embedded, or registered as embedded with a mode that is neither central nor local, or a policyEvents report outside none, requested, excluded and down (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
+| `STS-XACML-0345` | GET /xacml/pep/policies?scope=bound-application was asked by a caller that is not a registered embedded PEP in local mode bound to the application it registered for (#2027): the pull scoped to an application, which carries that application's own policy, is answered to that application's local PEP and nobody else. Nothing was sent. | GET /xacml/pep/policies: HTTP 403 access_denied |
+| `STS-XACML-0346` | GET /xacml/pep/policies named a scope this service does not have: repository (or none) and bound-application are the two (#2027). | GET /xacml/pep/policies: HTTP 400 invalid_request |
+| `STS-XACML-0347` | Whether an application enforces fine-grained authorization could not be read while building its local PEP's scoped pull (#2027), so the PEP was sent the realm root and its closure, which is what AuthZEN decides the application by when it cannot read it either. Logged. | none (a log line; the pull is answered) |
+| `STS-XACML-0348` | Whether what an embedded remote PEP pulls moved could not be decided after a change to the policies or the AuthZEN catalogue (#2028), so no pep-policies-changed was sent for it. Logged and nothing else: the change itself stands, and the PEP converges on its fallback poll. | none (a log line) |
 
 ## STS-XPEP
 
