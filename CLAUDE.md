@@ -174,8 +174,8 @@ surfaces below are the exceptions, each argued where it lives.
 it MUST NOT authenticate, and what it lacks is attestation (`spiffe/CLAUDE.md`).
 
 Extracted from the [OAuth2/OIDC Debugger](https://idptools.com). **The protocol
-suite is still WRITTEN in that project and a copy of it RUNS here** — see
-*Tests* below.
+suite began as a copy of that project's and is maintained HERE since
+2026-10-23 (#430)** — see *Tests* below.
 
 ## Running it
 
@@ -1026,8 +1026,10 @@ design.
 
 **THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
 `CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
-They bind every `.js` file except the `node-ldapjs` submodule and the
-non-`local` copies in `tests/protocol/`, neither of which may be edited here.
+They bind every `.js` file except the `node-ldapjs` submodule, which may not
+be edited here, and the non-`local` jobs in `tests/protocol/`, which began as
+the parent's copies and keep the parent's style (they are edited here since
+2026-10-23; see *Tests*).
 `common/crypto_impl/` and the eight Kerberos codec modules were on that list
 as the parent's copies until #1280, and are bound like the rest since.
 
@@ -1076,9 +1078,10 @@ as the parent's copies until #1280, and are bound like the rest since.
   and the licence identifier BUSL-1.1 (the Business Source License 1.1 since
   2026-09-30; MIT until then), in the form `LICENSE.md` shows, after a `#!`
   line or `// @ts-check`, in the file's own comment syntax. A file that cannot carry a
-  comment, a vendored copy (the non-`local` jobs in `tests/protocol/`) and
-  third-party material are declared in `REUSE.toml` instead, and never given
-  a header — the parent project's copies stay MIT there. `tests/copyright_notices.js` fails on a missing
+  comment, a job that began as a copy of the parent's (the non-`local` jobs
+  in `tests/protocol/`) and third-party material are declared in
+  `REUSE.toml` instead, and never given a header — the parent's copies stay
+  MIT there, edited here or not. `tests/copyright_notices.js` fails on a missing
   one; `LICENSE.md` says what is not under the BSL, and `reuse lint` is the
   whole-repository check.
 * **The log level is `info` in every appconfig file in `env/`** (2026-09-12),
@@ -1211,8 +1214,9 @@ run was cancelled by the next merge.
 
 ## Tests
 
-**The protocol suite is WRITTEN in the parent project and a COPY of it RUNS here.**
-Those are two claims and keeping them apart is the whole of this section.
+**The protocol suite is maintained HERE.** Some of its jobs began as copies of
+the parent project's and keep that project's MIT licence; since 2026-10-23
+(#430) nothing syncs them, and every job is edited here.
 
 ```bash
 ./docker-npm-test.sh                    # the in-process half, in the tests image (#50)
@@ -1235,10 +1239,14 @@ Where a new test goes, asked in this order:
 2. **Can it be asserted over HTTP against a running service?** Then **`tests/protocol/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
 3. **Otherwise here**: it chooses how the process starts, needs a second container on the service's network, or needs a socket no stack publishes.
 
-**Never edit a vendored copy** — the next
-`node tests/tools/vendor-check.js --sync` overwrites it and the
-fix never reaches the parent. The `local: true` jobs are the inversion, edited
-here only. `tests/protocol/MANIFEST.js` says which is which.
+**The protocol jobs are maintained HERE, every one of them, since 2026-10-23
+(#430).** The non-`local` jobs began as MIT copies of the parent project's
+and keep that licence and the parent's style, but there is no longer a sync:
+`tests/tools/vendor-check.js` is gone, nothing overwrites them, and a fix to
+one is made here like any other change. Port a change back to the parent only
+when a parent test or wire compatibility calls for it.
+`tests/protocol/MANIFEST.js`'s header is the authority, and its `local: true`
+marks the jobs written here from the start.
 
 `tests/CLAUDE.md` carries the job table, the launchers, the modes, the image
 mirror, the coverage run and the rules that are not optional there. **What
