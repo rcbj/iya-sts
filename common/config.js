@@ -10377,6 +10377,22 @@ const SETTINGS = [
                  'and a named authorization server\'s profile can publish ' +
                  'it.' },
 
+  { key: 'oauth2.authorizationDetailsRequirePar',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Accept authorization_details only in a pushed request',
+    env: 'STS_OAUTH2_AUTHORIZATION_DETAILS_REQUIRE_PAR', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT (ASVS 5.0.0 10.4.15, #2185). On, the ' +
+                 'authorization endpoint refuses, with invalid_request and a ' +
+                 '400 on this server, a request that carries RFC 9396 ' +
+                 'authorization_details and did not come through a ' +
+                 'request_uri issued at /oauth2/par, so a rich ' +
+                 'authorization request never travels in the browser\'s ' +
+                 'address. A signed request object passed by value is ' +
+                 'refused too: it travels in the browser as well. A request ' +
+                 'with no authorization_details is not affected; the row ' +
+                 'above makes every request pushed.' },
+
   { key: 'oauth2.parRequestUriLifetimeS', group: 'OAuth 2.0 / OIDC',
     label: 'Pushed request_uri lifetime (seconds)',
     env: 'STS_OAUTH2_PAR_REQUEST_URI_LIFETIME_S', type: 'int', dflt: 60,

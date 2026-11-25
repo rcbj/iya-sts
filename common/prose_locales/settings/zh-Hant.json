@@ -5119,6 +5119,14 @@
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 section 4 的全域原則：授權端點會拒絕任何未攜帶此服務於 /oauth2/par 簽發之 request_uri 的要求，在此伺服器上回應 invalid_request 與 400。以 require_pushed_authorization_requests 發佈。預設為關閉，因為每個傳送一般授權要求的用戶端都會被拒絕。用戶端可以透過其項目上的 oauthRequirePushedAuthorizationRequests（註冊時的 require_pushed_authorization_requests）對自己提出同樣的要求，具名授權伺服器的設定檔也可以發佈它。"
   },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "僅在推送的請求中接受 authorization_details"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "預設關閉（ASVS 5.0.0 10.4.15，#2185）。開啟後，授權端點會在本伺服器上以 invalid_request 與 400 拒絕攜帶 RFC 9396 authorization_details 且未經由 /oauth2/par 簽發之 request_uri 送達的請求，使豐富授權請求永遠不會出現在瀏覽器的網址中。以值傳遞的已簽署請求物件也會被拒絕：它同樣經過瀏覽器。不含 authorization_details 的請求不受影響；上面一列使每個請求都必須推送。"
+  },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
     "text": "推送 request_uri 有效期（秒）"
