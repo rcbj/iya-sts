@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "يحذف نوافذ حد المعدل التي انقضت من الجدول الذي تتشاركه كل العقد."
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "تحديث الأسرار المشتركة"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "يعيد قراءة الأسرار المشتركة من المخزن في هذه العملية، فيُستخدم هنا أي تدوير جرى على أي عقدة."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "تدوير الأسرار المشتركة"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "يُدوِّر كل سر مشترك هو مفتاح (مفاتيح CSRF وnonce الخاص بـ ACME ومستقبِل Shared Signals وصفحة OpenID Federation ونتيجة تسجيل الخروج وDBSC) كل cluster.secretRotationDays: تُنشر قيمة تالية وتصبح الحالية بعد عشر دقائق، ويظل القديم مقبولًا طوال cluster.secretOverlapS. وسرّا الموضوع pairwise واسم التمهيد معرّفان ولا يُدوَّران أبدًا."
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "إعادة التحقق من إقرار Android"
@@ -292,8 +308,8 @@
     "text": "انتهاء صلاحية سر العميل"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "يفحص كل سر عميل لكل تطبيق: صف تدقيق للتطبيق الذي يحمل سرًا تنتهي صلاحيته خلال oauth2.clientSecretExpiryWarningDays، ولمن انتهت صلاحية كل أسراره؛ ويزيل الأسرار المنتهية التي يحتفظ التطبيق إلى جانبها بسر غير منتهٍ — ولا يزيل آخر سر أبدًا، فهو يبقى ويُرفَض في وضع product."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "يفحص كل سر عميل لكل تطبيق: صف تدقيق للتطبيق الذي يحمل سرًا تنتهي صلاحيته خلال oauth2.clientSecretExpiryWarningDays، ولمن انتهت صلاحية كل أسراره؛ ويزيل الأسرار المنتهية التي يحتفظ التطبيق إلى جانبها بسر غير منتهٍ — ولا يزيل آخر سر أبدًا، فهو يبقى ويُرفَض في وضع product. ويُدوِّر أولًا سر كل تطبيق مدرج في oauth2.clientSecretAutoRotate تنتهي صلاحيته خلال oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",

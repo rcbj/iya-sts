@@ -482,13 +482,24 @@ class SsfReceivers {
     return held;
   }
 
-  private receiverToken(surface?) {
+  private receiverToken(surface?, secret?) {
     const { log, realms, stsCrypto } = this.deps;
     log.debug("Entering SsfReceivers.receiverToken().");
     log.debug("Leaving SsfReceivers.receiverToken().");
     return 'Bearer ' + stsCrypto.deriveSharedCredential(
-      this.internalSecret(), 'ssf-internal-receiver', realms.currentId(),
-          surface.id);
+      secret || this.internalSecret(), 'ssf-internal-receiver',
+      realms.currentId(), surface.id);
+  }
+
+  // Every token a poll may present (#2220): one under each value of the
+  // secret a verifier accepts, the current one first.
+  private receiverTokens(surface?) {
+    const { log, clusterSecrets } = this.deps;
+    log.debug("Entering SsfReceivers.receiverTokens().");
+    const secrets = typeof clusterSecrets.texts === 'function'
+      ? clusterSecrets.texts('ssf-receiver') : [this.internalSecret()];
+    log.debug("Leaving SsfReceivers.receiverTokens().");
+    return secrets.map((secret) => this.receiverToken(surface, secret));
   }
 
   // ---------------------------------------------------------------------------
@@ -1232,8 +1243,8 @@ class SsfReceivers {
     log.debug("Entering SsfReceivers.authorizesPoll().");
     const surface = this.surfaceOf(record && record.internalSurface);
     const ok = !!surface && this.enabled() &&
-               this.sameSecret(String(presented || ''),
-                               this.receiverToken(surface));
+               this.receiverTokens(surface).some((token) =>
+                 this.sameSecret(String(presented || ''), token));
     log.debug("Leaving SsfReceivers.authorizesPoll(). " + ok);
     return ok;
   }

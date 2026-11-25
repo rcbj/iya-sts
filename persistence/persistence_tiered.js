@@ -65,7 +65,8 @@ const log = bunyan.createLogger({ name: 'sts-persistence-tiered' });
 const GLOBAL_METHODS = [
   'loadRealms', 'saveRealms', 'loadOverrides', 'saveOverrides',
   'loadKeys', 'loadDekRows', 'saveKeys', 'deleteKeys', 'loadKey',
-  'mergeKeys', 'ensureSharedSecret',
+  'mergeKeys', 'ensureSharedSecret', 'readSharedSecret',
+  'replaceSharedSecret',
   // THE USED-ASSERTION HISTORY IS GLOBAL (#98): an RFC 7523 or 7522
   // assertion is accepted once EVER (rule 3ae), and every cell answers on
   // the same public name — a history per cell would accept it once per cell.

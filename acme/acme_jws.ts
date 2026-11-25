@@ -741,7 +741,7 @@ class AcmeJws {
    * @param random - the random bytes
    * @returns the 16-byte MAC
    */
-  nonceMac(realmId, expiresS, random) {
+  nonceMac(realmId, expiresS, random, secret?) {
     const { log, stsCrypto, cells } = this.deps;
     log.debug("Entering AcmeJws.nonceMac().");
     // **BOUND TO THE CELL THAT ISSUED IT (#98), IN A SERVICE DEPLOYED AS
@@ -759,7 +759,7 @@ class AcmeJws {
     // single-cell service folds in nothing, so its nonces are unchanged.
     const scope = String(realmId || '') +
                   (cells.isMulti() ? '\ncell:' + cells.id() : '');
-    const mac = stsCrypto.deriveSharedCredential(this.nonceSecret(),
+    const mac = stsCrypto.deriveSharedCredential(secret || this.nonceSecret(),
                                                  'acme-nonce',
                                                  scope,
                                                  String(expiresS),
@@ -814,8 +814,17 @@ class AcmeJws {
     const expiresS = bytes.readUInt32BE(1);
     const random = bytes.subarray(5, 21);
     const presented = bytes.subarray(21, 37);
-    const expected = this.nonceMac(realmId, expiresS, random);
-    if (!stsCrypto.bytesEqualConstantTime(presented, expected)) {
+    // UNDER ANY VALUE A VERIFIER ACCEPTS (#2220): a nonce minted just
+    // before a rotation is still good after it.
+    const { clusterSecrets } = this.deps;
+    const secrets = typeof clusterSecrets.texts === 'function'
+      ? clusterSecrets.texts('acme-nonce') : [this.nonceSecret()];
+    const self = this;
+    const matches = secrets.some(function (secret) {
+      return stsCrypto.bytesEqualConstantTime(presented,
+        self.nonceMac(realmId, expiresS, random, secret));
+    });
+    if (!matches) {
       log.debug("Leaving AcmeJws.checkNonce(). Not one this service issued " +
                 "here.");
       return { ok: false, reason: 'forged' };

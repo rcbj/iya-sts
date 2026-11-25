@@ -87,6 +87,22 @@
     "en": "772463775db370a2",
     "text": "从所有节点共享的表中删除已过去的速率限制窗口。"
   },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "共享机密刷新"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "从存储中重新读取本进程的共享机密，使任何节点上进行的轮换在此处生效。"
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "共享机密轮换"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "每隔 cluster.secretRotationDays 轮换属于密钥的每个共享机密（CSRF、ACME nonce、Shared Signals 接收方、OpenID Federation 页面、退出结果和 DBSC 密钥）：发布下一个值，十分钟后使其成为当前值，旧值在 cluster.secretOverlapS 内仍被接受。成对主体机密和引导名称机密是标识符，永不轮换。"
+  },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
     "text": "Android 证明重新检查"
@@ -292,8 +308,8 @@
     "text": "客户端密钥过期"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "检查每个应用的每个客户端密钥：对持有将在 oauth2.clientSecretExpiryWarningDays 内过期密钥的应用，以及所有密钥均已过期的应用，各写一条审计记录；并在应用同时持有未过期密钥时移除其过期密钥——绝不移除其最后一个，该密钥保留下来，并在产品模式中被拒绝。"
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "检查每个应用的每个客户端密钥：对持有将在 oauth2.clientSecretExpiryWarningDays 内过期密钥的应用，以及所有密钥均已过期的应用，各写一条审计记录；并在应用同时持有未过期密钥时移除其过期密钥——绝不移除其最后一个，该密钥保留下来，并在产品模式中被拒绝。首先，它会轮换 oauth2.clientSecretAutoRotate 中列出且将在 oauth2.clientSecretAutoRotateDays 内过期的每个应用的密钥。"
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",

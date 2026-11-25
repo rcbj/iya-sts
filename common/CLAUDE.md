@@ -11,6 +11,7 @@ more than one family needs it, not because it felt general.
 | `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
 | `subject_urn.ts` | **THE NAMES A LEAF GIVES ITS HOLDER, DEFINED ONCE (#1827, 2026-11-16).** `SubjectUrn`: the one table of `urn:sts:<form>:` prefixes (person, sa, application, federation, cell, device), `forPerson()`, `forHolder()`, `parse()` (bare or `URI:`), `namesIn()`, `namesPerson()`, `isServiceAccountForm()`, `sameHolder()`. A static utility class and a leaf (`bunyan`, `config`). See *3df*. |
 | `csv_cell.ts` | **`CsvCell.of()`, EVERY CSV CELL THIS SERVICE WRITES (#2138).** A string whose first character is `=`, `+`, `-`, `@`, tab, CR or NUL gets a single quote in front (OWASP's CSV injection guidance, ASVS 5.0.0 1.2.10), then RFC 4180 quoting. A JavaScript number or bigint is never prefixed, so a negative count stays a number; the string `-5` is prefixed. Used by `report/formats.ts` and `passkey_report.ts`'s export; a new CSV writer uses it too. A static utility class. |
+| `pattern_safety.js` | **`PatternSafety.problem()`, THE BOUND ON A REGULAR EXPRESSION SOMEBODY ELSE WROTE (#2220, ASVS 5.0.0 1.3.12).** Too long (the caller's number), a backreference, or a quantifier on a group that is itself quantified or an alternation (`nestedQuantifier()`, the exponential shape on a backtracking engine) — read on the source text, erring towards refusing; compiling is the caller's question, in its dialect. Federation's `fedSubjectPattern`, XACML's regexp-match (save and evaluation), the two SPIFFE pattern settings (`config.js`'s `csvPatterns` rows) and an RFC 9396 type's schema patterns (`applications.js`'s `accessTypeWriteProblem()`). JavaScript, not TypeScript, because `config.js` reads it on the host. A static utility class with no logger. |
 | `image_metadata.ts` | **`ImageMetadata.stripped()`, A PUBLISHED IMAGE WITHOUT ITS METADATA (#2140).** The JPEG and PNG writers `profile_photo.ts` had (#719), moved here so the sign-in logo (`branding.ts`) uses them too, and a WebP writer for the logo. Each walks the container and keeps the listed segments or chunks; one it cannot walk answers null and the caller refuses. A JPEG ends at its FIRST end marker since #2140 (the last kept an appended MPF image and its EXIF), and an APP2 is kept only as an ICC profile. A library with no route, requiring only `helpers`, so 6a-brand and 6a-photo each require it without moving anything. A static utility class. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
 | `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
@@ -7947,15 +7948,21 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   `secrets.PREVIOUS_KEK`, restart-only) is read at start beside the new key; a
   service DEK that unwraps only under it is re-wrapped and its row written
   (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
-  wrapped under the old refuses (`STS-KEYS-0091`). **Cell keys are not covered**
-  — a rotated cell key has no previous-key descriptor yet.
+  wrapped under the old refuses (`STS-KEYS-0091`). **A cell key is rotated the
+  same way since #2220**: `keys.previousCellKek*` (`secrets.PREVIOUS_CELL_KEK`,
+  no fallback, refused without a cell key, `STS-CELL-0213`) is read beside the
+  new cell key, and `unwrapWithRotation()` tries each scope's OWN previous key
+  — the service key's for `service`, the cell key's for this cell's scope.
 * **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's
   tag) was HKDF of the KEK, so a rotated KEK would have changed every digest.
   Where DEKs are stored it is one random key of its own, class `keyed-digest`
   in the service scope's default-realm row, FIRST WRITER WINS in the merge
   (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
   rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
-  is kept — nothing a digest names outlives the process there.
+  is kept — nothing a digest names outlives the process there. **Not rotating
+  it is a decision (#2220), not a gap**: it is a blind-index key, every digest
+  it makes is stored and looked up again, and a new key would orphan all of
+  them; the KEK it is wrapped under rotates instead (`keystore.js` argues it).
 * **THE HMAC KEY EACH LABEL DERIVES IS KEPT (#760, 2026-10-20)**, beside the
   input it came from (the digest key, or the KEK's bytes), which is compared
   on every call: HKDF ran per digest, and the minted store asks one for every

@@ -518,6 +518,7 @@
   "a3.factIntrospection": "Mga introspection claim",
   "a3.factLimits": "Limits schema",
   "a3.limitsRefused": "wala: tinatanggihan ang limits",
+  "a3.writeWouldRefuse": "NAKA-SAVE BAGO ANG MAS MAHIGPIT NA PATAKARAN: ginagamit pa rin ito gaya ng pagkakasulat, at tatanggihan ang pag-save nito ngayon",
   "a3.factInteraction": "Interaction (phase 6)",
   "a3.consentForcedBy": "; pinipilit ang pahintulot ng ",
   "a3.factAcr": "Antas ng authentication (phase 6)",

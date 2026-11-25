@@ -27,7 +27,7 @@ use crate::model::{Bag, XacmlError, XacmlResult};
 use crate::policy::Expression;
 use crate::value::Value;
 
-pub use xsd_regex::xml_schema_regex;
+pub use xsd_regex::{bounded_match, xml_schema_regex};
 
 /// What a parameter (or a return) is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

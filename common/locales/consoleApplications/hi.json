@@ -518,6 +518,7 @@
   "a3.factIntrospection": "Introspection दावे",
   "a3.factLimits": "सीमा स्कीमा",
   "a3.limitsRefused": "कोई नहीं: सीमाएँ अस्वीकृत हैं",
+  "a3.writeWouldRefuse": "एक सख़्त नियम से पहले सहेजा गया: इसका उपयोग अब भी लिखे अनुसार होता है, और आज इसे सहेजना अस्वीकार कर दिया जाएगा",
   "a3.factInteraction": "सहभागिता (चरण 6)",
   "a3.consentForcedBy": "; सहमति इनसे बाध्य ",
   "a3.factAcr": "प्रमाणीकरण स्तर (चरण 6)",

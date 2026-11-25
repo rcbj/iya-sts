@@ -156,7 +156,8 @@ interface WebSecurityDeps {
   config: { value(key: string): any };
   crypto: { constantTimeEquals(a: string, b: string): boolean };
   errorCodes: typeof errorCodes;
-  clusterSecrets: { get(name: string): Buffer };
+  clusterSecrets: { get(name: string): Buffer;
+                   keys?: (name: string) => Buffer[] };
   clusterCounters: typeof clusterCounters;
   clientAddress: { clientAddressOf(req: any): string };
   // The rate-limit buckets, the module-scope store below.
@@ -377,7 +378,16 @@ class WebSecurity {
                        'service drew.' },
                              'STS-HTTP-0015');
     }
-    const same = crypto.constantTimeEquals(presented, this.tokenFor(id));
+    // UNDER ANY KEY A VERIFIER ACCEPTS (#2220): the current CSRF key, a
+    // published next one, and the previous one while its overlap lasts, so
+    // a form drawn before a rotation still posts after it.
+    const { clusterSecrets } = this.deps;
+    const candidates = typeof clusterSecrets.keys === 'function'
+      ? clusterSecrets.keys('csrf') : [clusterSecrets.get('csrf')];
+    const same = candidates.some(function (key) {
+      return crypto.constantTimeEquals(presented,
+        String(stsCrypto.hmac('sha256', key, id, 'base64url')));
+    });
     log.debug("Leaving WebSecurity.checkCsrf().");
     return same
       ? { ok: true, reason: 'verified' }

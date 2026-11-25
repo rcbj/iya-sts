@@ -1772,6 +1772,13 @@ one per value: a bare name, or a JSON definition such as
 
 written on the console, through `/admin-api`, or proposed by the RFC 9728
 import from a resource's `authorization_details_types_supported`.
+**A definition written since 1.2.0 is held to a subset** (#2220): its
+`schema` may use only the keywords a `limits` schema may (below), and every
+`pattern` in either is at most 1024 characters, with no backreference and no
+quantifier applied to a group that is itself quantified or an alternation,
+and must compile (`STS-REG-0374`). A definition stored before then is still
+used as it is; the application's Access types tab marks it, and
+`/admin/mode`'s `access-type-schemas` row lists it, until it is rewritten.
 `authorization_details_types_supported` in both discovery documents is
 `openid_credential` plus every declared type in the realm. A named
 authorization server may publish a narrower list, and a client may register

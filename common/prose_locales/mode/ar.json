@@ -119,6 +119,18 @@
     "en": "01bf0ea288cde1c4",
     "text": "ترفض قاعدة protocol-not-declared في سياسة الإصدار إصدارًا عبر عائلة بروتوكول لم يُعلَن التطبيق لها (STS-XACML-0084): ID Token لتطبيق أُعلن لـ OAuth 2.0 وحده، وتأكيد SAML لتطبيق أُعلن لـ OpenID Connect. لا يُرفض تطبيق لم يُعلَن لأي شيء."
   },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "يُقيَّد JSON Schema لنوع الوصول بمجموعة جزئية، وكل نمط من أنماطه بحدّ"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "التعريف المكتوب عبر وحدة التحكم أو واجهة برمجة الإدارة يُبقي مخططه ضمن الكلمات المفتاحية التي يجوز لمخطط الحدود استخدامها، وكل نمط ضمن الحد المفروض على التعبير النمطي؛ ويُرفض ما عدا ذلك (STS-REG-0374). والتعريف المحفوظ قبل تلك القاعدة لا يزال يُستخدم كما حُفظ، ويُبلغ هذا الصف عن ASVS 5.0.0 1.3.12 بأنه غير مستوفى له."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "الأمر نفسه."
+  },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
     "text": "لا يُمنح حق وصول GNAP إلا من نوع يعلنه فهرس أنواع الوصول"

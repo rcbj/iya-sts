@@ -1339,7 +1339,10 @@ class SigningRotation {
                 'within oauth2.clientSecretExpiryWarningDays, and for one ' +
                 'whose every secret has expired; and removes the expired ' +
                 'secrets an application holds an unexpired one beside — ' +
-                'never its last, which stays and is refused in product.',
+                'never its last, which stays and is refused in product. ' +
+                'First it rotates the secret of every application listed ' +
+                'in oauth2.clientSecretAutoRotate that expires within ' +
+                'oauth2.clientSecretAutoRotateDays.',
       owner: 'common/signing_rotation.ts',
       kind: 'cluster', scope: 'realm',
       everyMs: function (): number {
@@ -1353,7 +1356,9 @@ class SigningRotation {
           ctx.nowMs()).then(function (done: Json): Json {
           return { expiring: done.expiring.length,
                    expired: done.expired.length,
-                   cleared: done.cleared.length };
+                   cleared: done.cleared.length,
+                   rotated: (done.rotated || []).length,
+                   rotationFailed: (done.rotationFailed || []).length };
         });
       }
     });
