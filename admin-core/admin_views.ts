@@ -1504,9 +1504,10 @@ class AdminViews {
    * Describes the gate for a request the management API authenticated.
    *
    * @param caller - the API gate's caller: `kind`, `name`, `realm`, `roles`
+   * @param heldRoles - optional; what its subject holds as well (#2200)
    * @returns the gate state, in `gateStateFor()`'s shape
    */
-  apiGateStateOf(caller) {
+  apiGateStateOf(caller, heldRoles?) {
     const { log, config, realms, rbac } = this.deps;
     log.debug("Entering AdminViews.apiGateStateOf().");
     const identityRealm = String(caller.realm || realms.DEFAULT_ID);
@@ -1515,7 +1516,15 @@ class AdminViews {
     const outsideRealm = authority === 'realm' &&
                          realms.currentId() !== identityRealm;
     // SECURITY_ADMIN is the roster's `security` (#645), which implies read.
-    const roles = (caller.roles || []).map(function (role) {
+    // WHAT THE PERSON HOLDS, NOT WHAT THIS TOKEN CARRIES (#2200, #2168's
+    // `holds`): the console's first token is a read token, and a view draws
+    // the write controls its reader may use — a write is one second
+    // authorization away, and the operation still refuses it without the
+    // scope (`insufficient_scope`). `heldRoles` is the gate's
+    // `adminApiHeldRoles()`, the token's own roles and what its subject
+    // holds; without it, the token's roles as before.
+    const source = Array.isArray(heldRoles) ? heldRoles : (caller.roles || []);
+    const roles = source.map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
         : (role === 'ADMIN_WRITE' ? 'write'
           : (role === 'SECURITY_ADMIN' ? 'security'
@@ -1559,7 +1568,9 @@ class AdminViews {
     log.debug("Entering AdminViews.gateStateFor().");
     if (req && req.adminApiCaller) {
       log.debug("Leaving AdminViews.gateStateFor(). The API's caller.");
-      return this.apiGateStateOf(req.adminApiCaller);
+      return this.apiGateStateOf(req.adminApiCaller,
+        typeof req.adminApiHeldRoles === 'function'
+          ? req.adminApiHeldRoles() : null);
     }
     // THE MODE, since 2026-09-06, where this read `admin.authRequired`. That
     // setting is gone: "is authentication required here" had four answers

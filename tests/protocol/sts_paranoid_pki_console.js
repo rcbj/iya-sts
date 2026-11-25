@@ -26,6 +26,12 @@ const { Builder, By, logging } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const credentials = require("../tools/pep-credential.js");
+// What the console asks for after a Save — a recent sign-in (#2173), the
+// write scope by a popup (#2189) — completed as an administrator would
+// (#2196).
+const consoleSteps = require("./console_steps.js");
+// A password the person holds as their own (#2160).
+const ownPassword = require("./own_password.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -429,8 +435,30 @@ async function press(driver, form, button) {
   log.debug("Leaving press().");
 }
 
+// THE STEPS AFTER A PRESS (#2196), completed by `console_steps.js`; set in
+// test() once there is a driver.
+let steps = null;
+
+// Whether the browser has the answer to this trust action: a response for
+// its path that is not a challenge (`challenge` false), or one that is —
+// a 401 or a 403, which the step after it sends again (`challenge` true).
+function answered(driver, action, challenge) {
+  log.debug("Entering answered().");
+  log.debug("Leaving answered().");
+  return driver.executeScript(
+    "const path = '/admin-api/pki/trust/' + arguments[0];" +
+    "return performance.getEntriesByType('resource')" +
+    ".some(function (one) { return one.name.endsWith(path) &&" +
+    " ([401, 403].indexOf(one.responseStatus) >= 0) === arguments[1]; });",
+    action, !!challenge).catch(function (e) {
+      log.debug("Caught in answered(): " + ((e && e.message) || e));
+      return false;
+    });
+}
+
 // Submits the form on the open tab that holds this field.
-async function submitFormHolding(driver, tab, selector, fields, answerMs) {
+async function submitFormHolding(driver, tab, selector, fields, answerMs,
+                                 pressedAgain) {
   log.debug("Entering submitFormHolding(). " + selector);
   await driver.wait(async function () {
     return (await driver.findElements(
@@ -452,7 +480,27 @@ async function submitFormHolding(driver, tab, selector, fields, answerMs) {
   // What the page loaded is read and dropped, so the record a failure
   // reports holds only what the press started.
   await networkSince(driver);
+  const start = await steps.before();
   await press(driver, form, button);
+  // WHAT THE CONSOLE ASKS FOR FIRST (#2196): a popup, a Continue, a sign-in
+  // again, done as the person does it. A page that left to sign in sent
+  // nothing, and is pressed again.
+  const stepped = await steps.after(start, {
+    settled: function () {
+      return answered(driver, action, false);
+    },
+    stepping: function () {
+      return answered(driver, action, true);
+    }
+  });
+  if (stepped.leftToSignIn && !pressedAgain) {
+    await waitForDrawn(driver);
+    log.info("the " + action + " form was not sent: the console signed in " +
+             "again on the page. Pressed again.");
+    await submitFormHolding(driver, tab, selector, fields, answerMs, true);
+    log.debug("Leaving submitFormHolding(). Pressed again.");
+    return;
+  }
   // UNTIL THE ANSWER HAS ARRIVED, NOT FOR A FIXED TIME. The console fetches the
   // API document before it sends a form, about 0.8s on an idle stack. After a
   // fixed 1.5s on a busy machine the next read found Remove not yet done, and
@@ -504,12 +552,23 @@ async function submitFormHolding(driver, tab, selector, fields, answerMs) {
 async function test() {
   log.debug("Entering test().");
   log.info("/admin/pki/trust at " + base);
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): typed by an administrator it
+  // is temporary in product, so it is a temporary one, and the person
+  // chooses PASSWORD (`own_password.js`).
+  const temporary = ownPassword.temporaryFor(PASSWORD);
   const created = await api("POST", "/admin-api/users/create", {
     username: USER, invent: false,
     attributes: { cn: USER, givenName: "Paranoid", sn: "Console",
                   mail: USER + "@paranoid.test" },
-    credential: "password", password: PASSWORD });
+    credential: "password", password: temporary });
   assert.ok(created.status === 200, created.raw.slice(0, 300));
+  await ownPassword.chooseOwn(base, USER, temporary, PASSWORD,
+    function (who, value) {
+      log.debug("Entering setPassword().");
+      log.debug("Leaving setPassword().");
+      return api("POST", "/admin-api/users/set-password",
+                 { user: who, password: value });
+    });
   const granted = await api("POST", "/admin-api/rbac/grant",
                             { username: USER, role: "write" });
   assert.strictEqual(granted.status, 200, granted.raw.slice(0, 300));
@@ -532,6 +591,12 @@ async function test() {
   browserFlags.addBrowserAccessFlags(options, base);
   const driver = await new Builder().forBrowser("chrome")
       .setChromeOptions(options).build();
+  steps = consoleSteps.forDriver(driver, {
+    credentials: function () {
+      return { username: USER, password: PASSWORD };
+    },
+    log: log
+  });
   try {
     await signIn(driver);
 

@@ -75,6 +75,12 @@ const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const credentials = require("../tools/pep-credential.js");
+// What the console asks for after a Save — a recent sign-in (#2173), the
+// write scope by a popup (#2189) — completed as an administrator would
+// (#2196).
+const consoleSteps = require("./console_steps.js");
+// A password the person holds as their own (#2160).
+const ownPassword = require("./own_password.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -322,12 +328,32 @@ async function evidence(driver) {
   return String(shown);
 }
 
+// THE STEPS AFTER A PRESS (#2196), completed by `console_steps.js`; set in
+// test() once there is a driver.
+let steps = null;
+
+// Whether the press marked `arguments[1]` has been answered: a drawn frame
+// that is not the marked one. Runs in the browser.
+const FRAME_ANSWERED = `
+  const frame = document.querySelector('.shell');
+  if (document.readyState !== 'complete' || !frame) { return false; }
+  if (frame[arguments[0]] === arguments[1]) { return false; }
+  const lede = document.querySelector('p.lede');
+  if (lede && /^Signing in/.test(lede.textContent)) { return false; }
+  return !!document.querySelector('.pagehead');
+`;
+
 // THE PRESS IS SEEN TO BE ANSWERED: the console frame is marked, the button
 // pressed in the same script, and the wait is for a drawn frame that is not
 // the marked one (`sts_xacml_editor.js`'s arrangement). `find` is a script
 // body answering the element to press, or a string saying why there is none.
-async function pressAndWait(driver, find, args, what) {
+//
+// WHAT THE CONSOLE ASKS FOR FIRST (#2196) — a popup, a Continue, a sign-in
+// again — is done in between as the person does it, and a page that left to
+// sign in, which sent nothing, is pressed again.
+async function pressAndWait(driver, find, args, what, pressedAgain) {
   log.debug("Entering pressAndWait(). " + what);
+  const start = await steps.before();
   const token = STAMP + "-" + crypto.randomBytes(6).toString("hex");
   const pressed = await driver.executeScript(
     "const found = (function () { " + find + " }).apply(null, " +
@@ -339,15 +365,26 @@ async function pressAndWait(driver, find, args, what) {
     "frame[arguments[0]] = arguments[1];" +
     "found.click(); return '';", PRESS_MARK, token, args || []);
   assert.strictEqual(pressed, "", what + ": " + pressed);
+  const stepped = await steps.after(start, {
+    settled: function () {
+      return driver.executeScript(FRAME_ANSWERED, PRESS_MARK, token)
+        .catch(function (e) {
+          log.debug("Caught in pressAndWait(): " + ((e && e.message) || e));
+          return false;
+        });
+    }
+  });
+  if (stepped.leftToSignIn && !pressedAgain) {
+    await waitForDrawn(driver);
+    log.info(what + " was not sent: the console signed in again on the " +
+             "page. Pressed again.");
+    await pressAndWait(driver, find, args, what, true);
+    log.debug("Leaving pressAndWait(). Pressed again.");
+    return;
+  }
   await driver.wait(async function () {
-    const done = await driver.executeScript(`
-      const frame = document.querySelector('.shell');
-      if (document.readyState !== 'complete' || !frame) { return false; }
-      if (frame[arguments[0]] === arguments[1]) { return false; }
-      const lede = document.querySelector('p.lede');
-      if (lede && /^Signing in/.test(lede.textContent)) { return false; }
-      return !!document.querySelector('.pagehead');
-    `, PRESS_MARK, token).catch(function (e) {
+    const done = await driver.executeScript(FRAME_ANSWERED, PRESS_MARK,
+                                            token).catch(function (e) {
       // A document being replaced under the probe: asked again.
       log.debug("Caught in pressAndWait(): " + ((e && e.message) || e));
       return false;
@@ -1306,11 +1343,22 @@ async function setUp() {
                  "(#2096); the runner removes it once the job passes.",
     overrides: { "global.mode": "development" }
   });
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): typed by an administrator it
+  // is temporary in product, so it is a temporary one, and the person
+  // chooses PASSWORD (`own_password.js`).
+  const temporary = ownPassword.temporaryFor(PASSWORD);
   await apiOk("POST", "/admin-api/users/create", {
     username: USER, invent: false,
     attributes: { cn: USER, givenName: "Cert", sn: "Editors",
                   mail: USER + "@cert-editors.test" },
-    credential: "password", password: PASSWORD });
+    credential: "password", password: temporary });
+  await ownPassword.chooseOwn(base, USER, temporary, PASSWORD,
+    function (who, value) {
+      log.debug("Entering setPassword().");
+      log.debug("Leaving setPassword().");
+      return api("POST", "/admin-api/users/set-password",
+                 { user: who, password: value });
+    });
   await apiOk("POST", "/admin-api/rbac/grant",
               { username: USER, role: "write" });
   await apiOk("POST", realmPath("/admin-api/users/create"), {
@@ -1398,6 +1446,12 @@ async function test() {
     browserFlags.addBrowserAccessFlags(options, base);
     driver = await new Builder().forBrowser("chrome")
         .setChromeOptions(options).build();
+    steps = consoleSteps.forDriver(driver, {
+      credentials: function () {
+        return { username: USER, password: PASSWORD };
+      },
+      log: log
+    });
     await signIn(driver);
     await theProfilesEditor(driver, root);
     await thePemList(driver, anchor);

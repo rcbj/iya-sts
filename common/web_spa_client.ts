@@ -146,6 +146,13 @@ class SpaClient extends WebPage {
   // The step in progress (#2168), so two writes pressed together share one
   // second authorization; null when none is.
   protected stepping: Json;
+  // THE REALM WHOSE AUTHORIZATION SERVER ISSUED THE TOKENS IN HAND (#1038,
+  // #2200): its prefix, null until a runtime records one. A runtime whose
+  // realm switcher keeps the token while the page moves to another realm
+  // (the console's, the reports application's) goes on asking THIS realm
+  // for every token — a refresh, a second authorization (#2168) — while
+  // the pages and the API calls name the realm on screen.
+  protected issuerPrefix: string | null;
 
   /**
    * Makes the client.
@@ -178,6 +185,7 @@ class SpaClient extends WebPage {
     this.writeScopes = (options.writeScopes || []).slice(0);
     this.freshScopes = (options.freshScopes || []).slice(0);
     this.stepping = null;
+    this.issuerPrefix = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -626,6 +634,31 @@ class SpaClient extends WebPage {
   // --- the authorization server --------------------------------------------
   // (This realm's address for a path, `url()`, is `WebPage`'s.)
 
+  /**
+   * The address of a path at the realm that issued the tokens in hand
+   * (`issuerPrefix`, #2200): the authorization server's endpoints, the
+   * callback a token is redeemed at, and the resource a token is for. The
+   * realm on screen's where none was recorded, or it is that realm.
+   *
+   * @param path - `/oauth2/token`, `/admin/callback`, `/admin-api`
+   * @returns the absolute URL
+   */
+  issuerUrl(path: string): string {
+    if (this.issuerPrefix === null || this.issuerPrefix === this.prefix) {
+      return this.url(path);
+    }
+    // `url()` is a runtime's (the reports application's reads its own
+    // fields), so it is asked with the issuer's prefix in place, and the
+    // prefix put back before anything else can run.
+    const here = this.prefix;
+    this.prefix = this.issuerPrefix;
+    try {
+      return this.url(path);
+    } finally {
+      this.prefix = here;
+    }
+  }
+
   // A token endpoint answer with `error: use_dpop_nonce` is retried once
   // with the nonce it sent (RFC 9449 section 8).
   /**
@@ -635,7 +668,7 @@ class SpaClient extends WebPage {
    * @returns the response's JSON and status
    */
   async tokenRequest(form: Json): Promise<Json> {
-    const endpoint = this.url('/oauth2/token');
+    const endpoint = this.issuerUrl('/oauth2/token');
     // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and an answer
     // that comes back after one is not kept.
     const identity = this.identity;
@@ -696,7 +729,7 @@ class SpaClient extends WebPage {
     let json: Json = {};
     try {
       const res = await this.env.fetch(
-        this.url('/.well-known/oauth-authorization-server'),
+        this.issuerUrl('/.well-known/oauth-authorization-server'),
         { headers: { 'Accept': 'application/json' } });
       json = res.status === 200 ? await res.json() : {};
     } catch (e) {
@@ -708,7 +741,7 @@ class SpaClient extends WebPage {
     // server it was fetched from. One that does not is ignored, as if none had
     // answered.
     const meta = json || {};
-    const expected = String(this.url('')).replace(/\/+$/, '');
+    const expected = String(this.issuerUrl('')).replace(/\/+$/, '');
     this.metadata = meta.issuer && String(meta.issuer) !== expected ? {} : meta;
     return this.metadata;
   }
@@ -737,7 +770,7 @@ class SpaClient extends WebPage {
    * @returns the URL to send the browser to
    */
   async authorizationRequestUrl(params: Json): Promise<string> {
-    const authorize = this.url('/oauth2/authorize');
+    const authorize = this.issuerUrl('/oauth2/authorize');
     const meta = await this.asMetadata();
     // JARM WHERE THE REALM OFFERS NOTHING ELSE (FAPI 2.0 Message Signing,
     // which leaves only the JWT-secured modes in `response_modes_supported`):
@@ -759,7 +792,7 @@ class SpaClient extends WebPage {
       return authorize + '?' + SpaClient.formOf(params);
     }
     const endpoint = String(meta.pushed_authorization_request_endpoint ||
-                            this.url('/oauth2/par'));
+                            this.issuerUrl('/oauth2/par'));
     // NO DPoP PROOF ON THE PUSH: a proof there binds the authorization code
     // to its key (RFC 9449 section 10), and the key is this page load's —
     // the callback is another page load, with another key that cannot
@@ -913,7 +946,7 @@ class SpaClient extends WebPage {
     let keys: Json[] = [];
     try {
       const res = await this.env.fetch(String(meta.jwks_uri ||
-        this.url('/oauth2/jwks')),
+        this.issuerUrl('/oauth2/jwks')),
         { headers: { 'Accept': 'application/json' } });
       keys = ((await res.json()) || {}).keys || [];
     } catch (e) {
