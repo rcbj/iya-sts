@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "無法完成該要求。",
   "gnap.tooManyCodes": "從此處嘗試的代碼過多。{detail}",
   "gnap.wrongOrigin": "此操作應由本服務的頁面傳送：該要求攜帶了{carried, select, none {空的 Origin} other {其他來源}}。",
+  "limits.tooManyActs": "您在短時間內執行此操作的次數過多。請等待 {seconds} 秒後再試一次。",
   "logout.accountNotSignedIn": "該帳戶已不再於此瀏覽器中登入。請重新選擇。",
   "logout.accountsOff": "此信任領域不會在每個瀏覽器中保留多個已登入帳戶（authn.multipleAccounts 已關閉），因此沒有可選擇的帳戶。",
   "logout.chooseAccount": "請選擇一個帳戶，或所有帳戶。",

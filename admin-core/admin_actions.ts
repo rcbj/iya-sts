@@ -971,6 +971,13 @@ const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 const PKI_TRUST_ACTIONS = ['add', 'remove', 'recheck', 'set-row'];
 
 /**
+ * The actions `namedTruststoresAction()` answers (#2118): named truststores
+ * and the use cases assigned them.
+ */
+const NAMED_TRUSTSTORE_ACTIONS = ['show', 'create', 'delete', 'add', 'remove',
+                                  'assign', 'unassign'];
+
+/**
  * The actions `spiffeEntriesAction()` answers.
  */
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
@@ -12183,6 +12190,325 @@ class AdminActions {
   }
 
   /**
+   * One certificate of a truststore as `/admin-api/truststores` answers it:
+   * the members the model names and no others, its PEM only when asked for.
+   *
+   * @param one - a row `common/truststores.ts` described
+   * @param withPem - whether the PEM goes in
+   * @returns the row
+   */
+  static truststoreCertificate(one, withPem: boolean) {
+    helpers.log.debug("Entering AdminActions.truststoreCertificate().");
+    const row: any = {
+      kind: String(one.kind || ''), subject: String(one.subject || ''),
+      issuer: String(one.issuer || ''), notBefore: Number(one.notBefore) || 0,
+      notAfter: Number(one.notAfter) || 0,
+      fingerprint256: String(one.fingerprint256 || '')
+    };
+    if (withPem) {
+      row.pem = String(one.pem || '');
+    }
+    if (one.unadmittable) {
+      row.unadmittable = String(one.unadmittable);
+    }
+    helpers.log.debug("Leaving AdminActions.truststoreCertificate().");
+    return row;
+  }
+
+  /**
+   * One truststore's row as `/admin-api/truststores` answers it, from a row
+   * `truststores.stores()` or `store()` gave: the members the model names,
+   * with the use cases that trust it.
+   *
+   * @param one - the row
+   * @param usedBy - the use cases that trust it in this realm
+   * @returns the row
+   */
+  static truststoreRow(one, usedBy: string[]) {
+    helpers.log.debug("Entering AdminActions.truststoreRow().");
+    const row: any = {
+      name: String(one.name || ''), kind: String(one.kind || ''),
+      scope: String(one.scope || ''), readOnly: !!one.readOnly,
+      description: String(one.description || ''),
+      anchors: Number(one.anchors) || 0,
+      intermediates: Number(one.intermediates) || 0,
+      problem: String(one.problem || ''), usedBy: (usedBy || []).slice()
+    };
+    if (one.kind === 'named') {
+      row.addedBy = String(one.addedBy || '');
+    }
+    if (one.kind === 'spiffe') {
+      row.trustDomain = String(one.trustDomain || '');
+      row.jwtKeys = Array.isArray(one.jwtKeys) ? one.jwtKeys.length :
+        Number(one.jwtKeys) || 0;
+    }
+    helpers.log.debug("Leaving AdminActions.truststoreRow().");
+    return row;
+  }
+
+  /**
+   * One truststore with what it holds, as the `show` action and the System
+   * truststore tab answer it. `withPem: false` leaves every certificate's PEM
+   * out, which is what keeps node's own store (about 150 roots) a page and
+   * not a bundle (rcbj, 2026-11-24); `common/truststores.ts`'s `store()` is
+   * not changed for it.
+   *
+   * @param realmId - the realm
+   * @param name - the truststore
+   * @param options - `{ withPem }`, true where omitted
+   * @returns the truststore, or null where the realm can name none so
+   */
+  truststoreShown(realmId: string, name: string, options?: any) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.truststoreShown(). " + name);
+    // Lazily: a library this module is loaded long before.
+    const truststores = require('../common/truststores');
+    const withPem = !(options && options.withPem === false);
+    const held = truststores.store(realmId, name);
+    if (!held) {
+      log.debug("Leaving AdminActions.truststoreShown(). None.");
+      return null;
+    }
+    const out: any = AdminActions.truststoreRow(held,
+      truststores.usedBy(realmId, name));
+    out.certificates = (held.certificates || []).map(function (one) {
+      return AdminActions.truststoreCertificate(one, withPem);
+    });
+    // A JWK's PUBLIC members only, the closed model's: a bundle's key may
+    // carry members of its own, and none of them is a page's business.
+    const JWK_MEMBERS = ['kty', 'use', 'kid', 'alg', 'crv', 'x', 'y', 'n',
+                         'e', 'x5c', 'x5t', 'x5t#S256'];
+    out.jwks = (Array.isArray(held.jwtKeys) ? held.jwtKeys : [])
+      .map(function (key) {
+        const jwk: any = { kty: String((key && key.kty) || '') };
+        JWK_MEMBERS.forEach(function (name) {
+          if (name !== 'kty' && key && key[name] !== undefined) {
+            jwk[name] = name === 'x5c' ? [].concat(key[name]).map(String)
+              : String(key[name]);
+          }
+        });
+        return jwk;
+      });
+    log.debug("Leaving AdminActions.truststoreShown(). " +
+              out.certificates.length + " certificate(s).");
+    return out;
+  }
+
+  /**
+   * Answers `/admin-api/truststores/:action` (#2118 phase 4): named
+   * truststores and the use cases assigned them, on Protocols → PKI trust's
+   * Truststores and Use cases tabs. Every refusal carries the engine's own
+   * STS-PKI-03xx code (`common/truststores.ts`), recorded and never sent:
+   * the answer is `{ ok: false, errors }`. Every write is an audit row
+   * naming truststores, use cases and fingerprints, never certificate text.
+   *
+   * A SERVICE-WIDE USE CASE IS ASSIGNED FROM THE DEFAULT REALM ONLY. The
+   * engine writes such an assignment in the default realm whichever realm is
+   * ambient, because a handshake or an outbound dial has no realm in hand
+   * (D2); a realm's own administrator is confined to the realm (#32), so
+   * this layer refuses the write rather than let one realm change what every
+   * other realm's dials trust.
+   *
+   * @param body - `{ action, name, description, certificates, fingerprint,
+   *   useCase, truststores, withPem }`
+   * @param context - `{ actor, via }`
+   * @returns a promise of the answer
+   */
+  async namedTruststoresAction(body: IyaApi.AdminActionBody<
+    '/admin-api/truststores'>, context) {
+    const { log, auditLog } = this.deps;
+    log.debug("Entering AdminActions.namedTruststoresAction().");
+    const self = this;
+    const asked: any = body || {};
+    const action = String(asked.action || '');
+    const actor = String((context || {}).actor || '');
+    const via = String((context || {}).via || 'console');
+    if (NAMED_TRUSTSTORE_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). Unknown " +
+                "action.");
+      return this.refused('STS-ADMIN-0956', { ok: false, errors: [
+        'Unknown action "' + action + '". The seven are: ' +
+        NAMED_TRUSTSTORE_ACTIONS.join(', ') + '.'] });
+    }
+    // Lazily: libraries, loaded long after this module.
+    const truststores = require('../common/truststores');
+    const UseCases = require('../common/truststore_use_cases');
+    const realmId = realms.currentId();
+    const name = String(asked.name || '').trim();
+    const record = function (summary: string, detail: any): void {
+      log.debug("Entering record().");
+      auditLog.audit({ action: 'admin.pki.truststore.change', actor: actor,
+                       protocol: 'PKI', channel: 'http', target: realmId,
+                       summary: summary + ' through the ' + via,
+                       detail: Object.assign({ via: via }, detail) });
+      log.debug("Leaving record().");
+    };
+    // The engine's refusal, `{ ok, code, why }`, as this API answers one:
+    // the sentence sent, the code recorded.
+    const refusal = function (result: any, fallback: string): any {
+      log.debug("Entering refusal().");
+      log.debug("Leaving refusal().");
+      return self.refused(String((result && result.code) || '') ||
+                          errorCodes.codeOf(result) || fallback,
+                          { ok: false, errors: [String((result &&
+                            result.why) || 'Nothing was changed.')] });
+    };
+    if (action === 'show') {
+      const shown = this.truststoreShown(realmId, name, {
+        withPem: !(asked.withPem === false ||
+                   String(asked.withPem) === 'false') });
+      if (!shown) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). show: " +
+                  "none.");
+        return this.refused('STS-PKI-0301', { ok: false, errors: [
+          'This realm can name no truststore "' + name + '".'] });
+      }
+      log.debug("Leaving AdminActions.namedTruststoresAction(). show.");
+      return { ok: true, truststore: shown };
+    }
+    if (action === 'create') {
+      const made = truststores.create(realmId, {
+        name: name, description: String(asked.description || ''),
+        addedBy: actor });
+      if (!made.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). create " +
+                  "refused.");
+        return refusal(made, 'STS-ADMIN-0957');
+      }
+      record('The truststore ' + name + ' was created',
+             { action: 'create', name: name });
+      log.debug("Leaving AdminActions.namedTruststoresAction(). created.");
+      return { ok: true, name: name,
+               message: 'The truststore "' + name + '" was created.' };
+    }
+    if (action === 'delete') {
+      const gone = truststores.remove(realmId, name);
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). delete " +
+                  "refused.");
+        return refusal(gone, 'STS-ADMIN-0957');
+      }
+      record('The truststore ' + name + ' was deleted',
+             { action: 'delete', name: name });
+      log.debug("Leaving AdminActions.namedTruststoresAction(). deleted.");
+      return { ok: true, name: name,
+               message: 'The truststore "' + name + '" was deleted.' };
+    }
+    if (action === 'add') {
+      const text = Array.isArray(asked.certificates)
+        ? asked.certificates.map(String).join('\n')
+        : String(asked.certificates || '');
+      const result = await truststores.addCertificates(realmId, name, text,
+                                                       { addedBy: actor });
+      const refusals = (result.refused || []).map(function (one) {
+        return String(one.why || '');
+      });
+      if (!result.added.length && !result.duplicates) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). add " +
+                  "refused.");
+        return this.refused(errorCodes.codeOf(result) ||
+                            ((result.refused || [])[0] || {}).code ||
+                            'STS-ADMIN-0957',
+                            { ok: false, errors: refusals.length ? refusals :
+                              ['Nothing was added.'] });
+      }
+      if (result.added.length) {
+        // A detail value is a string of at most 200 characters
+        // (`common/audit.js`), so three fingerprints fit whole and a longer
+        // list is cut with its length named; `count` is always whole.
+        record('The truststore ' + name + ' was given ' +
+               result.added.length + ' certificate(s)', {
+          action: 'add', name: name, count: result.added.length,
+          fingerprints: result.added.map(function (one) {
+            return String(one.fingerprint256 || '');
+          }).join(' ')
+        });
+      }
+      log.debug("Leaving AdminActions.namedTruststoresAction(). added.");
+      return { ok: true, name: name,
+               added: result.added.map(function (one) {
+                 return AdminActions.truststoreCertificate(one, false);
+               }),
+               duplicates: result.duplicates,
+               refused: (result.refused || []).map(function (one) {
+                 return { subject: String(one.subject || ''),
+                          why: String(one.why || '') };
+               }),
+               message: 'Added ' + result.added.length + ', ' +
+                 result.duplicates + ' already held' +
+                 (refusals.length ? '; refused: ' + refusals.join('; ') : '') +
+                 '.' };
+    }
+    if (action === 'remove') {
+      const fingerprint = String(asked.fingerprint || '')
+        .replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+      const gone = truststores.removeCertificate(realmId, name, fingerprint);
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). remove " +
+                  "refused.");
+        return refusal(gone, 'STS-ADMIN-0957');
+      }
+      record('A certificate was removed from the truststore ' + name,
+             { action: 'remove', name: name, fingerprint: fingerprint });
+      log.debug("Leaving AdminActions.namedTruststoresAction(). removed.");
+      return { ok: true, name: name, fingerprint: fingerprint,
+               message: 'Removed from "' + name + '".' };
+    }
+    // assign and unassign.
+    const useCase = String(asked.useCase || '').trim();
+    const row = UseCases.get(useCase);
+    if (!row || !UseCases.assignable(row)) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). Not " +
+                "assignable.");
+      return refusal(truststores.assignmentProblem(useCase, ['system'],
+                                                   realmId), 'STS-PKI-0303');
+    }
+    // #2148: an outbound use case may be overridden by a realm, for its own
+    // dials; every other service-wide one is the default realm's.
+    if (row.scope === 'service' && !UseCases.overridable(row) &&
+        realmId !== realms.DEFAULT_ID) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). A " +
+                "service-wide use case from a realm.");
+      return this.refused('STS-PKI-0302', { ok: false, errors: [
+        '"' + useCase + '" is decided with no realm in hand and trusts the ' +
+        'same truststores in every realm, so it is assigned from the ' +
+        'default realm only.'] });
+    }
+    let list: string[] = [];
+    if (action === 'assign') {
+      list = (Array.isArray(asked.truststores) ? asked.truststores :
+        String(asked.truststores || '').split(/[\s,]+/))
+        .map(function (one) {
+          return String(one || '').trim();
+        }).filter(Boolean);
+      if (!list.length) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). An " +
+                  "empty list.");
+        return refusal(truststores.assignmentProblem(useCase, list, realmId),
+                       'STS-PKI-0303');
+      }
+    }
+    const done = truststores.assign(realmId, useCase, list);
+    if (!done.ok) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). " + action +
+                " refused.");
+      return refusal(done, 'STS-ADMIN-0957');
+    }
+    const now = truststores.namesFor(useCase, realmId).names;
+    record(action === 'assign'
+      ? 'The use case ' + useCase + ' was assigned ' + now.join(', ')
+      : 'The use case ' + useCase + ' was returned to its default',
+    { action: action, useCase: useCase, names: now.join(', ') });
+    log.debug("Leaving AdminActions.namedTruststoresAction(). " + action +
+              ".");
+    return { ok: true, useCase: useCase, names: now,
+             message: action === 'assign'
+               ? '"' + useCase + '" now trusts ' + now.join(', ') + '.'
+               : '"' + useCase + '" trusts its default again: ' +
+                 now.join(', ') + '.' };
+  }
+
+  /**
    * Adds an anchor to the client-certificate truststore, or removes one; an add
    * is persisted where a store is installed, and the result says which.
    *
@@ -13562,6 +13888,9 @@ export = {
   truststoreAction: slot.forward('truststoreAction'),
   pkiTrustAction: slot.forward('pkiTrustAction'),
   PKI_TRUST_ACTIONS: PKI_TRUST_ACTIONS,
+  NAMED_TRUSTSTORE_ACTIONS: NAMED_TRUSTSTORE_ACTIONS,
+  namedTruststoresAction: slot.forward('namedTruststoresAction'),
+  truststoreShown: slot.forward('truststoreShown'),
   KERBEROS_PRINCIPAL_ACTIONS: KERBEROS_PRINCIPAL_ACTIONS,
   kerberosPrincipalsAction: slot.forward('kerberosPrincipalsAction'),
   KERBEROS_TRUST_ACTIONS: KERBEROS_TRUST_ACTIONS,

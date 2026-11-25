@@ -1300,7 +1300,9 @@ Swedish. Chinese is drawn in English, and the page adds
 
 The body is `{ "error", "error_description" }`. `error` is the public
 token. The description is one English sentence. The `STS-REPORT-` code
-is recorded and logged. It is not in the body.
+is recorded and logged. It is not in the body. A refusal whose sentence is
+a catalog message also carries `messages: [{ key, params }]`, which the
+`/report` page draws in its own language.
 
 | Token | HTTP | When |
 |---|---|---|
@@ -1320,6 +1322,7 @@ is recorded and logged. It is not in the body.
 | `job_not_ready` | 409 | The result was asked for before the job completed. |
 | `result_expired` | 410 | The artifact aged out, or the job completed and the bytes are gone. |
 | `too_many_jobs` | 429 | This person or this realm already has as many queued and running jobs as the queue allows. |
+| `too_many_requests` | 429 | This caller has spent its budget of expensive acts: more queries or previews, jobs queued, definitions run and results downloaded than `report.actsPerSubject` allows in `report.actWindowS` (240 in ten minutes by default in product mode; off in development). `Retry-After` says how many seconds remain. Counted by the token's subject, so other callers are not affected, and the lists, definitions and a job's status can still be read (`STS-REPORT-0062`). |
 | `unavailable` | 400 | A report could not be completed. The code's own note says 500; this API answers 400. |
 
 `GET` or `HEAD` is the only method on `/report` itself. Anything else is

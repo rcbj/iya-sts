@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "The request could not be completed.",
   "gnap.tooManyCodes": "Too many codes have been tried from here. {detail}",
   "gnap.wrongOrigin": "This operation is sent by a page of this service: the request carried {carried, select, none {no Origin} other {another origin}}.",
+  "limits.tooManyActs": "You have done that too many times in a short while. Wait {seconds} seconds and try again.",
   "logout.accountNotSignedIn": "That account is not signed in in this browser any more. Choose again.",
   "logout.accountsOff": "This trust realm does not keep several signed-in accounts per browser (authn.multipleAccounts is off), so there is no account to choose.",
   "logout.chooseAccount": "Choose an account, or every account.",

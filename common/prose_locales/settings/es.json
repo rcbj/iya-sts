@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "Hace cuánto, como máximo, en minutos, debe haber iniciado sesión alguien para cambiar cómo inicia sesión una persona. En el portal: sus segundos factores, códigos de recuperación, llaves de acceso, contraseñas de aplicación, certificados, claves de firma, identificadores autoemitidos, dirección de correo o una oferta de credencial para la cartera, y cerrar sus otras sesiones; primero se la envía a iniciar sesión de nuevo. Para un administrador: cambiar la contraseña, el segundo factor, la llave de acceso, los códigos de recuperación, la dirección de correo o las contraseñas de aplicación de una persona a través de la consola o de /admin-api, que responde con insufficient_user_authentication de RFC 9470. Lo mismo se aplica cuando un administrador concede o retira un rol, crea, cambia o elimina un dominio de confianza, actúa sobre la PKI, las claves de firma, la clave de cifrado de claves o los destinos de envío de secretos, o cambia cualquier ajuste (#2161). 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Cambios de cuenta por persona y ventana"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Cuántos cambios puede hacer una persona con sesión iniciada en su propia cuenta a través de /account-api (el portal) en una ventana de account.writeWindowS: ediciones del perfil, credenciales registradas o eliminadas, consentimientos retirados, cambios de dispositivos. Se cuenta por el sujeto del token, no por dirección, de modo que las personas detrás de una misma dirección no lo comparten. Por encima, un cambio se rechaza con 429 y Retry-After hasta que pase la ventana; la lectura de la cuenta continúa. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 300 de forma predeterminada."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Ventana de cambios de cuenta (segundos)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "La ventana en la que se cuenta account.writesPerSubject, en segundos. Una ventana fija, como todo límite de frecuencia aquí."
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "Permitir una contraseña predeterminada de la base de datos en modo producto"
@@ -346,6 +362,22 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Añade includeSubDomains a Strict-Transport-Security, para que los navegadores usen HTTPS en todos los subdominios del nombre de host de este servicio. Activado por defecto en modo producto. Desactívelo si un subdominio debe seguir respondiendo por HTTP sin cifrar."
+  },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Mostrar la compilación exacta a quienes no son administradores"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Si la versión exacta, el número de compilación, la hora de compilación y el commit aparecen donde alguien que no es administrador puede leerlos: el pie de cada página, las API de inicio de sesión, del portal y de informes y sus documentos OpenAPI, y el User-Agent de las solicitudes que este servicio hace a los socios. auto, el valor por defecto, los muestra en modo desarrollo y los oculta en modo producto, donde los documentos indican en su lugar la versión propia de la API y el User-Agent es solo el nombre del producto; on y off lo imponen en cualquier modo. La consola y la API de administración siempre muestran la compilación."
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Solicitar la inclusión en la lista de precarga de HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Añade preload a Strict-Transport-Security, que solo envía el modo producto, para que el nombre de host pueda enviarse a la lista de precarga de los navegadores en hstspreload.org. La precarga compromete todo el dominio registrable y cada subdominio a usar HTTPS en todos los navegadores, y salir de la lista lleva meses. Solo se envía mientras Aplicar HSTS a los subdominios está activado."
   },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
@@ -3027,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "La mitad RFC 8705 de la fila anterior, en las mismas superficies: un token de acceso presentado debe llevar `cnf[\"x5t#S256\"]` y la conexión debe llevar ese certificado. **Necesita que el puerto principal esté enlazado como HTTPS** (global.https), y la escucha del depurador empezó a PEDIR un certificado de cliente el 2026-09-15 para que allí pueda presentarse siquiera un token vinculado — se pide, nunca se exige. A un token que este servicio no emitió se le aplica la misma regla: la vinculación que lleva se comprueba aunque el propio token no pueda verificarse."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Emitir solo tokens de acceso restringidos al remitente"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA, y pensado para quedarse así salvo que todos los clientes del dominio puedan vincular sus tokens (ASVS 5.0.0 10.3.5 y 10.4.14, #2183). Activado, el endpoint de token emite un token de acceso solo a una solicitud que lo vincule: una prueba DPoP (RFC 9449) o el certificado de cliente de la conexión (RFC 8705), cualquiera de los dos, para cada tipo de concesión. El endpoint de autorización rechaza un response_type que emitiría un token en el navegador (`token` implícito e híbrido), que nunca podría vincularse. Un cliente que no envía ninguno se rechaza con invalid_dpop_proof nombrando este ajuste. Las dos filas anteriores rechazan un token sin vincular en los recursos; esta se niega a emitirlo."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Registro dinámico de clientes abierto (modo producto)"
@@ -3096,8 +3136,8 @@
     "text": "Vigencia del secreto de cliente (días)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. CERO, el valor predeterminado, es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
+    "en": "0282a861551627b6",
+    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. El valor predeterminado es 365 días (ASVS 5.0.0 13.3.4); CERO es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -5086,6 +5126,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "La política global de RFC 9126 sección 4: el endpoint de autorización rechaza, con invalid_request y un 400 en este servidor, toda solicitud que no lleve un request_uri emitido por este servicio en /oauth2/par. Se publica como require_pushed_authorization_requests. DESACTIVADO de forma predeterminada, porque se rechazaría a todo cliente que envía una solicitud de autorización plana. Un cliente puede exigirse lo mismo con oauthRequirePushedAuthorizationRequests en su entrada (require_pushed_authorization_requests en el registro), y el perfil de un servidor de autorización con nombre puede publicarlo."
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "Aceptar authorization_details solo en una solicitud enviada por PAR"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA (ASVS 5.0.0 10.4.15, #2185). Activado, el endpoint de autorización rechaza, con invalid_request y un 400 en este servidor, una solicitud que lleva authorization_details de RFC 9396 y no llegó mediante un request_uri emitido en /oauth2/par, de modo que una solicitud de autorización enriquecida nunca viaja en la dirección del navegador. También se rechaza un objeto de solicitud firmado pasado por valor: también viaja en el navegador. Una solicitud sin authorization_details no se ve afectada; la fila anterior hace que toda solicitud sea enviada por PAR."
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
@@ -7866,6 +7914,14 @@
   "krb5.pkinitRequireFreshness|description": {
     "en": "77b517dda5eb4231",
     "text": "Si una solicitud PKINIT debe llevar un token de frescura de RFC 8070 — uno que este KDC emitió en KDC_ERR_PREAUTH_REQUIRED dentro del desfase de reloj. Es lo que impide que un AuthPack firmado de antemano con una tarjeta inteligente prestada se use más tarde. MIT Kerberos 1.17 y posteriores y Heimdal envían uno cuando se les pide. ADVERTENCIA: desactivado, una solicitud PKINIT queda sujeta solo a su propia marca de tiempo y a la comprobación de repetición."
+  },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT exige paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Indica si una solicitud PKINIT debe llevar el paChecksum2 de Microsoft (MS-PKCA sección 2.2.3): el SHA-256, SHA-384 o SHA-512 del cuerpo de la solicitud, junto al paChecksum SHA-1 que exige la RFC 4556. Un paChecksum2 enviado se comprueba en cualquier caso, y uno sobre SHA-1 se rechaza en modo producto. Desactivado de forma predeterminada, porque MIT Kerberos no lo envía; Windows 11 y Windows Server 2022 23H2 y posteriores sí. Activado, un cliente que no lo envíe —incluido PKINIT anónimo— se rechaza con KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
   },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
@@ -12474,6 +12530,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Cuántos trabajos de informe puede tener en ejecución a la vez una persona."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Ejecuciones y descargas de informes por persona y ventana"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Cuántas acciones costosas puede hacer quien llama a la Reports API en una ventana de report.actWindowS: una consulta o vista previa ad hoc, un trabajo en cola, una definición guardada ejecutada, un resultado descargado. Se cuenta por el sujeto del token, no por dirección. Por encima, tal acción se rechaza con 429 y Retry-After hasta que pase la ventana; las listas y las definiciones se pueden seguir leyendo. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 240 de forma predeterminada."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Ventana de acciones de informes (segundos)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "La ventana en la que se cuenta report.actsPerSubject, en segundos. Una ventana fija, como todo límite de frecuencia aquí."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

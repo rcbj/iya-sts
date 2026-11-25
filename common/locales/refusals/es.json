@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "No se pudo completar la solicitud.",
   "gnap.tooManyCodes": "Se han probado demasiados códigos desde aquí. {detail}",
   "gnap.wrongOrigin": "Esta operación la envía una página de este servicio: la solicitud traía {carried, select, none {ningún Origin} other {otro origen}}.",
+  "limits.tooManyActs": "Ha hecho eso demasiadas veces en poco tiempo. Espere {seconds} segundos e inténtelo de nuevo.",
   "logout.accountNotSignedIn": "Esa cuenta ya no tiene la sesión iniciada en este navegador. Vuelva a elegir.",
   "logout.accountsOff": "Este dominio de confianza no mantiene varias cuentas con sesión iniciada por navegador (authn.multipleAccounts está desactivado), así que no hay ninguna cuenta que elegir.",
   "logout.chooseAccount": "Elija una cuenta, o todas las cuentas.",

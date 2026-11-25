@@ -587,6 +587,18 @@
     "en": "0a4ee080bb81a76f",
     "text": "SAML 2.0, SAML 1.1 या WS-Federation द्वारा व्यक्ति को अनुप्रयोग में साइन इन करने से पहले प्रति अनुप्रयोग एक बार पूछा जाता है, और उत्तर रखा जाता है। saml2.ssoConsent, saml11.ssoConsent और wsfed.ssoConsent इसे प्रति प्रोटोकॉल बंद करते हैं, और अनुप्रयोग का अपना मान उन्हें अधिलेखित करता है।"
   },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "सटीक बिल्ड केवल व्यवस्थापकों को दिखाया जाता है"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "हर पृष्ठ फ़ुटर, साइन-इन, पोर्टल और रिपोर्ट API और उनके OpenAPI दस्तावेज़ संस्करण, बिल्ड संख्या, बिल्ड समय और commit रखते हैं, और इस सेवा के हर अनुरोध का User-Agent संस्करण बताता है।"
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "इनमें से कोई भी बिल्ड नहीं रखता: फ़ुटर में संस्करण की पंक्ति नहीं होती, OpenAPI दस्तावेज़ API का अपना संस्करण बताता है, और User-Agent केवल उत्पाद का नाम होता है। कंसोल और प्रबंधन API अब भी बिल्ड दिखाते हैं। security.publishBuildInfo को on करने पर यह फिर दिखता है।"
+  },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
     "text": "बैकएंड रहस्य किसी सीक्रेट स्टोर से आते हैं"

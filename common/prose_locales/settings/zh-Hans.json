@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "要更改某人的登录方式，必须在多少分钟内登录过。在门户上：本人的第二因素、恢复代码、通行密钥、应用密码、证书、签名密钥、自签发 ID、电子邮件地址或钱包凭据提供，以及结束本人的其他会话；须先重新登录。对管理员而言：通过控制台或 /admin-api 更改某人的密码、第二因素、通行密钥、恢复代码、电子邮件地址或应用密码，/admin-api 会以 RFC 9470 的 insufficient_user_authentication 作答。管理员授予或移除角色，创建、更改或删除信任域，操作 PKI、签名密钥、密钥加密密钥或机密推送目标，或更改任何设置时，同样如此（#2161）。0 表示不要求，这是开发模式的默认值。产品模式默认 15。"
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "每人每个时间窗口的账户更改次数"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "一位已登录的人在 account.writeWindowS 时间窗口内可通过 /account-api（门户）对自己账户进行的更改次数：资料编辑、注册或移除凭据、撤回同意、设备更改。按令牌的 subject 计数，而不是按地址，因此同一地址后的人不会共享此额度。超过后，更改会以 429 和 Retry-After 拒绝，直到时间窗口结束；读取账户不受影响。0 表示不限制，这是开发模式的默认值。产品模式默认为 300。"
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "账户更改时间窗口（秒）"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "计数 account.writesPerSubject 的时间窗口，单位为秒。与这里的每个速率限制一样，是固定窗口。"
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "在产品模式下允许默认数据库密码"
@@ -346,6 +362,22 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
+  },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "向非管理员显示确切的构建"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "确切的版本、构建号、构建时间和 commit 是否出现在管理员以外的人可以读到的地方：每个页面的页脚、登录、门户和报表 API 及其 OpenAPI 文档，以及此服务向合作方发出的请求的 User-Agent。auto（默认）在开发模式下显示，在产品模式下隐藏；产品模式下文档改为给出 API 自身的版本，User-Agent 只有产品名称；on 和 off 在任一模式下强制设定。控制台和管理 API 始终显示构建。"
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "申请加入 HSTS 预加载列表"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "在 Strict-Transport-Security 中添加 preload(仅产品模式发送该标头),以便可以在 hstspreload.org 将主机名提交到浏览器的预加载列表。预加载会使整个可注册域及其每个子域在所有浏览器中都只能使用 HTTPS,而退出该列表需要数月。仅在“对子域应用 HSTS”开启时发送。"
   },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
@@ -3027,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "上一行的 RFC 8705 部分，作用于同样的界面：出示的访问令牌必须携带 `cnf[\"x5t#S256\"]`，连接必须携带该证书。**它需要主端口以 HTTPS 绑定**（global.https），而调试器的监听器自 2026-09-15 起开始请求客户端证书，使绑定的令牌能够在那里出示——只是请求，从不强制要求。本服务未签发的令牌也受同样规则约束：即使令牌本身无法验证，也会检查其携带的绑定。"
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "仅签发发送方约束的访问令牌"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "默认关闭，除非该域的每个客户端都能绑定其令牌，否则应保持关闭（ASVS 5.0.0 10.3.5 和 10.4.14，#2183）。开启后，令牌端点只向能绑定令牌的请求签发访问令牌：DPoP 证明（RFC 9449）或连接的客户端证书（RFC 8705），二者任一，适用于每种授权类型。授权端点拒绝会在浏览器中签发令牌的 response_type（隐式和混合 `token`），因为这种令牌永远无法绑定。两者都不发送的客户端会被以 invalid_dpop_proof 拒绝，并指明此设置。上面两行在资源处拒绝未绑定的令牌；这一行拒绝签发它。"
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "开放动态客户端注册（产品模式）"
@@ -3096,8 +3136,8 @@
     "text": "客户端密钥有效期（天）"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "本服务生成或接收的每个客户端密钥的有效期（天），因而也是 RFC 7591 第 3.2.1 节为在 POST /oauth2/register 注册的客户端发布的 `client_secret_expires_at`——也是生成或接收的每个密钥（重新生成、轮换、添加的密钥、在控制台上输入的值）的默认值，除非添加表单指定了其他值，或创建表单为应用的第一个密钥指定了其他值。零（默认）即该节自己的“永不过期”。它在每个密钥创建时写入，之后的更改不会改变它。"
+    "en": "0282a861551627b6",
+    "text": "本服务生成或接收的每个客户端密钥的有效期（天），因而也是 RFC 7591 第 3.2.1 节为在 POST /oauth2/register 注册的客户端发布的 `client_secret_expires_at`——也是生成或接收的每个密钥（重新生成、轮换、添加的密钥、在控制台上输入的值）的默认值，除非添加表单指定了其他值，或创建表单为应用的第一个密钥指定了其他值。默认值为 365 天（ASVS 5.0.0 13.3.4）；零即该节自己的“永不过期”。它在每个密钥创建时写入，之后的更改不会改变它。"
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -5086,6 +5126,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 第 4 节的全局策略：授权端点会拒绝任何未携带本服务在 /oauth2/par 上签发的 request_uri 的请求，在本服务器上答复 invalid_request 和 400。发布为 require_pushed_authorization_requests。默认关闭，因为每个发送普通授权请求的客户端都会被拒绝。客户端可以通过其条目上的 oauthRequirePushedAuthorizationRequests（注册时的 require_pushed_authorization_requests）对自己提出同样的要求，命名授权服务器的配置也可以发布它。"
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "仅在推送的请求中接受 authorization_details"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "默认关闭（ASVS 5.0.0 10.4.15，#2185）。开启后，授权端点会在本服务器上以 invalid_request 和 400 拒绝携带 RFC 9396 authorization_details 且未通过 /oauth2/par 签发的 request_uri 送达的请求，使富授权请求永远不会出现在浏览器的地址中。按值传递的已签名请求对象也会被拒绝：它同样经过浏览器。不含 authorization_details 的请求不受影响；上面一行使每个请求都必须推送。"
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
@@ -7866,6 +7914,14 @@
   "krb5.pkinitRequireFreshness|description": {
     "en": "77b517dda5eb4231",
     "text": "PKINIT 请求是否必须携带 RFC 8070 新鲜度令牌——即此 KDC 在时钟偏差范围内通过 KDC_ERR_PREAUTH_REQUIRED 签发的令牌。它能阻止事先在借来的智能卡上签署的 AuthPack 日后被使用。MIT Kerberos 1.17 及更高版本以及 Heimdal 在被要求时会发送它。警告：关闭时，PKINIT 请求仅受其自身时间戳和重放检查的约束。"
+  },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT 要求 paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "PKINIT 请求是否必须携带 Microsoft 的 paChecksum2（MS-PKCA 第 2.2.3 节）——即请求正文的 SHA-256、SHA-384 或 SHA-512，与 RFC 4556 要求的 SHA-1 paChecksum 并列。已发送的 paChecksum2 无论如何都会被校验，基于 SHA-1 的 paChecksum2 在产品模式下会被拒绝。默认关闭，因为 MIT Kerberos 不发送它；Windows 11 以及 Windows Server 2022 23H2 及更高版本会发送。开启后，未发送它的客户端（包括匿名 PKINIT）将被以 KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED 拒绝。"
   },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
@@ -12474,6 +12530,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "一个人可以同时运行多少个报表作业。"
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "每人每个时间窗口的报表运行和下载次数"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Reports API 的调用方在 report.actWindowS 时间窗口内可执行的高开销操作次数：一次临时查询或预览、一个排队的作业、一次运行已保存的定义、一次下载结果。按令牌的 subject 计数，而不是按地址。超过后，此类操作会以 429 和 Retry-After 拒绝，直到时间窗口结束；列表和定义仍可读取。0 表示不限制，这是开发模式的默认值。产品模式默认为 240。"
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "报表操作时间窗口（秒）"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "计数 report.actsPerSubject 的时间窗口，单位为秒。与这里的每个速率限制一样，是固定窗口。"
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

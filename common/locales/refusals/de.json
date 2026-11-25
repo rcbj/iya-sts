@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "Die Anfrage konnte nicht abgeschlossen werden.",
   "gnap.tooManyCodes": "Von hier aus wurden zu viele Codes ausprobiert. {detail}",
   "gnap.wrongOrigin": "Diese Operation wird von einer Seite dieses Dienstes gesendet: Die Anfrage trug {carried, select, none {keinen Origin} other {einen anderen Ursprung}}.",
+  "limits.tooManyActs": "Sie haben das in kurzer Zeit zu oft getan. Warten Sie {seconds} Sekunden und versuchen Sie es erneut.",
   "logout.accountNotSignedIn": "Dieses Konto ist in diesem Browser nicht mehr angemeldet. Wählen Sie erneut.",
   "logout.accountsOff": "Dieser Vertrauensbereich hält nicht mehrere angemeldete Konten pro Browser (authn.multipleAccounts ist aus), daher gibt es kein Konto zur Auswahl.",
   "logout.chooseAccount": "Wählen Sie ein Konto oder alle Konten.",

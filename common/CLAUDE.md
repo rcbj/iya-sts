@@ -58,6 +58,8 @@ more than one family needs it, not because it felt general.
 | `connect_refusal.ts` | **CONNECT IS ANSWERED 501 ON EVERY HTTP LISTENER (#1304, 2026-11-04).** This service is an origin server, never a proxy, so it implements no CONNECT (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the application — its target is an authority, not a path. With no `connect` listener node answered on its own, wrongly over both protocols: a bare 405 with no `Allow` over HTTP/2 (RFC 9110 section 15.5.6 says a 405 MUST carry one), and over HTTP/1.1 nothing at all — the connection was destroyed. `install(server, label)` answers 501 over either, `no-store`, with `frame-ancestors 'none'`, marked `STS-HTTP-0025`; `server.js` installs it on the main port (TLS and plain) and every custom listener, `debugger_server.ts` on its own. **Logged sparingly** — the first, then a count at most once a minute, with no timer — because a CONNECT is what a scanner sends. `tests/main_port_http2.js` 13. |
 | `security_operations.ts` | **WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645, 2026-11-02).** One answer for the management API's gate, the LDAP socket and SCIM: a Directory → Policies save, reset or act (read off `admin-core/policy_kinds.ts`, so a new kind is covered), a policy REFERENCE that changes (each kind's `REFERENCES` and `PolicySelection`'s declarations; a grid posting it unchanged is not a change, `''` and `default` are one value), a grant of the role by any door (the roster, `SECURITY_ADMIN`, `cn=security-admin`, `admin.securityGroup`), and an act on a holder's account. XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay Admin Write's (rcbj's decision). It reads nothing itself: the caller hands it `SecurityHooks` (`admin_rbac.ts`'s `holdsSecurity()`, `personValues()`, `groupValues()`, `applications.get()`). A static utility class, `policy_kinds` required lazily. `tests/security_admin.js`. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
+| `truststores.ts` | **NAMED TRUSTSTORES, AND WHICH ONES EACH USE CASE TRUSTS (#2118).** Built-ins (`system`, `service-root`, the shipped vendor roots), views of the two older stores (`signers`, `client-certificates`), `setting:<key>` views of every legacy anchor or CA setting, SPIFFE bundle truststores (`spiffe:<trust domain>`) and named truststores under `ou=truststores`; `resolve()`, `caFor()`, `configuredPems()`, `assign()`. A library with a rule 3e slot. See *Named truststores*, below. |
+| `truststore_use_cases.ts` | **EVERY USE CASE THAT TRUSTS A CERTIFICATE OR A KEY SET (#2118)**: id, scope (service or realm), kind (`x509`, `spiffe`, `pins`, `fixed`, `admission`), direction, the sites, the default list (which reproduces what the use case trusted before) and a fallback. A leaf. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `model_ir.ts` | **THE JSON THE MODEL'S IMPORTERS AND EMITTERS SHARE (#1390).** `stable()` sorts keys for the directory and persistence catalogues. An OpenAPI document is never passed through it. A library, no route. |
 | `directory_spellings.ts` | **`STANDARD_NAMES` AND `OWN_NAMES`, READ AS TEXT (#1390).** The directory server registers routes when it is required, so the lists are taken from the source. |
@@ -12056,6 +12058,27 @@ the product token. Each of those reaches somebody else's server, and their
 access log is where an integration with a mock they did not install gets
 diagnosed.
 
+**IN PRODUCT, NOBODY BUT AN ADMINISTRATOR IS TOLD WHICH BUILD THIS IS (#2142,
+ASVS 5.0.0 13.4.6).** `mode.publishesBuildDetail()` — `security.publishBuildInfo`,
+`auto` following the mode — is asked where a build would reach anybody else,
+and false leaves it out: the page footer's facts (`page_footer.ts`, so every
+shell and the error page, the console's shell DOCUMENT included, since anybody
+can fetch it), the shell's `data-sts-version`, `/web/locales/catalogs.json`, the
+front page's view, `/account-api`'s `version` members and document, the reports
+index, `/authn-api/openapi.json` (OpenAPI requires `info.version`, so it is the
+API's own `1`, as the reports document's always was), and every outbound
+User-Agent, which becomes `sts (<component>)`. `userAgent(component,
+showBuild)` takes the answer from its caller because this module may not ask the
+mode; the requesters that built the header once at require time ask per request
+now (a `defaultDeps()` getter), since the mode is per realm and runtime-settable.
+The console keeps the build through its shell ANSWER, which only a token holder
+reads: `WebFooter.drawnIn()` draws the footer with it. `/admin-api` and
+`/admin/sts-metadata` never ask. The audit export's `source` and User-Agent stay
+whole: they go to the operator's own destination. A page's cached files are
+keyed by `buildKey()`, a random key the Dockerfile draws per build
+(`STS_BUILD_KEY`), where `buildId()` named the commit and the instant to every
+visitor; with no key (a checkout, the tests image) it is `buildId()`.
+
 **`package.json` carries VERSION's M.N.O exactly** since #1298 (it was `M.N.0`,
 semver's three parts with the build number not one of them), and never the
 build number (#1317). `node
@@ -13874,6 +13897,16 @@ provided by `websecurity.ts` at require time. What a maintainer needs:
   (`cert_enrollment.ts`'s `throttledShared()`), GNAP's user code, `POST
   /xacml/pip` and the LDAP bind. Same buckets, window, limits, refusals and
   codes as the synchronous three, which stay for the tests that drive them.
+* **`subjectActShared()` is a SIGNED-IN subject's budget (#2167)**, not a
+  guess limiter: `/account-api`'s writes and `/report-api`'s four expensive
+  acts, keyed by realm and token `sub`, the address bucket out of reach
+  (`IDENTITY_ONLY`'s rule). The object form of a limit may name its own
+  `windowS` (the caller's setting instead of `security.rateLimitWindowS`)
+  and the `code` and catalog `sentence` its identity refusal carries
+  (`refusalTerms()`), so an operator searching `STS-HTTP-0017` for a
+  sign-in lockout never finds somebody who saved their profile too often.
+  Every act counts, success or not. With no shared store each node counts
+  its own: up to N - 1 over across N nodes, accepted for a bound on work.
 * **On a shared store (postgres) the count is a row of
   `sts_cluster_windows`**, one conditional upsert per bucket that resets a
   passed window and increments a live one, returning the count THIS attempt
@@ -15748,7 +15781,10 @@ reasons for the shape:
   as a parameter. **Still English**: operator-written text (a policy's
   advice, an application's configuration problem), technical detail
   passed as a parameter, a validation shape refusal, the portal's and the
-  console's refusals, and every specification endpoint's answer.
+  console's refusals — except the per-subject budget's (#2167,
+  `refusals.limits.tooManyActs`), which `/account-api` and `/report-api`
+  carry as `messages` and the portal and `/report` draw — and every
+  specification endpoint's answer.
   `tests/refusal_sentences.js` holds the design and that no sign-in door is
   handed an English literal; `tests/i18n_catalogs.js` test E scans
   `Sentence.say('` and `.refusal('` as it scans `t.text('`.
@@ -17383,6 +17419,16 @@ the wire, in product over TLS, it is `__Host-` or `__Secure-`. So a new cookie
 needs nothing, and a cookie whose NAME a document must state asks
 `CookieWire.wireName()` (DBSC does). HSTS is there for the same reason.
 
+**`preload` is withheld, never refused at write (#2165).** `security.hstsPreload`
+(off by default) adds it only while `includeSubDomains` is in force, because the
+preload list rejects a header without it and `security.hstsIncludeSubDomains`
+takes its default from the realm's mode — an env variable, an appconfig file or
+a mode switch can break the pair where no write is checked. So
+`strictTransportSecurity()` decides per response, logs STS-CORE-0181 when the
+pair breaks, and `mode.js`'s `hstsPreloadWaivers()` puts it on the
+`strict-transport-security` row. `max-age` is a constant year, so the list's
+other condition always holds.
+
 **A request a worker answers is named by THE WORKER'S view of the realm's mode**
 (2026-11-16, GitHub Actions run 43884417831). The names follow the realm's mode,
 a worker answers `config/set global.mode`, and the front learns of it from the
@@ -17428,3 +17474,51 @@ accepts an id in the path, for a program.
 `scep.allowInProduct`, `oauth2.allowUndeclaredGrants`,
 `admin.allowDefaultUsername`, `crypto.allowLegacyHashes`. So those defaults are held by in-process tests
 (`tests/asvs_product_limits.js`), not by a product run of the protocol half.
+
+
+## Named truststores (#2118)
+
+rcbj's design on #2118 combined the signer truststore and the client-certificate
+truststore into one concept: a truststore has a NAME, and every place this
+service validates a signature or dials a TLS server trusts the truststores its
+USE CASE is assigned (`truststore_use_cases.ts`), or `system`. The design and
+the decisions (D1–D5) are on the issue; what a maintainer needs:
+
+* **NOTHING WAS COPIED.** The older stores and every legacy anchor or CA
+  setting are read-only VIEWS (`signers`, `client-certificates`,
+  `setting:<key>`), and each use case's default list names the views of what
+  it read before. An upgrade changes nothing a deployment trusts and needs no
+  script; the legacy keys, pages and APIs keep working because they write what
+  the views read. **A new anchor or CA setting is not added**: a new use case
+  gets a row whose default names `system` or a built-in, and an administrator
+  assigns it a truststore.
+* **A SITE ASKS `configuredPems(useCase)`** where it used to read its setting:
+  unassigned that is exactly the setting (so a page or metadata document that
+  asked "is it set?" keeps its answer), assigned it is the assignment. The
+  validation door (`certificate_trust.ts`) adds the use case's resolution
+  itself — `assignedAnchors()`, in the `caller` source and every baseline, and
+  `pki.namedAnchors()` for the `signer-truststore` source — so a site passes
+  only DYNAMIC anchors (an authenticator's MDS roots, this realm's IACA).
+* **EVERY MODE (D4)**: the door consults a use case's truststores whether or
+  not paranoid PKI mode applies; paranoid decides what is CHECKED.
+  `tests/certificate_trust.js` N holds it.
+* **OUTBOUND**: `outbound_tls.ts`'s `tlsVerdict()` resolves a family through
+  its use case, `optionsFor()` serves any other dialer, and `assignedCa()`
+  serves a dialer whose own CA replaces node's store. The paranoid addition of
+  the ambient realm's signer truststore is kept as it was, and no longer lost
+  when a family names a CA file (the defect the inventory found).
+* **FIXED, AND WHY**: the database and the secret store are dialled before
+  the directory that holds the truststores can be read, and the cloud SDKs
+  build their own TLS; their rows say so and are not assignable.
+  `enrollment-credential`, `cell-peer` and `outbound-loopback` are this
+  service's own hierarchy by definition.
+* **SCOPE (D2)**: a `service` use case resolves in the default realm and may
+  name only its truststores, the built-ins and the views
+  (`assignmentProblem()`, STS-PKI-0302). The listeners re-apply their
+  truststores when `ou=truststores` changes in the default realm, locally or
+  through replication (`ldap/ldap_server.js`'s `isNamedTruststoreKey()`).
+* **SPIFFE (D5)**: a trust domain's bundle is ONE truststore, both halves, read
+  from `spiffe_ca.ts`'s own storage; an assignment narrows which federated
+  domains `spiffe-svid` and `spiffe-jwt-svid` accept (`trustsSpiffeDomain()`).
+* **NOT CHANGED, DELIBERATELY**: a WS-Security certificate stored on exactly one
+  entry is pinned by name (#1061) and asks no path, as before.

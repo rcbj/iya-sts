@@ -1,0 +1,10 @@
+{
+  "name": "sts-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "The optional SDKs the image installs into /opt/sts-sdk, one workspace per package so a build installs only those it names (Dockerfile, sdk/).",
+  "workspaces": [
+    "packages/*"
+  ]
+}

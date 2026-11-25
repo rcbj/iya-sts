@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "تعذّر إكمال الطلب.",
   "gnap.tooManyCodes": "جُرّبت رموز كثيرة جدًا من هنا. {detail}",
   "gnap.wrongOrigin": "تُرسَل هذه العملية من صفحة تابعة لهذه الخدمة: حمل الطلب {carried, select, none {بلا Origin} other {أصلًا آخر}}.",
+  "limits.tooManyActs": "لقد فعلت ذلك مرات كثيرة جدًا في وقت قصير. انتظر {seconds} ثانية وحاول مرة أخرى.",
   "logout.accountNotSignedIn": "لم يعد ذلك الحساب مسجّل الدخول في هذا المتصفح. اختر مرة أخرى.",
   "logout.accountsOff": "لا يحتفظ نطاق الثقة هذا بعدة حسابات مسجّلة الدخول لكل متصفح (authn.multipleAccounts متوقف)، لذا لا يوجد حساب لاختياره.",
   "logout.chooseAccount": "اختر حسابًا، أو كل الحسابات.",

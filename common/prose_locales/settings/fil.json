@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ganoon din kapag ang isang administrator ay nagbibigay o nag-aalis ng role, gumagawa, nagbabago o nag-aalis ng trust realm, kumikilos sa PKI, sa mga signing key, sa key-encryption key o sa mga destinasyon ng pagpapadala ng sikreto, o nagbabago ng anumang setting (#2161). Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Mga pagbabago sa account bawat tao bawat window"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Ilang pagbabago ang maaaring gawin ng isang taong naka-sign in sa sarili niyang account sa pamamagitan ng /account-api (ang portal) sa loob ng isang window na account.writeWindowS: mga pag-edit ng profile, mga credential na idinagdag o inalis, mga pahintulot na binawi, mga pagbabago sa device. Binibilang ayon sa subject ng token, hindi ayon sa address, kaya hindi ito pinaghahatian ng mga taong nasa likod ng iisang address. Lampas dito, tinatanggihan ang pagbabago nang may 429 at Retry-After hanggang lumipas ang window; nagpapatuloy ang pagbasa ng account. Ang 0 ay walang limitasyon, ang default sa development. Ang default sa product mode ay 300."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Window ng mga pagbabago sa account (segundo)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "Ang window kung saan binibilang ang account.writesPerSubject, sa segundo. Isang nakapirming window, gaya ng bawat rate limit dito."
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "Payagan ang default na database password sa product mode"
@@ -346,6 +362,22 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
+  },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Ipakita ang eksaktong build sa mga taong hindi administrator"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Kung lalabas ang eksaktong version, build number, oras ng build at commit kung saan mababasa ito ng iba bukod sa administrator: ang footer ng bawat page, ang mga API ng sign-in, portal at reports at ang kanilang mga OpenAPI document, at ang User-Agent ng mga request ng service na ito sa mga partner. Ipinapakita ito ng auto, ang default, sa development mode at itinatago sa product mode, kung saan ang sariling version ng API ang nakasaad sa mga document at ang User-Agent ay pangalan lang ng produkto; pinipilit ito ng on at off sa alinmang mode. Laging ipinapakita ng console at ng management API ang build."
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Hilingin na mapasama sa HSTS preload list"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Idinadagdag ang preload sa Strict-Transport-Security, na ipinapadala lamang ng product mode, upang maisumite ang host name sa preload list ng mga browser sa hstspreload.org. Itinatali ng preloading ang buong registrable domain at bawat subdomain sa HTTPS sa bawat browser, at buwan ang inaabot ng pag-alis sa listahan. Ipinapadala lamang habang naka-on ang Ilapat ang HSTS sa mga subdomain."
   },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
@@ -3027,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Ang kalahating RFC 8705 ng row sa itaas, sa parehong mga surface: ang ipinakitang access token ay dapat may dalang `cnf[\"x5t#S256\"]` at dapat may dalang certificate na iyon ang connection. **Kailangan nitong naka-bind bilang HTTPS ang main port** (global.https), at nagsimulang HUMINGI ng client certificate ang listener ng debugger noong 2026-09-15 para maipakita man lang doon ang naka-bind na token — hinihingi ito, hindi kailanman sapilitan. Ang token na hindi in-issue ng serbisyong ito ay sinusukat sa parehong patakaran: sinusuri ang binding na dala nito kahit hindi mave-verify ang token mismo."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Mag-issue lamang ng sender-constrained na access token"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "NAKA-OFF BILANG DEFAULT, at dapat manatiling naka-off maliban kung kayang i-bind ng bawat client ng realm ang mga token nito (ASVS 5.0.0 10.3.5 at 10.4.14, #2183). Kapag naka-on, ang token endpoint ay mag-iissue lamang ng access token sa request na nagbi-bind dito: isang DPoP proof (RFC 9449) o ang client certificate ng koneksyon (RFC 8705), alinman, para sa bawat grant. Tinatanggihan ng authorization endpoint ang response_type na mag-iissue ng token sa browser (implicit at hybrid `token`), na hindi kailanman maibi-bind. Ang client na walang ipinapadala sa dalawa ay tinatanggihan ng invalid_dpop_proof na pinangangalanan ang setting na ito. Tinatanggihan ng dalawang row sa itaas ang hindi naka-bind na token sa mga resource; ang isang ito ay tumatangging i-issue ito."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Bukas na dynamic client registration (product mode)"
@@ -3096,8 +3136,8 @@
     "text": "Lifetime ng client secret (araw)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form, o ang create form para sa unang secret ng isang application. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
+    "en": "0282a861551627b6",
+    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form, o ang create form para sa unang secret ng isang application. Ang default ay 365 araw (ASVS 5.0.0 13.3.4); ang ZERO ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -5086,6 +5126,14 @@
   "oauth2.requirePushedAuthorizationRequests|description": {
     "en": "822efb2b3e3dc3ea",
     "text": "Ang global policy ng RFC 9126 section 4: tinatanggihan ng authorization endpoint, ng invalid_request at 400 sa server na ito, ang anumang request na walang dalang request_uri na iniisyu ng serbisyong ito sa /oauth2/par. Inilalathala bilang require_pushed_authorization_requests. NAKA-OFF bilang default, dahil tatanggihan ang bawat client na nagpapadala ng plain authorization request. Puwedeng hilingin ng isang client ang pareho para sa sarili nito gamit ang oauthRequirePushedAuthorizationRequests sa entry nito (require_pushed_authorization_requests sa registration), at puwede itong ilathala ng profile ng isang pinangalanang authorization server."
+  },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "Tanggapin lamang ang authorization_details sa isang pushed request"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "NAKA-OFF BILANG DEFAULT (ASVS 5.0.0 10.4.15, #2185). Kapag naka-on, tinatanggihan ng authorization endpoint, na may invalid_request at 400 sa server na ito, ang request na may RFC 9396 authorization_details at hindi dumaan sa request_uri na inisyu sa /oauth2/par, para hindi kailanman maglakbay ang isang rich authorization request sa address ng browser. Tinatanggihan din ang signed request object na ipinasa bilang value: naglalakbay din ito sa browser. Hindi apektado ang request na walang authorization_details; ginagawang pushed ng row sa itaas ang bawat request."
   },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
@@ -7866,6 +7914,14 @@
   "krb5.pkinitRequireFreshness|description": {
     "en": "77b517dda5eb4231",
     "text": "Kung dapat may dalang RFC 8070 freshness token ang isang PKINIT request — isang in-issue ng KDC na ito sa KDC_ERR_PREAUTH_REQUIRED sa loob ng clock skew. Ito ang pumipigil na magamit sa ibang pagkakataon ang AuthPack na pinirmahan nang maaga sa isang hiniram na smart card. Nagpapadala nito ang MIT Kerberos 1.17 pataas at ang Heimdal kapag hiningi. BABALA: kapag naka-off, ang PKINIT request ay sinusukat lang sa sarili nitong timestamp at sa replay check."
+  },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "Hinihingi ng PKINIT ang paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Kung kailangang magdala ang isang PKINIT na kahilingan ng paChecksum2 ng Microsoft (MS-PKCA seksyon 2.2.3) — ang SHA-256, SHA-384 o SHA-512 ng katawan ng kahilingan, katabi ng SHA-1 na paChecksum na hinihingi ng RFC 4556. Sinusuri ang paChecksum2 na ipinadala sa alinmang kaso, at tinatanggihan sa product mode ang isa na nasa SHA-1. Naka-off bilang default, dahil hindi nagpapadala nito ang MIT Kerberos; nagpapadala nito ang Windows 11 at ang Windows Server 2022 23H2 at mas bago. Kapag naka-on, tinatanggihan ng KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED ang isang client na hindi nagpapadala nito — kasama ang anonymous PKINIT."
   },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
@@ -12474,6 +12530,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Ilang report job ang maaaring sabay na tumatakbo para sa isang tao."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Mga pagpapatakbo at pag-download ng ulat bawat tao bawat window"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Ilang mabigat na kilos ang maaaring gawin ng isang tumatawag sa Reports API sa loob ng isang window na report.actWindowS: isang ad hoc na query o preview, isang job na inilagay sa pila, isang naka-save na definition na pinatakbo, isang resultang na-download. Binibilang ayon sa subject ng token, hindi ayon sa address. Lampas dito, tinatanggihan ang ganoong kilos nang may 429 at Retry-After hanggang lumipas ang window; mababasa pa rin ang mga listahan at definition. Ang 0 ay walang limitasyon, ang default sa development. Ang default sa product mode ay 240."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Window ng mga kilos sa ulat (segundo)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "Ang window kung saan binibilang ang report.actsPerSubject, sa segundo. Isang nakapirming window, gaya ng bawat rate limit dito."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",
