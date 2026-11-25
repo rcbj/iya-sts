@@ -104,6 +104,18 @@ interface OutboundFamily {
   skipIgnoredCode: string;
 }
 
+// The seams `readNamedFile()` reads through (#2247). Each is optional and
+// the default is node's own: `fs` an fs-like module (a caller's injected one,
+// so its tests' fakes keep working), `beforeOpen` called after the path check
+// and before the open (where a test swaps the path for a link out of the
+// directories), and `descriptorLink` the path the kernel holds for an open
+// descriptor (`/proc/self/fd/<fd>`; throwing means there is no such view).
+interface NamedFileSeams {
+  fs?: any;
+  beforeOpen?: (file: string) => void;
+  descriptorLink?: (fd: number) => string;
+}
+
 // The answer about plain http. `errorCode` is set only for the product-mode
 // refusal; a refusal because the setting is off is the family's own URL
 // refusal and carries the family's existing code.
@@ -787,6 +799,11 @@ class OutboundTls {
    * exist answers the same as one outside them, so this says nothing about
    * what is on the disk.
    *
+   * THIS IS A CHECK OF THE PATH, NOT OF WHAT IS READ (#2247, ASVS 5.0.0
+   * 15.4.2): a link swapped in after it answers is followed by whatever opens
+   * the path next. A caller that READS the file goes through
+   * `readNamedFile()`, which checks the descriptor it reads through.
+   *
    * @param file - the path as configured
    * @returns whether it may be read
    */
@@ -809,30 +826,70 @@ class OutboundTls {
       // file outside the directories.
       real = '';
     }
+    const allowed = !!real && OutboundTls.underFileRoots(real);
+    log.debug("Leaving OutboundTls.namedFileAllowed(). " + allowed);
+    return allowed;
+  }
+
+  /**
+   * Says whether a real path (links already resolved) lies inside a directory
+   * `security.fileRoots` lists. A listed directory is itself resolved, and
+   * one this image does not have is compared as written.
+   *
+   * @param real - an absolute path with no link left in it
+   * @returns whether it is inside one of the directories
+   */
+  static underFileRoots(real: string): boolean {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.underFileRoots().");
+    const nodePath = require('path');
     const listed: unknown = config.value('security.fileRoots');
     const roots = (Array.isArray(listed) ? listed : String(listed || '')
       .split(',')).map(function (one: unknown) {
       return String(one).trim();
     }).filter(Boolean);
-    const allowed = !!real && roots.some(function (root: string) {
-      let base = root;
-      try {
-        base = fs.realpathSync(root);
-      } catch (e) {
-        log.debug("Caught in OutboundTls.namedFileAllowed(): " +
-                  ((e && e.code) || (e && e.message) || e));
-        // A listed directory this image does not have is compared as written.
-      }
-      return real === base || real.indexOf(base + nodePath.sep) === 0;
-    });
-    log.debug("Leaving OutboundTls.namedFileAllowed(). " + allowed);
-    return allowed;
+    const inside = !!real && nodePath.isAbsolute(real) &&
+      roots.some(function (root: string) {
+        let base = root;
+        try {
+          base = fs.realpathSync(root);
+        } catch (e) {
+          log.debug("Caught in OutboundTls.underFileRoots(): " +
+                    ((e && e.code) || (e && e.message) || e));
+          // A listed directory this image does not have is compared as
+          // written.
+        }
+        return real === base || real.indexOf(base + nodePath.sep) === 0;
+      });
+    log.debug("Leaving OutboundTls.underFileRoots(). " + inside);
+    return inside;
+  }
+
+  /**
+   * The refusal of a named file, the same Error every reader throws: it
+   * names the setting and not the path, and is the same whether the file is
+   * outside the directories, does not exist, or was swapped for a link out
+   * of them after the check. `namedFileRefused` tells it from an fs error.
+   *
+   * @returns the Error, not thrown
+   */
+  static namedFileRefusal(): Error {
+    helpers.log.debug("Entering OutboundTls.namedFileRefusal().");
+    helpers.log.debug("Leaving OutboundTls.namedFileRefusal().");
+    // error-code: none — each caller records its own family's code
+    return Object.assign(new Error('that is not a file in a directory ' +
+                                   'security.fileRoots lists'),
+                         { namedFileRefused: true });
   }
 
   /**
    * Refuses a named file that may not be read, before a caller reads it. The
    * sentence names the setting and not the path, and is the same whether the
    * file is outside the directories or does not exist.
+   *
+   * A caller that reads the file itself uses `readNamedFile()` instead
+   * (#2247); this stays for one that hands the PATH to a library that opens
+   * it (a cloud SDK's key file), where the check is all this process can do.
    *
    * @param file - the path as configured
    * @returns nothing
@@ -843,10 +900,112 @@ class OutboundTls {
     log.debug("Entering OutboundTls.assertNamedFile().");
     if (!OutboundTls.namedFileAllowed(file)) {
       log.debug("Leaving OutboundTls.assertNamedFile(). Refused.");
-      throw new Error('that is not a file in a directory security.fileRoots ' +
-                      'lists');
+      throw OutboundTls.namedFileRefusal();
     }
     log.debug("Leaving OutboundTls.assertNamedFile().");
+  }
+
+  /**
+   * The real path of an open descriptor: what the kernel holds for it, from
+   * `/proc/self/fd/<fd>`, where there is such a view. Where there is not
+   * (not Linux), the path is resolved again and accepted only when it names
+   * the same file the descriptor is open on (device and inode), so a link
+   * swapped in between the open and this cannot be mistaken for it.
+   *
+   * @param fd - the open descriptor
+   * @param file - the path it was opened by
+   * @param opened - its fstat
+   * @param ffs - the fs-like module it was opened with
+   * @param seams - the test seams
+   * @returns the real path, or '' when it cannot be told
+   */
+  static descriptorRealPath(fd: number, file: string, opened: any, ffs: any,
+                            seams: NamedFileSeams): string {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.descriptorRealPath().");
+    try {
+      const link = seams.descriptorLink ? seams.descriptorLink(fd) :
+        String(ffs.readlinkSync('/proc/self/fd/' + fd));
+      log.debug("Leaving OutboundTls.descriptorRealPath(). Kernel's.");
+      return link;
+    } catch (e) {
+      log.debug("Caught in OutboundTls.descriptorRealPath(): " +
+                ((e && e.code) || (e && e.message) || e));
+      // No /proc here: resolve the path and compare the file it names.
+    }
+    try {
+      const real = String(ffs.realpathSync(file));
+      const named = ffs.statSync(real);
+      const same = named.dev === opened.dev && named.ino === opened.ino;
+      log.debug("Leaving OutboundTls.descriptorRealPath(). Same file: " +
+                same);
+      return same ? real : '';
+    } catch (e) {
+      log.debug("Caught in OutboundTls.descriptorRealPath(): " +
+                ((e && e.code) || (e && e.message) || e));
+      log.debug("Leaving OutboundTls.descriptorRealPath(). Unknown.");
+      return '';
+    }
+  }
+
+  /**
+   * READS a file an administrator or a setting named, held to
+   * `security.fileRoots` in product (#1481) WITHOUT a window between the
+   * check and the read (#2247, ASVS 5.0.0 15.4.2). The path is checked, then
+   * opened ONCE, and what is checked again is the open descriptor: it must
+   * be a regular file, and its real path, as the kernel holds it, must lie
+   * inside a listed directory. Only then is it read, through that
+   * descriptor, and closed. A link swapped in after the path check is
+   * followed by the open and refused by the second check, with the same
+   * sentence as any other refusal.
+   *
+   * `O_NOFOLLOW` is NOT used: a link INSIDE the directories to a file inside
+   * them is what `/etc/ssl/certs` and a Kubernetes secret volume (`..data`)
+   * are made of, and it was always followed. `O_NONBLOCK` is, so a FIFO
+   * cannot hold the open; it is then refused as not a regular file.
+   *
+   * Outside product nothing is confined and the file is read as before.
+   *
+   * @param file - the path as configured
+   * @param seams - optional: the fs-like module, and the test seams
+   * @returns the file's text (UTF-8)
+   * @throws `namedFileRefusal()` when it may not be read, or the fs error
+   *   (its `code` kept) when it is permitted and cannot be read
+   */
+  static readNamedFile(file: string, seams?: NamedFileSeams): string {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.readNamedFile().");
+    const given: NamedFileSeams = seams || {};
+    const ffs = given.fs || fs;
+    if (!mode.confinesNamedFiles()) {
+      const text = String(ffs.readFileSync(file, 'utf8'));
+      log.debug("Leaving OutboundTls.readNamedFile(). Not confined here.");
+      return text;
+    }
+    if (!OutboundTls.namedFileAllowed(file)) {
+      log.debug("Leaving OutboundTls.readNamedFile(). Refused.");
+      throw OutboundTls.namedFileRefusal();
+    }
+    if (given.beforeOpen) {
+      given.beforeOpen(file);
+    }
+    const flags = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0);
+    const fd: number = ffs.openSync(file, flags);
+    let text = '';
+    try {
+      const opened = ffs.fstatSync(fd);
+      const real = opened.isFile() ?
+        OutboundTls.descriptorRealPath(fd, file, opened, ffs, given) : '';
+      if (!real || !OutboundTls.underFileRoots(real)) {
+        log.debug("Leaving OutboundTls.readNamedFile(). The descriptor.");
+        throw OutboundTls.namedFileRefusal();
+      }
+      text = String(ffs.readFileSync(fd, 'utf8'));
+    } finally {
+      ffs.closeSync(fd);
+    }
+    log.debug("Leaving OutboundTls.readNamedFile().");
+    return text;
   }
 
   /**
@@ -858,16 +1017,16 @@ class OutboundTls {
   static caFilePems(file: string): string[] | string {
     const log = helpers.log;
     log.debug("Entering OutboundTls.caFilePems(). " + file);
-    if (!OutboundTls.namedFileAllowed(file)) {
-      log.debug("Leaving OutboundTls.caFilePems(). Not a permitted path.");
-      return 'it is not a file in a directory security.fileRoots lists';
-    }
     let text = '';
     try {
-      text = fs.readFileSync(file, 'utf8');
+      text = OutboundTls.readNamedFile(file);
     } catch (e) {
       log.debug("Caught in OutboundTls.caFilePems(): " +
                 ((e && e.message) || e));
+      if (e && e.namedFileRefused) {
+        log.debug("Leaving OutboundTls.caFilePems(). Not a permitted path.");
+        return 'it is not a file in a directory security.fileRoots lists';
+      }
       log.debug("Leaving OutboundTls.caFilePems(). Unreadable.");
       return 'it could not be read (' + ((e && e.code) || e.message) + ')';
     }

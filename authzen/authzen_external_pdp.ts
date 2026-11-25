@@ -160,7 +160,8 @@ class AuthzenExternalPdp {
       readFile: function (file: string): string {
         log.debug("Entering readFile().");
         try {
-          const text = require('fs').readFileSync(file, 'utf8');
+          // Checked again and read through one descriptor (#2247).
+          const text = require('../common/outbound_tls').readNamedFile(file);
           log.debug("Leaving readFile().");
           return text;
         } catch (e) {
@@ -384,10 +385,14 @@ class AuthzenExternalPdp {
     try {
       text = readFile(file);
     } catch (e) {
-      const err = e as { code?: string };
+      const err = e as { code?: string; namedFileRefused?: boolean };
       // The message names the path, so the log keeps the errno only.
       logger.debug("Caught in AuthzenExternalPdp.readPem(): " +
                    (err && err.code || 'unreadable'));
+      if (err && err.namedFileRefused) {
+        // Swapped for a link out of the directories after the check.
+        return refuse('is not a file this process may read.');
+      }
       return refuse('could not be read (' + (err && err.code || 'error') +
                     ').');
     }

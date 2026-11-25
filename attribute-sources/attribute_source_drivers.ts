@@ -47,7 +47,6 @@
 //     `pg-pool`. Nothing here checks a client out by hand.
 // ---------------------------------------------------------------------------
 
-import fs = require('fs');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import config = require('../common/config');
@@ -113,8 +112,10 @@ class AttributeSourceDrivers {
       readSecret: function (source: Json) {
         return secrets.readSourceSecret(source);
       },
+      // The one file read here is a source's `caFile`, an administrator's
+      // name: checked and read through one descriptor (#2247).
       readFile: function (path: string) {
-        return fs.readFileSync(path, 'utf8');
+        return require('../common/outbound_tls').readNamedFile(path);
       }
     };
   }
