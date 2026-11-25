@@ -253,7 +253,9 @@ SPIRE's `image-signature:verified`, `image-attestations:verified` and
    sigstore trust root: through TUF (`spiffe.dockerSigstoreTufRootFile`, the
    `root.json` you trust, refreshed by the scheduler job
    `spiffe.sigstore-tuf-refresh`), or pinned
-   (`spiffe.dockerSigstoreTrustedRootFile`);
+   (`spiffe.dockerSigstoreTrustedRootFile`). Each of the three may instead
+   come from a [truststore](truststores.md#sigstore-trust-material) assigned
+   to `sigstore-cosign-key`, `sigstore-trusted-root` or `sigstore-tuf-root`;
 2. for keyless signatures, the signers you accept
    (`spiffe.dockerSigstoreAllowedIdentities`, `issuer=subject`);
 3. the registries the signatures may be fetched from
@@ -835,6 +837,11 @@ are reconciled, which happens whenever one of the realm's settings changes.
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | How many unspent join tokens a realm holds; at the cap a new one is refused `RESOURCE_EXHAUSTED`. |
 
 ### x509pop, sshpop and tpm_devid
+
+The SSH CA keys an sshpop host certificate is checked against may instead
+come from an [SSH CA truststore](truststores.md#ssh-certificate-authorities)
+assigned to `spiffe-sshpop`; by default they are
+`spiffe.sshpopCertAuthorities`.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|

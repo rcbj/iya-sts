@@ -122,5 +122,14 @@
   "createKindJwks": "en nyckeluppsättning bunden till en part",
   "createParty": "Part (endast nyckeluppsättning): client:, federation:, claims-provider: eller oidfed-anchor:…",
   "createJwks": "Publika nycklar, som JSON Web Key Set",
-  "createJwksUri": "Eller en jwks_uri"
+  "createJwksUri": "Eller en jwks_uri",
+  "createKindSsh": "Nycklar för SSH-certifikatutfärdare",
+  "createSshKeys": "Publika SSH CA-nycklar i authorized_keys-format, en per rad",
+  "sshKeys": "{n} SSH CA-nyckel/nycklar",
+  "kindSshCa": "SSH CA-nycklar",
+  "createKindCosign": "publika cosign-nycklar",
+  "createKindSigstoreRoot": "en betrodd Sigstore-rot",
+  "createKindTufRoot": "en TUF-rot",
+  "createDocument": "Ett dokument (endast cosign, betrodd Sigstore-rot eller TUF-rot)",
+  "documentsHeld": "{n} dokument"
 }

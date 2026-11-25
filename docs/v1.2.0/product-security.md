@@ -117,6 +117,13 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   never reaches a loopback, private, link-local or reserved address. Set
   `security.outboundAllowedHosts` to limit it to named hosts as well. See
   [Communications](communications.md#outbound-locations-a-caller-can-name).
+* **Dependencies.** Every outbound call has a timeout, and a request a person
+  or client is waiting on does not retry. Delivery that must happen is queued
+  and retried in the background. [Dependencies, limits and
+  timeouts](dependencies.md) lists, for the database, the secret store, the
+  HSM, the mail relay and every partner, the connection limit, the timeouts,
+  the retries and what happens when it is down. The rotation of every key and
+  secret is in [Key management](key-management.md#rotation-schedule).
 * **Requests per address.** One address may make 6000 requests a minute to one
   process, `security.requestsPerAddressPerMinute`. More are answered `429`. See
   [Availability](availability.md).
@@ -243,6 +250,10 @@ screens is drawn through one renderer. It removes scripts, event handlers and
 unsafe addresses from the markup before it reaches the page, on top of each
 page's Content Security Policy.
 
+[Browser requirements](browser-requirements.md) lists the browser features
+those pages need and what a person sees when one is missing (ASVS 5.0.0
+3.1.1).
+
 An unexpected failure is answered without its internal error text: at the
 management API, the OAuth and OpenID Connect endpoints (the sign-out page
 included), WS-Trust and the wallet sign-in. The text is in the log, under the
@@ -327,6 +338,10 @@ session cookie) needs Admin Read to read and Admin Write to write.
 
 ## Algorithms
 
+* **Post-quantum.** [Post-quantum migration plan](post-quantum-migration.md)
+  sets out, surface by surface, what is post-quantum today, what the
+  ecosystem still prevents and the order a realm moves in (ASVS 5.0.0
+  11.1.4).
 * **Kerberos** uses enctypes 19 and 20 (RFC 8009).
 * **RSA keys** this service generates are 3072 bits by default: RSA signing
   keys, certificate authorities, the self-signed listener certificate and the
@@ -403,6 +418,12 @@ pin, or a version it does not hold, fails. The advisory check that runs on every
 CI run audits `sdk/package-lock.json` under the same windows as the root
 lockfile. The base images are named by version tag, not by digest.
 
+[Risky third-party components](risky-components.md) lists the components that
+carry more risk than the rest, and how the service contains each one.
+[Dangerous functionality](dangerous-functionality.md) lists the parts of the
+service that parse hostile input, fetch, take files or run code, and their
+controls.
+
 The image holds a CycloneDX inventory of its npm dependencies at
 `/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at
 `/usr/src/sts/sbom-sdks.cdx.json`, and a list of its operating-system packages
@@ -425,5 +446,7 @@ stack uses OpenBao for both. See [Key management](key-management.md).
 
 * [What is not checked](what-is-not-checked.md), in development mode
 * [Input validation](validation.md)
+* [Risky third-party components](risky-components.md)
+* [Dangerous functionality](dangerous-functionality.md)
 * [Departures from the specifications](spec-departures.md)
 * [Security profiles](oauth-security.md)

@@ -122,5 +122,14 @@
   "createKindJwks": "绑定到某一方的密钥集",
   "createParty": "参与方（仅密钥集）：client:、federation:、claims-provider: 或 oidfed-anchor:…",
   "createJwks": "公钥，作为 JSON Web Key Set",
-  "createJwksUri": "或 jwks_uri"
+  "createJwksUri": "或 jwks_uri",
+  "createKindSsh": "SSH 证书颁发机构密钥",
+  "createSshKeys": "SSH CA 公钥，authorized_keys 格式，每行一个",
+  "sshKeys": "{n} 个 SSH CA 密钥",
+  "kindSshCa": "SSH CA 密钥",
+  "createKindCosign": "cosign 公钥",
+  "createKindSigstoreRoot": "Sigstore 可信根",
+  "createKindTufRoot": "TUF 根",
+  "createDocument": "文档（仅限 cosign、Sigstore 可信根或 TUF 根）",
+  "documentsHeld": "{n} 个文档"
 }

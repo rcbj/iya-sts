@@ -122,5 +122,14 @@
   "createKindJwks": "ein an eine Partei gebundener Schlüsselsatz",
   "createParty": "Partei (nur Schlüsselsatz): client:, federation:, claims-provider: oder oidfed-anchor:…",
   "createJwks": "Öffentliche Schlüssel als JSON Web Key Set",
-  "createJwksUri": "Oder eine jwks_uri"
+  "createJwksUri": "Oder eine jwks_uri",
+  "createKindSsh": "Schlüssel von SSH-Zertifizierungsstellen",
+  "createSshKeys": "Öffentliche SSH-CA-Schlüssel im authorized_keys-Format, einer pro Zeile",
+  "sshKeys": "{n} SSH-CA-Schlüssel",
+  "kindSshCa": "SSH-CA-Schlüssel",
+  "createKindCosign": "öffentliche cosign-Schlüssel",
+  "createKindSigstoreRoot": "ein Sigstore-Trusted-Root",
+  "createKindTufRoot": "ein TUF-Root",
+  "createDocument": "Ein Dokument (nur cosign, Sigstore-Trusted-Root oder TUF-Root)",
+  "documentsHeld": "{n} Dokument(e)"
 }

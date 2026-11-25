@@ -122,5 +122,14 @@
   "createKindJwks": "isang key set na nakatali sa isang partido",
   "createParty": "Partido (key set lamang): client:, federation:, claims-provider: o oidfed-anchor:…",
   "createJwks": "Mga pampublikong key, bilang JSON Web Key Set",
-  "createJwksUri": "O isang jwks_uri"
+  "createJwksUri": "O isang jwks_uri",
+  "createKindSsh": "Mga key ng SSH certificate authority",
+  "createSshKeys": "Mga pampublikong key ng SSH CA, sa anyong authorized_keys, isa bawat linya",
+  "sshKeys": "{n} SSH CA key",
+  "kindSshCa": "Mga SSH CA key",
+  "createKindCosign": "mga pampublikong key ng cosign",
+  "createKindSigstoreRoot": "isang Sigstore trusted root",
+  "createKindTufRoot": "isang TUF root",
+  "createDocument": "Isang dokumento (cosign, Sigstore trusted root o TUF root lamang)",
+  "documentsHeld": "{n} dokumento"
 }

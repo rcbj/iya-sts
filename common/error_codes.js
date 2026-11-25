@@ -5649,15 +5649,21 @@ const CODES = [
       'or oidfed-anchor:<id>; the key set is not JSON, holds no key, more ' +
       'than 32, a key without kty, or a private or symmetric key; neither ' +
       'or both of pasted keys and a jwks_uri were given; or a Trust ' +
-      'Anchor\'s key set was given a jwks_uri (#2150). Also recorded where ' +
-      'a stored key set no longer reads, at a verification.',
+      'Anchor\'s key set was given a jwks_uri (#2150); or an SSH CA ' +
+      'truststore was given no key, more than 32, or a line that is not ' +
+      'an SSH public key (#2151); or a cosign, sigstore-root or tuf-root ' +
+      'truststore was given no document, one over 256 KiB, or one that is ' +
+      'not PEM public keys, a trusted root or a TUF root (#2152). Also ' +
+      'recorded where a stored key set or a setting\'s file no longer ' +
+      'reads.',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0309',
     summary: 'A key set and a certificate truststore were confused ' +
       '(#2149): a key-set use case was assigned a certificate truststore, ' +
       'another use case a key set, a certificate was added to a key set, ' +
-      'or keys were set on a certificate truststore.',
+      'or keys were set on a certificate truststore; or SSH CA keys and ' +
+      'certificates were confused the same way (#2151).',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-ENROLL-0001',

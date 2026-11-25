@@ -127,7 +127,26 @@ const MAX_KEYS = 32;
 // A JWK member that makes it a private or a symmetric key.
 const SECRET_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k'];
 
+// SSH CERTIFICATE AUTHORITIES (#2151): authorized_keys lines. An SSH CA
+// vouches for many hosts and its certificate names the principals, so these
+// pool like X.509 anchors; no party binding.
+const MAX_SSH_KEYS = 32;
+// DOCUMENTS (#2152): the Sigstore trust material, each held as text. cosign
+// public keys pool; trusted roots are unioned; a TUF root is ONE document.
+const DOCUMENT_KINDS = ['cosign', 'sigstore-root', 'tuf-root'];
+const MAX_DOCUMENT = 256 * 1024;
+const MAX_COSIGN_KEYS = 32;
+// Every kind that is not certificates, for the kind check.
+const NOT_X509 = ['jwks', 'ssh'].concat(DOCUMENT_KINDS);
+const PUBLIC_KEY =
+  /-----BEGIN PUBLIC KEY-----[\s\S]+?-----END PUBLIC KEY-----/g;
+
 const SETTING_FORMATS: Json = {
+  'spiffe.sshpopCertAuthorities': 'ssh-lines',
+  // #2152: files of the Sigstore trust material, `files:` a list.
+  'spiffe.dockerSigstorePublicKeyFiles': 'files:cosign',
+  'spiffe.dockerSigstoreTrustedRootFile': 'file:sigstore-root',
+  'spiffe.dockerSigstoreTufRootFile': 'file:tuf-root',
   'saml2.metadataTrustAnchors': 'der-csv',
   'tls.trustIssuedClientCertificates': 'service-root-when-true'
 };
@@ -141,6 +160,8 @@ interface TruststoresDeps {
   errorCodes: typeof errorCodes;
   readFile: (file: string) => string;
   readCaFile: (file: string) => string[] | string;
+  // A file a setting names, held to `security.fileRoots` (#2152).
+  readNamedFile: (file: string) => string;
 }
 
 interface Resolution {
@@ -190,6 +211,10 @@ class Truststores {
       },
       readCaFile: function (file: string): string[] | string {
         return require('./outbound_tls').caFilePems(file);
+      },
+      readNamedFile: function (file: string): string {
+        require('./outbound_tls').assertNamedFile(file);
+        return fs.readFileSync(file, 'utf8');
       }
     };
   }
@@ -311,6 +336,11 @@ class Truststores {
       return config.value(key);
     });
     const format = SETTING_FORMATS[key] || 'pem-or-file';
+    if (format === 'ssh-lines' || /^files?:/.test(format)) {
+      log.debug("Leaving Truststores.settingPems(). Keys or documents, no " +
+                "certificate.");
+      return { pems: [], problem: null };
+    }
     if (format === 'service-root-when-true') {
       const on = raw === true || String(raw) === 'true';
       log.debug("Leaving Truststores.settingPems(). Flag " + on + ".");
@@ -552,7 +582,8 @@ class Truststores {
         realms.DEFAULT_ID : realmId };
     } else if (name.indexOf('setting:') === 0) {
       found = this.settingKnown(name.slice(8)) ?
-        { kind: 'setting', realmId: realmId } : null;
+        { kind: 'setting', realmId: realmId,
+          storeKind: Truststores.settingKind(name.slice(8)) } : null;
     } else if (name.indexOf('spiffe:') === 0) {
       found = { kind: 'spiffe', realmId: realmId };
     } else if (Object.prototype.hasOwnProperty.call(KEYSET_VIEWS, name)) {
@@ -588,8 +619,9 @@ class Truststores {
       return out;
     }
     let pems: string[] = [];
-    if (where.storeKind === 'jwks') {
-      // A key set holds no certificate (#2149); `keySources()` reads it.
+    if (NOT_X509.indexOf(where.storeKind) >= 0) {
+      // A key set holds no certificate (#2149), nor SSH CA keys (#2151);
+      // `keySources()` and `sshAuthorities()` read them.
       log.debug("Leaving Truststores.holdings(). A key set.");
       return out;
     }
@@ -916,13 +948,21 @@ class Truststores {
       }
       // A key-set use case names key sets only, and nothing else names one
       // (#2149): a certificate is not a key, nor a key a certificate.
-      if ((useCase.kind === 'jwks') !== (where.storeKind === 'jwks')) {
-        log.debug("Leaving Truststores.assignmentProblem(). Key set.");
-        return { code: 'STS-PKI-0309', why: useCase.kind === 'jwks' ?
+      // And an SSH CA use case names SSH CA keys only (#2151).
+      // And a document use case names its own kind of document (#2152).
+      const wants = NOT_X509.indexOf(useCase.kind) >= 0 ? useCase.kind :
+        'x509';
+      const holds = NOT_X509.indexOf(where.storeKind) >= 0 ?
+        where.storeKind : 'x509';
+      if (wants !== holds) {
+        log.debug("Leaving Truststores.assignmentProblem(). Kind.");
+        return { code: 'STS-PKI-0309', why: wants === 'jwks' ?
           '"' + useCaseId + '" verifies a JSON Web Signature and may name ' +
           'only key sets (registered-keys, or a key-set truststore)' :
-          '"' + name + '" is a key set, which only a key-set use case may ' +
-          'name' };
+          wants !== 'x509' ? '"' + useCaseId + '" may name only ' + wants +
+          ' truststores, and "' + name + '" holds ' + holds :
+          '"' + name + '" holds ' + holds + ', which only a use case of ' +
+          'that kind may name' };
       }
       if (useCase.scope === 'service' && where.kind === 'named' &&
           where.realmId !== self.deps.realms.DEFAULT_ID &&
@@ -1024,6 +1064,24 @@ class Truststores {
     });
     UseCases.legacySettings().forEach(function (key) {
       const name = 'setting:' + key;
+      if (DOCUMENT_KINDS.indexOf(Truststores.settingKind(key)) >= 0) {
+        const read = self.settingDocuments(id, key);
+        out.push({ name: name, kind: 'setting',
+          storeKind: Truststores.settingKind(key), scope: 'realm',
+          readOnly: true, description: 'The file(s) the setting ' + key +
+            ' names. Change them with the setting.',
+          keys: read.documents.length, anchors: 0, intermediates: 0,
+          problem: read.problems.length ? read.problems[0].why : '' });
+        return;
+      }
+      if (SETTING_FORMATS[key] === 'ssh-lines') {
+        out.push({ name: name, kind: 'setting', storeKind: 'ssh',
+          scope: 'realm', readOnly: true, description: 'The SSH CA keys the ' +
+            'setting ' + key + ' holds. Change them with the setting.',
+          keys: self.sshSettingKeys(id, key).length, anchors: 0,
+          intermediates: 0, problem: '' });
+        return;
+      }
       out.push(Object.assign({ name: name, kind: 'setting', scope: 'realm',
         readOnly: true, description: 'What the setting ' + key + ' names, ' +
           'read where it is kept. Change it with the setting.' },
@@ -1051,6 +1109,25 @@ class Truststores {
       });
     }
     named.forEach(function (row: Json) {
+      if (DOCUMENT_KINDS.indexOf(row.kind) >= 0) {
+        const why = Truststores.documentProblem(row.kind,
+                                                String(row.document || ''));
+        out.push({ name: row.name, kind: 'named', storeKind: row.kind,
+          scope: row.realmId === realms.DEFAULT_ID ? 'service' : 'realm',
+          readOnly: row.realmId !== id, description: row.description || '',
+          addedBy: row.addedBy || '', keys: why ? 0 : 1,
+          anchors: 0, intermediates: 0, problem: why });
+        return;
+      }
+      if (row.kind === 'ssh') {
+        const read = Truststores.sshKeysOfText(String(row.sshKeys || ''));
+        out.push({ name: row.name, kind: 'named', storeKind: 'ssh',
+          scope: row.realmId === realms.DEFAULT_ID ? 'service' : 'realm',
+          readOnly: row.realmId !== id, description: row.description || '',
+          addedBy: row.addedBy || '', keys: read.keys.length,
+          anchors: 0, intermediates: 0, problem: read.why });
+        return;
+      }
       if (row.kind === 'jwks') {
         const read = Truststores.keysOfText(String(row.jwks || ''));
         out.push({ name: row.name, kind: 'named', storeKind: 'jwks',
@@ -1227,8 +1304,24 @@ class Truststores {
                           MAX_STORES + ' named truststores');
     }
     const kind = String((spec && spec.kind) || 'x509');
-    const keySet: Json = { party: '', jwks: '', jwksUri: '' };
-    if (kind === 'jwks') {
+    const keySet: Json = { party: '', jwks: '', jwksUri: '', sshKeys: '',
+                           document: '' };
+    if (DOCUMENT_KINDS.indexOf(kind) >= 0) {
+      const text = String(spec.document || '').trim();
+      const why = Truststores.documentProblem(kind, text);
+      if (why) {
+        log.debug("Leaving Truststores.create(). Document.");
+        return this.refused('STS-PKI-0308', why);
+      }
+      keySet.document = text;
+    } else if (kind === 'ssh') {
+      const read = Truststores.sshKeysOfText(String(spec.sshKeys || ''));
+      if (read.why) {
+        log.debug("Leaving Truststores.create(). SSH keys.");
+        return this.refused('STS-PKI-0308', read.why);
+      }
+      keySet.sshKeys = read.keys.join('\n');
+    } else if (kind === 'jwks') {
       const problem = Truststores.keySetProblem(spec, true);
       if (problem) {
         log.debug("Leaving Truststores.create(). Key set.");
@@ -1240,7 +1333,8 @@ class Truststores {
     } else if (kind !== 'x509') {
       log.debug("Leaving Truststores.create(). Kind.");
       return this.refused('STS-PKI-0308', 'a truststore holds x509 ' +
-                          'certificates or a jwks key set');
+                          'certificates, a jwks key set, ssh CA keys, or a ' +
+                          'cosign, sigstore-root or tuf-root document');
     }
     const written = this.directory.putStore(id, Object.assign({
       name: name, kind: kind,
@@ -1600,6 +1694,36 @@ class Truststores {
       return this.refused('STS-PKI-0301', 'this realm holds no named ' +
                           'truststore "' + name + '"');
     }
+    if (DOCUMENT_KINDS.indexOf(row.kind) >= 0) {
+      const text = String((spec && spec.document) || '').trim();
+      const why = Truststores.documentProblem(row.kind, text);
+      if (why) {
+        log.debug("Leaving Truststores.setKeys(). Document refused.");
+        return this.refused('STS-PKI-0308', why);
+      }
+      const put = this.directory.putStore(id, {
+        name: row.name, kind: row.kind, description: row.description || '',
+        addedBy: row.addedBy || '', document: text
+      }) !== false;
+      log.debug("Leaving Truststores.setKeys(). Document " + put);
+      return put ? { ok: true, code: '', why: '' } :
+        this.refused('STS-PKI-0306', 'the directory is full');
+    }
+    if (row.kind === 'ssh') {
+      const read = Truststores.sshKeysOfText(String((spec && spec.sshKeys) ||
+                                                    ''));
+      if (read.why) {
+        log.debug("Leaving Truststores.setKeys(). SSH keys refused.");
+        return this.refused('STS-PKI-0308', read.why);
+      }
+      const done = this.directory.putStore(id, {
+        name: row.name, kind: 'ssh', description: row.description || '',
+        addedBy: row.addedBy || '', sshKeys: read.keys.join('\n')
+      }) !== false;
+      log.debug("Leaving Truststores.setKeys(). SSH keys " + done);
+      return done ? { ok: true, code: '', why: '' } :
+        this.refused('STS-PKI-0306', 'the directory is full');
+    }
     if (row.kind !== 'jwks') {
       log.debug("Leaving Truststores.setKeys(). Certificates.");
       return this.refused('STS-PKI-0309', '"' + name + '" holds ' +
@@ -1674,6 +1798,248 @@ class Truststores {
               ", " + sets.length + " bound set(s).");
     return { registered: registered, sets: sets, names: chosen.names,
              assigned: chosen.assigned, problems: problems };
+  }
+
+  // The store kind a legacy setting's view holds.
+  private static settingKind(key: string): string {
+    helpers.log.debug("Entering Truststores.settingKind(). " + key);
+    const format = String(SETTING_FORMATS[key] || '');
+    const kind = format === 'ssh-lines' ? 'ssh' :
+      /^files?:/.test(format) ? format.replace(/^files?:/, '') : 'x509';
+    helpers.log.debug("Leaving Truststores.settingKind(). " + kind);
+    return kind;
+  }
+
+  /**
+   * What is wrong with a document of a kind (#2152), or ''. `cosign`: one
+   * to 32 PEM public keys; `sigstore-root`: a trusted_root.json, a JSON
+   * object with certificateAuthorities or tlogs; `tuf-root`: a TUF root,
+   * a JSON object whose signed._type is root. At most 256 KiB.
+   *
+   * @param kind - the document kind
+   * @param text - the document
+   * @returns the reason, or ''
+   */
+  static documentProblem(kind: string, text: string): string {
+    helpers.log.debug("Entering Truststores.documentProblem(). " + kind);
+    let why = '';
+    if (!text) {
+      why = 'a ' + kind + ' truststore holds a document; none was given';
+    } else if (Buffer.byteLength(text, 'utf8') > MAX_DOCUMENT) {
+      why = 'a document is at most 256 KiB';
+    } else if (kind === 'cosign') {
+      const blocks = text.match(PUBLIC_KEY) || [];
+      if (!blocks.length || blocks.length > MAX_COSIGN_KEYS) {
+        why = 'a cosign truststore holds 1 to ' + MAX_COSIGN_KEYS + ' PEM ' +
+          'public keys';
+      } else if (blocks.some(function (one) {
+        let spki: Json = null;
+        try {
+          spki = stsCrypto.spkiFromPublicKeyPem(one);
+        } catch (e) {
+          helpers.log.debug("Caught in Truststores.documentProblem(): " +
+                            ((e && (e as Json).message) || e));
+          spki = null;
+        }
+        return !spki;
+      })) {
+        why = 'every block is a PEM public key';
+      }
+    } else {
+      let doc: Json = null;
+      try {
+        doc = JSON.parse(text);
+      } catch (e) {
+        helpers.log.debug("Caught in Truststores.documentProblem(): " +
+                          ((e && (e as Json).message) || e));
+        doc = null;
+      }
+      if (!doc || typeof doc !== 'object') {
+        why = 'a ' + kind + ' document is JSON';
+      } else if (kind === 'sigstore-root' &&
+                 !Array.isArray(doc.certificateAuthorities) &&
+                 !Array.isArray(doc.tlogs)) {
+        why = 'a Sigstore trusted root names certificateAuthorities or tlogs';
+      } else if (kind === 'tuf-root' &&
+                 !(doc.signed && doc.signed._type === 'root')) {
+        why = 'a TUF root is a signed document whose _type is root';
+      }
+    }
+    helpers.log.debug("Leaving Truststores.documentProblem(). " +
+                      (why || 'none'));
+    return why;
+  }
+
+  // The documents a `file:` or `files:` setting names, read where kept.
+  private settingDocuments(realmId: string, key: string): Json {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Truststores.settingDocuments(). " + key);
+    const self = this;
+    const raw = realms.run(realmId, function () {
+      return config.value(key);
+    });
+    const files = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (one: Json) {
+        return String(one).trim();
+      }).filter(Boolean);
+    const documents: Json[] = [];
+    const problems: Json[] = [];
+    files.forEach(function (file: string) {
+      try {
+        documents.push({ name: 'setting:' + key, file: file,
+                         text: self.deps.readNamedFile(file) });
+      } catch (e) {
+        log.debug("Caught in Truststores.settingDocuments(): " +
+                  ((e && (e as Json).message) || e));
+        problems.push({ code: 'STS-PKI-0308', store: 'setting:' + key,
+          file: file, why: file + ' could not be read: ' +
+            ((e && (e as Json).message) || e) });
+      }
+    });
+    log.debug("Leaving Truststores.settingDocuments(). " + documents.length);
+    return { documents: documents, problems: problems };
+  }
+
+  /**
+   * THE DOCUMENTS a document use case trusts (#2152), in its list's order:
+   * a setting view's files read under `security.fileRoots`, a truststore's
+   * document as stored. A file that cannot be read is a problem, not a
+   * document; the caller decides whether that fails it.
+   *
+   * @param useCaseId - a `cosign`, `sigstore-root` or `tuf-root` use case
+   * @param realmId - the realm; the ambient one where omitted
+   * @returns `{ documents: [{ name, file?, text }], names, assigned,
+   *   problems }`
+   */
+  documentsFor(useCaseId: string, realmId?: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Truststores.documentsFor(). " + useCaseId);
+    const useCase = UseCases.get(useCaseId);
+    if (!useCase || DOCUMENT_KINDS.indexOf(useCase.kind) < 0) {
+      log.debug("Leaving Truststores.documentsFor(). Not a document use " +
+                "case.");
+      return { documents: [], names: [], assigned: false, problems: [] };
+    }
+    const self = this;
+    const chosen = this.namesFor(useCaseId, realmId);
+    const here = this.resolvingRealm(useCase, realmId);
+    const documents: Json[] = [];
+    const problems: Json[] = [];
+    (chosen.names as string[]).forEach(function (name: string) {
+      const where = self.locate(here, name);
+      if (!where || where.storeKind !== useCase.kind) {
+        return;
+      }
+      if (where.kind === 'setting') {
+        const read = self.settingDocuments(where.realmId, name.slice(8));
+        read.documents.forEach(function (one: Json) {
+          documents.push(one);
+        });
+        read.problems.forEach(function (one: Json) {
+          problems.push(one);
+        });
+        return;
+      }
+      documents.push({ name: name, text: String(where.row.document || '') });
+    });
+    log.debug("Leaving Truststores.documentsFor(). " + documents.length +
+              " document(s).");
+    return { documents: documents, names: chosen.names,
+             assigned: chosen.assigned, problems: problems };
+  }
+
+  /**
+   * SSH CA public keys in authorized_keys form (#2151): one per line, at
+   * most MAX_SSH_KEYS, each one `pki.parseSshAuthorizedKey()` reads; blank
+   * lines and comments are dropped.
+   *
+   * @param text - the lines
+   * @returns `{ keys, why }`, `keys` the normalised lines
+   */
+  static sshKeysOfText(text: string): Json {
+    helpers.log.debug("Entering Truststores.sshKeysOfText().");
+    const lines = String(text || '').split(/\r?\n/).map(function (one) {
+      return one.trim();
+    }).filter(function (one) {
+      return !!one && one.charAt(0) !== '#';
+    });
+    let why = '';
+    if (!lines.length) {
+      why = 'SSH CA keys are at least one public key in authorized_keys form';
+    } else if (lines.length > MAX_SSH_KEYS) {
+      why = 'a truststore holds at most ' + MAX_SSH_KEYS + ' SSH CA keys';
+    } else if (lines.some(function (one) {
+      return !pki.parseSshAuthorizedKey(one);
+    })) {
+      why = 'every line is an SSH public key in authorized_keys form';
+    }
+    helpers.log.debug("Leaving Truststores.sshKeysOfText(). " +
+                      (why || 'ok'));
+    return { keys: why ? [] : lines, why: why };
+  }
+
+  // The SSH CA keys an `ssh-lines` setting holds in a realm.
+  private sshSettingKeys(realmId: string, key: string): string[] {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Truststores.sshSettingKeys(). " + key);
+    const raw = realms.run(realmId, function () {
+      return config.value(key);
+    });
+    const lines = String(raw || '').split(/\r?\n/).map(function (one) {
+      return one.trim();
+    }).filter(function (one) {
+      return !!one && one.charAt(0) !== '#';
+    });
+    log.debug("Leaving Truststores.sshSettingKeys(). " + lines.length);
+    return lines;
+  }
+
+  /**
+   * THE SSH CA KEYS an `ssh` use case trusts (#2151), in order: what its
+   * list names, each setting view and SSH CA truststore read where kept.
+   * Lines that do not parse are left for the caller's parser to drop.
+   *
+   * @param useCaseId - an `ssh` use case
+   * @param realmId - the realm; the ambient one where omitted
+   * @returns `{ keys, names, assigned, problems }`
+   */
+  sshAuthorities(useCaseId: string, realmId?: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Truststores.sshAuthorities(). " + useCaseId);
+    const useCase = UseCases.get(useCaseId);
+    if (!useCase || useCase.kind !== 'ssh') {
+      log.debug("Leaving Truststores.sshAuthorities(). Not an SSH use case.");
+      return { keys: [], names: [], assigned: false, problems: [] };
+    }
+    const self = this;
+    const chosen = this.namesFor(useCaseId, realmId);
+    const here = this.resolvingRealm(useCase, realmId);
+    const keys: string[] = [];
+    const problems: Json[] = [];
+    (chosen.names as string[]).forEach(function (name: string) {
+      const where = self.locate(here, name);
+      if (!where || where.storeKind !== 'ssh') {
+        return;
+      }
+      if (where.kind === 'setting') {
+        self.sshSettingKeys(where.realmId, name.slice(8)).forEach(
+          function (one) {
+            keys.push(one);
+          });
+        return;
+      }
+      const read = Truststores.sshKeysOfText(String(where.row.sshKeys || ''));
+      if (read.why) {
+        problems.push({ code: 'STS-PKI-0308', store: name, why: read.why });
+        return;
+      }
+      read.keys.forEach(function (one: string) {
+        keys.push(one);
+      });
+    });
+    log.debug("Leaving Truststores.sshAuthorities(). " + keys.length + ".");
+    return { keys: keys, names: chosen.names, assigned: chosen.assigned,
+             problems: problems };
   }
 
   /**
@@ -1776,6 +2142,10 @@ export = {
   setKeys: slot.forward('setKeys'),
   keySources: slot.forward('keySources'),
   boundKeySets: slot.forward('boundKeySets'),
+  sshAuthorities: slot.forward('sshAuthorities'),
+  sshKeysOfText: Truststores.sshKeysOfText,
+  documentsFor: slot.forward('documentsFor'),
+  documentProblem: Truststores.documentProblem,
   keysOfText: Truststores.keysOfText,
   keySetProblem: Truststores.keySetProblem,
   limits: slot.forward('limits')

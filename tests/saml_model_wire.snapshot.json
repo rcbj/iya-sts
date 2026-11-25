@@ -11,6 +11,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -31,6 +32,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -51,6 +53,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -71,6 +74,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -91,6 +95,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -111,6 +116,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -131,6 +137,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwire/authn/login?authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -158,6 +165,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwire/authn/login?authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -183,10 +191,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -209,10 +219,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -238,6 +250,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwire/saml2/sso?rid=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -260,10 +273,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -287,10 +302,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -313,10 +330,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -339,10 +358,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -365,10 +386,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -393,6 +416,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://sp.wire.test/acs?SAMLResponse=<value>&SigAlg=http%3A%2F%2Fwww.w3.org%2F2001%2F04%2Fxmldsig-more%23rsa-sha256&Signature=<value>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -421,10 +445,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -451,6 +477,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://sp.wire.test/acs?SAMLart=<value>&RelayState=rs-art",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -484,6 +511,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -504,6 +532,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -524,6 +553,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -542,10 +572,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -568,10 +600,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -594,10 +628,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -620,10 +656,12 @@
    "code": "STS-SAML-0002",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -646,10 +684,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -666,10 +706,12 @@
    "code": "STS-SAML-0002",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -692,10 +734,12 @@
    "code": "STS-SAML-0087",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -718,10 +762,12 @@
    "code": "STS-SAML-0085",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -744,10 +790,12 @@
    "code": "STS-SAML-0086",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -770,10 +818,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -796,10 +846,12 @@
    "code": "STS-SAML-0088",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -822,10 +874,12 @@
    "code": "STS-SAML-0007",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -848,10 +902,12 @@
    "code": "STS-SAML-0008",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -876,6 +932,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwire/authn/login?authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -901,10 +958,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -927,10 +986,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -953,10 +1014,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -979,10 +1042,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1005,10 +1070,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1031,10 +1098,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1058,10 +1127,12 @@
    "code": "STS-SAML-0091",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1086,6 +1157,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1106,6 +1178,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1142,10 +1215,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -1162,10 +1237,12 @@
    "code": "STS-SAML-0019",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1190,6 +1267,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://sp.wire.test/slo?SAMLResponse=<value>&RelayState=rs-slo&SigAlg=http%3A%2F%2Fwww.w3.org%2F2001%2F04%2Fxmldsig-more%23rsa-sha256&Signature=<value>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1219,10 +1297,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_session=; Path=/; Max-Age=0"
     ],
@@ -1247,6 +1327,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwire/authn/login?authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1272,10 +1353,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1299,10 +1382,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1328,6 +1413,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://rp.wire.test/artifact?SAMLart=<value>&TARGET=https%3A%2F%2Frp.wire.test%2Fapp",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1361,6 +1447,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1381,6 +1468,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1401,6 +1489,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1421,6 +1510,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1441,6 +1531,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1461,6 +1552,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1481,6 +1573,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1501,6 +1594,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1519,10 +1613,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1545,10 +1641,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1572,10 +1670,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1599,10 +1699,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwire/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwire/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwire=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1628,6 +1730,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://rp.wire.test/artifact?SAMLart=<value>&TARGET=https%3A%2F%2Frp.wire.test%2Fx",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1661,6 +1764,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1681,6 +1785,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1701,6 +1806,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1721,6 +1827,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1741,6 +1848,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/samlmetadata+xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1761,6 +1869,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "application/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -1779,10 +1888,12 @@
    "code": "STS-SAML-0063",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1807,6 +1918,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwirep/authn/login?app=https%3A%2F%2Fsp.wire.test%2Fsp#authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1834,6 +1946,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwirep/oauth2/consent#<random>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1858,10 +1971,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1887,6 +2002,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwirep/saml2/sso?rid=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -1909,10 +2025,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1936,10 +2054,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1962,10 +2082,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -1988,10 +2110,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2014,10 +2138,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2042,6 +2168,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://sp.wire.test/acs?SAMLResponse=<value>&SigAlg=http%3A%2F%2Fwww.w3.org%2F2001%2F04%2Fxmldsig-more%23rsa-sha256&Signature=<value>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -2070,10 +2197,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2100,6 +2229,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://sp.wire.test/acs?SAMLart=<value>&RelayState=rs-art",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -2133,6 +2263,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -2153,6 +2284,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -2173,6 +2305,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -2191,10 +2324,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2217,10 +2352,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2243,10 +2380,12 @@
    "code": "STS-SAML-0002",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2269,10 +2408,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -2289,10 +2430,12 @@
    "code": "STS-SAML-0002",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2315,10 +2458,12 @@
    "code": "STS-SAML-0087",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2341,10 +2486,12 @@
    "code": "STS-SAML-0085",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2367,10 +2514,12 @@
    "code": "STS-SAML-0086",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2393,10 +2542,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2419,10 +2570,12 @@
    "code": "STS-SAML-0088",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2445,10 +2598,12 @@
    "code": "STS-SAML-0007",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2471,10 +2626,12 @@
    "code": "STS-SAML-0008",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2499,6 +2656,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwirep/authn/login?app=https%3A%2F%2Fsp.wire.test%2Fsp#authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -2524,10 +2682,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2550,10 +2710,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2576,10 +2738,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2602,10 +2766,12 @@
    "code": "STS-SAML-0005",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2628,10 +2794,12 @@
    "code": "STS-SAML-0103",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2654,10 +2822,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2683,6 +2853,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -2703,6 +2874,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -2723,6 +2895,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -2753,10 +2926,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "vary": "Origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -2773,10 +2948,12 @@
    "code": "STS-SAML-0019",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2801,6 +2978,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://sp.wire.test/slo?SAMLResponse=<value>&RelayState=rs-slo&SigAlg=http%3A%2F%2Fwww.w3.org%2F2001%2F04%2Fxmldsig-more%23rsa-sha256&Signature=<value>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -2830,10 +3008,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_session=; Path=/; Max-Age=0"
     ],
@@ -2858,6 +3038,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "/realm/samlwirep/authn/login?app=https%3A%2F%2Frp.wire.test%2Frp#authn=<handle>",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -2883,10 +3064,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2910,10 +3093,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -2939,6 +3124,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://rp.wire.test/artifact?SAMLart=<value>&TARGET=https%3A%2F%2Frp.wire.test%2Fapp",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -2972,6 +3158,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -2992,6 +3179,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -3012,6 +3200,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -3032,6 +3221,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -3052,6 +3242,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -3072,6 +3263,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -3092,6 +3284,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -3112,6 +3305,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/xml; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
     "vary": "Origin",
@@ -3130,10 +3324,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -3156,10 +3352,12 @@
    "code": "STS-SAML-0028",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -3182,10 +3380,12 @@
    "code": "STS-SAML-0105",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -3208,10 +3408,12 @@
    "code": "",
    "headers": {
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; report-uri /realm/samlwirep/web/csp-report; report-to csp-endpoint",
     "content-type": "text/html; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
+    "reporting-endpoints": "csp-endpoint=\"/realm/samlwirep/web/csp-report\"",
     "set-cookie": [
      "sts_accounts_samlwirep=<cookie>; Path=/; HttpOnly; SameSite=Lax"
     ],
@@ -3237,6 +3439,7 @@
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
     "content-type": "text/plain; charset=utf-8",
+    "cross-origin-resource-policy": "same-site",
     "location": "https://rp.wire.test/artifact?SAMLart=<value>&TARGET=https%3A%2F%2Frp.wire.test%2Fx",
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",

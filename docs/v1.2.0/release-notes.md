@@ -6,6 +6,60 @@ title: Release notes
 
 ## 1.2.0
 
+### New: risky components and dangerous functionality, documented
+
+[Risky third-party components](risky-components.md) lists the third-party
+components that carry more risk than the rest, with what each is used for,
+how its use is contained and how it is kept current (ASVS 5.0.0 15.1.4).
+[Dangerous functionality](dangerous-functionality.md) is one inventory of the
+parts of the service that parse hostile formats, fetch what others name, take
+files, run processes or native code, or run rules an administrator wrote, with
+their controls (ASVS 5.0.0 15.1.5) (#2204).
+### New: dependencies, limits and timeouts, and a rotation schedule
+
+A new page, [Dependencies, limits and timeouts](dependencies.md), lists every
+system iya-sts connects to. For each one it gives the connection limit, what
+happens at the limit, the timeouts, the retries, and what a caller sees when
+the system is down (ASVS 5.0.0 13.1.2, 13.1.3). [Key
+management](key-management.md#rotation-schedule) now has a rotation schedule
+for every key and secret (ASVS 5.0.0 13.1.4). Both pages end with the gaps
+they found.
+### Fixed: GNAP macaroon and `jwt-encrypted` tokens survive a signing rotation
+
+A signing rotation no longer stops GNAP macaroons and `jwt-encrypted`
+tokens issued before it from verifying (#2212). They are verified under
+every replaced realm secret the rotation keeps, and it keeps one for at
+least the longest GNAP access-token lifetime. A resource server's
+`gnapMacaroonKey` is rewritten when the first macaroon for it is minted
+after a rotation. Tokens issued before the upgrade keep verifying.
+Nothing needs an upgrade script.
+### New: Sigstore trust material as truststores
+
+The SPIFFE Docker workload attestor's cosign public keys, pinned Sigstore
+trusted root and TUF root may now come from truststores (#2152): three
+new use cases, `sigstore-cosign-key`, `sigstore-trusted-root` and
+`sigstore-tuf-root`, each defaulting to today's setting, so nothing
+changes until an administrator assigns a truststore. Several trusted roots
+are combined; a TUF root is one. `POST /admin-api/truststores/create` and
+`set-keys` take `document`.
+
+### New: SSH certificate authorities as truststores
+
+A truststore may now hold SSH certificate authority public keys (#2151).
+The new use case `spiffe-sshpop`, which the SPIFFE sshpop node attestor
+checks host certificates against, defaults to the setting
+`spiffe.sshpopCertAuthorities`, so nothing changes until an administrator
+assigns a truststore. `POST /admin-api/truststores/create` and `set-keys`
+take `sshKeys`.
+### New documentation: a post-quantum migration plan and browser requirements
+
+[Post-quantum migration plan](post-quantum-migration.md) sets out, surface by
+surface, what is post-quantum today, what the ecosystem still prevents and the
+order a realm moves in (ASVS 5.0.0 11.1.4). [Browser
+requirements](browser-requirements.md) lists the browser features the console,
+portal, reports application and sign-in screens need, and what a person sees
+when one is missing (ASVS 5.0.0 3.1.1) (#2206).
+
 ### New: OpenID Federation Trust Anchors from truststores
 
 A realm's OpenID Federation Trust Anchors may now come from key-set

@@ -55,7 +55,7 @@ Do not edit it by hand.
 | [Signer trust anchor](#signer-trust-anchor) | `SignerTrustAnchor` | ou=signerTrustAnchors | 5 |
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
-| [Named truststore](#named-truststore) | `Truststore` | ou=truststores | 5 |
+| [Named truststore](#named-truststore) | `Truststore` | ou=truststores | 7 |
 | [Truststore assignments](#truststore-assignments) | `TruststoreAssignments` |  | 1 |
 | [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 26 |
 | [XACML policy enforcement point cluster](#xacml-policy-enforcement-point-cluster) | `XacmlPepCluster` | ou=pepClusters | 5 |
@@ -1359,10 +1359,12 @@ One entry per named truststore; its certificates are stsSignerTrustAnchor entrie
 | Attribute | Values | Origin | OID | Description |
 |---|---|---|---|---|
 | `stsTrustAnchorAddedBy` | one | this service | `1.3.6.1.4.1.67607.1.1.690` | Who created the truststore, from the console or the management API; empty where nobody is recorded. |
+| `stsTruststoreDocument` | one | this service | `1.3.6.1.4.1.67607.1.1.1011` | A cosign, sigstore-root or tuf-root truststore's document: PEM public keys, a Sigstore trusted_root.json or a TUF root.json (#2152). |
 | `stsTruststoreJwks` | one | this service | `1.3.6.1.4.1.67607.1.1.1008` | A jwks truststore's key set as pasted: a JSON Web Key Set of public keys only. |
 | `stsTruststoreJwksUri` | one | this service | `1.3.6.1.4.1.67607.1.1.1009` | A jwks truststore's jwks_uri, fetched under the outbound policy where no key set was pasted. |
-| `stsTruststoreKind` | one | this service | `1.3.6.1.4.1.67607.1.1.1005` | What the truststore holds: x509 (certificate authorities) or jwks (a key set bound to one party, #2149). Absent is x509. |
+| `stsTruststoreKind` | one | this service | `1.3.6.1.4.1.67607.1.1.1005` | What the truststore holds: x509 (certificate authorities) jwks (a key set bound to one party, #2149) ssh (SSH certificate authority keys, #2151), or cosign, sigstore-root or tuf-root (Sigstore trust material, #2152). Absent is x509. |
 | `stsTruststoreParty` | one | this service | `1.3.6.1.4.1.67607.1.1.1007` | A jwks truststore's party, the one whose JSON Web Tokens its keys may verify: client:<client_id>, federation:<relationship id>, claims-provider:<provider id> or oidfed-anchor:<entity id> (#2149, #2150). |
+| `stsTruststoreSshKeys` | one | this service | `1.3.6.1.4.1.67607.1.1.1010` | An ssh truststore's SSH certificate authority public keys, in authorized_keys form, one per line (#2151). |
 
 ## Truststore assignments
 

@@ -1103,6 +1103,8 @@ declare namespace IyaDomain {
     party?: string;
     jwks?: string;
     jwksUri?: string;
+    sshKeys?: string;
+    document?: string;
     addedBy?: string;
     realm?: string;
   }

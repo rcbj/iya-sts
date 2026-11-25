@@ -428,6 +428,43 @@ const HEX = DIGEST.replace(/^sha256:/, '');
 const SIG_TAG = 'sha256-' + HEX + '.sig';
 const ATT_TAG = 'sha256-' + HEX + '.att';
 
+// An in-memory directory for named truststores (#2152): this file loads no
+// directory of its own.
+function truststoreDouble() {
+  log.debug("Entering truststoreDouble().");
+  const stores = new Map();
+  let assignments = {};
+  log.debug("Leaving truststoreDouble().");
+  return {
+    listStores: function () {
+      return Array.from(stores.values());
+    },
+    putStore: function (realmId, row) {
+      stores.set(row.name, row);
+      return true;
+    },
+    removeStore: function (realmId, name) {
+      return stores.delete(name);
+    },
+    listCerts: function () {
+      return [];
+    },
+    putCert: function () {
+      return false;
+    },
+    removeCert: function () {
+      return false;
+    },
+    readAssignments: function () {
+      return Object.assign({}, assignments);
+    },
+    writeAssignments: function (realmId, map) {
+      assignments = Object.assign({}, map);
+      return true;
+    }
+  };
+}
+
 async function keyed(t, m) {
   log.debug("Entering keyed().");
   t.log.info('=== cosign signatures under a configured key ===');
@@ -460,6 +497,54 @@ async function keyed(t, m) {
           'a keyed signature with its Rekor bundle verifies, with SPIRE\'s ' +
           'image-signature selectors (no subject or issuer: no certificate)',
           show(got));
+
+  // THE SAME KEY AND ROOT FROM TRUSTSTORES (#2152): with both settings
+  // empty, nothing verifies; with the key in a cosign truststore and the
+  // root in a sigstore-root truststore, assigned, it verifies again.
+  const truststores = require('../common/truststores');
+  const previousDirectory = truststores.installedDirectory();
+  truststores.setDirectory(truststoreDouble());
+  try {
+    config.setOverride('spiffe.dockerSigstorePublicKeyFiles', '');
+    config.setOverride('spiffe.dockerSigstoreTrustedRootFile', '');
+    const bare = await outcome(verifier(registry({ [SIG_TAG]: [good] }, [])));
+    const made = truststores.create(undefined, { name: 'cosign-keys',
+      kind: 'cosign', document: m.cosign.pem }).ok &&
+      truststores.create(undefined, { name: 'sigstore-root',
+        kind: 'sigstore-root',
+        document: fs.readFileSync(m.rootFile, 'utf8') }).ok;
+    const notAKey = truststores.create(undefined, { name: 'not-a-key',
+      kind: 'cosign', document: 'hello' }).code;
+    const notATuf = truststores.create(undefined, { name: 'not-a-tuf',
+      kind: 'tuf-root', document: '{"signed":{"_type":"targets"}}' }).code;
+    const assigned = truststores.assign(undefined, 'sigstore-cosign-key',
+                                        ['cosign-keys']).ok &&
+      truststores.assign(undefined, 'sigstore-trusted-root',
+                         ['sigstore-root']).ok;
+    const fromStores = await outcome(verifier(registry({ [SIG_TAG]: [good] },
+                                                       [])));
+    t.check(!bare.ok && made && notAKey === 'STS-PKI-0308' &&
+            notATuf === 'STS-PKI-0308' && assigned && fromStores.ok &&
+            fromStores.selectors[0] === 'image-signature:verified',
+            'with both settings empty nothing verifies; with the key and ' +
+            'the root in truststores assigned to sigstore-cosign-key and ' +
+            'sigstore-trusted-root, it verifies (#2152)',
+            show({ bare: bare, made: made, notAKey: notAKey,
+                   notATuf: notATuf, assigned: assigned,
+                   fromStores: fromStores }));
+  } finally {
+    // Unassigned and deleted whatever directory stays: a later file in this
+    // process must find both use cases at their defaults.
+    truststores.assign(undefined, 'sigstore-cosign-key', []);
+    truststores.assign(undefined, 'sigstore-trusted-root', []);
+    truststores.remove(undefined, 'cosign-keys');
+    truststores.remove(undefined, 'sigstore-root');
+    if (previousDirectory) {
+      truststores.setDirectory(previousDirectory);
+    }
+    config.setOverride('spiffe.dockerSigstorePublicKeyFiles', keyFile);
+    config.setOverride('spiffe.dockerSigstoreTrustedRootFile', m.rootFile);
+  }
   t.check(asked.some(function (u) {
             return urls.isAt(u, 'https://auth.test/token') &&
                    u.indexOf('scope=repository%3Ateam%2Fapp%3Apull') >= 0;

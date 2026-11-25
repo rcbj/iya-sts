@@ -404,9 +404,18 @@ class SigningRotation {
 
   // How long a retired refresh-token key set goes on OPENING tokens (D7): the
   // longest refresh token any client is issued, or the setting if longer.
+  //
+  // AND THE LONGEST GNAP ACCESS TOKEN (#2212). The set's secret is also what
+  // GNAP's macaroon root keys and its `dir` jwt-encrypted key are derived
+  // from (`gnap/gnap_tokens.ts`, `realmDerivedAll()`), and those verify
+  // under a retired set until it is dropped. So the set is kept until the
+  // last GNAP token minted under it has expired too — a client's own
+  // `gnapAccessTokenLifetimeS` included, through `longest()` — which no
+  // grant lifetime can extend, since a token is cut short at its grant.
   /**
    * Returns how long a retired refresh-token key set goes on opening tokens:
-   * the longest refresh-token lifetime plus skew, or the setting if longer.
+   * the longest refresh-token or GNAP access-token lifetime plus skew, or the
+   * setting if longer.
    *
    * @returns the grace in milliseconds
    */
@@ -416,7 +425,8 @@ class SigningRotation {
     const setting = Number(config.value('signing.retiredKeyGraceDays')) *
                     DAY_MS;
     const answer = Math.max(setting,
-      this.longest([['oauth2.refreshTokenTtlS', 1000]]) + SKEW_MS);
+      this.longest([['oauth2.refreshTokenTtlS', 1000],
+                    ['gnap.accessTokenLifetimeS', 1000]]) + SKEW_MS);
     log.debug("Leaving SigningRotation.refreshGraceMs(). " + answer + "ms.");
     return answer;
   }
