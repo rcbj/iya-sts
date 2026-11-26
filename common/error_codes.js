@@ -2392,6 +2392,14 @@ const CODES = [
       'holds together. New connections go on presenting the pair already ' +
       'held.',
     spec: 'Log line and audit row' },
+  { code: 'STS-STORE-0182',
+    summary: 'The realm list another process\'s change asked for was read ' +
+      'several times and each time this process\'s own realm write ' +
+      'committed while the read was out (GitHub run 45732176952). The last ' +
+      'answer is applied with no realm removed whose row this process wrote ' +
+      'meanwhile; a setting written here in that moment may read as the ' +
+      'stored row until the next realm change.',
+    spec: 'Log line' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +

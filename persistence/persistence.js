@@ -1558,6 +1558,11 @@ function realmsDelta(removals) {
 
 function advanceRealmShadow(delta) {
   log.debug("Entering advanceRealmShadow().");
+  // A realm list read now in flight predates this (`applyRealmsRead()`).
+  if (delta && ((delta.removed && delta.removed.length) ||
+                (delta.upserts && delta.upserts.length))) {
+    realmShadowMoves += 1;
+  }
   delta.removed.forEach(function (id) {
     realmShadow.delete(id);
   });
@@ -5821,18 +5826,82 @@ function applyStaleKeys(keys, reader) {
 }
 
 
+// ---------------------------------------------------------------------------
+// A REALM LIST READ THAT THIS PROCESS'S OWN REALM WRITE OVERTOOK IS READ AGAIN
+// (GitHub run 45732176952, `sts_pseudonyms`, single-node).
+//
+// The list is read whole, and this process's own flush may commit a realm row
+// and advance `realmShadow` while that read is out. The answer then predates
+// the write it is judged against: a realm created HERE a moment earlier is in
+// the shadow and not in the answer, and the removal rule below took that as
+// "another node removed it". In the run worker 5 created `p644-…`, its flush
+// committed while a pull it was late with (another realm's removal) had the
+// list in flight, and the stale answer removed the new realm from worker 5 —
+// and, through the keystore's purge, its signing keys and data keys from the
+// STORE. Every later request worker 5 served for the realm was express's
+// "Cannot POST", and every other process met entries sealed under data keys
+// the purge had destroyed (STS-KEYS-0092). The same overtaking would put a
+// realm's overrides back to the stale row's, undoing a setting this process
+// had just written.
+//
+// So the shadow counts its moves (`realmShadowMoves`, advanced by
+// `advanceRealmShadow()`), and an answer read while the count moved is not
+// applied: the list is read again, now after the commit. Bounded at
+// REALMS_REREADS; past it the answer is applied with removals confined to
+// realms whose shadow is what it was before the read (STS-STORE-0182), so an
+// overtaken read can still never remove a realm.
+// ---------------------------------------------------------------------------
+const REALMS_REREADS = 4;
+let realmShadowMoves = 0;
+
+/**
+ * Applies a realm change another process wrote: reads the realm list and
+ * reconciles this process's registry with it.
+ *
+ * @returns a promise of true once applied, false when realms are not
+ *   persisted
+ */
 function applyRealmsChange() {
   log.debug("Entering applyRealmsChange().");
   if (!persistsRealms()) {
     log.debug("Leaving applyRealmsChange().");
     return Promise.resolve(false);
   }
+  log.debug("Leaving applyRealmsChange().");
+  return applyRealmsRead(0);
+}
+
+/**
+ * One read of the realm list and, unless this process's own realm write
+ * overtook it, its application. See the block above.
+ *
+ * @param attempt - the reads already made and discarded
+ * @returns a promise of true once applied
+ */
+function applyRealmsRead(attempt) {
+  log.debug("Entering applyRealmsRead(). attempt=" + attempt);
   // WHAT THIS PROCESS HOLDS FOR REALMS IT HAS NOT DEFINED, TAKEN BEFORE THE
   // READ (#1938): only what was here before the store answered is judged by
   // that answer. See `realms.forgetUnarrived()`, below.
   const heldBefore = realms.heldUnarrivedIds();
-  log.debug("Leaving applyRealmsChange().");
+  // And the shadow as it was before the read, for the block above.
+  const movesBefore = realmShadowMoves;
+  const shadowBefore = new Map(realmShadow);
+  log.debug("Leaving applyRealmsRead().");
   return driver.loadRealms().then(function (rows) {
+    const overtaken = realmShadowMoves !== movesBefore;
+    if (overtaken && attempt + 1 < REALMS_REREADS) {
+      log.debug('persistence: this process wrote a realm row while the ' +
+                'realm list was being read; reading it again.');
+      return applyRealmsRead(attempt + 1);
+    }
+    if (overtaken) {
+      log.warn(errorCodes.tag('STS-STORE-0182') + 'persistence: the realm ' +
+               'list was read ' + REALMS_REREADS + ' times and each time ' +
+               'this process wrote a realm row while it was out; the last ' +
+               'answer is applied, removing no realm whose row this process ' +
+               'wrote meanwhile.');
+    }
     const stored = rows || [];
     // -----------------------------------------------------------------------
     // WHAT THIS PROCESS HAS CHANGED AND NOT WRITTEN YET RIDES ON TOP
@@ -5878,8 +5947,13 @@ function applyRealmsChange() {
     // neither, and is left alone.
     // -----------------------------------------------------------------------
     const storedIds = new Set(stored.map(function (row) { return row.id; }));
+    // Judged only where the shadow is what it was before the read: a realm
+    // this process wrote while the read was out is not the answer's to
+    // remove (the block above `applyRealmsChange()`).
     const gone = Array.from(realmShadow.keys()).filter(function (id) {
-      return !storedIds.has(id) && !!realms.get(id);
+      return !storedIds.has(id) && !!realms.get(id) &&
+        shadowBefore.has(id) &&
+        shadowBefore.get(id) === realmShadow.get(id);
     });
     const was = restoring;
     // The realms whose replicated update was refused (STS-STORE-0174).
