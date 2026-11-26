@@ -143,6 +143,7 @@ protocol's section of the sidebar:
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
 [Hardware tokens](hardware-tokens.md) ·
+[Smart cards](smart-cards.md) ·
 [One-time code tokens](one-time-code-tokens.md) ·
 [YubiKey OTP](yubiotp.md) ·
 [OpenPGP keys and encrypted mail](openpgp.md) ·
@@ -304,7 +305,7 @@ This table is the same ground by protocol family.
 | **App passwords** — what a person with a second factor gives a client at the five doors that take only a password (LDAP, WS-Trust, SCIM, SSF and EST Basic), which in product refuse their own password; generated, shown **once**, hashed, scoped to the doors named and never accepted at a browser sign-in | `/portal/app-passwords`, `/admin/users`, `/admin-api/users/app-passwords` | [authentication](authentication.md#the-password-only-doors-and-app-passwords) |
 | **HOTP (RFC 4226) and PSKC (RFC 6030)** — a counter-based one-time code from a YubiKey slot programmed for HOTP, or from a vendor's seed file, as a second factor | `/portal/mfa`, `/admin/hardware-tokens` | [one-time-code-tokens](one-time-code-tokens.md) |
 | **Yubico OTP and YK-VAL 2.0** — a YubiKey OTP checked on this service, and an optional validation server for clients that already speak YK-VAL. Nothing is sent to YubiCloud | `/portal/mfa`, `/wsapi/2.0/verify` | [yubiotp](yubiotp.md) |
-| **Hardware tokens, PIV (NIST SP 800-73-4, FIPS 201-3) and YubiKey PIV attestation** — one record per physical key, taken from attestation: passkeys, PIV certificates from attested keys, one-time codes, an OpenSSH certificate and an OpenPGP key. Reporting it lost retires every credential on it | `/admin/hardware-tokens`, `/portal/tokens`, `/portal/tokens-and-keys` | [hardware-tokens](hardware-tokens.md) |
+| **Hardware tokens, PIV (NIST SP 800-73-4, FIPS 201-3) and YubiKey PIV attestation** — one record per physical key, taken from attestation: passkeys, PIV certificates from attested keys, one-time codes, an OpenSSH certificate and an OpenPGP key. Reporting it lost retires every credential on it | `/admin/hardware-tokens`, `/portal/tokens`, `/portal/tokens-and-keys` | [hardware-tokens](hardware-tokens.md), [smart cards](smart-cards.md) |
 | **W3C Device Bound Session Credentials** (draft) — the relying party's half: after a sign-in the browser is asked to bind the sign-on session to a key it holds (TPM-backed where it can), and a bound session then needs a short-lived second cookie that only a proof of that key renews, so a copied session cookie stops working. Per realm, off by default (`authn.deviceBoundSessions`); a browser without DBSC keeps an ordinary session | `/authn/dbsc/register`, `/authn/dbsc/refresh` | [sessions](sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials) |
 | Kerberos v5 — a KDC, a protected service, and MS-KKDCP; a person's **keytab**, derived from a password in hand | TCP/UDP 88, `/KdcProxy`, `/portal/kerberos` | [kerberos](kerberos.md) |
 | SPNEGO (RFC 4559/4178) | `/authn/spnego` | [kerberos](kerberos.md) |

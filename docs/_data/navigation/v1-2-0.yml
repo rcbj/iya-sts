@@ -108,6 +108,20 @@
     - { title: Attribute sources, url: /attribute-sources.html }
     - { title: Secret push destinations, url: /secret-destinations.html }
 
+# SMART CARDS (#2277): a hub, a page per standard and the guide. The pages
+# link to the sections on the TLS, hardware token, authentication, Kerberos
+# and PKI pages rather than repeating them.
+- section: Smart cards
+  items:
+    - { title: Smart cards, url: /smart-cards.html }
+    - { title: Smart-card guide, url: /smart-cards-guide.html }
+    - { title: PIV and YubiKey PIV attestation, url: /smart-cards-piv.html }
+    - { title: Client certificates in TLS, url: /smart-cards-tls.html }
+    - { title: Kerberos PKINIT, url: /smart-cards-pkinit.html }
+    - { title: "PKCS #11", url: /smart-cards-pkcs11.html }
+    - { title: "Card-held keys: S/MIME, OpenPGP, SSH", url: /smart-cards-keys.html }
+    - { title: "Smart-card and certificate sign-in", url: "/configure-tls.html#smart-card-and-certificate-sign-in" }
+
 - section: Verifiable credentials
   items:
     - { title: "Verifiable credentials and wallets (OID4VC)", url: /verifiable-credentials.html }

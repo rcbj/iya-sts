@@ -442,6 +442,8 @@ is shown on the screen and recorded under `STS-AUTHN-0463` to
 
 ## Smart-card and certificate sign-in
 
+See also: [Smart cards](smart-cards.md) and the [Smart-card guide](smart-cards-guide.md).
+
 A person can sign in with a client certificate from an authority this service
 does not run: a federal PIV card, a CAC, an enterprise smart card, or a
 software certificate from your own CA. Storing each certificate on its entry
