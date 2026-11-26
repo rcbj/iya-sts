@@ -189,20 +189,40 @@ Each default reads the setting's files as before, under
 ## Scope: service-wide and per realm
 
 Truststores you create in the **default realm** are service-wide. A
-**service** use case is decided with no realm in hand: a TLS handshake, a
-connection this service makes, the database. It may name only service-wide
-truststores, built-ins and views (`STS-PKI-0302`). A **realm** use case may
-name its own realm's truststores and the service-wide ones.
+**realm** use case is decided in the realm that asks, and may name that
+realm's own truststores and the service-wide ones; a name is looked for in
+the realm first and in the default realm after. A **service** use case is
+decided in the default realm, so it trusts one list everywhere, with the one
+exception below.
 
-**A realm may override an outbound service-wide use case** (#2148): the
-connections this service makes from that realm, to a partner, a mail relay,
-a SCIM target and the like, can trust a list of that realm's own, naming its
-own truststores and the service-wide ones. A realm with no override trusts
-the default realm's list, and clearing the override returns it there. The
-override changes nothing for the default realm or any other realm. A
-handshake (`tls-client`) and the fixed infrastructure use cases are still
-assigned from the default realm only (`STS-PKI-0302`), because nothing
-there says which realm is asking.
+**A realm may override an outbound service-wide use case** (#2148). The
+`x509` rows whose id starts with `outbound-` (every one but the `fixed`
+`outbound-database`, `outbound-secret-store`, `outbound-cloud-sdk` and
+`outbound-loopback`) check a server this service dials, and a dial is made
+from a realm. Assigned from a realm other than the default, such a use case
+gets that realm's own list, naming that realm's truststores and the
+service-wide ones, and the realm's own connections (to a federation partner,
+a mail relay, a SCIM target and the like) use it. A realm with no override
+uses the default realm's list; clearing the override (**Use cases** tab, or
+`truststores/unassign` under `/realm/<id>/admin-api/`) returns it there. An
+override changes nothing for the default realm or any other realm.
+`GET /admin-api/truststores` says of each use case whether it is
+`overridable` and, in a realm, whether that realm has a `realmOverride`.
+
+**The service-wide inbound use cases are the default realm's only**:
+`tls-client` (a client certificate at a TLS handshake, which carries no realm
+until the certificate is read), `fido-mds` and `revocation-signer`.
+`STS-PKI-0302` refuses two things: assigning or clearing one of these three
+from any realm other than the default, and a service-wide use case naming a
+truststore a realm other than the default defines, unless it is that realm's
+own override naming that realm's own truststore.
+
+**A `setting:<key>` view is read in the realm that asks** (#2235), whichever
+realm the use case's list was resolved in. A realm that sets its own
+`federation.outboundCaFile`, `ssf.pushCaFile`, `gnap.pushCaFile` or
+`risk.mdsTrustAnchors` therefore has its own value trusted for its own
+requests, through the default realm's list or its own. Named truststores,
+built-ins and the other views resolve where the list was resolved, as before.
 
 A SPIFFE use case names only SPIFFE bundle truststores, and nothing else
 names one (`STS-PKI-0304`). Assigning `spiffe-svid` or `spiffe-jwt-svid` a
@@ -218,12 +238,19 @@ truststores are consulted.
 
 ## The use cases
 
-`Kind` says whether a use case is assigned truststores: `x509` and `spiffe`
-are; `pins` trusts the certificate registered on each entry; `fixed` is this
-service's own hierarchy, or a connection made before the directory that
-holds the truststores can be read; `admission` is the rule a certificate is
-admitted into a store under. `Fallback` is used only while the use case is
-unassigned and its default list holds no anchor.
+`Kind` says whether a use case is assigned truststores, and of which kind.
+`x509` names certificate truststores, `spiffe` SPIFFE bundle truststores,
+`jwks` [key sets](#key-sets), `ssh` [SSH CA truststores](#ssh-certificate-authorities),
+and `cosign`, `sigstore-root` and `tuf-root` the
+[Sigstore documents](#sigstore-trust-material) of that kind: each of these is
+assigned a list. The other three take none: `pins` trusts the certificate
+registered on each entry; `fixed` is this service's own hierarchy, or a
+connection made before the directory that holds the truststores can be read;
+`admission` is the rule a certificate is admitted into a store under.
+`Fallback` is used only while the use case is unassigned and its default list
+holds no anchor. The `outbound-` rows check the server certificate of
+whoever this service connects to; every other row checks something
+presented to this service.
 
 | Use case | What it checks | Scope | Kind | Default | Fallback |
 |---|---|---|---|---|---|
@@ -290,6 +317,42 @@ unassigned and its default list holds no anchor.
 | `outbound-cloud-sdk` | AWS, Google Cloud and Azure APIs: their SDKs build their own TLS from node's store and NODE_EXTRA_CA_CERTS | service | fixed | `system` |  |
 | `outbound-loopback` | This service, dialled by itself | service | fixed | `service-root` |  |
 
+### Smart cards and certificate sign-in
+
+A card's certificate meets four use cases. The rest of what a card does is
+[Smart cards](smart-cards.md).
+
+| Use case | Scope | Default | What it decides for a card |
+|---|---|---|---|
+| `tls-client` | service | `client-certificates`, `setting:tls.trustIssuedClientCertificates` | Whether the certificate a browser or a client sends at the handshake verifies at all: the chain a [certificate sign-in profile](configure-tls.md#what-decides-a-certificate) looks for its `issuers` in, the LDAPS SASL EXTERNAL bind, and a certificate a [TLS-terminating proxy](configure-tls.md#a-tls-terminating-proxy-in-front-of-certificate-sign-in) forwards (and the proxy's own). One list for every realm, assigned from the default realm only. |
+| `piv-card` | realm | `setting:piv.externalIssuers` | The issuing CAs whose PIV or CAC cards are mapped by their FIPS 201 card UUID ([Outside PIV and CAC cards](hardware-tokens.md#outside-piv-and-cac-cards)). The card must verify under `tls-client` as well. |
+| `piv-attestation` | realm | `setting:piv.attestationAnchors`, falling back to `yubico-piv` | The roots a YubiKey PIV key attestation must chain to at enrolment ([PIV key attestation](hardware-tokens.md#piv-key-attestation)). |
+| `pkinit` | realm | `service-root` | The anchors a Kerberos PKINIT client certificate is validated to. The KDC also requires the leaf to come from one of this realm's own identity Issuing CAs (`STS-KRB-0184`), so assigning an outside CA here does not give an outside card a ticket ([PKINIT](smart-cards-pkinit.md)). |
+
+Fetching an outside card's revocation status is outbound:
+`outbound-revocation-http` for an OCSP responder or CRL over HTTPS,
+`outbound-revocation-ldap` for a CRL over LDAPS, and `revocation-signer`
+for a CRL signed by an issuer outside the certificate's path.
+
+To trust a federal PKI root through a named truststore instead of the
+client-certificate truststore, create it and assign it in the **default
+realm**, keeping the default names in the list so nothing else stops
+verifying (`api` is the helper in
+[Configuring OAuth 2.0 grants → Before you start](configure-oauth2-grants.md#before-you-start)):
+
+```bash
+api truststores/create '{"name":"fpki","description":"Federal PKI roots"}'
+api truststores/add "$(jq -n --rawfile c fpki-roots.pem '{name:"fpki", certificates:$c}')"
+api truststores/assign '{"useCase":"tls-client",
+  "truststores":["client-certificates","setting:tls.trustIssuedClientCertificates","fpki"]}'
+```
+
+In the console it is **Protocols → PKI trust** (`/admin/pki/trust`), the
+**Truststores** tab to create and fill it and the **Use cases** tab to
+assign it. Assigning `piv-card` or `piv-attestation` is the same call under
+`/realm/<id>/admin-api/` for a realm other than the default, and may name
+that realm's own truststores.
+
 ## Managing truststores
 
 On `/admin/pki/trust`:
@@ -308,7 +371,8 @@ On `/admin/pki/trust`:
   default. A service-wide inbound use case is assigned from the default
   realm only (`STS-PKI-0302`): it trusts the same truststores in every
   realm. In any other realm, an outbound one may be given that realm's own
-  list, shown as *this realm's own list*.
+  list, shown as *this realm's own list*
+  ([Scope](#scope-service-wide-and-per-realm)).
 * **System truststore** lists node's default store.
 
 The management API:

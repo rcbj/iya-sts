@@ -1143,6 +1143,8 @@ still asked for.
 
 #### Smart cards (#2031)
 
+See also: [Smart cards](smart-cards.md), every place a card is used.
+
 Three rows separate a smart card from the generic row that governed it until
 now. Each is a first factor only.
 

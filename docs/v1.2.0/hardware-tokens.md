@@ -341,6 +341,8 @@ A token reported lost after the sign-in reads `attested` false from then on.
 
 ## PIV key attestation
 
+See also: [Smart cards](smart-cards.md), every place a card is used.
+
 A YubiKey can prove that the key in one of its PIV slots was generated on the
 key and has never left it. `ykman piv keys attest <slot>` produces an
 **attestation certificate** for the slot's key, signed by the key's factory
