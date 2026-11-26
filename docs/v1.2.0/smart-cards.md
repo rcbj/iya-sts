@@ -143,6 +143,9 @@ The configuration and use-case recipes are in the
 
 ## Related
 
+See also [Phishing-resistant sign-in](phishing-resistance.md), every defence
+against phishing in one place.
+
 [Hardware tokens](hardware-tokens.md) ·
 [Configuring TLS and mutual TLS](configure-tls.md) ·
 [TLS and mutual TLS](tls.md) ·

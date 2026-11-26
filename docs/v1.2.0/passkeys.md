@@ -2298,6 +2298,8 @@ way, because the browser refuses the ceremony before the service sees it.
 
 ## Related
 
+* [Phishing-resistant sign-in](phishing-resistance.md): every defence against
+  phishing, passkeys among them, in one place
 * [Authentication](authentication.md): the sign-in service, passwords,
   TOTP, recovery codes, and the full reasoning behind passkeys
 * [Security profiles](oauth-security.md): `acr_values`, step-up and

@@ -1677,6 +1677,7 @@ client may override `oauth2.refreshIdleSeconds` and
 
 ## Related
 
+* [Phishing-resistant sign-in](phishing-resistance.md) — every defence against phishing, in one place
 * [OAuth 2.0 & OpenID Connect](oauth-oidc.md)
 * [TLS](tls.md) — the main port, the client truststore, certificate sign-in
 * [PKI](pki.md) — the certificate authority that issues client certificates
