@@ -1835,6 +1835,22 @@ directory and everything it had minted. Now:
   `liveRealmRow()` through the same `realmChangeOf()` the flush uses, and an
   unchanged row is counted and skipped (`tests/realm_replicated_overrides.js`
   B5).
+  **A realm list read that this process's own realm write overtook is read
+  again (GitHub run 45732176952).** The list is read whole while this
+  process's flush may commit a realm row and advance `realmShadow`; the
+  answer then predates the write it is judged against, and a realm created
+  HERE a moment before was in the shadow and not in the answer — "removed by
+  another node". In `single-node` worker 5 created `p644-…`, its flush
+  landed while a pull it was late with had the list out, and the stale
+  answer removed the realm from worker 5 and, through the keystore's purge,
+  its signing keys and data keys from the store: `sts_pseudonyms` got
+  express's `Cannot POST` from worker 5, and every other process met
+  entries sealed under destroyed keys (STS-KEYS-0092). `advanceRealmShadow()`
+  counts its moves; `applyRealmsRead()` reads again while the count moved
+  under it (up to four reads), and past that applies the answer with no
+  realm removed whose shadow changed during the read (STS-STORE-0182).
+  `tests/realm_replicated_overrides.js` B6 holds a read open across a flush
+  here.
   **The directory applier's base is what a RUNNING flush sent for that key,
   not the shadow (2026-09-23)**: the shadow advances only when the flush
   settles, so a change made while it was out that UNDID the flush's own change

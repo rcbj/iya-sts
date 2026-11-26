@@ -2393,12 +2393,12 @@ const CODES = [
       'held.',
     spec: 'Log line and audit row' },
   { code: 'STS-STORE-0182',
-    summary: 'The realm list another process\'s change asked for was read ' +
-      'several times and each time this process\'s own realm write ' +
-      'committed while the read was out (GitHub run 45732176952). The last ' +
-      'answer is applied with no realm removed whose row this process wrote ' +
-      'meanwhile; a setting written here in that moment may read as the ' +
-      'stored row until the next realm change.',
+    summary: 'The realm list or the settings table another process\'s ' +
+      'change asked for was read several times and each time this ' +
+      'process\'s own write of it committed while the read was out (GitHub ' +
+      'run 45732176952). The last answer is applied, with no realm removed ' +
+      'whose row this process wrote meanwhile; a value written here in that ' +
+      'moment may read as the stored one until the next change.',
     spec: 'Log line' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

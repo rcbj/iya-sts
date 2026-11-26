@@ -412,6 +412,11 @@ const shadowCount = cacheRegistry.register({
 });
 // key -> raw value, or null before a restore primed it
 let appconfigShadow = null;
+// How often each shadow was advanced by this process's own committed write,
+// so an applier can tell its read was overtaken by one
+// (`applyRealmsRead()`, `applyAppconfigRead()`).
+let realmShadowMoves = 0;
+let appconfigShadowMoves = 0;
 // The realms removed in THIS process and not yet written down.
 const removedHere = new Set();
 
@@ -1720,6 +1725,11 @@ function appconfigDelta() {
 
 function advanceAppconfigShadow(delta) {
   log.debug("Entering advanceAppconfigShadow().");
+  // A settings read now in flight predates this (`applyAppconfigRead()`).
+  if (delta && ((delta.cleared && delta.cleared.length) ||
+                (delta.set && Object.keys(delta.set).length))) {
+    appconfigShadowMoves += 1;
+  }
   const next = Object.assign({}, appconfigShadow || {});
   delta.cleared.forEach(function (key) {
     delete next[key];
@@ -5852,7 +5862,6 @@ function applyStaleKeys(keys, reader) {
 // overtaken read can still never remove a realm.
 // ---------------------------------------------------------------------------
 const REALMS_REREADS = 4;
-let realmShadowMoves = 0;
 
 /**
  * Applies a realm change another process wrote: reads the realm list and
@@ -6028,6 +6037,18 @@ function applyRealmsRead(attempt) {
   });
 }
 
+// THE SETTINGS TABLE, READ AGAIN WHEN THIS PROCESS'S OWN SETTINGS WRITE
+// OVERTOOK THE READ — `applyRealmsRead()`'s reason (GitHub run 45732176952):
+// a setting committed here while the read was out is no longer in the
+// pending delta, and the stale table without it would clear it here.
+
+/**
+ * Applies a settings change another process wrote: reads the table and
+ * applies it under what this process has not written yet.
+ *
+ * @returns a promise of true once applied, false when settings are not
+ *   persisted
+ */
 function applyAppconfigChange() {
   log.debug("Entering applyAppconfigChange().");
   if (!persistsAppconfig()) {
@@ -6035,7 +6056,32 @@ function applyAppconfigChange() {
     return Promise.resolve(false);
   }
   log.debug("Leaving applyAppconfigChange().");
+  return applyAppconfigRead(0);
+}
+
+/**
+ * One read of the settings table and, unless this process's own settings
+ * write overtook it, its application.
+ *
+ * @param attempt - the reads already made and discarded
+ * @returns a promise of true once applied
+ */
+function applyAppconfigRead(attempt) {
+  log.debug("Entering applyAppconfigRead(). attempt=" + attempt);
+  const movesBefore = appconfigShadowMoves;
+  log.debug("Leaving applyAppconfigRead().");
   return driver.loadOverrides().then(function (saved) {
+    if (appconfigShadowMoves !== movesBefore) {
+      if (attempt + 1 < REALMS_REREADS) {
+        log.debug('persistence: this process wrote a setting while the ' +
+                  'settings were being read; reading them again.');
+        return applyAppconfigRead(attempt + 1);
+      }
+      log.warn(errorCodes.tag('STS-STORE-0182') + 'persistence: the ' +
+               'settings were read ' + REALMS_REREADS + ' times and each ' +
+               'time this process wrote a setting while the read was out; ' +
+               'the last answer is applied.');
+    }
     // ----------------------------------------------------------------------
     // AN EMPTY TABLE IS A FACT HERE, NOT AN ABSENCE (2026-09-08).
     //
