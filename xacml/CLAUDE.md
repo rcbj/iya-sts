@@ -1546,14 +1546,20 @@ the streams its APPLICATION owns, subject the application.
   in the realm (`PepBinding.all()`), the token of the PEP's
   bound-application scope (`boundPull()`) and the catalogue's, and tells the
   PEPs for which either MOVED, naming which (`changed`).
-* **MOVED AGAINST WHAT.** `pepTokens`, per realm and per process, records
-  what each bound PEP was last sent (its scoped and catalogue pulls) or
-  last checked against. With nothing recorded yet, a `local` PEP's scope is
+* **MOVED AGAINST WHAT.** `pepTokens`, per realm and PERSISTED
+  (`xacml.pepTokens`), records what each bound PEP was last sent (its
+  scoped and catalogue pulls) or last checked against, written only when a
+  token moves and pruned to the bound PEPs at each check. **It was per
+  process until GitHub run 45732176952 (2026-11-26)**: `/xacml` and
+  `/admin-api` are fanned out across request workers, so the pull primed
+  one worker and the change was decided in another that knew nothing of
+  the PEP, and the event was lost — `sts_pep_policies_changed` failed in
+  `mariadb` and `cluster` and passed where one process answers. With nothing recorded yet, a `local` PEP's scope is
   compared with the token its row says it holds; the catalogue is not, so a
   restart does not send every PEP an event. A `central` PEP is told too (D4:
-  it clears its cached Permits). In a cluster the node that made the change
-  decides; the event is a hint, and a PEP that misses it converges on its
-  fallback poll.
+  it clears its cached Permits). The worker or node that made the change
+  decides, against the shared row; the event is a hint, and a PEP that
+  misses it converges on its fallback poll.
 * **HOW.** `ssf/service_signals.ts`'s `pepPoliciesChanged()` finds `ssf.ts`
   in the cache, and `ssf.pepPoliciesChanged()` sends one SET to each stream
   whose owner (`ssf_streams.ts`'s `ownerApplication()`) is the application
