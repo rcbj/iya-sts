@@ -3930,15 +3930,36 @@ async function theDirectoryPagesWork(driver) {
       "and stores one family out of three.");
   });
 
+  // THE PERSON'S OWN FIGURE, READ FROM THE STORE, and the realm's total only
+  // where it is the whole realm's (GitHub run 45732176952, cluster). On a
+  // database store the users register is on demand and `/admin-api/metrics`
+  // counts the records the ANSWERING process holds — it says so with
+  // `users.heldOnly`, and `common/admin_stats.js`'s `snapshot()` says a
+  // person's own figure is `userDetail()`'s, read from every origin's row.
+  // `/admin-api` is fanned out across workers and nodes, so the two
+  // readings above came from different processes and went from 1 to 0
+  // with nothing counted or uncounted. The person's drill-down asks the
+  // store, whichever process answers it.
   const after = await apiJson("/realm/" + REALM + "/admin-api/metrics");
+  const detail = await apiJson("/realm/" + REALM + "/admin-api/users?user=" +
+                               encodeURIComponent(person));
   check("creating somebody is not a sign-in", function () {
+    const own = (detail.body || {}).user || {};
+    assert.strictEqual(Number(own.authentications || 0), 0,
+      "creating a directory entry must not count as an authentication. " +
+      person + "'s own record, read from the store, counts " +
+      JSON.stringify(own.authentications) + ". An administrator adding " +
+      "somebody is not that person signing in, and a console that recorded " +
+      "one would inflate every number on /admin/metrics and every count on " +
+      "/admin/users.");
+    const held = !!((before.body.users || {}).heldOnly ||
+                    (after.body.users || {}).heldOnly);
     const signInsAfter = Number((after.body.users || {}).authentications || 0);
-    assert.strictEqual(signInsAfter, signInsBefore,
-      "creating a directory entry must not count as an authentication. It " +
-      "went from " + signInsBefore + " to " + signInsAfter + ". An " +
-      "administrator adding somebody is not that person signing in, and a " +
-      "console that recorded one would inflate every number on " +
-      "/admin/metrics and every count on /admin/users.");
+    if (!held) {
+      assert.strictEqual(signInsAfter, signInsBefore,
+        "and the realm's total, held whole by every process here, went " +
+        "from " + signInsBefore + " to " + signInsAfter + ".");
+    }
   });
 
   log.info("[directory] OK — a person and an application created on the " +

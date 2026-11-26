@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6190** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6191** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 116
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 120
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 121
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 36
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 90
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
@@ -486,6 +486,7 @@ Raised from: persistence/.
 | `STS-STORE-0179` | The database password could not be read again from its secret store (persistence.database-password-refresh, or after the database refused a login, #2220); new connections go on using the password already held. | Log line and audit row |
 | `STS-STORE-0180` | persistence.databaseTlsClientCertFile or persistence.databaseTlsClientKeyFile is set and the client certificate cannot be presented: only one of the two is set, a file cannot be read (or is outside security.fileRoots in product), it holds no certificate, the key is encrypted or does not parse, or it is not the certificate's key (#2254). Fatal at persistence.start(); the out-of-process tools that dial the database refuse the same way. | none — fatal at start |
 | `STS-STORE-0181` | The database client certificate could not be read again (persistence.database-password-refresh, or after the database refused a login, #2254): a file is unreadable or the pair no longer holds together. New connections go on presenting the pair already held. | Log line and audit row |
+| `STS-STORE-0182` | The realm list or the settings table another process's change asked for was read several times and each time this process's own write of it committed while the read was out (GitHub run 45732176952). The last answer is applied, with no realm removed whose row this process wrote meanwhile; a value written here in that moment may read as the stored one until the next change. | Log line |
 
 ## STS-CLUSTER
 
