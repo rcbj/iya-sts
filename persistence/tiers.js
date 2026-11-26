@@ -562,6 +562,10 @@ const CELL_MINTED = [
   // A remote PEP's Basic tickets (#1760): a person's sign-in, handed to the
   // PEP that asked this cell, and looked up by it alone.
   'xacml.pepTickets',
+  // What each bound embedded PEP was last sent (#2028): a token per PEP,
+  // written by the pulls this cell answered and read by the change it
+  // decides on. Its PEPs pull here; another cell keeps its own.
+  'xacml.pepTokens',
   'xacml_monitor.counters'
 ];
 

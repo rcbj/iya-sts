@@ -209,11 +209,23 @@ import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import realms = require('../common/realms');
 
-// WHAT THIS PROCESS LAST KNEW EACH BOUND PEP TO HOLD (#2028): its scope's
-// token and the catalogue's, per realm at the declaration, held in this
-// process only (it is a hint's memory, `notePepPolicies()`). Bounded by the
-// realm's bound PEPs.
-const pepTokens: any = realms.map();
+// WHAT EACH BOUND PEP WAS LAST SENT OR CHECKED AGAINST (#2028): its scope's
+// token and the catalogue's, per realm at the declaration.
+//
+// PERSISTED, SO EVERY PROCESS READS THE SAME ROW (GitHub run 45732176952).
+// It was held in each process alone, and with request workers that is a
+// coin toss: `/xacml` and `/admin-api` are fanned out rather than held to
+// one worker, so the PEP's pull primed the row in one worker and the
+// administrator's change was decided in another, which knew nothing of the
+// PEP, found no token on its row (a PEP need not report one) and sent
+// nothing — `sts_pep_policies_changed` failed in the `mariadb` and
+// `cluster` modes and passed only where one process answers. Declared
+// here, a pull's row is written once per token it moves to and the
+// deciding worker reads it after the read barrier, whichever worker or
+// node served the pull. Written only when a member changes (a PEP polling
+// an unchanged scope writes nothing) and pruned to the realm's bound PEPs
+// at every check.
+const pepTokens: any = realms.map({ persist: 'xacml.pepTokens' });
 
 // The description page's shell and script (#584).
 import DescriptionPages = require('../common/description_pages');
@@ -2720,11 +2732,12 @@ class XacmlSurface {
   // the PEP's bound-application scope (`boundPull()`) and the catalogue's,
   // and sends the event when either MOVED, naming which:
   //
-  //   * MOVED is against what this process last knew of the PEP
-  //     (`pepTokens`, primed by the PEP's own scoped and catalogue pulls
-  //     and by each check), and, with nothing known yet, against the scope
-  //     token a local PEP's row says it holds. A PEP this process knows
-  //     nothing about is told nothing about the catalogue: its next pull
+  //   * MOVED is against what the PEP was last sent or checked against
+  //     (`pepTokens`, persisted so every worker and node reads one row,
+  //     primed by the PEP's own scoped and catalogue pulls and by each
+  //     check), and, with nothing known yet, against the scope token a
+  //     local PEP's row says it holds. A PEP nothing is known of yet is
+  //     told nothing about the catalogue: its next pull
   //     takes the catalogue anyway, and a burst on every restart would
   //     make the event mean nothing;
   //   * a `central` PEP holds no policy and is told too — the event clears
@@ -2732,8 +2745,8 @@ class XacmlSurface {
   //   * a change to another application's policy moves no token of this
   //     PEP's, so it sends nothing.
   //
-  // PER PROCESS AND A HINT: in a cluster the node that made the change
-  // decides, and a PEP that misses the event converges on its fallback
+  // A HINT: the worker or node that made the change decides, against the
+  // shared row, and a PEP that misses the event converges on its fallback
   // poll. NOTHING HERE THROWS: a failure is logged under STS-XACML-0348.
   // -------------------------------------------------------------------------
   /**
@@ -2778,6 +2791,16 @@ class XacmlSurface {
     const { log } = this.deps;
     log.debug('Entering XacmlSurface.checkPepPolicies(). what=' + what);
     const bound = PepBinding.shared().all();
+    // A PEP no longer bound keeps no row: the store holds the realm's bound
+    // PEPs and nobody else, whatever was unbound or deleted since.
+    const names = bound.map(function (one) {
+      return one.name;
+    });
+    Array.from(pepTokens.keys()).forEach(function (name) {
+      if (names.indexOf(String(name)) < 0) {
+        pepTokens.delete(name);
+      }
+    });
     if (!bound.length) {
       log.debug('Leaving XacmlSurface.checkPepPolicies(). Nobody bound.');
       return [];
@@ -2800,10 +2823,14 @@ class XacmlSurface {
           !!row.syncToken && row.syncToken !== scopeToken;
       const catalogueMoved = !!known && !!catalogueToken &&
         !!known.catalogue && known.catalogue !== catalogueToken;
-      pepTokens.set(one.name, { application: one.application,
-                                policies: scopeToken,
-                                catalogue: catalogueToken ||
-                                  (known ? known.catalogue : '') });
+      const next = { application: one.application, policies: scopeToken,
+                     catalogue: catalogueToken ||
+                       (known ? known.catalogue : '') };
+      if (!known || known.application !== next.application ||
+          known.policies !== next.policies ||
+          known.catalogue !== next.catalogue) {
+        pepTokens.set(one.name, next);
+      }
       if (!policiesMoved && !catalogueMoved) {
         return;
       }
@@ -2831,6 +2858,11 @@ class XacmlSurface {
       return;
     }
     const known = pepTokens.get(name);
+    if (known && known.application === bound && known[kind] === token) {
+      // NOTHING MOVED: a PEP polling an unchanged scope writes no row.
+      log.debug('Leaving XacmlSurface.notePepPulled(). Unchanged.');
+      return;
+    }
     const kept = known && known.application === bound ? known
       : { application: bound, policies: '', catalogue: '' };
     pepTokens.set(name, Object.assign({}, kept, { [kind]: token }));
