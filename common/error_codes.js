@@ -5736,9 +5736,12 @@ const CODES = [
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}; at a validation, the use case\'s own refusal' },
   { code: 'STS-PKI-0302',
-    summary: 'A service-wide use case was assigned a truststore a realm ' +
-      'other than the default defines (#2118, D2): a handshake, an ' +
-      'outbound dial and the database carry no realm.',
+    summary: 'A service-wide truststore use case was assigned what its ' +
+      'scope does not allow (#2118 D2, #2148): an inbound one (tls-client, ' +
+      'fido-mds, revocation-signer) assigned or cleared from a realm other ' +
+      'than the default, which alone decides it; or a truststore a realm ' +
+      'other than the default defines named by a service-wide use case, ' +
+      'except an outbound one that realm overrides for its own dials.',
     spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0303',

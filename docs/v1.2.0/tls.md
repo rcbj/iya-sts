@@ -413,8 +413,12 @@ What happens to a certificate that is presented:
   verified certificate* below). One from an outside authority is not: a
   handshake has no realm to look its entry up in, so it is recorded by the
   door that signs its holder in.
-* A certificate is **never** read from a forwarded header (`X-Client-Cert` and
-  its relatives) in any mode. Behind a balancer, TLS has to be passed through.
+* A certificate is **never** read from a vendor's forwarded header
+  (`X-Client-Cert` and its relatives) in any mode. The one header read is
+  RFC 9440's `Client-Cert`, and only from a TLS-terminating proxy named by
+  both `tls.trustedProxyCertificates` and `tls.trustedProxyAddresses`
+  ([Reverse proxies and load balancers](#reverse-proxies-and-load-balancers)).
+  Otherwise, behind a balancer, TLS has to be passed through.
 * **A handshake that fails is logged**, with OpenSSL's own reason
   (`tlsClientError`), and recorded as a refusal on the audit log. Such a
   handshake never reaches a handler, so without that it is invisible from both
@@ -738,8 +742,9 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
   `ldap.ldapsDisableOptionalClientCertificate` is turned off (see *The
   listeners* above). Once it asks, a person's certificate binds an LDAP
   connection with SASL EXTERNAL — one this service issued, or one from an
-  outside certificate authority stored on that person's entry ([LDAP](ldap.md),
-  *Binding with a client certificate*).
+  outside certificate authority that a certificate sign-in profile binds to
+  that person, that is stored on their entry, or whose card UUID they hold
+  ([LDAP](ldap.md#binding-with-a-client-certificate)).
 
 ## Development and product mode
 

@@ -416,7 +416,11 @@ checked against.
 
 Both halves are available **in every mode**, wherever the main port is TLS
 (`global.https`). The port asks every connection for a client certificate and
-requires none. **A client certificate is never read from a header.**
+requires none. **A client certificate is read from a header only as RFC 9440's
+`Client-Cert`, from a TLS-terminating proxy named by both
+`tls.trustedProxyCertificates` and `tls.trustedProxyAddresses`** (empty by
+default), and is then verified here as a handshake's would be
+([TLS and reverse proxies](#tls-and-reverse-proxies-section-26)).
 
 **Client authentication (section 2).**
 
@@ -587,12 +591,20 @@ answer in the ID Token's `acr`.
   application anything issued on an authentication that did not earn the
   value, whatever the client asked for. The policy sees the fact as
   `urn:sts:xacml:phishing-resistance` (`phr`, `phrh` or `none`).
-* SAML's `AuthnContextClassRef` and WS-Federation's `wauth` do not read these
-  values.
+* SAML and WS-Federation read the same two values as their EAP class URIs
+  (`http://schemas.openid.net/pape/policies/2007/06/phishing-resistant` and
+  `http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware`): a
+  SAML 2.0 `RequestedAuthnContext`, SAML 1.1's non-spec
+  `authnContextClassRef` parameter or a WS-Federation `wauth` naming only
+  those URIs is the same demand as `acr_values`, and the assertion then
+  names the class the session earned. A SAML sign-in that still did not
+  earn it is refused (`STS-SAML-0116` for SAML 2.0, `STS-SAML-0117` for
+  SAML 1.1). A request naming none of them leaves the assertion's class
+  unchanged. See [Passkeys → Limits](passkeys.md#limits-and-what-is-not-supported)
+  and [Configuring WS-Federation → wauth](configure-ws-federation.md#wauth-demand-a-sign-in-method).
 
 ### Not implemented
 
-* A client certificate forwarded in a header by a TLS-terminating proxy.
 * `acr_values` on the device and token-exchange grants; GNAP's interaction does
   not read a step-up requirement.
 * The `web_message` response mode (RFC 9700 section 4.17). A request for it is
@@ -1187,10 +1199,17 @@ made against a proxy's URL while it is off is refused, and the refusal names the
 setting. In product mode the headers are believed only from a peer listed in
 `global.trustedProxies`, so set that too.
 
-**No client certificate is ever read from a header** (`X-Client-Cert`,
-`X-Forwarded-Client-Cert`, `X-SSL-Client-Cert` or any vendor spelling): a header
-costs nothing to forge. The cost, stated rather than hidden, is that a proxy
-terminating mutual TLS cannot pass the certificate through.
+**No client certificate is read from a vendor's header** (`X-Client-Cert`,
+`X-Forwarded-Client-Cert`, `X-SSL-Client-Cert` or any other spelling): a header
+costs nothing to forge. **The one exception is RFC 9440's `Client-Cert` and
+`Client-Cert-Chain`, and only from a TLS-terminating proxy named by both its
+own client certificate (`tls.trustedProxyCertificates`) and its address
+(`tls.trustedProxyAddresses`)**. The forwarded certificate is verified here
+against the client truststore and revocation, and then stands for the
+handshake's at every door. From any other sender the two headers are removed
+before anything reads them (`STS-TLS-0072`). Both settings are empty by
+default, so a proxy passes no certificate through until it is named. See
+[A TLS-terminating proxy in front of certificate sign-in](configure-tls.md#a-tls-terminating-proxy-in-front-of-certificate-sign-in).
 
 Monitoring → TLS connection (`GET /admin-api/tls-connection`, Admin Read)
 reports every forwarding and certificate header a request carried, whether any was believed, and the effective base URL. Certificate
@@ -1614,9 +1633,10 @@ client may override `oauth2.refreshIdleSeconds` and
 * **An unverified client certificate still binds a token.** RFC 8705 section 3
   binds to the certificate and allows a self-signed one. Requiring verification
   would make binding unreachable, because the truststore starts empty.
-* **No certificate from a header.** Anybody can write `X-Client-Cert`. The cost
-  (a proxy terminating mutual TLS cannot pass the certificate through) is
-  accepted and stated.
+* **No certificate from a header, except RFC 9440's from a named proxy.**
+  Anybody can write `X-Client-Cert`. A `Client-Cert` is believed only from a
+  proxy the operator named by its certificate and its address, both off by
+  default, and is verified here as a handshake's certificate would be.
 * **One decision about forwarded headers.** The published URLs and the DPoP
   `htu` check read `X-Forwarded-*` through one switch, `global.trustProxy`, so
   the two cannot disagree.
