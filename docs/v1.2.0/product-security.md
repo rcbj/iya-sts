@@ -475,6 +475,7 @@ stack uses OpenBao for both. See [Key management](key-management.md).
 
 ## Related
 
+* [Phishing-resistant sign-in](phishing-resistance.md): every defence against phishing, in one place
 * [What is not checked](what-is-not-checked.md), in development mode
 * [Input validation](validation.md)
 * [Risky third-party components](risky-components.md)

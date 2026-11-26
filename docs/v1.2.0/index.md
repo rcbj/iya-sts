@@ -132,6 +132,8 @@ protocol's section of the sidebar:
 [Certificate enrollment: ACME, EST, SCEP](configure-enrollment.md) ·
 [SPIFFE](configure-spiffe.md) ·
 [Passkeys and WebAuthn](passkeys.md) ·
+[Phishing-resistant sign-in](phishing-resistance.md): what defends a
+sign-in against phishing, and the specification behind each ·
 [Post-login activities](post-login-activities.md).
 
 **Sessions and signals** —
