@@ -13,9 +13,10 @@ also works with other providers that implement the same specification.
 
 There are four server-side libraries — OpenID Connect, GNAP, SAML 2.0 and
 WS-Federation — in Node.js, Python, Java, Rust, Go, C#, and C and C++.
-There are also two in-browser clients, for OpenID Connect and GNAP, and a
-Swift client for native macOS apps. Every repository is public and every
-library is under the MIT License.
+There are also two in-browser clients, for OpenID Connect and GNAP, a
+Swift client for native macOS apps and a Kotlin client for native Android
+apps. Every repository is public and every library is under the MIT
+License.
 
 | Language | Where the packages are published |
 |---|---|
@@ -27,6 +28,7 @@ library is under the MIT License.
 | C# | [NuGet](https://www.nuget.org/profiles/IyaSec) |
 | C and C++ | Not published to a package manager; build it from the repository with CMake, or put it in your Conan cache from a clone of a release tag |
 | Swift | [GitHub Releases](https://github.com/rcbj/swift-oidc-caep-native-app/releases), through Swift Package Manager |
+| Kotlin (Android) | Not published to a package manager yet; include the `library` module from the [repository](https://github.com/rcbj/android-oidc-caep-native-app) in a Gradle build |
 
 Each repository has a test that signs its demo application in to a fresh
 iya-sts built from the latest `main` branch. The test then sends two CAEP
@@ -41,8 +43,8 @@ iya-sts behaves as the provider is on the protocol page for that family:
 [WS-Federation](ws-federation.md), [GNAP](gnap.md) and
 [Shared Signals](shared-signals.md).
 
-A longer guide to the browser OpenID Connect client, and to the Swift
-client for native macOS apps, is
+A longer guide to the browser OpenID Connect client, to the Swift client
+for native macOS apps and to the Kotlin client for native Android apps, is
 [OpenID Connect and CAEP clients](client-libraries.md).
 
 ## Trusting iya-sts's TLS certificate
@@ -146,7 +148,8 @@ pre-release from `develop`.
 
 The four server-side libraries in the Node.js table also exist in these
 languages. The two in-browser clients stay in that table. The Swift client
-for native macOS apps is [below](#swift).
+for native macOS apps is [below](#swift), and so is the Kotlin client for
+native Android apps ([Android](#android)).
 
 Each library follows its Node.js module: the same protocol behaviour and
 the same JSON configuration keys. `signals` omitted or true keeps the CAEP
@@ -279,3 +282,18 @@ and depend on the `OIDCCAEPClient` product. The detailed guide is
 | Product | Platform | Repository | Documentation |
 |---|---|---|---|
 | `OIDCCAEPClient` | macOS 13 or later; Linux desktops too | [rcbj/swift-oidc-caep-native-app](https://github.com/rcbj/swift-oidc-caep-native-app) | [documentation](https://rcbj.github.io/swift-oidc-caep-native-app/) |
+
+## Android
+
+`net.rcbj.oidccaep` is an OpenID Connect public client (PKCE, PAR, DPoP)
+and a CAEP receiver for native Android apps, written in Kotlin. It is a
+port of the Swift client: the same API shape and protections, with the DPoP
+key generated in the Android Keystore (StrongBox where the device has it,
+else the TEE), tokens encrypted at rest under a Keystore key, and sign-in
+in a Custom Tab. It is not published to a package manager yet: include the
+repository's `library` module in a Gradle build. The detailed guide is
+[OpenID Connect and CAEP clients](client-libraries.md).
+
+| Module | Platform | Repository | Documentation |
+|---|---|---|---|
+| `library` (package `net.rcbj.oidccaep`) | Android 9 (API 28) or later | [rcbj/android-oidc-caep-native-app](https://github.com/rcbj/android-oidc-caep-native-app) | [README](https://github.com/rcbj/android-oidc-caep-native-app/blob/main/README.md) |
