@@ -602,11 +602,17 @@ answer in the ID Token's `acr`.
   SAML 1.1). A request naming none of them leaves the assertion's class
   unchanged. See [Passkeys → Limits](passkeys.md#limits-and-what-is-not-supported)
   and [Configuring WS-Federation → wauth](configure-ws-federation.md#wauth-demand-a-sign-in-method).
+* GNAP reads them too, by their short names: an `interact.acr` (a string or
+  an array) naming only `phr`, or only `phrh`, is the same demand as
+  `acr_values`. It keeps an interaction the grant could otherwise skip
+  (`STS-GNAP-0893`), and a session that has still not earned the class after
+  the one interaction is refused `request_denied` (`STS-GNAP-0905`). An
+  access type's own `acr` is a step-up requirement in the same way; see
+  [GNAP → Who must be asked, and how strongly signed in](gnap.md#who-must-be-asked-and-how-strongly-signed-in).
 
 ### Not implemented
 
-* `acr_values` on the device and token-exchange grants; GNAP's interaction does
-  not read a step-up requirement.
+* `acr_values` on the device and token-exchange grants.
 * The `web_message` response mode (RFC 9700 section 4.17). A request for it is
   refused; see [In-browser communication](#in-browser-communication-section-417).
 
