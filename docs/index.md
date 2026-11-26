@@ -4,7 +4,7 @@ title: iya-sts documentation
 
 # iya-sts documentation
 
-iya-sts is an identity service in one Node process: OAuth 2.0 and OpenID
+iya-sts is an identity service in a single container: OAuth 2.0 and OpenID
 Connect, SAML, WS-Trust and WS-Federation, Kerberos, LDAP, SCIM, SPIFFE,
 OpenID4VC, certificate enrollment and more. Development mode exercises
 clients; product mode is deployable.

@@ -5,8 +5,8 @@ nav_order: 1
 
 # iya-sts
 
-An identity service that speaks every protocol family the sidebar lists in one
-Node process, in one of two modes (`global.mode`).
+An identity service that speaks every protocol family the sidebar lists in a
+single container, in one of two modes (`global.mode`).
 
 What it speaks about is two protocol-independent objects. A
 [user](people.md) is one person. An [application](applications.md) is one
