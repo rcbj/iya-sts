@@ -86,13 +86,27 @@ exists** — none is created:
   SCEP, naming the person in its `urn:sts:person:` subjectAltName (a service
   account's `urn:sts:sa:`);
 * one from an **outside certificate authority** trusted through
-  `/admin/tls/trust`, **stored byte for byte in `userCertificate` on exactly
-  one person entry** of the bind's realm. Its common name and subject are
-  never read. Store it on the person's console page (**Stored
-  certificates**), with `POST /admin-api/users/add-certificate`, or with an
-  LDAP modify of `userCertificate;binary`; a renewed certificate is stored
-  again. [TLS](tls.md#a-certificate-from-an-outside-certificate-authority)
-  has the whole rule.
+  `/admin/tls/trust`, decided as at every other door that reads a
+  certificate as a person
+  ([What decides a certificate](configure-tls.md#what-decides-a-certificate)):
+  * where one of the realm's **certificate sign-in profiles**
+    (`certSignIn.profiles`) covers it, by the profile's checks and its
+    binding methods, such as `issuer-serial` or `card-uuid`, against the
+    person's `stsCertificateBinding` or `stsPivCardUuid`
+    ([Smart-card and certificate sign-in](configure-tls.md#smart-card-and-certificate-sign-in));
+  * otherwise **stored byte for byte in `userCertificate` on exactly one
+    person entry** of the bind's realm, or, for an outside PIV or CAC card
+    from a CA in `piv.externalIssuers`, its card UUID in exactly one
+    person's `stsPivCardUuid`
+    ([Outside PIV and CAC cards](hardware-tokens.md#outside-piv-and-cac-cards)).
+    Store the certificate on the person's console page (**Stored
+    certificates**), with `POST /admin-api/users/add-certificate`, or with an
+    LDAP modify of `userCertificate;binary`; a renewed certificate is stored
+    again. [TLS](tls.md#a-certificate-from-an-outside-certificate-authority)
+    has the whole rule.
+
+  Its common name and subject are never read, except by a profile's
+  low-affinity name method where an administrator opted in.
 
 These are refused, each with its own error code:
 
@@ -101,7 +115,7 @@ These are refused, each with its own error code:
 | a mechanism other than EXTERNAL | 7 authMethodNotSupported |
 | EXTERNAL on the plain listener (389), or no verified certificate on the connection | 48 inappropriateAuthentication |
 | a revoked certificate | 49 invalidCredentials |
-| a certificate from an outside certificate authority stored on no entry of the realm (`STS-LDAP-0192`), or on more than one (`STS-LDAP-0193`) | 49 |
+| a certificate from an outside certificate authority that names nobody in the realm — stored on no entry, bound to nobody, or outside the profile that covers it (`STS-LDAP-0192`) — or more than one account (`STS-LDAP-0193`) | 49 |
 | a certificate issued in another trust realm, or one that is not a TLS client identity | 49 |
 | an application's certificate (only a person binds to the directory) | 49 |
 | a certificate no longer on its holder's record, a person with no entry, a disabled account | 49 |

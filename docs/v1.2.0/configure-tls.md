@@ -489,6 +489,7 @@ most 32 profiles, and each list in a profile at most 32 values.
 | `policies` | no | Certificate policies as dotted OIDs. RFC 5280 section 6.1 policy processing runs over the validated path with these as the initial policy set and an explicit policy required, so the path must carry one of them down to the leaf. Policy mappings are honoured: an agency policy mapped to one of these through a bridge counts. |
 | `bindings` | no | The methods that say which account the certificate is (below). Default `["certificate-sha256", "issuer-serial"]`. |
 | `lowAffinity` | no | `true` lets `bindings` name a low-affinity (name) method. Without it, a name method is refused when the setting is written. |
+| `smartCard` | no | `true` where the certificates the profile covers are smart cards (PIV, CAC or another card), so a sign-in with one is governed by the authentication policy's *Smart card (PIV/CAC) certificate* row rather than *TLS client certificate* ([Smart cards](authentication.md#smart-cards-2031)). Absent is `false`; a value that is not `true` or `false` is refused (`STS-TLS-0065`). |
 | `description` | no | Free text, at most 500 characters. |
 
 A write that is not a well-formed array is refused with `STS-TLS-0065` and a
